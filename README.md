@@ -2,12 +2,12 @@
 
 Standalone parser, AST, and transformer for ABB SattLine.
 
-This package owns the Lark grammar, the strict single-file syntax behavior, the AST models, and the `SLTransformer` — all in one self-contained, installable package.
+This package owns the Lark grammar, the strict single-file syntax behavior, the AST models, and the `SLTransformer`, all in one self-contained, installable package.
 
 ## Features
 
 - Lark LALR parser for SattLine sources (grammar in `grammar/sattline.lark`)
-- Parses plain text and files — `.s`, `.g`, `.l`, `.x`, `.y`, `.z` and any other extension; the parser is content-based, not extension-based
+- Parses plain text and files (`.s`, `.g`, `.l`, `.x`, `.y`, `.z` and any other extension; the parser is content-based, not extension-based)
 - Strict, no-silent-fallback parsing
 - Automatic comment stripping (`(* ... *)`, nested) before parsing
 - Automatic compressed-source decoding (`preprocess_sl_text`, `is_compressed`)
@@ -51,7 +51,7 @@ basepicture = parse_source_text(source)
 
 `parse_source_file` is for when you have a path on disk. It handles the file I/O for you: it reads the file with an encoding fallback (`utf-8`, then `cp1252`, then `latin-1`) and passes the path along so error messages can name the source file.
 
-`parse_source_text` is for when you already hold the source as a string — a snippet, an editor buffer, a response from an API, or content read by your own code. The two are interchangeable in behavior; `parse_source_file(path)` is equivalent to `parse_source_text(path.read_text(...))` plus the encoding fallback and path-aware error reporting. Start with `parse_source_file` when you have a path, `parse_source_text` otherwise.
+`parse_source_text` is for when you already hold the source as a string: a snippet, an editor buffer, a response from an API, or content read by your own code. The two are interchangeable in behavior; `parse_source_file(path)` is equivalent to `parse_source_text(path.read_text(...))` plus the encoding fallback and path-aware error reporting. Start with `parse_source_file` when you have a path, `parse_source_text` otherwise.
 
 Both entry points handle cleanup automatically, so you do not need to pre-process the source:
 
@@ -79,7 +79,7 @@ if is_compressed(source):
     decoded, mapping = preprocess_sl_text(source)
 ```
 
-`is_compressed` answers whether the text uses the compressed encoding, and `preprocess_sl_text` decodes it, returning the decoded text plus a mapping back to the original. Since both parse entry points already detect and decode compressed sources, these are only needed by tooling that must decode without parsing — for example, saving a plain-text copy — or by the fuzz harness that drives `preprocess_sl_text` with adversarial inputs.
+`is_compressed` answers whether the text uses the compressed encoding, and `preprocess_sl_text` decodes it, returning the decoded text plus a mapping back to the original. Since both parse entry points already detect and decode compressed sources, these are only needed by tooling that must decode without parsing (for example, saving a plain-text copy) or by the fuzz harness that drives `preprocess_sl_text` with adversarial inputs.
 
 ### Report errors with source locations
 
@@ -96,9 +96,9 @@ except Exception as exc:
 
 ### What is the AST good for?
 
-`parse_source_file` and `parse_source_text` return a `BasePicture` — a tree of Python objects that mirrors the structure of the program. Once you have it, you can inspect and walk the program *as data* instead of as text.
+`parse_source_file` and `parse_source_text` return a `BasePicture`, a tree of Python objects that mirrors the structure of the program. Once you have it, you can inspect and walk the program *as data* instead of as text.
 
-For readers new to ASTs (abstract syntax trees): the parser does not give you the flat file back — it gives you structured objects. `basepicture.program_name` is the program name, `basepicture.moduletype_defs` is the list of type definitions, `basepicture.submodules` is the tree of nested modules, and so on. You can read fields, iterate lists, and check conditions directly in Python. For a small program this prints:
+For readers new to ASTs (abstract syntax trees): the parser does not give you the flat file back; it gives you structured objects. `basepicture.program_name` is the program name, `basepicture.moduletype_defs` is the list of type definitions, `basepicture.submodules` is the tree of nested modules, and so on. You can read fields, iterate lists, and check conditions directly in Python. For a small program this prints:
 
 ```python
 from pathlib import Path
@@ -116,7 +116,7 @@ program
 2 submodules
 ```
 
-Think of the AST as a structured, machine-readable view of the program, that tools — a linter, a refactorer, an editor, a report generator — can walk without re-parsing the text. Since an AST is just nested objects, answering questions about the program becomes ordinary Python.
+Think of the AST as a structured, machine-readable view of the program, that tools (a linter, a refactorer, an editor, a report generator) can walk without re-parsing the text. Since an AST is just nested objects, answering questions about the program becomes ordinary Python.
 
 ## Development
 
@@ -130,11 +130,11 @@ pyright src tests
 
 ## Project layout
 
-- `src/sattline_parser/grammar/` — Lark grammar and constants
-- `src/sattline_parser/models/` — AST models
-- `src/sattline_parser/transformer/` — transformer mixins and `SLTransformer`
-- `src/sattline_parser/api.py` — public entry points
-- `src/sattline_parser/fuzz_harness.py` — standalone fuzzing
+- `src/sattline_parser/grammar/` : Lark grammar and constants
+- `src/sattline_parser/models/` : AST models
+- `src/sattline_parser/transformer/` : transformer mixins and `SLTransformer`
+- `src/sattline_parser/api.py` : public entry points
+- `src/sattline_parser/fuzz_harness.py` : standalone fuzzing
 
 ## License
 
