@@ -33,7 +33,7 @@ Requires Python 3.13+.
 from pathlib import Path
 from sattline_parser import parse_source_file
 
-picture = parse_source_file(Path("program.s"))
+basepicture = parse_source_file(Path("program.s"))
 ```
 
 ### Parse source text
@@ -42,7 +42,7 @@ picture = parse_source_file(Path("program.s"))
 from sattline_parser import parse_source_text
 
 source = open("program.x", encoding="utf-8").read()
-picture = parse_source_text(source)  # comments stripped, decoding applied
+basepicture = parse_source_text(source)  # comments stripped, decoding applied
 ```
 
 `parse_source_file` and `parse_source_text` both return a `BasePicture` (the module-level model) with the full AST attached.
