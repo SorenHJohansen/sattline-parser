@@ -11,7 +11,7 @@ from sattline_parser.models.ast_model import BasePicture, SourceSpan
 from sattline_parser.transformer.sl_transformer import SLTransformer
 
 from .__version__ import __version__
-from .api import create_parser, create_sl_parser, parse_source_file, parse_source_text
+from .api import create_parser, create_sl_parser, describe_parse_error, parse_source_file, parse_source_text
 from .grammar import constants
 from .utils.text_processing import strip_sl_comments
 
@@ -77,6 +77,7 @@ __all__ = [
     "constants",
     "create_parser",
     "create_sl_parser",
+    "describe_parse_error",
     "fuzz_parse_text",
     "generate_random_text",
     "is_compressed",
