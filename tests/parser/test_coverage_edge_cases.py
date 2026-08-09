@@ -38,6 +38,7 @@ from sattline_parser.utils import formatter
 
 # ---- Package __getattr__ / __dir__ ----
 
+
 def test_package_lazy_fuzz_exports_and_dir() -> None:
     for name in sattline_parser._FUZZ_EXPORT_SET:
         sattline_parser.__dict__.pop(name, None)
@@ -52,6 +53,7 @@ def test_package_lazy_fuzz_exports_and_dir() -> None:
 
 # ---- api.py helpers ----
 
+
 def test_render_source_context_guards() -> None:
     assert parser_api._render_source_context("a\nb", line=None, column=1) == ""
     assert parser_api._render_source_context("a\nb", line=5, column=1) == ""
@@ -60,10 +62,7 @@ def test_render_source_context_guards() -> None:
 
 def test_rewrite_summary_location_branches() -> None:
     assert parser_api._rewrite_summary_location("boom", line=None, column=2) == "boom"
-    assert (
-        parser_api._rewrite_summary_location("boom, at line 1 col 7", line=3, column=4)
-        == "boom, at line 3 col 4"
-    )
+    assert parser_api._rewrite_summary_location("boom, at line 1 col 7", line=3, column=4) == "boom, at line 3 col 4"
 
 
 def test_failure_details_without_source() -> None:
@@ -101,6 +100,7 @@ def test_load_source_text_decode_failure(monkeypatch: pytest.MonkeyPatch, tmp_pa
 
 # ---- Formatter edge branches ----
 
+
 def test_format_expr_skips_illformed_branch_items() -> None:
     if_expr = (
         const.GRAMMAR_VALUE_IF,
@@ -121,6 +121,7 @@ def test_format_expr_empty_tuple() -> None:
 
 
 # ---- Transformer mixin helpers ----
+
 
 def test_coord_type_guards_and_as_float() -> None:
     assert _is_coord_pair("nope") is False
@@ -204,6 +205,7 @@ def test_token_span_none_when_no_position() -> None:
 
 # ---- ast_model helpers ----
 
+
 def test_variable_ref_helpers() -> None:
     var = Variable(name="vx", datatype="integer")
     assert _variable_ref_name("plain") == "plain"
@@ -230,6 +232,7 @@ def test_base_picture_setstate_backfills_fields() -> None:
 
 # ---- fuzz harness ----
 
+
 def test_repo_root_raises_at_filesystem_root() -> None:
     with pytest.raises(RuntimeError):
         fuzzharness._repo_root_from(Path("/nonexistent/repo/root/nowhere"))
@@ -250,6 +253,7 @@ def test_is_expected_parse_error_public_wrapper() -> None:
 
 
 # ---- Atheris fuzzer entry modules ----
+
 
 @pytest.mark.parametrize("module_name", ["comments_fuzzer", "decode_fuzzer", "parser_fuzzer"])
 def test_fuzzer_entry_modules(monkeypatch: pytest.MonkeyPatch, module_name: str) -> None:
