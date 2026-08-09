@@ -244,6 +244,26 @@ def read_text_with_fallback(path: Path) -> str:
 _read_text_simple = read_text_with_fallback
 
 
+def _decode_compressed_source(
+    src: str,
+    *,
+    debug: Callable[[str], None] | None = None,
+    source_path: Path | None = None,
+    log_failures: bool = True,
+) -> str:
+    if not is_compressed(src):
+        return src
+    if debug is not None:
+        debug("Compressed format detected; decoding before parsing")
+    try:
+        src, _ = preprocess_sl_text(src)
+    except Exception as exc:
+        if log_failures:
+            _log_parser_failure(stage="decode", exc=exc, source_text=src, source_path=source_path)
+        raise
+    return src
+
+
 def load_source_text(
     code_path: Path,
     *,
@@ -254,15 +274,7 @@ def load_source_text(
         debug(f"Parsing file: {source_path}")
 
     src = _read_text_simple(source_path)
-    if is_compressed(src):
-        if debug is not None:
-            debug("Compressed format detected; decoding before parsing")
-        try:
-            src, _ = preprocess_sl_text(src)
-        except Exception as exc:
-            _log_parser_failure(stage="decode", exc=exc, source_text=src, source_path=source_path)
-            raise
-    return src
+    return _decode_compressed_source(src, debug=debug, source_path=source_path)
 
 
 def parse_source_text(
@@ -274,7 +286,13 @@ def parse_source_text(
     source_path: Path | None = None,
     log_failures: bool = True,
 ) -> BasePicture:
-    stripped = strip_sl_comments_with_mapping(src)
+    decoded = _decode_compressed_source(
+        src,
+        debug=debug,
+        source_path=source_path,
+        log_failures=log_failures,
+    )
+    stripped = strip_sl_comments_with_mapping(decoded)
     cleaned = stripped.text
     active_parser = parser if parser is not None else _default_parser()
     active_transformer = transformer if transformer is not None else SLTransformer()
