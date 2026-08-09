@@ -123,7 +123,6 @@ def collect_corpus_inputs(
     subdirs: list[pathlib.Path] = []
     if include_valid:
         subdirs.append(corpus_dir / "valid")
-        subdirs.append(corpus_dir / "icf")
     if include_invalid:
         subdirs.append(corpus_dir / "invalid")
     if include_edge_cases:
