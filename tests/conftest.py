@@ -7,13 +7,13 @@ from pathlib import Path
 
 import pytest
 
-from sattline_parser.api import create_sl_parser
-from sattline_parser.transformer.sl_transformer import SLTransformer
-
 _ROOT = Path(__file__).resolve().parents[1]
 _SRC = _ROOT / "src"
 if str(_SRC) not in sys.path:
     sys.path.insert(0, str(_SRC))
+
+from sattline_parser.api import create_sl_parser  # noqa: E402
+from sattline_parser.transformer.sl_transformer import SLTransformer  # noqa: E402
 
 
 @pytest.fixture(scope="session")
