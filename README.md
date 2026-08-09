@@ -94,6 +94,32 @@ except Exception as exc:
     print(f"{details.line}:{details.column} {details.message}")
 ```
 
+### What is the AST good for?
+
+`parse_source_file` and `parse_source_text` return a `BasePicture` — a tree of Python objects that mirrors the structure of the program. Once you have it, you can inspect and walk the program *as data* instead of as text.
+
+For readers new to ASTs (abstract syntax trees): the parser does not give you the flat file back — it gives you structured objects. `basepicture.name` is the program name, `basepicture.moduletype_defs` is the list of type definitions, `basepicture.submodules` is the tree of nested modules, and so on. You can read fields, iterate lists, and check conditions directly in Python:
+
+```python
+from pathlib import Path
+from sattline_parser import parse_source_file
+
+basepicture = parse_source_file(Path("program.s"))
+
+print(basepicture.name)                 # program name
+for module in basepicture.submodules:
+    print(module.header.name)                 # the module's name
+    # module types differ, so guard the optional local variables:
+    for variable in getattr(module, "localvariables", []):
+        print(variable.name, variable.datatype)   # a variable and its type
+```
+
+Think of the AST as a structured, machine-readable view of the program. From the exact line and column a variable is declared at, to the full nesting of modules, the AST carries all the information a linter, a refactoring tool, an editor, or a report generator would need without re-parsing the text themselves. Since an AST is just objects, you can easily describe facts about the program:
+
+```python
+print(len(basepicture.submodules), "submodules")
+```
+
 ## Development
 
 ```bash
