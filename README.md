@@ -98,21 +98,21 @@ except Exception as exc:
 
 `parse_source_file` and `parse_source_text` return a `BasePicture` — a tree of Python objects that mirrors the structure of the program. Once you have it, you can inspect and walk the program *as data* instead of as text.
 
-For readers new to ASTs (abstract syntax trees): the parser does not give you the flat file back — it gives you structured objects. `basepicture.name` is the program name, `basepicture.moduletype_defs` is the list of type definitions, `basepicture.submodules` is the tree of nested modules, and so on. You can read fields, iterate lists, and check conditions directly in Python. For a small program this prints:
+For readers new to ASTs (abstract syntax trees): the parser does not give you the flat file back — it gives you structured objects. `basepicture.program_name` is the program name, `basepicture.moduletype_defs` is the list of type definitions, `basepicture.submodules` is the tree of nested modules, and so on. You can read fields, iterate lists, and check conditions directly in Python. For a small program this prints:
 
 ```python
 from pathlib import Path
 from sattline_parser import parse_source_file
 
 basepicture = parse_source_file(Path("program.s"))
-print(basepicture.name)
+print(basepicture.program_name)
 print([submodule.header.name for submodule in basepicture.submodules])
 print(len(basepicture.submodules), "submodules")
 ```
 
 ```text
-BasePicture
-['Controller', 'AlarmHandler']
+program
+['Controller1', 'Controller2']
 2 submodules
 ```
 
