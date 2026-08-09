@@ -9,7 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
-- Extracted the parser, grammar, AST, and transformer from the SattLint monorepo into this standalone `sattline-parser` package.
+- Initial standalone release of the `sattline-parser` package: the SattLine grammar, AST models, `SLTransformer`, strict single-source parsing entry points, compressed-source decoding, and a standalone fuzz harness.
 
 ## [0.1.0] - 2026-08-08
 

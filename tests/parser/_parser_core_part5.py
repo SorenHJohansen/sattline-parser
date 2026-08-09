@@ -406,7 +406,7 @@ def test_parse_source_text_raises_when_transformer_returns_non_basepicture(caplo
             return "not-a-basepicture"
 
     with (
-        caplog.at_level(logging.ERROR, logger="SattLint"),
+        caplog.at_level(logging.ERROR, logger="sattline_parser"),
         pytest.raises(
             RuntimeError,
             match="Transform result is not BasePicture",
@@ -430,7 +430,7 @@ def test_parse_source_file_logs_parse_failures_with_path(caplog, tmp_path):
     source_file = tmp_path / "BrokenProgram.s"
     source_file.write_text("IF X THEN", encoding="utf-8")
 
-    with caplog.at_level(logging.ERROR, logger="SattLint"), pytest.raises(UnexpectedToken):
+    with caplog.at_level(logging.ERROR, logger="sattline_parser"), pytest.raises(UnexpectedToken):
         parser_api.parse_source_file(source_file)
 
     record = caplog.records[-1]

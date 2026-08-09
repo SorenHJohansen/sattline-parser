@@ -37,8 +37,8 @@ from .grammar import constants as const
 from .utils.text_processing import strip_sl_comments, strip_sl_comments_with_mapping
 
 GRAMMAR_PATH = Path(__file__).resolve().parent / "grammar" / "sattline.lark"
-_PARSER_CACHE_DIR = Path(gettempdir()) / "sattlint" / "lark-cache"
-log = logging.getLogger("SattLint")
+_PARSER_CACHE_DIR = Path(gettempdir()) / "sattline-parser" / "lark-cache"
+log = logging.getLogger("sattline_parser")
 _LARK_LOCATION_SUFFIX_RE = re.compile(r", at line \d+ col \d+$")
 
 if not GRAMMAR_PATH.exists():
@@ -116,7 +116,7 @@ def create_parser(*, strict: bool = False) -> Lark:
 
 
 def create_sl_parser(*, strict: bool = False) -> Lark:
-    """Compatibility alias for existing SattLint naming."""
+    """Compatibility alias for create_parser."""
     return create_parser(strict=strict)
 
 
