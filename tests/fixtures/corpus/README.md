@@ -5,7 +5,6 @@ Parser regression and fuzz-seeding corpus. All fixtures are SattLine sources (`.
 Layout:
 
 - `valid/` for fixtures that must parse, transform, and produce a `BasePicture` cleanly
-- `icf/` for the interactive control framework fixture program (also valid input)
 - `invalid/` for sources that must fail strict validation (or at minimum not crash the parser)
 - `edge_cases/` for high-risk semantics and parser corner cases
 

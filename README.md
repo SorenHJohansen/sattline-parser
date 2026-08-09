@@ -1,6 +1,6 @@
 # sattline-parser
 
-Standalone parser, AST, and transformer for the SattLine PLC language.
+Standalone parser, AST, and transformer for ABB SattLine.
 
 This package owns the Lark grammar, the strict single-file syntax behavior, the AST models, and the `SLTransformer` — all in one self-contained, installable package.
 

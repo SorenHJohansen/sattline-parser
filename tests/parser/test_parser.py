@@ -109,11 +109,6 @@ class TestCollectCorpusInputs:
         paths = [p for p, _ in inputs]
         assert any("valid" in p for p in paths)
 
-    def test_collects_icf_files(self):
-        inputs = collect_corpus_inputs(CORPUS_DIR, include_valid=True, max_files=100)
-        paths = [p for p, _ in inputs]
-        assert any("icf" in p for p in paths)
-
 
 class TestRunCorpusRegression:
     def test_runs_without_crashes(self):
