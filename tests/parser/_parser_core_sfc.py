@@ -1,0 +1,199 @@
+# pyright: reportUnknownVariableType=false, reportUnknownMemberType=false, reportUnknownParameterType=false, reportMissingParameterType=false, reportUnknownArgumentType=false, reportCallIssue=false, reportUnknownLambdaType=false, reportUnusedImport=false
+# ruff: noqa: F403, F405
+from ._parser_core_test_support import *
+
+
+def test_sfc_mixin_builds_modulecode_sequences_and_equations():
+    mixin = _SFCHarness()
+    code_blocks = mixin.code_blocks([{"enter": ["enter1"]}, {"active": ["active1"]}, {"exit": ["exit1"]}])
+    init_step = mixin.seqinitstep([Token("SEQINITSTEP", "SEQINITSTEP"), "Init", code_blocks])
+    step = mixin.seqstep([Token("SEQSTEP", "SEQSTEP"), "Run", code_blocks])
+    transition = mixin.seqtransition(
+        [Token("SEQTRANSITION", "SEQTRANSITION"), "Gate", Token("WAIT_FOR", "WAIT_FOR"), True]
+    )
+    anonymous_transition = mixin.seqtransition(
+        [Token("SEQTRANSITION", "SEQTRANSITION"), Token("WAIT_FOR", "WAIT_FOR"), False]
+    )
+    body_tree = mixin.sequence_body([init_step, transition])
+
+    assert code_blocks == SFCCodeBlocks(enter=["enter1"], active=["active1"], exit=["exit1"])
+    assert init_step == SFCStep(kind="init", name="Init", code=code_blocks)
+    assert step == SFCStep(kind="step", name="Run", code=code_blocks)
+    assert transition == SFCTransition(name="Gate", condition=True)
+    assert anonymous_transition == SFCTransition(name=None, condition=False)
+    assert mixin.seqtransitionsub(
+        [Token("SUBSEQTRANSITION", "SUBSEQTRANSITION"), "SubGate", body_tree, Token("ENDSUBSEQTRANSITION", "END")]
+    ) == SFCTransitionSub(name="SubGate", body=[init_step, transition])
+    assert mixin.seqsub(
+        [Token("SUBSEQUENCE", "SUBSEQUENCE"), "SubA", body_tree, Token("ENDSUBSEQUENCE", "END")]
+    ) == SFCSubsequence(
+        name="SubA",
+        body=[init_step, transition],
+    )
+    assert mixin.seqalternative([Token("ALT", "ALT"), body_tree, mixin.sequence_body([SFCBreak()])]) == SFCAlternative(
+        branches=[[init_step, transition], [SFCBreak()]]
+    )
+    assert mixin.seqparallel(
+        [Token("PAR", "PAR"), body_tree, mixin.sequence_body([SFCFork(targets=("Other",))])]
+    ) == SFCParallel(branches=[[init_step, transition], [SFCFork(targets=("Other",))]])
+    assert mixin.seqfork([Token("SEQFORK", "SEQFORK"), "NextStep"]) == SFCFork(targets=("NextStep",))
+    assert mixin.seqfork([Token("SEQFORK", "SEQFORK"), "PathA", "PathB"]) == SFCFork(targets=("PathA", "PathB"))
+    assert isinstance(mixin.seqbreak([]), SFCBreak)
+    assert mixin.seq_element([step]) is step
+    assert mixin.seq_element([]) is None
+
+    seqcontrol_tree = Tree(
+        parser_const.KEY_SEQ_CONTROL_OPS,
+        [
+            Token("FLAG", parser_const.GRAMMAR_VALUE_SEQCONTROL),
+            Token("FLAG", parser_const.GRAMMAR_VALUE_SEQTIMER),
+        ],
+    )
+    sequence = mixin.sequence(
+        [
+            Token(parser_const.GRAMMAR_VALUE_OPENSEQUENCE, parser_const.GRAMMAR_VALUE_OPENSEQUENCE),
+            "MainSeq",
+            (1, 2),
+            (3, 4),
+            seqcontrol_tree,
+            body_tree,
+        ]
+    )
+    equation = mixin.equationblock(["EqA", (5, 6), (7, 8), Tree(parser_const.KEY_STATEMENT, ["stmt"])])
+    tokenized_equation = mixin.equationblock(
+        [
+            Token(parser_const.GRAMMAR_VALUE_EQUATIONBLOCK, parser_const.GRAMMAR_VALUE_EQUATIONBLOCK),
+            "EqToken",
+            (6, 7),
+            (8, 9),
+            Tree(parser_const.KEY_STATEMENT, ["token_stmt"]),
+        ]
+    )
+    nested_sequence = Sequence(name="Nested", type="SEQUENCE", position=(0, 0), size=(1, 1), code=[])
+    nested_equation = Equation(name="EqNested", position=(9, 10), size=(11, 12), code=[])
+    modulecode = mixin.modulecode([sequence, equation, [nested_sequence, nested_equation]])
+
+    assert sequence == Sequence(
+        name="MainSeq",
+        type=parser_const.GRAMMAR_VALUE_OPENSEQUENCE,
+        position=(1.0, 2.0),
+        size=(3.0, 4.0),
+        seqcontrol=True,
+        seqtimer=True,
+        code=[init_step, transition],
+    )
+    assert equation == Equation(name="EqA", position=(5.0, 6.0), size=(7.0, 8.0), code=["stmt"])
+    assert tokenized_equation == Equation(name="EqToken", position=(6.0, 7.0), size=(8.0, 9.0), code=["token_stmt"])
+    assert modulecode.sequences == [sequence, nested_sequence]
+    assert modulecode.equations == [equation, nested_equation]
+
+
+def test_sfc_mixin_normalizes_enter_active_exit_code_blocks():
+    mixin = _SFCHarness()
+
+    enter = mixin.entercode([Token("ENTERCODE", "ENTERCODE"), Tree(parser_const.KEY_STATEMENT, ["enter_stmt"])])
+    active = mixin.activecode([Token("ACTIVECODE", "ACTIVECODE"), Tree(parser_const.KEY_STATEMENT, ["active_stmt"])])
+    exit_ = mixin.exitcode([Token("EXITCODE", "EXITCODE"), Tree(parser_const.KEY_STATEMENT, ["exit_stmt"])])
+
+    code_blocks = mixin.code_blocks([enter, active, exit_])
+
+    assert enter == {"enter": [Tree(parser_const.KEY_STATEMENT, ["enter_stmt"])]}
+    assert active == {"active": [Tree(parser_const.KEY_STATEMENT, ["active_stmt"])]}
+    assert exit_ == {"exit": [Tree(parser_const.KEY_STATEMENT, ["exit_stmt"])]}
+    assert code_blocks == SFCCodeBlocks(
+        enter=[Tree(parser_const.KEY_STATEMENT, ["enter_stmt"])],
+        active=[Tree(parser_const.KEY_STATEMENT, ["active_stmt"])],
+        exit=[Tree(parser_const.KEY_STATEMENT, ["exit_stmt"])],
+    )
+
+
+def test_parse_source_text_preserves_sfc_step_code_blocks():
+    bp = _parse_to_basepicture(
+        '"SyntaxVersion"\n'
+        '"OriginalFileDate"\n'
+        '"ProgramDate"\n'
+        "BasePicture Invocation (0.0,0.0,0.0,1.0,1.0) : MODULEDEFINITION DateCode_ 1\n"
+        "LOCALVARIABLES\n"
+        "   Flag: boolean := False;\n"
+        "   Counter: integer := 0;\n"
+        "ModuleDef\n"
+        "ClippingBounds = ( -1.0 , -1.0 ) ( 1.0 , 1.0 )\n"
+        "ModuleCode\n"
+        "SEQUENCE Main (SeqControl) COORD 0.0, 0.0 OBJSIZE 1.0, 1.0\n"
+        "   SEQINITSTEP Init\n"
+        "   SEQTRANSITION Tr1 WAIT_FOR True\n"
+        "   SEQSTEP Run\n"
+        "      ENTERCODE\n"
+        "         Flag = True;\n"
+        "      ACTIVECODE\n"
+        "         Counter = 1;\n"
+        "      EXITCODE\n"
+        "         Counter = 0;\n"
+        "   SEQTRANSITION Done WAIT_FOR False\n"
+        "ENDSEQUENCE\n"
+        "ENDDEF (*BasePicture*);\n"
+    )
+
+    sequence = bp.modulecode.sequences[0]
+    run_step = next(node for node in sequence.code if isinstance(node, SFCStep) and node.name == "Run")
+
+    assert len(run_step.code.enter) == 1
+    assert len(run_step.code.active) == 1
+    assert len(run_step.code.exit) == 1
+    enter_stmt = run_step.code.enter[0]
+    active_stmt = run_step.code.active[0]
+    exit_stmt = run_step.code.exit[0]
+
+    assert isinstance(enter_stmt, Tree)
+    assert isinstance(active_stmt, Tree)
+    assert isinstance(exit_stmt, Tree)
+    assert enter_stmt.data == parser_const.KEY_STATEMENT
+    assert active_stmt.data == parser_const.KEY_STATEMENT
+    assert exit_stmt.data == parser_const.KEY_STATEMENT
+    enter_assignment = cast(tuple[str, dict[str, Any], Any], enter_stmt.children[0])
+    active_assignment = cast(tuple[str, dict[str, Any], Any], active_stmt.children[0])
+    exit_assignment = cast(tuple[str, dict[str, Any], Any], exit_stmt.children[0])
+    assert enter_stmt.children == [
+        (parser_const.KEY_ASSIGN, {"var_name": "Flag", "state": None, "span": enter_assignment[1]["span"]}, True)
+    ]
+    assert active_assignment[0] == parser_const.KEY_ASSIGN
+    assert active_assignment[1]["var_name"] == "Counter"
+    assert active_assignment[2] == 1
+    assert exit_assignment[0] == parser_const.KEY_ASSIGN
+    assert exit_assignment[1]["var_name"] == "Counter"
+    assert exit_assignment[2] == 0
+
+
+def test_sfc_mixin_rejects_malformed_shapes_and_missing_required_fields():
+    mixin = _SFCHarness()
+
+    with pytest.raises(ValueError, match="seqinitstep expected"):
+        mixin.seqinitstep([Token("SEQINITSTEP", "SEQINITSTEP"), "Init"])
+    with pytest.raises(ValueError, match="seqstep expected"):
+        mixin.seqstep([Token("SEQSTEP", "SEQSTEP"), "Step", "not-code-blocks"])
+    with pytest.raises(ValueError, match="seqtransition expected WAIT_FOR"):
+        mixin.seqtransition([Token("SEQTRANSITION", "SEQTRANSITION"), "Gate", Token("NAME", "NAME"), True])
+    with pytest.raises(ValueError, match="seqtransition expected WAIT_FOR"):
+        mixin.seqtransition([Token("SEQTRANSITION", "SEQTRANSITION"), Token("NAME", "NAME"), True])
+    with pytest.raises(ValueError, match=r"seqtransition expected \(SEQTRANSITION"):
+        mixin.seqtransition([Token("SEQTRANSITION", "SEQTRANSITION")])
+    with pytest.raises(ValueError, match="seqtransitionsub expected"):
+        mixin.seqtransitionsub(
+            [Token("SUBSEQTRANSITION", "SUBSEQTRANSITION"), "Sub", Tree("wrong", []), Token("END", "END")]
+        )
+    with pytest.raises(ValueError, match="seqsub expected"):
+        mixin.seqsub([Token("SUBSEQUENCE", "SUBSEQUENCE"), "Sub", Tree("wrong", []), Token("END", "END")])
+    with pytest.raises(ValueError, match="seqfork expected"):
+        mixin.seqfork([Token("SEQFORK", "SEQFORK")])
+    with pytest.raises(ValueError, match="Name can't be None"):
+        mixin.sequence([(1, 2), (3, 4), Tree(parser_const.KEY_SEQUENCE_BODY, [])])
+    with pytest.raises(ValueError, match="Position can't be None"):
+        mixin.sequence([Token(parser_const.GRAMMAR_VALUE_SEQUENCE, parser_const.GRAMMAR_VALUE_SEQUENCE), "Seq"])
+    with pytest.raises(ValueError, match="Size can't be None"):
+        mixin.sequence([Token(parser_const.GRAMMAR_VALUE_SEQUENCE, parser_const.GRAMMAR_VALUE_SEQUENCE), "Seq", (1, 2)])
+    with pytest.raises(ValueError, match="Name can't be None"):
+        mixin.equationblock([(1, 2), (3, 4), Tree(parser_const.KEY_STATEMENT, ["stmt"])])
+    with pytest.raises(ValueError, match="Position can't be None"):
+        mixin.equationblock(["EqA"])
+    with pytest.raises(ValueError, match="Size can't be None"):
+        mixin.equationblock(["EqA", (1, 2)])

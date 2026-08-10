@@ -28,9 +28,9 @@ from sattline_parser import (
     strip_sl_comments,
 )
 from sattline_parser.api import create_sl_parser, parse_source_file
+from sattline_parser.formatting.formatter import format_expr, format_list, format_optional, format_seq_nodes
 from sattline_parser.grammar import constants as const
 from sattline_parser.grammar import constants as parser_const
-from sattline_parser.grammar import parser_decode as grammar_parser_decode
 from sattline_parser.models.ast_model import (
     BasePicture,
     DataType,
@@ -61,6 +61,8 @@ from sattline_parser.models.ast_model import (
     SourceSpan,
     Variable,
 )
+from sattline_parser.preprocessing import preprocess_sl_text
+from sattline_parser.preprocessing.comments import strip_sl_comments_with_mapping
 from sattline_parser.transformer._expressions_mixin import _ExpressionsMixin
 from sattline_parser.transformer._graphics_interact_mixin import _GraphicsInteractMixin
 from sattline_parser.transformer._modules_mixin import _ModulesMixin, flatten_items, meta_span
@@ -81,8 +83,6 @@ from sattline_parser.transformer.sl_transformer import (
 from sattline_parser.transformer.sl_transformer import (
     meta_span as _sl_meta_span,
 )
-from sattline_parser.utils.formatter import format_expr, format_list, format_optional, format_seq_nodes
-from sattline_parser.utils.text_processing import strip_sl_comments_with_mapping
 
 
 def _parse_to_basepicture(text: str):
@@ -228,7 +228,6 @@ __all__ = [
     "format_list",
     "format_optional",
     "format_seq_nodes",
-    "grammar_parser_decode",
     "importlib",
     "meta_span",
     "parse_source_file",
@@ -236,6 +235,7 @@ __all__ = [
     "parser_const",
     "parser_core_parse_source_text",
     "parser_fuzz_harness",
+    "preprocess_sl_text",
     "pytest",
     "strip_sl_comments",
     "strip_sl_comments_with_mapping",

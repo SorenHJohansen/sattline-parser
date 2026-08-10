@@ -1,6 +1,108 @@
-# pyright: reportUnknownVariableType=false
+# pyright: reportUnknownVariableType=false, reportUnknownMemberType=false, reportUnusedImport=false
 # ruff: noqa: F403, F405
 from ._parser_core_test_support import *
+
+
+def test_ternary_if_has_lowest_precedence():
+    code = """
+"SyntaxVersion"
+"OriginalFileDate"
+"ProgramDate"
+BasePicture Invocation (0.0,0.0,0.0,1.0,1.0) : MODULEDEFINITION DateCode_ 1
+LOCALVARIABLES
+    A: integer := 0;
+    B: integer := 1;
+    C: integer := 2;
+    D: integer := 3;
+    X: integer := 0;
+ModuleDef
+ClippingBounds = ( -1.0 , -1.0 ) ( 1.0 , 1.0 )
+ModuleCode
+    EQUATIONBLOCK Main COORD 0.0, 0.0 OBJSIZE 1.0, 1.0 :
+        X = IF A > 0 THEN B ELSE C + D ENDIF;
+ENDDEF (*BasePicture*);
+"""
+    bp = _parse_to_basepicture(code)
+    stmt = bp.modulecode.equations[0].code[0]
+    assert stmt[0] == const.KEY_ASSIGN
+
+    expr = stmt[2]
+    assert expr[0] == const.KEY_TERNARY
+
+    else_expr = expr[2]
+    assert else_expr[0] == const.KEY_ADD
+    assert else_expr[1][const.KEY_VAR_NAME].casefold() == "c"
+    assert else_expr[2][0][0] == "+"
+    assert else_expr[2][0][1][const.KEY_VAR_NAME].casefold() == "d"
+
+
+def test_quoted_identifier_length_is_limited_to_20_chars():
+    long_name = "'QuotedIdentifierLength21'"  # 25 chars without quotes
+    code = f"""
+"SyntaxVersion"
+"OriginalFileDate"
+"ProgramDate"
+BasePicture Invocation (0.0,0.0,0.0,1.0,1.0) : MODULEDEFINITION DateCode_ 1
+LOCALVARIABLES
+    {long_name}: integer := 0;
+ModuleDef
+ClippingBounds = ( -1.0 , -1.0 ) ( 1.0 , 1.0 )
+ModuleCode
+    EQUATIONBLOCK Main COORD 0.0, 0.0 OBJSIZE 1.0, 1.0 :
+        {long_name} = 1;
+ENDDEF (*BasePicture*);
+"""
+    parser = create_sl_parser()
+    with pytest.raises(UnexpectedCharacters):
+        parser.parse(strip_sl_comments(code))
+
+
+def test_parser_core_preserves_invocation_argument_flags():
+    code = """
+"SyntaxVersion"
+"OriginalFileDate"
+"ProgramDate"
+BasePicture Invocation (0.0,0.0,0.0,1.0,1.0 IgnoreMaxModule) : MODULEDEFINITION DateCode_ 1
+SUBMODULES
+    Child Invocation (0.0,0.0,0.0,1.0,1.0 LayerModule) : ChildType;
+ModuleDef
+ClippingBounds = ( -1.0 , -1.0 ) ( 1.0 , 1.0 )
+ENDDEF (*BasePicture*);
+"""
+
+    bp = parser_core_parse_source_text(code)
+
+    assert bp.header.invocation_arguments == ("IgnoreMaxModule",)
+    assert len(bp.submodules) == 1
+    child = bp.submodules[0]
+    assert isinstance(child, ModuleTypeInstance)
+    assert child.header.invocation_arguments == ("LayerModule",)
+
+
+def test_parser_core_accepts_outline_colour_assignment_invar_tail():
+    code = """
+"SyntaxVersion"
+"OriginalFileDate"
+"ProgramDate"
+BasePicture Invocation (0.0,0.0,0.0,1.0,1.0) : MODULEDEFINITION DateCode_ 1
+LOCALVARIABLES
+    WidthSource: integer := 0;
+    FormatSource: integer := 0;
+    ColourSource: integer := 0;
+ModuleDef
+    ClippingBounds = ( -1.0 , -1.0 ) ( 1.0 , 1.0 )
+    GraphObjects :
+        TextObject ( 0.0 , 0.0 ) ( 1.0 , 1.0 )
+            "Value" VarName Width_ = 5 : InVar_ "WidthSource"
+            Format_String_ = "" : InVar_ "FormatSource"
+            OutlineColour : Colour0 = 5 : InVar_ "ColourSource"
+ENDDEF (*BasePicture*);
+"""
+
+    bp = parser_core_parse_source_text(code)
+
+    assert isinstance(bp, BasePicture)
+    assert bp.moduledef is not None
 
 
 def test_parser_core_accepts_clipping_bounds_and_interact_tail_sequences():

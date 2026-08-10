@@ -1,10 +1,15 @@
 from __future__ import annotations
 
-from sattline_parser.grammar import parser_decode as grammar_parser_decode
+from sattline_parser.preprocessing.compressed import (
+    SEED_MAPPING,
+    decode_compressed,
+    is_compressed,
+    preprocess_sl_text,
+)
 
 
 def test_decode_compressed_normalizes_marker_prefixes_and_common_quirks() -> None:
-    decoded = grammar_parser_decode.decode_compressed(
+    decoded = decode_compressed(
         " ".join(
             [
                 "#01Tail",
@@ -26,7 +31,7 @@ def test_decode_compressed_normalizes_marker_prefixes_and_common_quirks() -> Non
                 "TrueVar",
             ]
         ),
-        grammar_parser_decode.SEED_MAPPING,
+        SEED_MAPPING,
     )
 
     assert "(Tail" in decoded
@@ -49,7 +54,7 @@ def test_decode_compressed_normalizes_marker_prefixes_and_common_quirks() -> Non
 
 
 def test_preprocess_sl_text_keeps_existing_modulecode_and_fills_empty_trailing_args() -> None:
-    decoded, _mapping = grammar_parser_decode.preprocess_sl_text(
+    decoded, _mapping = preprocess_sl_text(
         "MODULEDEFINITION Demo ModuleCode EQUATIONBLOCK Main COORD 0.0, 0.0 OBJSIZE 1.0, 1.0 : Func(a, )"
     )
 
@@ -58,7 +63,7 @@ def test_preprocess_sl_text_keeps_existing_modulecode_and_fills_empty_trailing_a
 
 
 def test_decode_compressed_covers_marker_and_cleanup_quirks() -> None:
-    decoded = grammar_parser_decode.decode_compressed(
+    decoded = decode_compressed(
         "#01Tail #0< #0<Flag #99 ENDIF GraphObjects : ENDDEF boolean ENDDEF Enable_ = Demo: OutVar_",
         {"#99": "Token"},
     )
@@ -74,5 +79,5 @@ def test_decode_compressed_covers_marker_and_cleanup_quirks() -> None:
 
 
 def test_is_compressed_covers_false_and_true_heuristics() -> None:
-    assert grammar_parser_decode.is_compressed("MODULEDEFINITION Demo EQUATIONBLOCK Main") is False
-    assert grammar_parser_decode.is_compressed(" ".join(["#01X"] * 10)) is True
+    assert is_compressed("MODULEDEFINITION Demo EQUATIONBLOCK Main") is False
+    assert is_compressed(" ".join(["#01X"] * 10)) is True
