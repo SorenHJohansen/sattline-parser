@@ -6,14 +6,14 @@ from importlib import import_module
 from types import ModuleType
 from typing import TYPE_CHECKING, Any
 
-from sattline_parser.grammar.parser_decode import is_compressed, preprocess_sl_text
 from sattline_parser.models.ast_model import BasePicture, SourceSpan
+from sattline_parser.preprocessing import is_compressed, preprocess_sl_text
+from sattline_parser.preprocessing.comments import strip_sl_comments
 from sattline_parser.transformer.sl_transformer import SLTransformer
 
 from .__version__ import __version__
 from .api import create_parser, create_sl_parser, describe_parse_error, parse_source_file, parse_source_text
 from .grammar import constants
-from .utils.text_processing import strip_sl_comments
 
 if TYPE_CHECKING:
     from . import fuzz_harness as fuzz_harness
