@@ -4,7 +4,7 @@ import textwrap
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any, Literal
 
-from ..utils.formatter import format_expr, format_list, format_optional, format_seq_nodes
+from ..formatting.formatter import format_expr, format_list, format_optional, format_seq_nodes
 
 if TYPE_CHECKING:
     from .ast_model import (

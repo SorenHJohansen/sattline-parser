@@ -1,9 +1,9 @@
 # pyright: reportUnknownParameterType=false, reportMissingParameterType=false, reportUnknownLambdaType=false, reportArgumentType=false
 from types import SimpleNamespace
 
+from sattline_parser.formatting import formatter
 from sattline_parser.grammar import constants as const
 from sattline_parser.models import ast_model
-from sattline_parser.utils import formatter
 
 
 class _StatementNode:

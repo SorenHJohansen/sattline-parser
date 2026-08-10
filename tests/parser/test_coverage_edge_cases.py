@@ -15,6 +15,7 @@ from lark import Token, Tree
 import sattline_parser
 from sattline_parser import api as parser_api
 from sattline_parser import fuzz_harness as fuzzharness
+from sattline_parser.formatting import formatter
 from sattline_parser.grammar import constants as const
 from sattline_parser.models.ast_model import (
     BasePicture,
@@ -34,7 +35,6 @@ from sattline_parser.transformer._module_layout_mixin import ModuleLayoutMixin
 from sattline_parser.transformer._module_shared import float_tuple, groupconn_value  # used below
 from sattline_parser.transformer._sfc_mixin import SFCMixin
 from sattline_parser.transformer._tokens_mixin import TokensMixin
-from sattline_parser.utils import formatter
 
 # ---- Package __getattr__ / __dir__ ----
 
