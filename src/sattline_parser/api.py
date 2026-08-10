@@ -1,11 +1,13 @@
-"""Public parser-core entry points."""
+"""Public parser-core entry points and orchestration layer.
+
+This module owns the public API, the Lark parser cache, and the parse
+pipeline. Lower-level error formatting lives in :mod:`sattline_parser.errors`
+and source pre-processing lives in :mod:`sattline_parser.preprocessing`.
+"""
 
 from __future__ import annotations
 
-import logging
-import re
 from collections.abc import Callable
-from dataclasses import dataclass
 from functools import lru_cache
 from hashlib import sha256
 from pathlib import Path
@@ -14,7 +16,31 @@ from typing import Protocol, cast
 
 from lark import Lark, Token, Tree
 from lark import __version__ as lark_version
-from lark.exceptions import UnexpectedCharacters, UnexpectedEOF, UnexpectedInput, UnexpectedToken
+from lark.exceptions import UnexpectedInput
+
+from sattline_parser.models.ast_model import BasePicture
+from sattline_parser.transformer.sl_transformer import SLTransformer
+
+from .errors import (
+    ParseErrorDetails,
+    _log_parser_failure,  # pyright: ignore[reportPrivateUsage]  # imported for internal use
+    describe_parse_error,
+)
+from .errors import (
+    _failure_details as _failure_details,  # pyright: ignore[reportPrivateUsage]  # re-exported as a test seam
+)
+from .errors import (
+    _render_source_context as _render_source_context,  # pyright: ignore[reportPrivateUsage]  # re-exported as a test seam
+)
+from .errors import (
+    _rewrite_summary_location as _rewrite_summary_location,  # pyright: ignore[reportPrivateUsage]  # re-exported as a test seam
+)
+from .errors import (
+    _unexpected_input_summary as _unexpected_input_summary,  # pyright: ignore[reportPrivateUsage]  # re-exported as a test seam
+)
+from .grammar import constants as const
+from .preprocessing import is_compressed, preprocess_sl_text
+from .preprocessing.comments import strip_sl_comments, strip_sl_comments_with_mapping
 
 __all__ = [
     "ParseErrorDetails",
@@ -29,27 +55,11 @@ __all__ = [
     "strip_sl_comments",
 ]
 
-from sattline_parser.grammar.parser_decode import is_compressed, preprocess_sl_text
-from sattline_parser.models.ast_model import BasePicture
-from sattline_parser.transformer.sl_transformer import SLTransformer
-
-from .grammar import constants as const
-from .utils.text_processing import strip_sl_comments, strip_sl_comments_with_mapping
-
 GRAMMAR_PATH = Path(__file__).resolve().parent / "grammar" / "sattline.lark"
 _PARSER_CACHE_DIR = Path(gettempdir()) / "sattline-parser" / "lark-cache"
-log = logging.getLogger("sattline_parser")
-_LARK_LOCATION_SUFFIX_RE = re.compile(r", at line \d+ col \d+$")
 
 if not GRAMMAR_PATH.exists():
     raise RuntimeError(f"Grammar file missing: {GRAMMAR_PATH}")
-
-
-@dataclass(frozen=True, slots=True)
-class ParseErrorDetails:
-    message: str
-    line: int | None = None
-    column: int | None = None
 
 
 class _ParserProtocol(Protocol):
@@ -125,125 +135,6 @@ def _default_parser() -> Lark:
     return create_parser()
 
 
-def _unexpected_input_summary(exc: UnexpectedInput) -> str:
-    summary = str(exc).splitlines()[0].strip()
-    expected = getattr(exc, "expected", None)
-    if expected:
-        expected_text = ", ".join(sorted(expected)[:12])
-        if expected_text and expected_text not in summary:
-            summary = f"{summary}. Expected one of: {expected_text}"
-    elif isinstance(exc, UnexpectedEOF):
-        expected = sorted(getattr(exc, "expected", ()) or ())
-        if expected:
-            summary = f"Unexpected end of input. Expected one of: {', '.join(expected[:12])}"
-    elif isinstance(exc, UnexpectedToken):
-        token = getattr(exc, "token", None)
-        if token is not None:
-            summary = f"Unexpected token {token!r}"
-            expected = sorted(getattr(exc, "expected", ()) or ())
-            if expected:
-                summary = f"{summary}. Expected one of: {', '.join(expected[:12])}"
-    elif isinstance(exc, UnexpectedCharacters):
-        summary = summary.rstrip(".")
-    return summary
-
-
-def _render_source_context(source_text: str, *, line: int | None, column: int | None) -> str:
-    if line is None or column is None or line < 1 or column < 1:
-        return ""
-    lines = source_text.splitlines()
-    if line > len(lines):
-        return ""
-    context_line = lines[line - 1]
-    caret_padding = max(column - 1, 0)
-    return f"{context_line}\n{' ' * caret_padding}^"
-
-
-def _rewrite_summary_location(summary: str, *, line: int | None, column: int | None) -> str:
-    if line is None or column is None:
-        return summary
-    if not _LARK_LOCATION_SUFFIX_RE.search(summary):
-        return summary
-    return _LARK_LOCATION_SUFFIX_RE.sub(f", at line {line} col {column}", summary)
-
-
-def describe_parse_error(exc: Exception, source_text: str) -> ParseErrorDetails:
-    line = getattr(exc, "line", None)
-    column = getattr(exc, "column", None)
-    if isinstance(exc, UnexpectedInput):
-        message = _unexpected_input_summary(exc)
-        stripped = strip_sl_comments_with_mapping(source_text)
-        if stripped.text != source_text:
-            line, column = stripped.map_line_column(line, column)
-            message = _rewrite_summary_location(message, line=line, column=column)
-            context = _render_source_context(source_text, line=line, column=column).rstrip()
-        else:
-            context = exc.get_context(source_text, span=40).rstrip()
-        if context:
-            message = f"{message}\n{context}"
-        return ParseErrorDetails(message=message, line=line, column=column)
-    return ParseErrorDetails(message=str(exc), line=line, column=column)
-
-
-def _failure_details(exc: Exception, source_text: str | None = None) -> ParseErrorDetails:
-    if source_text is not None:
-        return describe_parse_error(exc, source_text)
-    return ParseErrorDetails(
-        message=str(exc),
-        line=getattr(exc, "line", None),
-        column=getattr(exc, "column", None),
-    )
-
-
-def _log_parser_failure(
-    *,
-    stage: str,
-    exc: Exception,
-    source_text: str | None = None,
-    source_path: Path | None = None,
-) -> None:
-    details = _failure_details(exc, source_text)
-    path_text = str(source_path) if source_path is not None else None
-    location_text = ""
-    if details.line is not None and details.column is not None:
-        location_text = f" (line {details.line}, column {details.column})"
-    elif details.line is not None:
-        location_text = f" (line {details.line})"
-    path_suffix = f" for {path_text}" if path_text is not None else ""
-    log.error(
-        "Parser %s failure%s%s: %s",
-        stage,
-        path_suffix,
-        location_text,
-        details.message,
-        extra={
-            "parser_stage": stage,
-            "parser_path": path_text,
-            "parser_line": details.line,
-            "parser_column": details.column,
-            "parser_context": details.message,
-        },
-        exc_info=(type(exc), exc, exc.__traceback__),
-    )
-
-
-def read_text_with_fallback(path: Path) -> str:
-    """Read a text file trying utf-8, then cp1252, then latin-1."""
-    for encoding in ("utf-8", "cp1252", "latin-1"):
-        try:
-            return path.read_text(encoding=encoding)
-        except UnicodeDecodeError:
-            continue
-        except OSError as exc:
-            _log_parser_failure(stage="read", exc=exc, source_path=path)
-            raise
-    return path.read_text(encoding="latin-1")
-
-
-# Internal alias kept for callers that import the private name.
-_read_text_simple = read_text_with_fallback
-
-
 def _decode_compressed_source(
     src: str,
     *,
@@ -262,6 +153,23 @@ def _decode_compressed_source(
             _log_parser_failure(stage="decode", exc=exc, source_text=src, source_path=source_path)
         raise
     return src
+
+
+def read_text_with_fallback(path: Path) -> str:
+    """Read a text file trying utf-8, then cp1252, then latin-1."""
+    for encoding in ("utf-8", "cp1252", "latin-1"):
+        try:
+            return path.read_text(encoding=encoding)
+        except UnicodeDecodeError:
+            continue
+        except OSError as exc:
+            _log_parser_failure(stage="read", exc=exc, source_path=path)
+            raise
+    return path.read_text(encoding="latin-1")
+
+
+# Internal alias kept for callers that import the private name.
+_read_text_simple = read_text_with_fallback
 
 
 def load_source_text(

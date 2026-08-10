@@ -4,7 +4,7 @@ import sys
 
 import atheris  # type: ignore[import-untyped]
 
-from sattline_parser.utils.text_processing import strip_sl_comments
+from sattline_parser.preprocessing.comments import strip_sl_comments
 
 
 def test_one_input(data: bytes) -> None:
