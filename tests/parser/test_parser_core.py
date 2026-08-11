@@ -1,6 +1,7 @@
 # ruff: noqa: F403
 from ._parser_core_api import *
 from ._parser_core_ast_model import *
+from ._parser_core_comments import *
 from ._parser_core_errors import *
 from ._parser_core_expressions import *
 from ._parser_core_formatter import *

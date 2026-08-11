@@ -108,7 +108,7 @@ def test_describe_parse_error_falls_back_to_plain_exception_message():
     assert details.column == 11
 
 
-def test_describe_parse_error_remaps_locations_from_inline_comment_stripped_source():
+def test_describe_parse_error_locations_map_directly_to_original_source():
     source = """\
 \"SyntaxVersion\"
 \"OriginalFileDate\"
@@ -121,24 +121,21 @@ ModuleCode
         DemoValue = 1; (* inline comment *) ???
 ENDDEF (*BasePicture*);
 """
-    stripped = parser_api.strip_sl_comments(source)
-    cleaned_line = stripped.splitlines()[8]
-    cleaned_column = cleaned_line.index("?") + 1
     original_column = source.splitlines()[8].index("?") + 1
+    line_start = sum(len(line) + 1 for line in source.splitlines()[:8])
+    stream_pos = line_start + original_column - 1
 
     class FakeUnexpectedInput(UnexpectedEOF):
         def __init__(self) -> None:
             pass
 
         line = 9
-        column = cleaned_column
+        column = original_column
+        pos_in_stream = stream_pos
         expected = cast(Any, {"NAME"})
 
         def __str__(self) -> LiteralString:
             return "Unexpected end of input"
-
-        def get_context(self, text: str, span: int = 40) -> str:
-            raise AssertionError("mapped parse errors should render context from the original source")
 
     details = parser_api.describe_parse_error(FakeUnexpectedInput(), source)
 

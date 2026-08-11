@@ -56,6 +56,10 @@ def any_list() -> list[Any]:
     return []
 
 
+def code_comment_list() -> list[Any]:
+    return []
+
+
 def submodule_list() -> list[SingleModule | FrameModule | ModuleTypeInstance]:
     return []
 

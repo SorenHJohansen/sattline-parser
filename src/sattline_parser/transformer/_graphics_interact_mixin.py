@@ -13,6 +13,8 @@ from lark import Token, Tree
 from sattline_parser.grammar import constants as const
 from sattline_parser.models.ast_model import GraphObject, InteractObject
 
+from ._comments_mixin import is_comment_tree
+
 TransformerItem = object
 TransformerTree = Tree[object]
 CoordPair = tuple[float, float]
@@ -112,6 +114,9 @@ class _GraphicsInteractMixin:
                 j = i - 1
                 while j >= 0:
                     prev = items[j]
+                    if is_comment_tree(prev):
+                        j -= 1
+                        continue
                     s = _extract_text_from_node(prev)
                     if s:
                         text_vars.append(s)

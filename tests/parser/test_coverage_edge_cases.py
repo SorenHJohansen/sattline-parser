@@ -19,12 +19,15 @@ from sattline_parser.formatting import formatter
 from sattline_parser.grammar import constants as const
 from sattline_parser.models.ast_model import (
     BasePicture,
+    CodeComment,
     ModuleHeader,
     ParameterMapping,
     Variable,
     _normalize_variable_ref,
     _variable_ref_name,
 )
+from sattline_parser.transformer._comments_mixin import CommentsMixin
+from sattline_parser.transformer._expressions_mixin import _ExpressionsMixin
 from sattline_parser.transformer._graphics_interact_mixin import _as_float, _is_coord_box, _is_coord_pair
 from sattline_parser.transformer._module_assembly_mixin import ModuleAssemblyMixin
 from sattline_parser.transformer._module_header_mixin import (
@@ -35,6 +38,8 @@ from sattline_parser.transformer._module_layout_mixin import ModuleLayoutMixin
 from sattline_parser.transformer._module_shared import float_tuple, groupconn_value  # used below
 from sattline_parser.transformer._sfc_mixin import SFCMixin
 from sattline_parser.transformer._tokens_mixin import TokensMixin
+
+from ._parser_core_test_support import _GraphicsHarness
 
 # ---- Package __getattr__ / __dir__ ----
 
@@ -52,17 +57,6 @@ def test_package_lazy_fuzz_exports_and_dir() -> None:
 
 
 # ---- api.py helpers ----
-
-
-def test_render_source_context_guards() -> None:
-    assert parser_api._render_source_context("a\nb", line=None, column=1) == ""
-    assert parser_api._render_source_context("a\nb", line=5, column=1) == ""
-    assert parser_api._render_source_context("a\nb", line=1, column=2) == "a\n ^"
-
-
-def test_rewrite_summary_location_branches() -> None:
-    assert parser_api._rewrite_summary_location("boom", line=None, column=2) == "boom"
-    assert parser_api._rewrite_summary_location("boom, at line 1 col 7", line=3, column=4) == "boom, at line 3 col 4"
 
 
 def test_failure_details_without_source() -> None:
@@ -185,6 +179,79 @@ def test_sfc_mixin_branch_branches() -> None:
     assert len(blocks.enter) == 1
 
 
+def test_comment_build_raises_on_empty_items() -> None:
+    with pytest.raises(ValueError, match="comment rule expected"):
+        CommentsMixin()._build_code_comment([])
+
+
+def test_expressions_if_statement_flattens_nested_list_statements() -> None:
+    mixin = _ExpressionsMixin()
+    if_items = [
+        Token(const.GRAMMAR_VALUE_IF, "IF"),
+        "cond",
+        Token("THEN", "THEN"),
+        ["stmt1", "stmt2"],
+        Token(const.GRAMMAR_VALUE_ENDIF, "ENDIF"),
+    ]
+    assert mixin.if_statement(if_items) == (
+        const.GRAMMAR_VALUE_IF,
+        [("cond", ["stmt1", "stmt2"])],
+        None,
+    )
+    if_else_items = [
+        Token(const.GRAMMAR_VALUE_IF, "IF"),
+        "cond",
+        Token("THEN", "THEN"),
+        "stmt",
+        Token(const.GRAMMAR_VALUE_ELSE, "ELSE"),
+        ["else1", "else2"],
+        Token(const.GRAMMAR_VALUE_ENDIF, "ENDIF"),
+    ]
+    assert mixin.if_statement(if_else_items) == (
+        const.GRAMMAR_VALUE_IF,
+        [("cond", ["stmt"])],
+        ["else1", "else2"],
+    )
+
+
+def test_text_object_skips_comment_trees_when_linking_text_vars() -> None:
+    mixin = _GraphicsHarness(coord_tails=[], extra_tails=[])
+    go = mixin.text_object(
+        [
+            "Caption",
+            Tree("comment", [Token("COMMENT", "(* c *)")]),
+            Token(const.TOKEN_VARNAME, "TextVar"),
+        ]
+    )
+    assert go.properties["text_vars"] == ["Caption"]
+
+
+def test_sfc_flatten_code_body_extends_nested_lists() -> None:
+    sfc = SFCMixin()
+    assert sfc._flatten_code_body([["stmt1", "stmt2"], Token("ENTERCODE", "ENTERCODE")]) == ["stmt1", "stmt2"]
+
+
+def test_sfc_modulecode_appends_top_level_code_comments() -> None:
+    sfc = SFCMixin()
+    comment = CodeComment("(* c *)")
+    module_code = sfc.modulecode([comment])
+    assert module_code.comments == [comment]
+
+
+def test_sfc_sequence_body_extends_nested_lists() -> None:
+    sfc = SFCMixin()
+    body = sfc.sequence_body([["step1", "step2"], "step3"])
+    assert body.data == const.KEY_SEQUENCE_BODY
+    assert body.children == ["step1", "step2", "step3"]
+
+
+def test_sfc_equationblock_appends_code_comments() -> None:
+    sfc = SFCMixin()
+    comment = CodeComment("(* c *)")
+    equation = sfc.equationblock(["EqA", (1, 2), (3, 4), comment])
+    assert equation.code == [comment]
+
+
 def test_sequence_with_seq_control_tokens() -> None:
     seq = SFCMixin().sequence(
         [
@@ -255,7 +322,7 @@ def test_is_expected_parse_error_public_wrapper() -> None:
 # ---- Atheris fuzzer entry modules ----
 
 
-@pytest.mark.parametrize("module_name", ["comments_fuzzer", "decode_fuzzer", "parser_fuzzer"])
+@pytest.mark.parametrize("module_name", ["decode_fuzzer", "parser_fuzzer"])
 def test_fuzzer_entry_modules(monkeypatch: pytest.MonkeyPatch, module_name: str) -> None:
     calls: list[str] = []
     fake_atheris = types.SimpleNamespace(

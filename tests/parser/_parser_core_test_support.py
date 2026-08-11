@@ -24,15 +24,13 @@ from sattline_parser import (
 from sattline_parser import (
     parse_source_text as parser_core_parse_source_text,
 )
-from sattline_parser import (
-    strip_sl_comments,
-)
 from sattline_parser.api import create_sl_parser, parse_source_file
 from sattline_parser.formatting.formatter import format_expr, format_list, format_optional, format_seq_nodes
 from sattline_parser.grammar import constants as const
 from sattline_parser.grammar import constants as parser_const
 from sattline_parser.models.ast_model import (
     BasePicture,
+    CodeComment,
     DataType,
     Equation,
     FloatLiteral,
@@ -62,7 +60,6 @@ from sattline_parser.models.ast_model import (
     Variable,
 )
 from sattline_parser.preprocessing import preprocess_sl_text
-from sattline_parser.preprocessing.comments import strip_sl_comments_with_mapping
 from sattline_parser.transformer._expressions_mixin import _ExpressionsMixin
 from sattline_parser.transformer._graphics_interact_mixin import _GraphicsInteractMixin
 from sattline_parser.transformer._modules_mixin import _ModulesMixin, flatten_items, meta_span
@@ -87,7 +84,7 @@ from sattline_parser.transformer.sl_transformer import (
 
 def _parse_to_basepicture(text: str):
     parser = create_sl_parser()
-    tree = parser.parse(strip_sl_comments(text))
+    tree = parser.parse(text)
     return SLTransformer().transform(tree)
 
 
@@ -163,6 +160,7 @@ __all__ = [
     "DEFAULT_INIT",
     "Any",
     "BasePicture",
+    "CodeComment",
     "DataType",
     "Equation",
     "FloatLiteral",
@@ -237,7 +235,5 @@ __all__ = [
     "parser_fuzz_harness",
     "preprocess_sl_text",
     "pytest",
-    "strip_sl_comments",
-    "strip_sl_comments_with_mapping",
     "sys",
 ]

@@ -14,6 +14,7 @@ from ._ast_model_support import (
     PropertyMap,
     UsageLocation,
     any_list,
+    code_comment_list,
     datatype_def_list,
     format_list,
     graph_object_list,
@@ -35,6 +36,7 @@ from ._ast_model_support import (
 
 __all__ = [
     "BasePicture",
+    "CodeComment",
     "DataType",
     "Equation",
     "FloatLiteral",
@@ -73,6 +75,30 @@ class SourceSpan:
 
     def __reduce__(self):
         return (type(self), (self.line, self.column))
+
+
+@dataclass(frozen=True)
+class CodeComment:
+    """A preserved SattLine ``(* ... *)`` comment classified by syntactic role.
+
+    ``text`` holds the full lossless comment text including the ``(*`` and
+    ``*)`` delimiters; ``content`` is the inner text without the delimiters.
+    """
+
+    text: str
+    span: SourceSpan | None = None
+
+    @property
+    def content(self) -> str:
+        inner = self.text
+        if inner.startswith("(*"):
+            inner = inner[2:]
+        if inner.endswith("*)"):
+            inner = inner[:-2]
+        return inner
+
+    def __str__(self) -> str:
+        return self.text
 
 
 class IntLiteral(int):
@@ -171,6 +197,7 @@ class DataType:
     origin_file: str | None = None
     origin_lib: str | None = None
     declaration_span: SourceSpan | None = None
+    trailing_comments: list[CodeComment] = field(default_factory=code_comment_list)
 
     def mark_read(self, module_path: ModulePath) -> None:
         self.read = True
@@ -327,6 +354,7 @@ class Equation:
 class ModuleCode:
     sequences: list[Sequence] | None = None
     equations: list[Equation] | None = None
+    comments: list[CodeComment] = field(default_factory=code_comment_list)
 
     def __str__(self) -> str:
         return render_module_code(self, statement_key=const.KEY_STATEMENT)
@@ -346,6 +374,7 @@ class ModuleHeader:
     invoke_coord_tails: list[Any] = field(default_factory=any_list)
     groupconn: AstNodeDict | None = None
     groupconn_global: bool = False
+    description_comments: list[CodeComment] = field(default_factory=code_comment_list)
 
 
 @dataclass
@@ -358,6 +387,7 @@ class SingleModule:
     submodules: list[SingleModule | FrameModule | ModuleTypeInstance] = field(default_factory=submodule_list)
     modulecode: ModuleCode | None = None
     parametermappings: list[ParameterMapping] = field(default_factory=parameter_mapping_list)
+    trailing_comments: list[CodeComment] = field(default_factory=code_comment_list)
 
     def __str__(self) -> str:
         return render_single_module(self)
@@ -370,6 +400,7 @@ class FrameModule:
     submodules: list[SingleModule | FrameModule | ModuleTypeInstance] = field(default_factory=submodule_list)
     moduledef: ModuleDef | None = None
     modulecode: ModuleCode | None = None
+    trailing_comments: list[CodeComment] = field(default_factory=code_comment_list)
 
     def __str__(self) -> str:
         return render_frame_module(self)
@@ -400,6 +431,8 @@ class ModuleTypeDef:
     origin_file: str | None = None
     origin_lib: str | None = None
     declaration_span: SourceSpan | None = None
+    description_comments: list[CodeComment] = field(default_factory=code_comment_list)
+    trailing_comments: list[CodeComment] = field(default_factory=code_comment_list)
 
     def __str__(self) -> str:
         return render_moduletype_def(self)
@@ -427,6 +460,7 @@ class BasePicture:
     graphics_picture_display_records: list[Any] = field(default_factory=any_list)
     graphics_picture_display_occurrences: list[Any] = field(default_factory=any_list)
     library_dependencies: dict[str, list[str]] = field(default_factory=library_dependency_map)
+    trailing_comments: list[CodeComment] = field(default_factory=code_comment_list)
     parse_tree: Any | None = None
 
     def __getstate__(self) -> dict[str, Any]:

@@ -210,7 +210,13 @@ TOKEN_NEW = "NEW"  # nosec B105 - grammar token literal, not a credential
 TOKEN_OLD = "OLD"  # nosec B105 - grammar token literal, not a credential
 TOKEN_VARNAME = "VARNAME"  # nosec B105 - grammar token literal, not a credential
 
-GRAMMAR_REGEX_COMMENT = r"/\(\*[\s\S]*?\*\)(\s*;)?/"
+TOKEN_COMMENT_START = "COMMENT_START"  # nosec B105 - grammar token literal
+TOKEN_COMMENT_END = "COMMENT_END"  # nosec B105 - grammar token literal
+TOKEN_COMMENT_TEXT = "COMMENT_TEXT"  # nosec B105 - grammar token literal
+
+COMMENT_TERMINALS = frozenset({TOKEN_COMMENT_START, TOKEN_COMMENT_END, TOKEN_COMMENT_TEXT})
+
+GRAMMAR_REGEX_COMMENT_TEXT = r"/(?:[^(*]|\((?!\*)|\*(?!\)))+/"
 GRAMMAR_REGEX_SL_DATECODE = r"/\d+/"
 GRAMMAR_REGEX_BOOL = r"/True\b|False\b/"
 GRAMMAR_REGEX_BOOL_NOTAIL = r"/(?:True|False)\b(?![ \t\r\n]*:)/"
