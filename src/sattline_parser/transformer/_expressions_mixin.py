@@ -214,7 +214,10 @@ class _ExpressionsMixin:
                         const.GRAMMAR_VALUE_ENDIF,
                     ):
                         break
-                    stmts.append(t)
+                    if isinstance(t, list):
+                        stmts.extend(cast(list[Any], t))
+                    else:
+                        stmts.append(t)
                     i += 1
                 branches.append((cond, stmts))
             elif isinstance(tok, Token) and tok.type == const.GRAMMAR_VALUE_ELSE:
@@ -224,7 +227,10 @@ class _ExpressionsMixin:
                     t = items[i]
                     if isinstance(t, Token) and t.type == const.GRAMMAR_VALUE_ENDIF:
                         break
-                    else_block.append(t)
+                    if isinstance(t, list):
+                        else_block.extend(cast(list[Any], t))
+                    else:
+                        else_block.append(t)
                     i += 1
                 # ENDIF will be handled by loop increment
                 i += 1

@@ -9,6 +9,7 @@ from lark import Token, Tree
 from sattline_parser.grammar import constants as const
 from sattline_parser.models.ast_model import (
     BasePicture,
+    CodeComment,
     DataType,
     FrameModule,
     ModuleCode,
@@ -62,6 +63,7 @@ class ModuleAssemblyMixin:
         moduledef: ModuleDef | None = None
         modulecode: ModuleCode | None = None
         scan_group_info: dict[str, object] | None = None
+        trailing_comments: list[CodeComment] = []
 
         for it in flatten_items(items[1:]):
             if isinstance(it, DataType):
@@ -72,6 +74,8 @@ class ModuleAssemblyMixin:
                 moduledef = it
             elif isinstance(it, ModuleCode):
                 modulecode = it
+            elif isinstance(it, CodeComment):
+                trailing_comments.append(it)
             elif isinstance(it, dict) and "groupconn" in it:
                 scan_group_info = cast(dict[str, object], it)
             elif isinstance(it, Tree):
@@ -99,6 +103,7 @@ class ModuleAssemblyMixin:
             submodules=submodules,
             moduledef=moduledef,
             modulecode=modulecode,
+            trailing_comments=trailing_comments,
         )
 
     def invocation_new_module(self, items: list[TransformerItem]) -> FrameModule | SingleModule:
@@ -112,11 +117,14 @@ class ModuleAssemblyMixin:
         modulecode: ModuleCode | None = None
         param_mappings: list[ParameterMapping] = []
         scan_group_info: dict[str, object] | None = None
+        trailing_comments: list[CodeComment] = []
         is_frame_module = any(it is True for it in items)
 
         for item in flatten_items(items):
             if isinstance(item, ModuleHeader) and header is None:
                 header = item
+            elif isinstance(item, CodeComment):
+                trailing_comments.append(item)
             elif isinstance(item, int) and datecode is None:
                 datecode = item
             elif isinstance(item, ModuleDef):
@@ -150,6 +158,7 @@ class ModuleAssemblyMixin:
                 submodules=submodules,
                 moduledef=moduledef,
                 modulecode=modulecode,
+                trailing_comments=trailing_comments,
             )
         return SingleModule(
             header=header,
@@ -160,6 +169,7 @@ class ModuleAssemblyMixin:
             moduledef=moduledef,
             modulecode=modulecode,
             parametermappings=param_mappings,
+            trailing_comments=trailing_comments,
         )
 
     def frame_module(self, _items: list[TransformerItem]) -> Literal[True]:
@@ -234,8 +244,20 @@ class ModuleAssemblyMixin:
         modulecode: ModuleCode | None = None
         name: str | None = None
         scan_group_info: dict[str, object] | None = None
+        description_comments: list[CodeComment] = []
+        trailing_comments: list[CodeComment] = []
+        seen_enddef = False
 
         for it in flatten_items(items):
+            if isinstance(it, Token) and it.type == "ENDDEF_KW":
+                seen_enddef = True
+                continue
+            if isinstance(it, CodeComment):
+                if seen_enddef:
+                    trailing_comments.append(it)
+                else:
+                    description_comments.append(it)
+                continue
             if isinstance(it, str) and name is None:
                 name = it
             elif isinstance(it, int) and datecode is None:
@@ -270,6 +292,8 @@ class ModuleAssemblyMixin:
             moduledef=moduledef,
             modulecode=modulecode,
             declaration_span=meta_span(meta),
+            description_comments=description_comments,
+            trailing_comments=trailing_comments,
         )
         if scan_group_info:
             moduletype.groupconn = groupconn_value(scan_group_info)
@@ -524,9 +548,12 @@ class ModuleAssemblyMixin:
         description: str | None = None
         datecode: int | None = None
         fields: list[Variable] = []
+        trailing_comments: list[CodeComment] = []
 
         for item in items:
-            if isinstance(item, str):
+            if isinstance(item, CodeComment):
+                trailing_comments.append(item)
+            elif isinstance(item, str):
                 if name is None:
                     name = item
                 elif description is None:
@@ -545,6 +572,7 @@ class ModuleAssemblyMixin:
             datecode=datecode,
             var_list=fields,
             declaration_span=meta_span(meta),
+            trailing_comments=trailing_comments,
         )
 
     def datatype_typedefinitions(self, items: list[TransformerItem]) -> TransformerTree:

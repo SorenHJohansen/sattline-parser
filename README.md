@@ -9,9 +9,9 @@ This package owns the Lark grammar, the strict single-file syntax behavior, the 
 - Lark LALR parser for SattLine sources (grammar in `grammar/sattline.lark`)
 - Parses plain text and files (`.s`, `.g`, `.l`, `.x`, `.y`, `.z` and any other extension; the parser is content-based, not extension-based)
 - Strict, no-silent-fallback parsing
-- Automatic comment stripping (`(* ... *)`, nested) before parsing
+- Structural comments (`(* ... *)`, nested) preserved as role-tagged AST nodes
 - Automatic compressed-source decoding (`preprocess_sl_text`, `is_compressed`)
-- Error reporting with line/column mapping from cleaned text back to the original source (`describe_parse_error`)
+- Error reporting with line/column locations in the original source (`describe_parse_error`)
 - AST models in `sattline_parser.models`
 - `SLTransformer` tree transformer in `sattline_parser.transformer`
 - Standalone fuzz harness with timeout protection and corpus regression
@@ -55,20 +55,10 @@ basepicture = parse_source_text(source)
 
 Both entry points handle cleanup automatically, so you do not need to pre-process the source:
 
-- **Comments are stripped** automatically (`(* ... *)`, including nested ones).
+- **Comments are parsed structurally** (`(* ... *)`, including nested ones) and preserved on the AST as `CodeComment` nodes.
 - **Compressed sources are detected and decoded** automatically.
 
 The exposed helpers below exist for the rare case where you are building tooling that needs the intermediate stages (for example, to tokenize, diff, or re-emit sources). For ordinary parsing you can ignore them.
-
-### For power users: strip comments yourself
-
-```python
-from sattline_parser import strip_sl_comments
-
-clean = strip_sl_comments(source)  # removes nested (* ... *) comments
-```
-
-`strip_sl_comments` returns comment-free text without parsing. Useful for tools that operate on the raw source (syntax highlighting, diffs, search) or for wrapping the parser with your own preprocessing.
 
 ### For power users: handle compressed sources
 

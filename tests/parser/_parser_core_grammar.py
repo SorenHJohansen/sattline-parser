@@ -54,7 +54,7 @@ ENDDEF (*BasePicture*);
 """
     parser = create_sl_parser()
     with pytest.raises(UnexpectedCharacters):
-        parser.parse(strip_sl_comments(code))
+        parser.parse(code)
 
 
 def test_parser_core_preserves_invocation_argument_flags():

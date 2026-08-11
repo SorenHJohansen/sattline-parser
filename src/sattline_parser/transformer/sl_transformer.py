@@ -13,6 +13,7 @@ from sattline_parser.models.ast_model import BasePicture, FloatLiteral, IntLiter
 
 from ..grammar import constants as const
 from . import _module_shared as _module_shared
+from ._comments_mixin import CommentsMixin
 from ._expressions_mixin import ExpressionsMixin
 from ._graphics_interact_mixin import GraphicsInteractMixin
 from ._module_assembly_mixin import ModuleAssemblyMixin
@@ -75,6 +76,7 @@ def _extract_program_name_from_header_lines(tree: TransformerTree) -> str | None
 
 class SLTransformer(
     TokensMixin,
+    CommentsMixin,
     ExpressionsMixin,
     SFCMixin,
     ModuleHeaderMixin,

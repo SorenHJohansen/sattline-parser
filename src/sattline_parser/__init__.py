@@ -8,7 +8,6 @@ from typing import TYPE_CHECKING, Any
 
 from sattline_parser.models.ast_model import BasePicture, SourceSpan
 from sattline_parser.preprocessing import is_compressed, preprocess_sl_text
-from sattline_parser.preprocessing.comments import strip_sl_comments
 from sattline_parser.transformer.sl_transformer import SLTransformer
 
 from .__version__ import __version__
@@ -86,5 +85,4 @@ __all__ = [
     "preprocess_sl_text",
     "run_corpus_regression",
     "run_random_fuzz",
-    "strip_sl_comments",
 ]

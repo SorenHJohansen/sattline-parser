@@ -9,7 +9,7 @@ from typing import Any, cast
 from lark import Token, Tree
 
 from sattline_parser.grammar import constants as const
-from sattline_parser.models.ast_model import ModuleHeader
+from sattline_parser.models.ast_model import CodeComment, ModuleHeader
 
 from ._module_shared import TransformerItem, TransformerTree, float_tuple, meta_span, v_args
 
@@ -119,10 +119,13 @@ class ModuleHeaderMixin:
         zoom_limits = None
         zoomable = False
         enable_tail: object | None = None
+        description_comments: list[CodeComment] = []
 
         for it in items:
             if isinstance(it, str) and name is None:
                 name = it
+            elif isinstance(it, CodeComment):
+                description_comments.append(it)
             elif isinstance(it, dict) and const.TREE_TAG_INVOKE_COORD in it:
                 mapping = cast(dict[str, object], it)
                 raw = mapping[const.TREE_TAG_INVOKE_COORD]
@@ -178,6 +181,7 @@ class ModuleHeaderMixin:
             zoom_limits=zoom_limits,
             enable_tail=enable_tail,
             invoke_coord_tails=coord_tails,
+            description_comments=description_comments,
         )
 
 

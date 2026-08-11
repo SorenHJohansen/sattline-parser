@@ -13,6 +13,7 @@ from lark import Token, Tree
 
 from sattline_parser.grammar import constants as const
 from sattline_parser.models.ast_model import (
+    CodeComment,
     Equation,
     ModuleCode,
     Sequence,
@@ -27,6 +28,7 @@ from sattline_parser.models.ast_model import (
     SFCTransitionSub,
 )
 
+from ._comments_mixin import is_comment_tree
 from ._module_shared import TransformerItem, TransformerTree, coord_pair, tree_children
 
 CodeBlockPayload = dict[str, list[object]]
@@ -36,20 +38,27 @@ SfcBody = list[object]
 class SFCMixin:
     """Mixin providing SFC (sequence function chart) transformation methods."""
 
+    def _flatten_code_body(self, items: list[TransformerItem]) -> list[object]:
+        """Flatten code-comment runs into a flat code list with CodeComment inline."""
+        flat: list[object] = []
+        for item in items:
+            if isinstance(item, list):
+                flat.extend(cast(list[object], item))
+            elif not isinstance(item, Token):
+                flat.append(item)
+        return flat
+
     def entercode(self, items: list[TransformerItem]) -> CodeBlockPayload:
         """Grammar entercode -> normalized enter block payload."""
-        statements = [item for item in items if not isinstance(item, Token)]
-        return {"enter": statements}
+        return {"enter": self._flatten_code_body(items)}
 
     def activecode(self, items: list[TransformerItem]) -> CodeBlockPayload:
         """Grammar activecode -> normalized active block payload."""
-        statements = [item for item in items if not isinstance(item, Token)]
-        return {"active": statements}
+        return {"active": self._flatten_code_body(items)}
 
     def exitcode(self, items: list[TransformerItem]) -> CodeBlockPayload:
         """Grammar exitcode -> normalized exit block payload."""
-        statements = [item for item in items if not isinstance(item, Token)]
-        return {"exit": statements}
+        return {"exit": self._flatten_code_body(items)}
 
     def code_blocks(self, items: list[TransformerItem]) -> SFCCodeBlocks:
         """Grammar code_blocks -> SFCCodeBlocks with enter/active/exit blocks."""
@@ -69,27 +78,34 @@ class SFCMixin:
         )
 
     def modulecode(self, items: list[TransformerItem]) -> ModuleCode:
-        """Grammar modulecode -> ModuleCode with sequences and equations."""
+        """Grammar modulecode -> ModuleCode with sequences, equations, and top-level code comments."""
         module_code = ModuleCode()
         sequences: list[Sequence] = []
         equations: list[Equation] = []
+        comments: list[CodeComment] = []
 
         for item in items:
             if isinstance(item, Sequence):
                 sequences.append(item)
             elif isinstance(item, Equation):
                 equations.append(item)
+            elif isinstance(item, CodeComment):
+                comments.append(item)
             elif isinstance(item, list):
                 for nested_item in cast(list[TransformerItem], item):
                     if isinstance(nested_item, Sequence):
                         sequences.append(nested_item)
                     elif isinstance(nested_item, Equation):
                         equations.append(nested_item)
+                    elif isinstance(nested_item, CodeComment):
+                        comments.append(nested_item)
 
         if sequences:
             module_code.sequences = sequences
         if equations:
             module_code.equations = equations
+        if comments:
+            module_code.comments = comments
 
         return module_code
 
@@ -107,6 +123,7 @@ class SFCMixin:
 
     def seqtransition(self, items: list[TransformerItem]) -> SFCTransition:
         """Grammar seqtransition -> SEQTRANSITION NAME? WAIT_FOR expression."""
+        items = [it for it in items if not is_comment_tree(it)]
         if len(items) == 4 and isinstance(items[1], str) and isinstance(items[2], Token):
             if items[2].type != "WAIT_FOR":
                 raise ValueError(f"seqtransition expected WAIT_FOR; got token {items[2]!r}")
@@ -189,8 +206,14 @@ class SFCMixin:
         return None
 
     def sequence_body(self, items: list[TransformerItem]) -> TransformerTree:
-        """Grammar sequence_body -> Tree of SFC sequence elements."""
-        return Tree(const.KEY_SEQUENCE_BODY, cast(list[Any], items))
+        """Grammar sequence_body -> Tree of SFC sequence elements with CodeComments inline."""
+        flat: list[Any] = []
+        for item in items:
+            if isinstance(item, list):
+                flat.extend(cast(list[Any], item))
+            else:
+                flat.append(item)
+        return Tree(const.KEY_SEQUENCE_BODY, flat)
 
     def sequence(self, items: list[TransformerItem]) -> Sequence:
         """Grammar sequence -> Sequence with name, position, size, seqcontrol/seqtimer flags, code."""
@@ -280,6 +303,12 @@ class SFCMixin:
             if isinstance(item, Tree) and item.data == const.KEY_STATEMENT:
                 tree = cast(TransformerTree, item)
                 code.extend(tree_children(tree))
+            elif isinstance(item, CodeComment):
+                code.append(item)
+            elif isinstance(item, list):
+                for nested in cast(list[TransformerItem], item):
+                    if isinstance(nested, CodeComment):
+                        code.append(nested)
 
         if name is None:
             raise ValueError("Name can't be None")

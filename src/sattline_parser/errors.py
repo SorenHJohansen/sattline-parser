@@ -3,13 +3,10 @@
 from __future__ import annotations
 
 import logging
-import re
 from dataclasses import dataclass
 from pathlib import Path
 
 from lark.exceptions import UnexpectedCharacters, UnexpectedEOF, UnexpectedInput, UnexpectedToken
-
-from .preprocessing.comments import strip_sl_comments_with_mapping
 
 __all__ = [
     "ParseErrorDetails",
@@ -18,7 +15,6 @@ __all__ = [
 ]
 
 log = logging.getLogger("sattline_parser")
-_LARK_LOCATION_SUFFIX_RE = re.compile(r", at line \d+ col \d+$")
 
 
 @dataclass(frozen=True, slots=True)
@@ -51,37 +47,12 @@ def _unexpected_input_summary(exc: UnexpectedInput) -> str:
     return summary
 
 
-def _render_source_context(source_text: str, *, line: int | None, column: int | None) -> str:
-    if line is None or column is None or line < 1 or column < 1:
-        return ""
-    lines = source_text.splitlines()
-    if line > len(lines):
-        return ""
-    context_line = lines[line - 1]
-    caret_padding = max(column - 1, 0)
-    return f"{context_line}\n{' ' * caret_padding}^"
-
-
-def _rewrite_summary_location(summary: str, *, line: int | None, column: int | None) -> str:
-    if line is None or column is None:
-        return summary
-    if not _LARK_LOCATION_SUFFIX_RE.search(summary):
-        return summary
-    return _LARK_LOCATION_SUFFIX_RE.sub(f", at line {line} col {column}", summary)
-
-
 def describe_parse_error(exc: Exception, source_text: str) -> ParseErrorDetails:
     line = getattr(exc, "line", None)
     column = getattr(exc, "column", None)
     if isinstance(exc, UnexpectedInput):
         message = _unexpected_input_summary(exc)
-        stripped = strip_sl_comments_with_mapping(source_text)
-        if stripped.text != source_text:
-            line, column = stripped.map_line_column(line, column)
-            message = _rewrite_summary_location(message, line=line, column=column)
-            context = _render_source_context(source_text, line=line, column=column).rstrip()
-        else:
-            context = exc.get_context(source_text, span=40).rstrip()
+        context = exc.get_context(source_text, span=40).rstrip()
         if context:
             message = f"{message}\n{context}"
         return ParseErrorDetails(message=message, line=line, column=column)

@@ -13,7 +13,7 @@
 | Path | Role |
 | --- | --- |
 | `src/sattline_parser/api.py` | Public entry points: `create_parser`, `parse_source_text/file`, `describe_parse_error`, decoding helpers |
-| `src/sattline_parser/grammar/` | Lark grammar (`sattline.lark`), `constants.py`, `parser_decode.py` |
+| `src/sattline_parser/grammar/` | Lark grammar (`sattline.lark`), `constants.py`, `sattline_lexer.py` |
 | `src/sattline_parser/models/` | AST models (`ast_model.py`) |
 | `src/sattline_parser/transformer/` | Transformer mixins and `SLTransformer` |
 | `src/sattline_parser/fuzz_harness.py` | Standalone fuzz harness |

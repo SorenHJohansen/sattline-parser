@@ -17,6 +17,7 @@ from typing import Protocol, cast
 from lark import Lark, Token, Tree
 from lark import __version__ as lark_version
 from lark.exceptions import UnexpectedInput
+from lark.lexer import ContextualLexer
 
 from sattline_parser.models.ast_model import BasePicture
 from sattline_parser.transformer.sl_transformer import SLTransformer
@@ -30,17 +31,11 @@ from .errors import (
     _failure_details as _failure_details,  # pyright: ignore[reportPrivateUsage]  # re-exported as a test seam
 )
 from .errors import (
-    _render_source_context as _render_source_context,  # pyright: ignore[reportPrivateUsage]  # re-exported as a test seam
-)
-from .errors import (
-    _rewrite_summary_location as _rewrite_summary_location,  # pyright: ignore[reportPrivateUsage]  # re-exported as a test seam
-)
-from .errors import (
     _unexpected_input_summary as _unexpected_input_summary,  # pyright: ignore[reportPrivateUsage]  # re-exported as a test seam
 )
 from .grammar import constants as const
+from .grammar.sattline_lexer import SattLineLexer
 from .preprocessing import is_compressed, preprocess_sl_text
-from .preprocessing.comments import strip_sl_comments, strip_sl_comments_with_mapping
 
 __all__ = [
     "ParseErrorDetails",
@@ -52,7 +47,6 @@ __all__ = [
     "parse_source_file",
     "parse_source_text",
     "read_text_with_fallback",
-    "strip_sl_comments",
 ]
 
 GRAMMAR_PATH = Path(__file__).resolve().parent / "grammar" / "sattline.lark"
@@ -82,6 +76,53 @@ def _formatted_grammar() -> str:
     return grammar_text.format(**grammar_substitutions)
 
 
+#: Comments are structurally exposed in the default grammar, which makes the
+#: LALR table carry inherent Shift/Reduce ambiguities at construct boundaries
+#: (a comment may trail the inner construct or start the enclosing repetition).
+#: Strict mode therefore validates the core, comment-free grammar instead.
+_COMMENT_RULE_PREFIXES = (
+    "comment:",
+    "?comment_content:",
+    "comments:",
+    "comments_with_opt_semi:",
+    "code_comment:",
+    "module_description_comment:",
+    "module_end_comment:",
+    "code_comments_with_opt_semi:",
+)
+_COMMENT_TERMINAL_PREFIXES = ("COMMENT_START:", "COMMENT_END:", "COMMENT_TEXT:")
+
+
+@lru_cache(maxsize=1)
+def _core_grammar() -> str:
+    """The comment-free grammar used by strict-mode builds."""
+    lines = _formatted_grammar().splitlines()
+    kept: list[str] = []
+    for line in lines:
+        stripped = line.strip()
+        if any(stripped.startswith(prefix) for prefix in _COMMENT_RULE_PREFIXES):
+            continue
+        if any(stripped.startswith(prefix) for prefix in _COMMENT_TERMINAL_PREFIXES):
+            continue
+        kept.append(line)
+    text = "\n".join(kept)
+    # Longest role-tagged rules first: ``comments_with_opt_semi`` is a
+    # substring of ``code_comments_with_opt_semi``, so the generic removal
+    # must not run before the role-specific one or it would corrupt the
+    # modulecode rule into a dangling ``code_sequence`` reference.
+    return (
+        text.replace("code_comments_with_opt_semi | ", "")
+        .replace("comments? ", "")
+        .replace("comments? ,", "")
+        .replace("comments_with_opt_semi | ", "")
+        .replace("comments?", "")
+        .replace("module_description_comment? ", "")
+        .replace("module_description_comment?", "")
+        .replace("module_end_comment? ", "")
+        .replace("module_end_comment?", "")
+    )
+
+
 def _parser_cache_path(
     *,
     start: str,
@@ -89,7 +130,8 @@ def _parser_cache_path(
     strict: bool,
 ) -> str:
     cache_key = sha256()
-    cache_key.update(_formatted_grammar().encode("utf-8"))
+    grammar_text = _core_grammar() if strict else _formatted_grammar()
+    cache_key.update(grammar_text.encode("utf-8"))
     cache_key.update(start.encode("utf-8"))
     cache_key.update(str(propagate_positions).encode("ascii"))
     cache_key.update(str(strict).encode("ascii"))
@@ -104,10 +146,14 @@ def build_lark_parser(
     propagate_positions: bool = True,
     strict: bool = False,
 ) -> Lark:
+    plugins: dict[str, type[ContextualLexer]] = {}
+    if not strict:
+        plugins["ContextualLexer"] = SattLineLexer
     return Lark(
-        _formatted_grammar(),
+        _core_grammar() if strict else _formatted_grammar(),
         start=start,
         parser="lalr",
+        lexer="contextual",
         propagate_positions=propagate_positions,
         strict=strict,
         regex=True,
@@ -117,6 +163,7 @@ def build_lark_parser(
             strict=strict,
         ),
         cache_grammar=True,
+        _plugins=plugins,
     )
 
 
@@ -200,13 +247,11 @@ def parse_source_text(
         source_path=source_path,
         log_failures=log_failures,
     )
-    stripped = strip_sl_comments_with_mapping(decoded)
-    cleaned = stripped.text
     active_parser = parser if parser is not None else _default_parser()
     active_transformer = transformer if transformer is not None else SLTransformer()
     parser_runner = cast(_ParserProtocol, active_parser)
     try:
-        tree = parser_runner.parse(cleaned)
+        tree = parser_runner.parse(decoded)
     except Exception as exc:
         if log_failures:
             _log_parser_failure(stage="parse", exc=exc, source_text=src, source_path=source_path)
