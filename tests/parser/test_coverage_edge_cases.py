@@ -283,7 +283,9 @@ def test_variable_ref_helpers() -> None:
     assert _normalize_variable_ref(VarRef("already"), field_name="target") == VarRef("already")
     assert _normalize_variable_ref("plain_str", field_name="target") == VarRef("plain_str")
     assert _normalize_variable_ref(var, field_name="target") == VarRef("vx")
-    assert _normalize_variable_ref({const.KEY_VAR_NAME: "DictVar", "state": "old"}, field_name="target") == VarRef("DictVar", state="old")
+    assert _normalize_variable_ref({const.KEY_VAR_NAME: "DictVar", "state": "old"}, field_name="target") == VarRef(
+        "DictVar", state="old"
+    )
     with pytest.raises(TypeError):
         _normalize_variable_ref(123, field_name="target")
 

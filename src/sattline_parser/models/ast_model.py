@@ -135,8 +135,15 @@ class CodeComment:
 # SFCBodyItem: the element type of Sequence.code (SFC structure nodes + comments).
 type CodeItem = Assignment | FuncCallStmt | IfStmt | CodeComment
 type SFCBodyItem = (
-    SFCStep | SFCTransition | SFCTransitionSub | SFCAlternative
-    | SFCParallel | SFCSubsequence | SFCFork | SFCBreak | CodeComment
+    SFCStep
+    | SFCTransition
+    | SFCTransitionSub
+    | SFCAlternative
+    | SFCParallel
+    | SFCSubsequence
+    | SFCFork
+    | SFCBreak
+    | CodeComment
 )
 
 

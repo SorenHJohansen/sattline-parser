@@ -74,4 +74,5 @@ class CommentsMixin:
         """Grammar comment_stmt -> CodeComment (comment used as a null statement)."""
         return self._build_code_comment(items)
 
+
 __all__ = ["CommentsMixin", "is_comment_tree"]
