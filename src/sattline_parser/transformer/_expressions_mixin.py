@@ -10,6 +10,19 @@ from typing import Any, cast
 from lark import Token, Tree
 
 from sattline_parser.grammar import constants as const
+from sattline_parser.models.expressions import (
+    Assignment,
+    BinOp,
+    BoolOp,
+    Compare,
+    FuncCall,
+    FuncCallStmt,
+    IfStmt,
+    NotOp,
+    TernaryOp,
+    UnaryOp,
+    VarRef,
+)
 
 __all__ = ["ExpressionsMixin", "_ExpressionsMixin"]
 
@@ -48,84 +61,69 @@ class _ExpressionsMixin:
         raise ValueError(f"invar_tail expected a non-Token child; got: {items}")
 
     def or_expression(self, items: list[Any]) -> Any:
-        """Grammar or_expression -> (expr OR expr | expr)."""
+        """Grammar or_expression -> BoolOp("OR", ...) | single expression."""
         exprs = [it for it in items if not isinstance(it, Token)]
         if len(exprs) == 1:
             return exprs[0]
-        return (const.GRAMMAR_VALUE_OR, exprs)
+        return BoolOp(op="OR", operands=tuple(exprs))
 
     def and_expression(self, items: list[Any]) -> Any:
-        """Grammar and_expression -> (expr AND expr | expr)."""
+        """Grammar and_expression -> BoolOp("AND", ...) | single expression."""
         exprs = [it for it in items if not isinstance(it, Token)]
         if len(exprs) == 1:
             return exprs[0]
-        return (const.GRAMMAR_VALUE_AND, exprs)
+        return BoolOp(op="AND", operands=tuple(exprs))
 
     def not_expression(self, items: list[Any]) -> Any:
-        """Grammar not_expression -> (NOT expr | expr)."""
-        # if "not" was present, should be (NOT, expr), else just expr
+        """Grammar not_expression -> NotOp(...) | single expression."""
         if len(items) == 1:
             return items[0]
-        if len(items) >= 2:
-            # Has NOT
-            expr: Any | None = None
-            for it in items:
-                if not isinstance(it, Token):
-                    expr = it
-            if expr is not None:
-                return (const.GRAMMAR_VALUE_NOT, expr)
+        expr: Any | None = None
+        for it in items:
+            if not isinstance(it, Token):
+                expr = it
+        if expr is not None:
+            return NotOp(operand=expr)
         return items[-1]
 
     def compare(self, items: list[Any]) -> Any:
-        """Grammar compare -> (expr OP expr | expr)."""
+        """Grammar compare -> Compare(left, op, right) | single expression."""
         values = [it for it in items if it is not None and not isinstance(it, Token)]
         operators = [str(it) for it in items if isinstance(it, Token)]
         if len(values) <= 1:
             return values[0] if values else None
-
-        pairs: list[tuple[str, Any]] = []
-        for index, operator in enumerate(operators):
-            rhs_index = index + 1
-            if rhs_index >= len(values):
-                break
-            pairs.append((operator, values[rhs_index]))
-        return (const.KEY_COMPARE, values[0], pairs)
+        # Left-fold: build chained comparisons as nested Compare nodes
+        result = values[0]
+        for op, rhs in zip(operators, values[1:], strict=False):
+            result = Compare(left=result, op=op, right=rhs)
+        return result
 
     def additive_expression(self, items: list[Any]) -> Any:
-        """Grammar additive_expression -> (expr + expr | expr - expr | expr)."""
+        """Grammar additive_expression -> BinOp (left-associative) | single expression."""
         values = [it for it in items if it is not None and not isinstance(it, Token)]
         operators = [str(it) for it in items if isinstance(it, Token)]
         if len(values) <= 1:
             return values[0] if values else None
-
-        pairs: list[tuple[str, Any]] = []
-        for index, operator in enumerate(operators):
-            rhs_index = index + 1
-            if rhs_index >= len(values):
-                break
-            pairs.append((operator, values[rhs_index]))
-        return (const.KEY_ADD, values[0], pairs)
+        result = values[0]
+        for op, rhs in zip(operators, values[1:], strict=False):
+            result = BinOp(left=result, op=op, right=rhs)
+        return result
 
     def multiplicative_expression(self, items: list[Any]) -> Any:
-        """Grammar multiplicative_expression -> (expr * expr | expr / expr | expr)."""
+        """Grammar multiplicative_expression -> BinOp (left-associative) | single expression."""
         values = [it for it in items if it is not None and not isinstance(it, Token)]
         operators = [str(it) for it in items if isinstance(it, Token)]
         if len(values) <= 1:
             return values[0] if values else None
-
-        pairs: list[tuple[str, Any]] = []
-        for index, operator in enumerate(operators):
-            rhs_index = index + 1
-            if rhs_index >= len(values):
-                break
-            pairs.append((operator, values[rhs_index]))
-        return (const.KEY_MUL, values[0], pairs)
+        result = values[0]
+        for op, rhs in zip(operators, values[1:], strict=False):
+            result = BinOp(left=result, op=op, right=rhs)
+        return result
 
     def unary_expression(self, items: list[Any]) -> Any:
-        """Grammar unary_expression -> (- expr | + expr | expr)."""
+        """Grammar unary_expression -> UnaryOp | single expression."""
         if len(items) == 1:
             return items[0]
-        # has unary operator
         op: Token | None = None
         expr: Any | None = None
         for it in items:
@@ -135,38 +133,36 @@ class _ExpressionsMixin:
                 expr = it
         if op is None or expr is None:
             raise ValueError(f"unary_expression expected operator and expression; got: {items}")
-        if op.type == const.KEY_MINUS:
-            return (const.KEY_MINUS, expr)
-        return (op.value, expr)
+        op_str = "-" if op.type == const.KEY_MINUS else "+"
+        return UnaryOp(op=op_str, operand=expr)  # type: ignore[arg-type]
 
-    def function_call(self, items: list[Any]) -> tuple[str, str | None, list[Any]]:
-        """Grammar function_call -> NAME LPAREN argument_list? RPAREN."""
+    def function_call(self, items: list[Any]) -> FuncCall:
+        """Grammar function_call -> FuncCall(name, args)."""
         fn_name: str | None = None
         args: list[Any] = []
         for it in items:
-            if isinstance(it, str) and not isinstance(it, list) and fn_name is None:
+            if isinstance(it, str) and not isinstance(it, Token) and fn_name is None:
                 fn_name = it
             elif not isinstance(it, Token):
-                # this is argument_list result
                 args = cast(list[Any], it) if isinstance(it, list) else [it]
-        return (const.KEY_FUNCTION_CALL, fn_name, args)
+        if fn_name is None:
+            raise ValueError(f"function_call missing name; got: {items}")
+        return FuncCall(name=fn_name, args=tuple(args))
 
     def argument_list(self, items: list[Any]) -> list[Any]:
         """Grammar argument_list -> expression (COMMA expression)*."""
         return [it for it in items if not isinstance(it, Token)]
 
-    def ternary_if(self, items: list[Any]) -> tuple[str, list[tuple[Any, Any]], Any | None]:
-        """Grammar ternary_if -> IF cond THEN expr (ELSIF cond THEN expr)* ELSE expr ENDIF."""
+    def ternary_if(self, items: list[Any]) -> TernaryOp:
+        """Grammar ternary_if -> TernaryOp(branches, else_expr)."""
         branches: list[tuple[Any, Any]] = []
         else_expr: Any | None = None
         i = 0
-        # Expect IF
         while i < len(items):
             tok = items[i]
             if isinstance(tok, Token) and tok.type == const.GRAMMAR_VALUE_IF:
                 cond = items[i + 1]
-                # skip THEN at i+2
-                then_expr = items[i + 3]
+                then_expr = items[i + 3]  # skip THEN at i+2
                 branches.append((cond, then_expr))
                 i += 4
             elif isinstance(tok, Token) and tok.type == const.GRAMMAR_VALUE_ELSIF:
@@ -179,32 +175,27 @@ class _ExpressionsMixin:
                 i += 2
             else:
                 i += 1
-        return (const.KEY_TERNARY, branches, else_expr)
+        return TernaryOp(branches=tuple(branches), else_expr=else_expr)
 
-    def assignment_statement(self, items: list[Any]) -> tuple[str, Any, Any]:
-        """Grammar assignment_statement -> variable_name '=' expression."""
-        if len(items) != 2:
-            # Be defensive in case of stray tokens
-            target = items[0]
-            expr = items[-1]
-        else:
-            target, expr = items
-        return (const.KEY_ASSIGN, target, expr)
+    def assignment_statement(self, items: list[Any]) -> Assignment:
+        """Grammar assignment_statement -> Assignment(target, value)."""
+        target_raw, expr = (items[0], items[-1]) if len(items) != 2 else items
+        target = target_raw if isinstance(target_raw, VarRef) else VarRef(str(target_raw))
+        return Assignment(target=target, value=expr)
 
-    def if_statement(self, items: list[Any]) -> tuple[str, list[tuple[Any, list[Any]]], list[Any] | None]:
-        """Grammar if_statement -> IF expression THEN statement* (ELSIF...)* (ELSE...)? ENDIF."""
-        branches: list[tuple[Any, list[Any]]] = []
-        else_block: list[Any] | None = None
+    def if_statement(self, items: list[Any]) -> IfStmt:
+        """Grammar if_statement -> IfStmt(branches, else_block)."""
+        branches: list[tuple[Any, tuple[Any, ...]]] = []
+        else_block: tuple[Any, ...] | None = None
         i = 0
         while i < len(items):
             tok = items[i]
-            if (isinstance(tok, Token) and tok.type == const.GRAMMAR_VALUE_IF) or (
-                isinstance(tok, Token) and tok.type == const.GRAMMAR_VALUE_ELSIF
+            if isinstance(tok, Token) and tok.type in (
+                const.GRAMMAR_VALUE_IF,
+                const.GRAMMAR_VALUE_ELSIF,
             ):
                 cond = items[i + 1]
-                i += 2  # now at THEN
-                # skip THEN
-                i += 1
+                i += 3  # skip cond + THEN
                 stmts: list[Any] = []
                 while i < len(items):
                     t = items[i]
@@ -219,30 +210,33 @@ class _ExpressionsMixin:
                     else:
                         stmts.append(t)
                     i += 1
-                branches.append((cond, stmts))
+                branches.append((cond, tuple(stmts)))
             elif isinstance(tok, Token) and tok.type == const.GRAMMAR_VALUE_ELSE:
                 i += 1
-                else_block = []
+                elst: list[Any] = []
                 while i < len(items):
                     t = items[i]
                     if isinstance(t, Token) and t.type == const.GRAMMAR_VALUE_ENDIF:
+                        i += 1
                         break
                     if isinstance(t, list):
-                        else_block.extend(cast(list[Any], t))
+                        elst.extend(cast(list[Any], t))
                     else:
-                        else_block.append(t)
+                        elst.append(t)
                     i += 1
-                # ENDIF will be handled by loop increment
-                i += 1
+                else_block = tuple(elst)
             else:
                 i += 1
-        return (const.GRAMMAR_VALUE_IF, branches, else_block)
+        return IfStmt(branches=tuple(branches), else_block=else_block)
 
-    def statement(self, items: list[Any]) -> Tree[Any]:
-        """Grammar statement -> assignment_statement | function_call | if_statement."""
+    def statement(self, items: list[Any]) -> Any:
+        """Grammar statement -> unwrapped Assignment | FuncCallStmt | IfStmt | CodeComment."""
         for it in items:
             if not isinstance(it, Token):
-                return Tree(const.KEY_STATEMENT, [it])  # Keep the Tree wrapper
+                # Wrap bare FuncCall in FuncCallStmt
+                if isinstance(it, FuncCall):
+                    return FuncCallStmt(call=it)
+                return it
         types = ", ".join(type(x).__name__ for x in items)
         raise ValueError(
             f"statement expected a non-Token child "

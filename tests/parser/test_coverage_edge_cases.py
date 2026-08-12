@@ -26,6 +26,7 @@ from sattline_parser.models.ast_model import (
     _normalize_variable_ref,
     _variable_ref_name,
 )
+from sattline_parser.models.expressions import IfStmt, VarRef
 from sattline_parser.transformer._comments_mixin import CommentsMixin
 from sattline_parser.transformer._expressions_mixin import _ExpressionsMixin
 from sattline_parser.transformer._graphics_interact_mixin import _as_float, _is_coord_box, _is_coord_pair
@@ -168,7 +169,8 @@ def test_module_layout_grid_and_def_tails() -> None:
 
 def test_module_shared_float_tuple_and_groupconn() -> None:
     assert groupconn_value(None) is None
-    assert groupconn_value({"groupconn": {"x": 1}}) == {"x": 1}
+    assert groupconn_value({"groupconn": VarRef("ScanGroup")}) == VarRef("ScanGroup")
+    assert groupconn_value({"groupconn": {"x": 1}}) is None
     assert float_tuple((1,), 2) is None
     assert float_tuple(("a", "b"), 2) is None
 
@@ -193,10 +195,9 @@ def test_expressions_if_statement_flattens_nested_list_statements() -> None:
         ["stmt1", "stmt2"],
         Token(const.GRAMMAR_VALUE_ENDIF, "ENDIF"),
     ]
-    assert mixin.if_statement(if_items) == (
-        const.GRAMMAR_VALUE_IF,
-        [("cond", ["stmt1", "stmt2"])],
-        None,
+    assert mixin.if_statement(if_items) == IfStmt(
+        branches=(("cond", ("stmt1", "stmt2")),),
+        else_block=None,
     )
     if_else_items = [
         Token(const.GRAMMAR_VALUE_IF, "IF"),
@@ -207,10 +208,9 @@ def test_expressions_if_statement_flattens_nested_list_statements() -> None:
         ["else1", "else2"],
         Token(const.GRAMMAR_VALUE_ENDIF, "ENDIF"),
     ]
-    assert mixin.if_statement(if_else_items) == (
-        const.GRAMMAR_VALUE_IF,
-        [("cond", ["stmt"])],
-        ["else1", "else2"],
+    assert mixin.if_statement(if_else_items) == IfStmt(
+        branches=(("cond", ("stmt",)),),
+        else_block=("else1", "else2"),
     )
 
 
@@ -275,12 +275,27 @@ def test_token_span_none_when_no_position() -> None:
 
 def test_variable_ref_helpers() -> None:
     var = Variable(name="vx", datatype="integer")
+    assert _variable_ref_name(VarRef("vr")) == "vr"
     assert _variable_ref_name("plain") == "plain"
     assert _variable_ref_name(var) == "vx"
+    assert _variable_ref_name({const.KEY_VAR_NAME: "dictname"}) == "dictname"
     assert _variable_ref_name({const.KEY_VAR_NAME: 123}) is None
-    assert _normalize_variable_ref(var, field_name="target") == {const.KEY_VAR_NAME: "vx"}
+    assert _normalize_variable_ref(VarRef("already"), field_name="target") == VarRef("already")
+    assert _normalize_variable_ref("plain_str", field_name="target") == VarRef("plain_str")
+    assert _normalize_variable_ref(var, field_name="target") == VarRef("vx")
+    assert _normalize_variable_ref({const.KEY_VAR_NAME: "DictVar", "state": "old"}, field_name="target") == VarRef("DictVar", state="old")
     with pytest.raises(TypeError):
         _normalize_variable_ref(123, field_name="target")
+
+    # ParameterMapping with dict source is coerced to VarRef
+    pm = ParameterMapping(
+        target=VarRef("T"),
+        source_type=const.TREE_TAG_VARIABLE_NAME,
+        is_duration=False,
+        is_source_global=False,
+        source={const.KEY_VAR_NAME: "S"},  # type: ignore[arg-type]
+    )
+    assert pm.source == VarRef("S")
 
 
 def test_base_picture_pickle_roundtrip() -> None:
@@ -339,18 +354,18 @@ def test_fuzzer_entry_modules(monkeypatch: pytest.MonkeyPatch, module_name: str)
 
 def test_parameter_mapping_str_variable_source() -> None:
     mapping = ParameterMapping(
-        target={const.KEY_VAR_NAME: "A"},
+        target=VarRef("A"),
         source_type=const.TREE_TAG_VARIABLE_NAME,
         is_duration=False,
         is_source_global=False,
-        source={const.KEY_VAR_NAME: "B"},
+        source=VarRef("B"),
     )
     assert str(mapping) == "A => B"
 
 
 def test_parameter_mapping_global_source() -> None:
     mapping = ParameterMapping(
-        target={const.KEY_VAR_NAME: "A"},
+        target=VarRef("A"),
         source_type=const.TREE_TAG_VARIABLE_NAME,
         is_duration=False,
         is_source_global=True,

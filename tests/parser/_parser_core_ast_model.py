@@ -49,7 +49,7 @@ def test_ast_model_helpers_cover_reduce_usage_and_string_formats(monkeypatch: py
     assert (
         str(
             ParameterMapping(
-                target={parser_const.KEY_VAR_NAME: "Target"},
+                target=VarRef("Target"),
                 source_type=parser_const.TREE_TAG_VARIABLE_NAME,
                 is_duration=False,
                 is_source_global=True,
@@ -60,10 +60,10 @@ def test_ast_model_helpers_cover_reduce_usage_and_string_formats(monkeypatch: py
     assert (
         str(
             ParameterMapping(
-                target={parser_const.KEY_VAR_NAME: "Target"},
+                target=VarRef("Target"),
                 source_type=parser_const.TREE_TAG_VARIABLE_NAME,
                 is_duration=False,
-                source={parser_const.KEY_VAR_NAME: "Source"},
+                source=VarRef("Source"),
                 is_source_global=False,
             )
         )

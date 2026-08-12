@@ -41,7 +41,7 @@ def test_sl_transformer_top_level_helpers_cover_header_quote_and_tree_iteration_
 
 def test_sl_transformer_helper_methods_cover_nested_tail_and_payload_collection():
     transformer = SLTransformer()
-    variable_tail = {parser_const.KEY_VAR_NAME: "ScanGroup"}
+    variable_tail = VarRef("ScanGroup")
     tuple_tail = ("Group", 3)
 
     tails = transformer._extract_coord_tails(

@@ -27,7 +27,7 @@ def test_modules_mixin_definition_trees_keep_only_supported_children():
                 [ModuleTypeInstance(header=_module_header("Nested"), moduletype_name="NestedType")],
             ),
             ModuleDef(),
-            {"groupconn": {parser_const.KEY_VAR_NAME: "ScanType"}, "global": True},
+            {"groupconn": VarRef("ScanType"), "global": True},
         ],
     )
     datatype_tree = mixin.datatype_typedefinitions([record, Tree("wrapper", [record])])
@@ -40,7 +40,7 @@ def test_modules_mixin_definition_trees_keep_only_supported_children():
     assert record.name == "Payload"
     assert record.declaration_span == SourceSpan(line=8, column=2)
     assert record.var_list == [record_field]
-    assert moduletype.groupconn == {parser_const.KEY_VAR_NAME: "ScanType"}
+    assert moduletype.groupconn == VarRef("ScanType")
     assert moduletype.groupconn_global is True
     assert datatype_tree.data == parser_const.TREE_TAG_DATATYPE_LIST
     assert datatype_tree.children == [record, record]
@@ -76,11 +76,11 @@ def test_modules_mixin_wrapper_rules_and_invocation_errors():
         parser_const.TREE_TAG_MODULETYPE_PAR_LIST,
         [
             ParameterMapping(
-                target={parser_const.KEY_VAR_NAME: "Target"},
+                target=VarRef("Target"),
                 source_type=parser_const.TREE_TAG_VARIABLE_NAME,
                 is_source_global=False,
                 is_duration=False,
-                source={parser_const.KEY_VAR_NAME: "Source"},
+                source=VarRef("Source"),
             )
         ],
     )
@@ -137,23 +137,21 @@ def test_modules_mixin_transfer_and_variable_helpers_cover_fallback_branches():
 
     duration_transfer = mixin.moduletype_par_transfer(
         [
-            {parser_const.KEY_VAR_NAME: "Target"},
+            VarRef("Target"),
             True,
             parser_const.GRAMMAR_VALUE_DURATION_VALUE,
             {parser_const.GRAMMAR_VALUE_TIME_VALUE: "T#5S"},
         ]
     )
-    object_transfer = mixin.moduletype_par_transfer([{parser_const.KEY_VAR_NAME: "Target"}, object()])
+    object_transfer = mixin.moduletype_par_transfer([VarRef("Target"), object()])
 
     assert duration_transfer.is_source_global is True
     assert duration_transfer.is_duration is True
     assert duration_transfer.source_literal == {parser_const.GRAMMAR_VALUE_TIME_VALUE: "T#5S"}
     assert object_transfer.source_literal is not None
     assert object_transfer.source_literal.startswith("<object object at")
-    assert mixin.moduletype_par_transfer(["TargetLiteral", "SourceLiteral"]).target == {
-        parser_const.KEY_VAR_NAME: "TargetLiteral"
-    }
-    assert mixin.moduletype_par_transfer([123, "SourceLiteral"]).target == {parser_const.KEY_VAR_NAME: "123"}
+    assert mixin.moduletype_par_transfer(["TargetLiteral", "SourceLiteral"]).target == VarRef("TargetLiteral")
+    assert mixin.moduletype_par_transfer([123, "SourceLiteral"]).target == VarRef("123")
     assert mixin.moduletype_par_list([duration_transfer]).data == parser_const.TREE_TAG_MODULETYPE_PAR_LIST
 
     assert mixin.variable_group([]) == []

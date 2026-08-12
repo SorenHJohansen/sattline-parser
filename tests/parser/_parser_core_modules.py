@@ -144,7 +144,7 @@ def test_modules_mixin_invocation_new_module_collects_decls_and_frame_marker(fra
         Tree(parser_const.TREE_TAG_SUBMODULES, [child]),
         Tree(parser_const.TREE_TAG_MODULETYPE_PAR_LIST, [mapping]),
         ModuleDef(),
-        {"groupconn": {parser_const.KEY_VAR_NAME: "ScanGroup"}, "global": False},
+        {"groupconn": VarRef("ScanGroup"), "global": False},
     ]
     if frame_marker:
         items.append(True)
@@ -152,7 +152,7 @@ def test_modules_mixin_invocation_new_module_collects_decls_and_frame_marker(fra
     result = mixin.invocation_new_module(items)
 
     assert isinstance(result, expected_type)
-    assert result.header.groupconn == {parser_const.KEY_VAR_NAME: "ScanGroup"}
+    assert result.header.groupconn == VarRef("ScanGroup")
     assert result.header.groupconn_global is False
     assert result.datecode == 101
     assert result.submodules == [child]
@@ -196,7 +196,7 @@ def test_modules_mixin_base_picture_module_collects_nested_children_and_scan_gro
                         Tree(parser_const.GRAMMAR_VALUE_LOCALVARIABLES, [local_var]),
                         Tree(parser_const.TREE_TAG_SUBMODULES, [[child]]),
                         moduledef,
-                        {"groupconn": {parser_const.KEY_VAR_NAME: "ScanRoot"}, "global": True},
+                        {"groupconn": VarRef("ScanRoot"), "global": True},
                     ],
                 ),
             ),
@@ -209,7 +209,7 @@ def test_modules_mixin_base_picture_module_collects_nested_children_and_scan_gro
     assert result.localvariables == [local_var]
     assert result.submodules == [child]
     assert result.moduledef is moduledef
-    assert header.groupconn == {parser_const.KEY_VAR_NAME: "ScanRoot"}
+    assert header.groupconn == VarRef("ScanRoot")
     assert header.groupconn_global is True
 
     direct_items_result = mixin.base_picture_module([_module_header("BaseDirect"), datatype, moduletype])
@@ -237,7 +237,7 @@ def test_modules_mixin_variable_group_and_mapping_helpers_preserve_modifiers_and
             parsed_name,
             True,
             parser_const.GRAMMAR_VALUE_DURATION_VALUE,
-            {parser_const.KEY_VAR_NAME: "SourceVar"},
+            VarRef("SourceVar"),
         ]
     )
     variables = mixin.variable_group(
@@ -257,13 +257,9 @@ def test_modules_mixin_variable_group_and_mapping_helpers_preserve_modifiers_and
     locals_tree = mixin.localvariables([list_tree])
     scan_group = mixin.scan_group([True, parsed_name])
 
-    assert parsed_name == {
-        parser_const.KEY_VAR_NAME: "Pump.State",
-        "state": "old",
-        "span": SourceSpan(line=9, column=3),
-    }
-    assert mapping.target == parsed_name
-    assert mapping.source == {parser_const.KEY_VAR_NAME: "SourceVar"}
+    assert parsed_name == VarRef("Pump.State", state="old")
+    assert mapping.target == VarRef("Pump.State", state="old")
+    assert mapping.source == VarRef("SourceVar")
     assert mapping.source_type == parser_const.TREE_TAG_VARIABLE_NAME
     assert mapping.is_duration is True
     assert mapping.is_source_global is True
@@ -284,8 +280,4 @@ def test_modules_mixin_variable_group_and_mapping_helpers_preserve_modifiers_and
         ["Pump", ".", "State", "new"],
     )
 
-    assert string_state_name == {
-        parser_const.KEY_VAR_NAME: "Pump.State",
-        "state": "new",
-        "span": SourceSpan(line=10, column=5),
-    }
+    assert string_state_name == VarRef("Pump.State", state="new")

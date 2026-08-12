@@ -9,7 +9,7 @@ from lark import Tree
 from lark.visitors import v_args as _lark_v_args  # pyright: ignore[reportUnknownVariableType]
 
 from sattline_parser.grammar import constants as const
-from sattline_parser.models.ast_model import FrameModule, ModuleTypeInstance, SingleModule, SourceSpan
+from sattline_parser.models.ast_model import FrameModule, ModuleTypeInstance, SingleModule, SourceSpan, VarRef
 
 TransformerTree = Tree[Any]
 TransformerItem = object
@@ -51,11 +51,13 @@ def float_tuple(raw: object, size: Literal[2, 5]) -> tuple[float, ...] | None:
     return tuple(float(cast(int | float, value)) for value in values)
 
 
-def groupconn_value(info: dict[str, object] | None) -> dict[Any, Any] | None:
+def groupconn_value(info: dict[str, object] | None) -> VarRef | None:
     if info is None:
         return None
     groupconn = info.get("groupconn")
-    return cast(dict[Any, Any] | None, groupconn)
+    if isinstance(groupconn, VarRef):
+        return groupconn
+    return None
 
 
 def coord_pair(raw: object) -> tuple[float, float] | None:

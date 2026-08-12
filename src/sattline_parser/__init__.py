@@ -7,6 +7,21 @@ from types import ModuleType
 from typing import TYPE_CHECKING, Any
 
 from sattline_parser.models.ast_model import BasePicture, SourceSpan
+from sattline_parser.models.expressions import (
+    Assignment,
+    BinOp,
+    BoolOp,
+    Compare,
+    FuncCall,
+    FuncCallStmt,
+    IfStmt,
+    NotOp,
+    SLExpression,
+    SLStmt,
+    TernaryOp,
+    UnaryOp,
+    VarRef,
+)
 from sattline_parser.preprocessing import is_compressed, preprocess_sl_text
 from sattline_parser.transformer.sl_transformer import SLTransformer
 
@@ -65,10 +80,23 @@ def __dir__() -> list[str]:
 
 
 __all__ = [
+    "Assignment",
     "BasePicture",
+    "BinOp",
+    "BoolOp",
+    "Compare",
+    "FuncCall",
+    "FuncCallStmt",
     "FuzzResult",
+    "IfStmt",
+    "NotOp",
+    "SLExpression",
+    "SLStmt",
     "SLTransformer",
     "SourceSpan",
+    "TernaryOp",
+    "UnaryOp",
+    "VarRef",
     "__version__",
     "assert_no_crashes",
     "assert_no_timeouts",

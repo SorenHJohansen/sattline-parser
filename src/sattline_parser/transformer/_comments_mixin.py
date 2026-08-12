@@ -19,7 +19,7 @@ from ._module_shared import TransformerItem, TransformerTree, tree_children
 
 #: Tree data names of the generic (discard) comment rules. Role rules transform
 #: to CodeComment; these stay as Trees outside code/description/end contexts.
-COMMENT_TREE_NAMES = frozenset({"comment", "comments", "comments_with_opt_semi"})
+COMMENT_TREE_NAMES = frozenset({"comment", "comments"})
 
 
 def is_comment_tree(value: object) -> bool:
@@ -62,17 +62,16 @@ class CommentsMixin:
         """Grammar code_comment -> CodeComment kept inline in ModuleCode lists."""
         return self._build_code_comment(items)
 
-    def module_description_comment(self, items: list[TransformerItem]) -> CodeComment:
-        """Grammar module_description_comment -> CodeComment (module description)."""
+    def module_typedescription(self, items: list[TransformerItem]) -> CodeComment:
+        """Grammar module_typedescription -> CodeComment (module type description)."""
         return self._build_code_comment(items)
 
     def module_end_comment(self, items: list[TransformerItem]) -> CodeComment:
         """Grammar module_end_comment -> CodeComment (trailing ENDDEF marker)."""
         return self._build_code_comment(items)
 
-    def code_comments_with_opt_semi(self, items: list[TransformerItem]) -> list[CodeComment]:
-        """Grammar code_comments_with_opt_semi -> flat list of CodeComments."""
-        return [it for it in items if isinstance(it, CodeComment)]
-
+    def comment_stmt(self, items: list[TransformerItem]) -> CodeComment:
+        """Grammar comment_stmt -> CodeComment (comment used as a null statement)."""
+        return self._build_code_comment(items)
 
 __all__ = ["CommentsMixin", "is_comment_tree"]
