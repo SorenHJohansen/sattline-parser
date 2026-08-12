@@ -100,7 +100,9 @@ def test_expressions_mixin_builds_statements_calls_and_conditionals():
     assert mixin.additive_expression([Token("PLUS", "+")]) is None
     assert mixin.additive_expression(["lhs", Token("PLUS", "+"), "rhs", Token("PLUS", "+")]) == BinOp("lhs", "+", "rhs")
     assert mixin.multiplicative_expression([Token("STAR", "*")]) is None
-    assert mixin.multiplicative_expression(["lhs", Token("STAR", "*"), "rhs", Token("STAR", "*")]) == BinOp("lhs", "*", "rhs")
+    assert mixin.multiplicative_expression(["lhs", Token("STAR", "*"), "rhs", Token("STAR", "*")]) == BinOp(
+        "lhs", "*", "rhs"
+    )
     assert mixin.compare(["lhs", Token("EQ", "="), "rhs", Token("NE", "<>")]) == Compare("lhs", "=", "rhs")
     with pytest.raises(ValueError, match="expected operator and expression"):
         mixin.unary_expression([Token("PLUS", "+"), Token("MINUS", "-")])

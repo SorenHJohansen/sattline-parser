@@ -141,18 +141,7 @@ class TernaryOp:
 
 # Convenience type alias covering every possible expression value.
 type SLExpression = (
-    VarRef
-    | bool
-    | int
-    | float
-    | str
-    | BoolOp
-    | NotOp
-    | Compare
-    | BinOp
-    | UnaryOp
-    | FuncCall
-    | TernaryOp
+    VarRef | bool | int | float | str | BoolOp | NotOp | Compare | BinOp | UnaryOp | FuncCall | TernaryOp
 )
 
 
