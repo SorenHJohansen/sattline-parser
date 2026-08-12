@@ -34,6 +34,7 @@ ASAN_OPTIONS=\$ASAN_OPTIONS:symbolize=1:external_symbolizer_path=\$this_dir/llvm
   if [ -d "$CORPUS_SRC" ]; then
     find "$CORPUS_SRC" -name '*.s' -type f -exec cp {} "$seed_dir/" \;
   fi
+  zip -j "$OUT/${fuzzer_basename}_seed_corpus.zip" "$seed_dir"/*.s 2>/dev/null || true
   echo "Seeded $fuzzer_basename with $(ls -1 "$seed_dir" | wc -l) corpus files"
 done
 
