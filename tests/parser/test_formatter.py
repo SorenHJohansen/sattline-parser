@@ -116,3 +116,41 @@ def test_format_seq_nodes_renders_all_node_types():
     assert "EndTransitionSub" in rendered
     assert "Fork to Z" in rendered
     assert "Break" in rendered
+
+
+def test_format_expr_handles_new_typed_expression_nodes():
+    from sattline_parser.models.expressions import (  # noqa: PLC0415
+        Assignment,
+        BinOp,
+        BoolOp,
+        Compare,
+        FuncCall,
+        FuncCallStmt,
+        IfStmt,
+        NotOp,
+        TernaryOp,
+        UnaryOp,
+        VarRef,
+    )
+
+    assert formatter.format_expr(VarRef("Pump.State")) == "Pump.State"
+    assert formatter.format_expr(VarRef("X", state="old")) == "X:old"
+    assert formatter.format_expr(Assignment(VarRef("A"), 1)) == "A = 1"
+    assert formatter.format_expr(FuncCallStmt(FuncCall("Reset", ()))) == "Reset()"
+    assert formatter.format_expr(BoolOp("OR", (VarRef("A"), VarRef("B")))) == "A OR \nB"
+    assert formatter.format_expr(BoolOp("AND", (VarRef("A"), VarRef("B")))) == "A AND \nB"
+    assert formatter.format_expr(NotOp(VarRef("X"))) == "NOT(X)"
+    assert formatter.format_expr(Compare(VarRef("A"), ">", 0)) == "A > 0"
+    assert formatter.format_expr(BinOp(VarRef("A"), "+", 1)) == "(A + 1)"
+    assert formatter.format_expr(UnaryOp("-", VarRef("X"))) == "-X"
+    assert formatter.format_expr(FuncCall("Get", (VarRef("A"),))) == "Get(A)"
+    ternary = TernaryOp(branches=((VarRef("C"), VarRef("A")),), else_expr=VarRef("B"))
+    rendered_t = formatter.format_expr(ternary)
+    assert "IF C" in rendered_t and "THEN" in rendered_t and "ELSE" in rendered_t
+
+    if_stmt = IfStmt(
+        branches=((VarRef("Cond"), (Assignment(VarRef("X"), 1),)),),
+        else_block=(Assignment(VarRef("X"), 0),),
+    )
+    rendered_if = formatter.format_expr(if_stmt)
+    assert "IF Cond" in rendered_if and "THEN" in rendered_if and "ELSE" in rendered_if

@@ -24,16 +24,18 @@ ENDDEF (*BasePicture*);
 """
     bp = _parse_to_basepicture(code)
     stmt = bp.modulecode.equations[0].code[0]
-    assert stmt[0] == const.KEY_ASSIGN
+    assert isinstance(stmt, Assignment)
 
-    expr = stmt[2]
-    assert expr[0] == const.KEY_TERNARY
+    expr = stmt.value
+    assert isinstance(expr, TernaryOp)
 
-    else_expr = expr[2]
-    assert else_expr[0] == const.KEY_ADD
-    assert else_expr[1][const.KEY_VAR_NAME].casefold() == "c"
-    assert else_expr[2][0][0] == "+"
-    assert else_expr[2][0][1][const.KEY_VAR_NAME].casefold() == "d"
+    else_expr = expr.else_expr
+    assert isinstance(else_expr, BinOp)
+    assert isinstance(else_expr.left, VarRef)
+    assert else_expr.left.name.casefold() == "c"
+    assert else_expr.op == "+"
+    assert isinstance(else_expr.right, VarRef)
+    assert else_expr.right.name.casefold() == "d"
 
 
 def test_quoted_identifier_length_is_limited_to_20_chars():
@@ -344,18 +346,17 @@ ENDDEF (*BasePicture*);
     assert bp.modulecode is not None
     assert bp.modulecode.equations is not None
     assignment = bp.modulecode.equations[0].code[0]
-    target = assignment[1]
-    value_ref = assignment[2][1]
+    assert isinstance(assignment, Assignment)
 
     assert declared.declaration_span is not None
     assert declared.declaration_span.line == 6
     assert declared.declaration_span.column == 5
     assert bp.header.declaration_span is not None
     assert bp.header.declaration_span.line == 4
-    assert target["span"].line == 11
-    assert target["span"].column == 9
-    assert value_ref["span"].line == 11
-    assert value_ref["span"].column == 19
+    assert assignment.target.name == "Counter"
+    assert isinstance(assignment.value, BinOp)
+    assert isinstance(assignment.value.left, VarRef)
+    assert assignment.value.left.name == "Counter"
 
 
 def test_parser_core_preserves_invar_tails_in_invoke_coords_and_clipping_bounds():

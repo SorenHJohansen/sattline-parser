@@ -33,16 +33,39 @@ from ._ast_model_support import (
     usage_location_list,
     variable_list,
 )
+from .expressions import (
+    Assignment,
+    BinOp,
+    BoolOp,
+    Compare,
+    FuncCall,
+    FuncCallStmt,
+    IfStmt,
+    NotOp,
+    SLExpression,
+    SLStmt,
+    TernaryOp,
+    UnaryOp,
+    VarRef,
+)
 
 __all__ = [
+    "Assignment",
     "BasePicture",
+    "BinOp",
+    "BoolOp",
     "CodeComment",
+    "CodeItem",
+    "Compare",
     "DataType",
     "Equation",
     "FloatLiteral",
     "FrameModule",
+    "FuncCall",
+    "FuncCallStmt",
     "GraphObject",
     "GraphicsBinding",
+    "IfStmt",
     "IntLiteral",
     "InteractObject",
     "ModuleCode",
@@ -50,8 +73,10 @@ __all__ = [
     "ModuleHeader",
     "ModuleTypeDef",
     "ModuleTypeInstance",
+    "NotOp",
     "ParameterMapping",
     "SFCAlternative",
+    "SFCBodyItem",
     "SFCBreak",
     "SFCCodeBlocks",
     "SFCFork",
@@ -60,10 +85,15 @@ __all__ = [
     "SFCSubsequence",
     "SFCTransition",
     "SFCTransitionSub",
+    "SLExpression",
+    "SLStmt",
     "Sequence",
     "Simple_DataType",
     "SingleModule",
     "SourceSpan",
+    "TernaryOp",
+    "UnaryOp",
+    "VarRef",
     "Variable",
 ]
 
@@ -99,6 +129,15 @@ class CodeComment:
 
     def __str__(self) -> str:
         return self.text
+
+
+# CodeItem: the element type of Equation.code and SFCCodeBlocks enter/active/exit.
+# SFCBodyItem: the element type of Sequence.code (SFC structure nodes + comments).
+type CodeItem = Assignment | FuncCallStmt | IfStmt | CodeComment
+type SFCBodyItem = (
+    SFCStep | SFCTransition | SFCTransitionSub | SFCAlternative
+    | SFCParallel | SFCSubsequence | SFCFork | SFCBreak | CodeComment
+)
 
 
 class IntLiteral(int):
@@ -223,27 +262,27 @@ class DataType:
 
 @dataclass
 class ParameterMapping:
-    target: AstNodeDict | str
+    target: VarRef
     source_type: str
     is_duration: bool
     is_source_global: bool
-    source: AstNodeDict | str | None = None
+    source: VarRef | None = None
     source_literal: Any | None = None
 
     def __post_init__(self) -> None:
-        self.target = _normalize_variable_ref(self.target, field_name="target")
-        if self.source_type == const.TREE_TAG_VARIABLE_NAME and self.source is not None:
+        if not isinstance(self.target, VarRef):  # pyright: ignore[reportUnnecessaryIsInstance]
+            self.target = _normalize_variable_ref(self.target, field_name="target")
+        if self.source is not None and not isinstance(self.source, VarRef):  # pyright: ignore[reportUnnecessaryIsInstance]
             self.source = _normalize_variable_ref(self.source, field_name="source")
 
     def __str__(self) -> str:
-        tgt = _variable_ref_name(self.target) or "<None>"
+        tgt = self.target.name
 
         if self.is_source_global:
             return f"{tgt} => GLOBAL"
 
         if self.source_type == const.TREE_TAG_VARIABLE_NAME and self.source:
-            src = _variable_ref_name(self.source) or "<None>"
-            return f"{tgt} => {src}"
+            return f"{tgt} => {self.source.name}"
 
         if self.source_literal is not None:
             return f"{tgt} => {self.source_literal!r}"
@@ -251,7 +290,10 @@ class ParameterMapping:
         return f"{tgt} => <None>"
 
 
-def _variable_ref_name(value: object) -> str | None:
+def _variable_ref_name(value: object) -> str | None:  # pyright: ignore[reportUnusedFunction]
+    """Return the name string from a VarRef (or legacy dict/str/Variable form)."""
+    if isinstance(value, VarRef):
+        return value.name
     if isinstance(value, str):
         return value
     if isinstance(value, Variable):
@@ -264,16 +306,19 @@ def _variable_ref_name(value: object) -> str | None:
     return None
 
 
-def _normalize_variable_ref(value: object, *, field_name: str) -> AstNodeDict:
+def _normalize_variable_ref(value: object, *, field_name: str) -> VarRef:
+    """Coerce various variable-reference forms to VarRef."""
+    if isinstance(value, VarRef):
+        return value
     if isinstance(value, str):
-        return {const.KEY_VAR_NAME: value}
+        return VarRef(value)
     if isinstance(value, Variable):
-        return {const.KEY_VAR_NAME: value.name}
+        return VarRef(value.name)
     if isinstance(value, dict):
         mapping = cast(AstNodeDict, value)
         full_name = mapping.get(const.KEY_VAR_NAME)
         if isinstance(full_name, str):
-            return mapping
+            return VarRef(full_name, state=cast(str | None, mapping.get("state")))
     raise TypeError(f"ParameterMapping.{field_name} must be a variable reference")
 
 
@@ -329,7 +374,7 @@ class Sequence:
     size: tuple[float, float]
     seqcontrol: bool = False
     seqtimer: bool = False
-    code: list[Any] = field(default_factory=any_list)
+    code: list[SFCBodyItem] = field(default_factory=any_list)  # type: ignore[assignment]
 
     def __str__(self) -> str:
         return (
@@ -344,7 +389,7 @@ class Equation:
     name: str
     position: tuple[float, float]
     size: tuple[float, float]
-    code: list[Any] = field(default_factory=any_list)
+    code: list[CodeItem] = field(default_factory=any_list)  # type: ignore[assignment]
 
     def __str__(self) -> str:
         return f"Equation(name={self.name}, pos={self.position},\n    code={format_list(self.code)})"
@@ -372,7 +417,7 @@ class ModuleHeader:
     zoomable: bool = False
     enable_tail: object | None = None
     invoke_coord_tails: list[Any] = field(default_factory=any_list)
-    groupconn: AstNodeDict | None = None
+    groupconn: VarRef | None = None
     groupconn_global: bool = False
     description_comments: list[CodeComment] = field(default_factory=code_comment_list)
 
@@ -426,7 +471,7 @@ class ModuleTypeDef:
     moduledef: ModuleDef | None = None
     modulecode: ModuleCode | None = None
     parametermappings: list[ParameterMapping] = field(default_factory=parameter_mapping_list)
-    groupconn: AstNodeDict | None = None
+    groupconn: VarRef | None = None
     groupconn_global: bool = False
     origin_file: str | None = None
     origin_lib: str | None = None
@@ -487,9 +532,9 @@ class BasePicture:
 
 @dataclass
 class SFCCodeBlocks:
-    enter: list[Any] = field(default_factory=any_list)
-    active: list[Any] = field(default_factory=any_list)
-    exit: list[Any] = field(default_factory=any_list)
+    enter: list[CodeItem] = field(default_factory=any_list)  # type: ignore[assignment]
+    active: list[CodeItem] = field(default_factory=any_list)  # type: ignore[assignment]
+    exit: list[CodeItem] = field(default_factory=any_list)  # type: ignore[assignment]
 
 
 @dataclass
@@ -502,7 +547,7 @@ class SFCStep:
 @dataclass
 class SFCTransition:
     name: str | None
-    condition: Any
+    condition: SLExpression
 
 
 @dataclass

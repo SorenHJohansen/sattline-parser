@@ -14,10 +14,12 @@ from lark import Token, Tree
 from sattline_parser.grammar import constants as const
 from sattline_parser.models.ast_model import (
     CodeComment,
+    CodeItem,
     Equation,
     ModuleCode,
     Sequence,
     SFCAlternative,
+    SFCBodyItem,
     SFCBreak,
     SFCCodeBlocks,
     SFCFork,
@@ -27,6 +29,7 @@ from sattline_parser.models.ast_model import (
     SFCTransition,
     SFCTransitionSub,
 )
+from sattline_parser.models.expressions import Assignment, FuncCall, FuncCallStmt, IfStmt, SLExpression
 
 from ._comments_mixin import is_comment_tree
 from ._module_shared import TransformerItem, TransformerTree, coord_pair, tree_children
@@ -72,9 +75,9 @@ class SFCMixin:
                 if statements:
                     blocks[key].extend(statements)
         return SFCCodeBlocks(
-            enter=blocks["enter"],
-            active=blocks["active"],
-            exit=blocks["exit"],
+            enter=cast(list[CodeItem], blocks["enter"]),
+            active=cast(list[CodeItem], blocks["active"]),
+            exit=cast(list[CodeItem], blocks["exit"]),
         )
 
     def modulecode(self, items: list[TransformerItem]) -> ModuleCode:
@@ -91,14 +94,6 @@ class SFCMixin:
                 equations.append(item)
             elif isinstance(item, CodeComment):
                 comments.append(item)
-            elif isinstance(item, list):
-                for nested_item in cast(list[TransformerItem], item):
-                    if isinstance(nested_item, Sequence):
-                        sequences.append(nested_item)
-                    elif isinstance(nested_item, Equation):
-                        equations.append(nested_item)
-                    elif isinstance(nested_item, CodeComment):
-                        comments.append(nested_item)
 
         if sequences:
             module_code.sequences = sequences
@@ -127,12 +122,12 @@ class SFCMixin:
         if len(items) == 4 and isinstance(items[1], str) and isinstance(items[2], Token):
             if items[2].type != "WAIT_FOR":
                 raise ValueError(f"seqtransition expected WAIT_FOR; got token {items[2]!r}")
-            return SFCTransition(name=items[1], condition=items[3])
+            return SFCTransition(name=items[1], condition=cast(SLExpression, items[3]))
 
         if len(items) == 3 and isinstance(items[1], Token):
             if items[1].type != "WAIT_FOR":
                 raise ValueError(f"seqtransition expected WAIT_FOR; got token {items[1]!r}")
-            return SFCTransition(name=None, condition=items[2])
+            return SFCTransition(name=None, condition=cast(SLExpression, items[2]))
 
         raise ValueError(f"seqtransition expected (SEQTRANSITION, NAME?, WAIT_FOR, expr); got: {items!r}")
 
@@ -274,7 +269,7 @@ class SFCMixin:
             size=size,
             seqcontrol=seqcontrol,
             seqtimer=seqtimer,
-            code=code,
+            code=cast(list[SFCBodyItem], code),
         )
 
     def equationblock(self, items: list[TransformerItem]) -> Equation:
@@ -301,14 +296,11 @@ class SFCMixin:
                 continue
 
             if isinstance(item, Tree) and item.data == const.KEY_STATEMENT:
+                # Legacy: old-style Tree wrapper (kept for backward compat)
                 tree = cast(TransformerTree, item)
                 code.extend(tree_children(tree))
-            elif isinstance(item, CodeComment):
+            elif isinstance(item, (Assignment, FuncCallStmt, IfStmt, CodeComment, FuncCall)):
                 code.append(item)
-            elif isinstance(item, list):
-                for nested in cast(list[TransformerItem], item):
-                    if isinstance(nested, CodeComment):
-                        code.append(nested)
 
         if name is None:
             raise ValueError("Name can't be None")
@@ -317,7 +309,7 @@ class SFCMixin:
         if size is None:
             raise ValueError("Size can't be None")
 
-        return Equation(name=name, position=position, size=size, code=code)
+        return Equation(name=name, position=position, size=size, code=cast(list[CodeItem], code))
 
 
 __all__ = ["SFCMixin"]

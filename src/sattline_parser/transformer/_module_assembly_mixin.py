@@ -21,6 +21,7 @@ from sattline_parser.models.ast_model import (
     SingleModule,
     SourceSpan,
     Variable,
+    VarRef,
 )
 
 from ._module_shared import (
@@ -203,8 +204,8 @@ class ModuleAssemblyMixin:
         )
 
     @v_args(meta=True)
-    def variable_name(self, meta: Any, children: list[TransformerItem]) -> dict[str, object | None]:
-        """Grammar variable_name -> dict with full dotted path and optional state suffix."""
+    def variable_name(self, meta: Any, children: list[TransformerItem]) -> VarRef:
+        """Grammar variable_name -> VarRef with full dotted path and optional state suffix."""
         parts: list[str] = []
         state: str | None = None
 
@@ -226,12 +227,7 @@ class ModuleAssemblyMixin:
                 elif child not in (":",):
                     parts.append(child)
 
-        full_name = "".join(parts)
-        return {
-            const.KEY_VAR_NAME: full_name,
-            "state": state,
-            "span": meta_span(meta),
-        }
+        return VarRef(name="".join(parts), state=state)
 
     @v_args(meta=True)
     def moduletype_definition(self, meta: Any, items: list[TransformerItem]) -> ModuleTypeDef:
@@ -325,12 +321,12 @@ class ModuleAssemblyMixin:
         if target_raw is None:
             raise ValueError("moduletype_par_transfer missing target variable_name")
 
-        if isinstance(target_raw, dict):
-            target_val: dict[str, object] | str = cast(dict[str, object], target_raw)
+        if isinstance(target_raw, VarRef):
+            target_val: VarRef = target_raw
         elif isinstance(target_raw, str):
-            target_val = target_raw
+            target_val = VarRef(target_raw)
         else:
-            target_val = str(target_raw)
+            target_val = VarRef(str(target_raw))
 
         is_global = False
         if idx < len(items):
@@ -345,22 +341,22 @@ class ModuleAssemblyMixin:
             idx += 1
 
         source_literal: Any | None = None
-        source_var: dict[str, object] | None = None
+        source_var: VarRef | None = None
         source_type: str = const.KEY_VALUE
 
         if idx < len(items):
             source = items[idx]
-            if isinstance(source, int | float | str | bool):
+            if isinstance(source, VarRef):
+                source_var = source
+                source_type = const.TREE_TAG_VARIABLE_NAME
+            elif isinstance(source, int | float | str | bool):
                 source_literal = source
                 source_type = const.KEY_VALUE
             elif isinstance(source, dict) and const.GRAMMAR_VALUE_TIME_VALUE in source:
                 source_literal = cast(dict[str, object], source)
                 source_type = const.KEY_VALUE
-            elif isinstance(source, dict):
-                source_var = cast(dict[str, object], source)
-                source_type = const.TREE_TAG_VARIABLE_NAME
             else:
-                source_literal = str(source)
+                source_literal = str(cast(object, source))
                 source_type = const.KEY_VALUE
 
         return ParameterMapping(
@@ -387,12 +383,12 @@ class ModuleAssemblyMixin:
         return None
 
     def scan_group(self, items: list[TransformerItem]) -> dict[str, object]:
-        """Grammar scan_group -> dict with groupconn variable and global flag."""
+        """Grammar scan_group -> dict with groupconn VarRef and global flag."""
         is_global = any(isinstance(it, bool) and it for it in items)
-        var: dict[str, object] | None = None
+        var: VarRef | None = None
         for it in items:
-            if isinstance(it, dict) and const.KEY_VAR_NAME in it:
-                var = cast(dict[str, object], it)
+            if isinstance(it, VarRef):
+                var = it
         return {"groupconn": var, "global": is_global}
 
     @v_args(meta=True)

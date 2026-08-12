@@ -84,11 +84,12 @@ _COMMENT_RULE_PREFIXES = (
     "comment:",
     "?comment_content:",
     "comments:",
-    "comments_with_opt_semi:",
     "code_comment:",
+    "comment_stmt:",
+    "change_description:",
     "module_description_comment:",
+    "module_typedescription:",
     "module_end_comment:",
-    "code_comments_with_opt_semi:",
 )
 _COMMENT_TERMINAL_PREFIXES = ("COMMENT_START:", "COMMENT_END:", "COMMENT_TEXT:")
 
@@ -106,20 +107,23 @@ def _core_grammar() -> str:
             continue
         kept.append(line)
     text = "\n".join(kept)
-    # Longest role-tagged rules first: ``comments_with_opt_semi`` is a
-    # substring of ``code_comments_with_opt_semi``, so the generic removal
-    # must not run before the role-specific one or it would corrupt the
-    # modulecode rule into a dangling ``code_sequence`` reference.
+    # Longest role-tagged rules first to avoid partial-match corruption.
     return (
-        text.replace("code_comments_with_opt_semi | ", "")
+        text.replace("code_comment | ", "")
+        .replace("comments | ", "")
         .replace("comments? ", "")
         .replace("comments? ,", "")
-        .replace("comments_with_opt_semi | ", "")
         .replace("comments?", "")
+        .replace("change_description? ", "")
+        .replace("change_description?", "")
         .replace("module_description_comment? ", "")
         .replace("module_description_comment?", "")
-        .replace("module_end_comment? ", "")
-        .replace("module_end_comment?", "")
+        .replace("module_typedescription? ", "")
+        .replace("module_typedescription?", "")
+        .replace(" module_end_comment? ", " ")
+        .replace(" module_end_comment?", "")
+        .replace(" module_end_comment ", " ")
+        .replace("| comment_stmt", "")
     )
 
 

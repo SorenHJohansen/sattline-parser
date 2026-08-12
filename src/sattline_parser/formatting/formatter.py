@@ -10,6 +10,19 @@ from typing import Any, Protocol, TypeGuard, cast
 from lark import Tree
 
 from ..grammar import constants as const
+from ..models.expressions import (
+    Assignment,
+    BinOp,
+    BoolOp,
+    Compare,
+    FuncCall,
+    FuncCallStmt,
+    IfStmt,
+    NotOp,
+    TernaryOp,
+    UnaryOp,
+    VarRef,
+)
 
 _DEFAULT_INDENT = "    "
 
@@ -143,6 +156,64 @@ def format_optional(obj: object) -> str:
 def format_expr(expr: object, indent: str = _DEFAULT_INDENT) -> str:  # noqa: PLR0915
     """Pretty-print nested expressions and statements in a SattLine-like format."""
 
+    # New typed nodes take priority over legacy tuple/dict forms
+    if isinstance(expr, VarRef):
+        return expr.name if not expr.state else f"{expr.name}:{expr.state}"
+
+    if isinstance(expr, Assignment):
+        return f"{format_expr(expr.target, indent)} = {format_expr(expr.value, indent)}"
+
+    if isinstance(expr, FuncCallStmt):
+        return format_expr(expr.call, indent)
+
+    if isinstance(expr, IfStmt):
+        out_lines: list[str] = []
+        for index, (cond, body) in enumerate(expr.branches):
+            out_lines.append(f"{'IF' if index == 0 else 'ELSIF'} {format_expr(cond, indent)}")
+            out_lines.append("THEN")
+            for stmt in body:
+                out_lines.append(textwrap.indent(format_expr(stmt, indent), indent))
+        if expr.else_block is not None:
+            out_lines.append("ELSE")
+            for stmt in expr.else_block:
+                out_lines.append(textwrap.indent(format_expr(stmt, indent), indent))
+        out_lines.append("ENDIF")
+        return "\n".join(out_lines)
+
+    if isinstance(expr, BoolOp):
+        parts = [format_expr(op, indent) for op in expr.operands]
+        sep = f" {expr.op} \n"
+        return sep.join(parts)
+
+    if isinstance(expr, NotOp):
+        return f"NOT({format_expr(expr.operand, indent)})"
+
+    if isinstance(expr, Compare):
+        return f"{format_expr(expr.left, indent)} {expr.op} {format_expr(expr.right, indent)}"
+
+    if isinstance(expr, BinOp):
+        return f"({format_expr(expr.left, indent)} {expr.op} {format_expr(expr.right, indent)})"
+
+    if isinstance(expr, UnaryOp):
+        return f"{expr.op}{format_expr(expr.operand, indent)}"
+
+    if isinstance(expr, FuncCall):
+        args = ", ".join(format_expr(a, indent) for a in expr.args)
+        return f"{expr.name}({args})"
+
+    if isinstance(expr, TernaryOp):
+        out_lines2: list[str] = []
+        for index, (cond, then_expr) in enumerate(expr.branches):
+            out_lines2.append(f"{'IF' if index == 0 else 'ELSIF'} {format_expr(cond, indent)}")
+            out_lines2.append("THEN")
+            out_lines2.append(textwrap.indent(format_expr(then_expr, indent), indent))
+        if expr.else_expr is not None:
+            out_lines2.append("ELSE")
+            out_lines2.append(textwrap.indent(format_expr(expr.else_expr, indent), indent))
+        out_lines2.append("ENDIF")
+        return "\n".join(out_lines2)
+
+    # Legacy fallbacks for old tuple/dict forms (kept for backward compat)
     children = _statement_children(expr)
     if children:
         return format_expr(children[0], indent)
@@ -247,7 +318,7 @@ def format_expr(expr: object, indent: str = _DEFAULT_INDENT) -> str:  # noqa: PL
     return str(expr)
 
 
-def format_seq_nodes(nodes: list[object], indent: str = _DEFAULT_INDENT) -> str:
+def format_seq_nodes(nodes: list[Any], indent: str = _DEFAULT_INDENT) -> str:
     """Pretty-print a list of SFC nodes recursively."""
     lines: list[str] = []
 

@@ -69,38 +69,24 @@ def test_expressions_mixin_coerces_values_and_builds_expression_tuples():
         mixin.connected_variable([Token("NAME", "OnlyToken")])
     with pytest.raises(ValueError, match="invar_tail expected"):
         mixin.invar_tail([Token("NAME", "OnlyToken")])
+    with pytest.raises(ValueError, match="function_call missing name"):
+        mixin.function_call([Token("LPAREN", "("), 42, Token("RPAREN", ")")])
 
     assert mixin.or_expression(["lhs"]) == "lhs"
-    assert mixin.or_expression(["lhs", Token("OR", "OR"), "rhs"]) == (
-        parser_const.GRAMMAR_VALUE_OR,
-        ["lhs", "rhs"],
-    )
+    assert mixin.or_expression(["lhs", Token("OR", "OR"), "rhs"]) == BoolOp("OR", ("lhs", "rhs"))
     assert mixin.and_expression(["lhs"]) == "lhs"
-    assert mixin.and_expression(["lhs", Token("AND", "AND"), "rhs"]) == (
-        parser_const.GRAMMAR_VALUE_AND,
-        ["lhs", "rhs"],
-    )
+    assert mixin.and_expression(["lhs", Token("AND", "AND"), "rhs"]) == BoolOp("AND", ("lhs", "rhs"))
     assert mixin.not_expression(["expr"]) == "expr"
-    assert mixin.not_expression([Token("NOT", "NOT"), "expr"]) == (parser_const.GRAMMAR_VALUE_NOT, "expr")
+    assert mixin.not_expression([Token("NOT", "NOT"), "expr"]) == NotOp("expr")
     assert mixin.not_expression([Token("NOT", "NOT")]) == Token("NOT", "NOT")
 
     assert mixin.compare(["lhs"]) == "lhs"
     assert mixin.compare([]) is None
     assert mixin.compare(["lhs", Token("EQ", "="), "rhs", Token("NE", "<>"), "other"]) == (
-        parser_const.KEY_COMPARE,
-        "lhs",
-        [("=", "rhs"), ("<>", "other")],
+        Compare(Compare("lhs", "=", "rhs"), "<>", "other")
     )
-    assert mixin.additive_expression(["lhs", Token("PLUS", "+"), "rhs"]) == (
-        parser_const.KEY_ADD,
-        "lhs",
-        [("+", "rhs")],
-    )
-    assert mixin.multiplicative_expression(["lhs", Token("STAR", "*"), "rhs"]) == (
-        parser_const.KEY_MUL,
-        "lhs",
-        [("*", "rhs")],
-    )
+    assert mixin.additive_expression(["lhs", Token("PLUS", "+"), "rhs"]) == BinOp("lhs", "+", "rhs")
+    assert mixin.multiplicative_expression(["lhs", Token("STAR", "*"), "rhs"]) == BinOp("lhs", "*", "rhs")
     assert mixin.compare(["lhs", Token("EQ", "=")]) == "lhs"
 
 
@@ -108,41 +94,25 @@ def test_expressions_mixin_builds_statements_calls_and_conditionals():
     mixin = _ExpressionsHarness()
 
     assert mixin.unary_expression(["expr"]) == "expr"
-    assert mixin.unary_expression([Token(parser_const.KEY_MINUS, "-"), "expr"]) == (parser_const.KEY_MINUS, "expr")
-    assert mixin.unary_expression([Token("PLUS", "+"), "expr"]) == ("+", "expr")
+    assert mixin.unary_expression([Token(parser_const.KEY_MINUS, "-"), "expr"]) == UnaryOp("-", "expr")
+    assert mixin.unary_expression([Token("PLUS", "+"), "expr"]) == UnaryOp("+", "expr")
     assert mixin.not_expression([Token("NOT", "NOT"), Token("PLUS", "+")]) == Token("PLUS", "+")
     assert mixin.additive_expression([Token("PLUS", "+")]) is None
-    assert mixin.additive_expression(["lhs", Token("PLUS", "+"), "rhs", Token("PLUS", "+")]) == (
-        parser_const.KEY_ADD,
-        "lhs",
-        [("+", "rhs")],
-    )
+    assert mixin.additive_expression(["lhs", Token("PLUS", "+"), "rhs", Token("PLUS", "+")]) == BinOp("lhs", "+", "rhs")
     assert mixin.multiplicative_expression([Token("STAR", "*")]) is None
-    assert mixin.multiplicative_expression(["lhs", Token("STAR", "*"), "rhs", Token("STAR", "*")]) == (
-        parser_const.KEY_MUL,
-        "lhs",
-        [("*", "rhs")],
-    )
-    assert mixin.compare(["lhs", Token("EQ", "="), "rhs", Token("NE", "<>")]) == (
-        parser_const.KEY_COMPARE,
-        "lhs",
-        [("=", "rhs")],
-    )
+    assert mixin.multiplicative_expression(["lhs", Token("STAR", "*"), "rhs", Token("STAR", "*")]) == BinOp("lhs", "*", "rhs")
+    assert mixin.compare(["lhs", Token("EQ", "="), "rhs", Token("NE", "<>")]) == Compare("lhs", "=", "rhs")
     with pytest.raises(ValueError, match="expected operator and expression"):
         mixin.unary_expression([Token("PLUS", "+"), Token("MINUS", "-")])
 
     assert mixin.argument_list(["a", Token("COMMA", ","), "b"]) == ["a", "b"]
-    assert mixin.function_call(["Fn", ["arg"]]) == (parser_const.KEY_FUNCTION_CALL, "Fn", ["arg"])
+    assert mixin.function_call(["Fn", ["arg"]]) == FuncCall("Fn", ("arg",))
     assert mixin.function_call(["Fn", Token("LPAREN", "("), ["arg1", "arg2"], Token("RPAREN", ")")]) == (
-        parser_const.KEY_FUNCTION_CALL,
-        "Fn",
-        ["arg1", "arg2"],
+        FuncCall("Fn", ("arg1", "arg2"))
     )
-    assert mixin.assignment_statement(["Target", "Value"]) == (parser_const.KEY_ASSIGN, "Target", "Value")
+    assert mixin.assignment_statement(["Target", "Value"]) == Assignment(VarRef("Target"), "Value")
     assert mixin.assignment_statement(["Target", Token("EQUAL", "="), "Value"]) == (
-        parser_const.KEY_ASSIGN,
-        "Target",
-        "Value",
+        Assignment(VarRef("Target"), "Value")
     )
 
     ternary_items = [
@@ -158,10 +128,9 @@ def test_expressions_mixin_builds_statements_calls_and_conditionals():
         "fallback",
         Token(parser_const.GRAMMAR_VALUE_ENDIF, "ENDIF"),
     ]
-    assert mixin.ternary_if(ternary_items) == (
-        parser_const.KEY_TERNARY,
-        [("cond1", "value1"), ("cond2", "value2")],
-        "fallback",
+    assert mixin.ternary_if(ternary_items) == TernaryOp(
+        branches=(("cond1", "value1"), ("cond2", "value2")),
+        else_expr="fallback",
     )
 
     if_items = [
@@ -177,17 +146,15 @@ def test_expressions_mixin_builds_statements_calls_and_conditionals():
         "stmt3",
         Token(parser_const.GRAMMAR_VALUE_ENDIF, "ENDIF"),
     ]
-    assert mixin.if_statement(if_items) == (
-        parser_const.GRAMMAR_VALUE_IF,
-        [("cond1", ["stmt1"]), ("cond2", ["stmt2"])],
-        ["stmt3"],
+    assert mixin.if_statement(if_items) == IfStmt(
+        branches=(("cond1", ("stmt1",)), ("cond2", ("stmt2",))),
+        else_block=("stmt3",),
     )
-    assert mixin.if_statement([Token("IGNORED", "?"), *if_items]) == (
-        parser_const.GRAMMAR_VALUE_IF,
-        [("cond1", ["stmt1"]), ("cond2", ["stmt2"])],
-        ["stmt3"],
+    assert mixin.if_statement([Token("IGNORED", "?"), *if_items]) == IfStmt(
+        branches=(("cond1", ("stmt1",)), ("cond2", ("stmt2",))),
+        else_block=("stmt3",),
     )
-    assert mixin.statement([Token("IGNORED", "?"), "assignment"]) == Tree(parser_const.KEY_STATEMENT, ["assignment"])
+    assert mixin.statement([Token("IGNORED", "?"), "assignment"]) == "assignment"
     with pytest.raises(ValueError, match="statement expected a non-Token child"):
         mixin.statement([Token("ONLY", "token")])
     with pytest.raises(ValueError, match="statement expected a non-Token child"):

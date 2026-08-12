@@ -20,7 +20,7 @@ def test_module_header_captures_description_comments():
 BasePicture (* before invoke *) Invocation (* after invoke *) (0.0,0.0,0.0,1.0,1.0) : MODULEDEFINITION DateCode_ 1
 ModuleDef
 ClippingBounds = ( -1.0 , -1.0 ) ( 1.0 , 1.0 )
-ENDDEF;
+ENDDEF (*BasePicture*);
 """
     bp = parser_core_parse_source_text(code)
 
@@ -72,7 +72,7 @@ TYPEDEFINITIONS
         ENDDEF (*type end*);
 ModuleDef
 ClippingBounds = ( -1.0 , -1.0 ) ( 1.0 , 1.0 )
-ENDDEF;
+ENDDEF (*BasePicture*);
 """
     bp = parser_core_parse_source_text(code)
 
@@ -97,7 +97,7 @@ ClippingBounds = ( -1.0 , -1.0 ) ( 1.0 , 1.0 )
     EQUATIONBLOCK Main COORD 0.0, 0.0 OBJSIZE 1.0, 1.0 :
         A = 1;
         (* inline equation comment *)
-ENDDEF;
+ENDDEF (*BasePicture*);
 """
     bp = parser_core_parse_source_text(code)
 
@@ -142,10 +142,34 @@ ModuleCode
     (* outer (* nested *) comment *)
     EQUATIONBLOCK Main COORD 0.0, 0.0 OBJSIZE 1.0, 1.0 :
         A = 1;
-ENDDEF;
+ENDDEF (*BasePicture*);
 """
     bp = parser_core_parse_source_text(code)
 
     assert bp.modulecode is not None
     assert [c.text for c in bp.modulecode.comments] == ["(* outer (* nested *) comment *)"]
     assert bp.modulecode.comments[0].content == " outer (* nested *) comment "
+
+
+def test_comment_stmt_in_equation_block_is_treated_as_null_statement():
+    code = """
+"SyntaxVersion"
+"OriginalFileDate"
+"ProgramDate"
+BasePicture Invocation (0.0,0.0,0.0,1.0,1.0) : MODULEDEFINITION DateCode_ 1
+LOCALVARIABLES
+    X: integer := 0;
+ModuleDef
+ClippingBounds = ( -1.0 , -1.0 ) ( 1.0 , 1.0 )
+ModuleCode
+    EQUATIONBLOCK Main COORD 0.0, 0.0 OBJSIZE 1.0, 1.0 :
+        (* comment as statement *);
+        X = 1;
+ENDDEF (*BasePicture*);
+"""
+    bp = parser_core_parse_source_text(code)
+
+    assert bp.modulecode is not None
+    equation = bp.modulecode.equations[0]
+    comment_items = [x for x in equation.code if isinstance(x, CodeComment)]
+    assert [c.text for c in comment_items] == ["(* comment as statement *)"]

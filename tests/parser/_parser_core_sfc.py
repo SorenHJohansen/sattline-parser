@@ -71,7 +71,7 @@ def test_sfc_mixin_builds_modulecode_sequences_and_equations():
     )
     nested_sequence = Sequence(name="Nested", type="SEQUENCE", position=(0, 0), size=(1, 1), code=[])
     nested_equation = Equation(name="EqNested", position=(9, 10), size=(11, 12), code=[])
-    modulecode = mixin.modulecode([sequence, equation, [nested_sequence, nested_equation]])
+    modulecode = mixin.modulecode([sequence, equation, nested_sequence, nested_equation])
 
     assert sequence == Sequence(
         name="MainSeq",
@@ -144,24 +144,15 @@ def test_parse_source_text_preserves_sfc_step_code_blocks():
     active_stmt = run_step.code.active[0]
     exit_stmt = run_step.code.exit[0]
 
-    assert isinstance(enter_stmt, Tree)
-    assert isinstance(active_stmt, Tree)
-    assert isinstance(exit_stmt, Tree)
-    assert enter_stmt.data == parser_const.KEY_STATEMENT
-    assert active_stmt.data == parser_const.KEY_STATEMENT
-    assert exit_stmt.data == parser_const.KEY_STATEMENT
-    enter_assignment = cast(tuple[str, dict[str, Any], Any], enter_stmt.children[0])
-    active_assignment = cast(tuple[str, dict[str, Any], Any], active_stmt.children[0])
-    exit_assignment = cast(tuple[str, dict[str, Any], Any], exit_stmt.children[0])
-    assert enter_stmt.children == [
-        (parser_const.KEY_ASSIGN, {"var_name": "Flag", "state": None, "span": enter_assignment[1]["span"]}, True)
-    ]
-    assert active_assignment[0] == parser_const.KEY_ASSIGN
-    assert active_assignment[1]["var_name"] == "Counter"
-    assert active_assignment[2] == 1
-    assert exit_assignment[0] == parser_const.KEY_ASSIGN
-    assert exit_assignment[1]["var_name"] == "Counter"
-    assert exit_assignment[2] == 0
+    assert isinstance(enter_stmt, Assignment)
+    assert isinstance(active_stmt, Assignment)
+    assert isinstance(exit_stmt, Assignment)
+    assert enter_stmt.target == VarRef("Flag")
+    assert enter_stmt.value is True
+    assert active_stmt.target == VarRef("Counter")
+    assert active_stmt.value == 1
+    assert exit_stmt.target == VarRef("Counter")
+    assert exit_stmt.value == 0
 
 
 def test_sfc_mixin_rejects_malformed_shapes_and_missing_required_fields():

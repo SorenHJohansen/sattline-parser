@@ -9,7 +9,7 @@ from typing import Any, TypeGuard, cast
 
 from lark import Token, Transformer, Tree
 
-from sattline_parser.models.ast_model import BasePicture, FloatLiteral, IntLiteral
+from sattline_parser.models.ast_model import BasePicture, FloatLiteral, IntLiteral, VarRef
 
 from ..grammar import constants as const
 from . import _module_shared as _module_shared
@@ -120,11 +120,11 @@ class SLTransformer(
                 return
             if isinstance(value, dict):
                 payload = cast(dict[str, object], value)
-                if const.KEY_VAR_NAME in payload:
-                    tails.append(payload)
-                    return
                 for nested in payload.values():
                     visit(nested)
+                return
+            if isinstance(value, VarRef):
+                tails.append(value)
                 return
             if isinstance(value, list):
                 for nested in cast(list[object], value):

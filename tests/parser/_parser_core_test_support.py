@@ -59,6 +59,19 @@ from sattline_parser.models.ast_model import (
     SourceSpan,
     Variable,
 )
+from sattline_parser.models.expressions import (
+    Assignment,
+    BinOp,
+    BoolOp,
+    Compare,
+    FuncCall,
+    FuncCallStmt,
+    IfStmt,
+    NotOp,
+    TernaryOp,
+    UnaryOp,
+    VarRef,
+)
 from sattline_parser.preprocessing import preprocess_sl_text
 from sattline_parser.transformer._expressions_mixin import _ExpressionsMixin
 from sattline_parser.transformer._graphics_interact_mixin import _GraphicsInteractMixin
@@ -218,7 +231,11 @@ __all__ = [
     "_sl_meta_span",
     "_strip_quoted",
     "ast",
+    "Assignment",
+    "BinOp",
+    "BoolOp",
     "cast",
+    "Compare",
     "const",
     "create_sl_parser",
     "flatten_items",
@@ -226,8 +243,12 @@ __all__ = [
     "format_list",
     "format_optional",
     "format_seq_nodes",
+    "FuncCall",
+    "FuncCallStmt",
+    "IfStmt",
     "importlib",
     "meta_span",
+    "NotOp",
     "parse_source_file",
     "parser_api",
     "parser_const",
@@ -236,4 +257,7 @@ __all__ = [
     "preprocess_sl_text",
     "pytest",
     "sys",
+    "TernaryOp",
+    "UnaryOp",
+    "VarRef",
 ]
