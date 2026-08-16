@@ -5,14 +5,15 @@ name: ClusterFuzzLite
 #   - deterministic corpus regression  -> normal CI (ci.yml, "fuzz" job)
 #   - random-input PR fuzz smoke        -> normal CI (ci.yml, "fuzz" job)
 # ClusterFuzzLite runs on a schedule and on merges to main, and maintains a
-# regression corpus of previously-crashing inputs.
+# regression corpus of previously-crashing inputs. It deliberately does NOT
+# run on pull_request events: that would fuzz every push to a PR branch.
+# PRs get cheap fuzz smoke coverage via ci.yml instead; ClusterFuzzLite only
+# fires when a PR is merged (push to main) or via the schedule/manual runs.
 
 on:
   schedule:
     - cron: "27 3 * * *"
   push:
-    branches: [main]
-  pull_request:
     branches: [main]
   workflow_dispatch:
 
