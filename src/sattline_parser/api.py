@@ -18,7 +18,6 @@ from typing import Protocol, cast
 from lark import Lark, Token, Tree
 from lark import __version__ as lark_version
 from lark.exceptions import UnexpectedInput
-from lark.lexer import ContextualLexer
 
 from sattline_parser.models.ast_model import BasePicture
 from sattline_parser.source_document import remap_parse_error, remap_tree_to_original
@@ -68,7 +67,16 @@ class _ParserProtocol(Protocol):
 
 
 @lru_cache(maxsize=1)
-def _formatted_grammar() -> str:
+def _resolved_grammar() -> str:
+    """Return the single authoritative SattLine grammar with constants applied.
+
+    ``sattline.lark`` is the canonical grammar; it is a template whose
+    ``{GRAMMAR_VALUE_*}`` / ``{GRAMMAR_REGEX_*}`` placeholders are filled from
+    :mod:`sattline_parser.grammar.constants` so the terminal spellings live in
+    exactly one place. No grammar is generated or manipulated beyond this
+    substitution: comments are explicit grammar elements in ``sattline.lark``
+    and are legal exactly where the grammar places them.
+    """
     grammar_text = GRAMMAR_PATH.read_text(encoding="utf-8")
     grammar_substitutions = {
         name: getattr(const, name)
@@ -78,88 +86,15 @@ def _formatted_grammar() -> str:
     return grammar_text.format(**grammar_substitutions)
 
 
-#: Comments are structurally exposed in the default grammar, which makes the
-#: LALR table carry inherent Shift/Reduce ambiguities at construct boundaries
-#: (a comment may trail the inner construct or start the enclosing repetition).
-#: Strict mode therefore validates the core, comment-free grammar instead.
-_COMMENT_RULE_PREFIXES = (
-    "comment:",
-    "?comment_content:",
-    "comments:",
-    "code_comment:",
-    "comment_stmt:",
-    "change_description:",
-    "module_description_comment:",
-    "module_typedescription:",
-    "module_end_comment:",
-)
-_COMMENT_TERMINAL_PREFIXES = ("COMMENT_START:", "COMMENT_END:", "COMMENT_TEXT:")
-
-
-@lru_cache(maxsize=1)
-def _core_grammar() -> str:
-    """The comment-free grammar used by strict-mode builds.
-
-    Derivation is structured: whole comment-rule and comment-terminal lines are
-    filtered out first, then remaining comment references are stripped from the
-    bodies of kept rules. The result is validated so a grammar edit that leaves
-    a comment rule in the strict grammar fails loudly instead of silently
-    changing strict-mode behavior.
-    """
-    lines = _formatted_grammar().splitlines()
-    kept: list[str] = []
-    for line in lines:
-        stripped = line.strip()
-        if any(stripped.startswith(prefix) for prefix in _COMMENT_RULE_PREFIXES):
-            continue
-        if any(stripped.startswith(prefix) for prefix in _COMMENT_TERMINAL_PREFIXES):
-            continue
-        kept.append(line)
-    text = "\n".join(kept)
-    # Longest role-tagged rules first to avoid partial-match corruption.
-    core = (
-        text.replace("code_comment | ", "")
-        .replace("comments | ", "")
-        .replace("comments? ", "")
-        .replace("comments? ,", "")
-        .replace("comments?", "")
-        .replace("change_description? ", "")
-        .replace("change_description?", "")
-        .replace("module_description_comment? ", "")
-        .replace("module_description_comment?", "")
-        .replace("module_typedescription? ", "")
-        .replace("module_typedescription?", "")
-        .replace(" module_end_comment? ", " ")
-        .replace(" module_end_comment?", "")
-        .replace(" module_end_comment ", " ")
-        .replace("| comment_stmt", "")
-    )
-    _validate_strict_grammar(core)
-    return core
-
-
-def _validate_strict_grammar(core: str) -> None:
-    """Fail loudly if comment rules leaked into the strict grammar."""
-    for prefix in _COMMENT_RULE_PREFIXES:
-        for line in core.splitlines():
-            if line.strip().startswith(prefix):
-                raise RuntimeError(
-                    f"strict grammar generation leaked comment rule {prefix!r}; update _core_grammar to strip it"
-                )
-
-
 def _parser_cache_path(
     *,
     start: str,
     propagate_positions: bool,
-    strict: bool,
 ) -> str:
     cache_key = sha256()
-    grammar_text = _core_grammar() if strict else _formatted_grammar()
-    cache_key.update(grammar_text.encode("utf-8"))
+    cache_key.update(_resolved_grammar().encode("utf-8"))
     cache_key.update(start.encode("utf-8"))
     cache_key.update(str(propagate_positions).encode("ascii"))
-    cache_key.update(str(strict).encode("ascii"))
     cache_key.update(lark_version.encode("utf-8"))
     # Lark's own cache payload already includes sys.version_info[:2]; include it
     # in the filename too so a cache written by another interpreter is never read.
@@ -172,37 +107,34 @@ def build_lark_parser(
     *,
     start: str = "start",
     propagate_positions: bool = True,
-    strict: bool = False,
 ) -> Lark:
-    plugins: dict[str, type[ContextualLexer]] = {}
-    if not strict:
-        plugins["ContextualLexer"] = SattLineLexer
+    """Load and compile the single authoritative SattLine grammar.
+
+    Every build uses :func:`_resolved_grammar` (comments legal exactly where
+    ``sattline.lark`` places them) and the :class:`SattLineLexer` (structural,
+    context-aware ``(* ... *)`` comment handling).
+    """
     return Lark(
-        _core_grammar() if strict else _formatted_grammar(),
+        _resolved_grammar(),
         start=start,
         parser="lalr",
         lexer="contextual",
         propagate_positions=propagate_positions,
-        strict=strict,
         regex=True,
-        cache=_parser_cache_path(
-            start=start,
-            propagate_positions=propagate_positions,
-            strict=strict,
-        ),
+        cache=_parser_cache_path(start=start, propagate_positions=propagate_positions),
         cache_grammar=True,
-        _plugins=plugins,
+        _plugins={"ContextualLexer": SattLineLexer},
     )
 
 
-def create_parser(*, strict: bool = False) -> Lark:
+def create_parser() -> Lark:
     """Load and compile the SattLine grammar."""
-    return build_lark_parser(strict=strict)
+    return build_lark_parser()
 
 
-def create_sl_parser(*, strict: bool = False) -> Lark:
-    """Compatibility alias for create_parser."""
-    return create_parser(strict=strict)
+def create_sl_parser() -> Lark:
+    """Compatibility alias for :func:`create_parser`."""
+    return create_parser()
 
 
 @lru_cache(maxsize=1)

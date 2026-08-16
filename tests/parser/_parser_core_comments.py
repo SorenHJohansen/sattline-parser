@@ -174,3 +174,77 @@ ENDDEF (*BasePicture*);
     equation = bp.modulecode.equations[0]
     comment_items = [x for x in equation.code if isinstance(x, CodeComment)]
     assert [c.text for c in comment_items] == ["(* comment as statement *)"]
+
+
+def test_comments_are_legal_between_statements_and_preserved_as_code_comment():
+    # Comments are explicit grammar elements at statement boundaries; they are
+    # NOT whitespace that the lexer drops. A comment between two statements
+    # must parse and be preserved as a CodeComment in the AST in order.
+    code = (
+        '"SyntaxVersion"\n'
+        '"OriginalFileDate"\n'
+        '"ProgramDate"\n'
+        "BasePicture Invocation (0.0,0.0,0.0,1.0,1.0) : MODULEDEFINITION DateCode_ 1\n"
+        "LOCALVARIABLES\n"
+        "    X: integer := 0;\n"
+        "    Y: integer := 0;\n"
+        "ModuleDef\n"
+        "ClippingBounds = ( -1.0 , -1.0 ) ( 1.0 , 1.0 )\n"
+        "ModuleCode\n"
+        "    EQUATIONBLOCK Main COORD 0.0, 0.0 OBJSIZE 1.0, 1.0 :\n"
+        "        X = 1;\n"
+        "        (* comment between statements *)\n"
+        "        Y = 2;\n"
+        "ENDDEF (*BasePicture*);\n"
+    )
+    bp = parser_core_parse_source_text(code)
+    assert bp.modulecode is not None
+    assert bp.modulecode.equations is not None
+    equation = bp.modulecode.equations[0]
+    assert isinstance(equation.code[0], Assignment)
+    assert isinstance(equation.code[1], CodeComment)
+    assert equation.code[1].text == "(* comment between statements *)"
+    assert isinstance(equation.code[2], Assignment)
+
+
+def test_comments_are_illegal_inside_an_expression():
+    # A comment inside an expression is NOT legal: comments are not whitespace
+    # and the grammar permits them only at explicit positions.
+    code = (
+        '"SyntaxVersion"\n'
+        '"OriginalFileDate"\n'
+        '"ProgramDate"\n'
+        "BasePicture Invocation (0.0,0.0,0.0,1.0,1.0) : MODULEDEFINITION DateCode_ 1\n"
+        "LOCALVARIABLES\n"
+        "    X: integer := 0;\n"
+        "ModuleDef\n"
+        "ClippingBounds = ( -1.0 , -1.0 ) ( 1.0 , 1.0 )\n"
+        "ModuleCode\n"
+        "    EQUATIONBLOCK Main COORD 0.0, 0.0 OBJSIZE 1.0, 1.0 :\n"
+        "        X = 1 (* comment inside expression *) + 2;\n"
+        "ENDDEF (*BasePicture*);\n"
+    )
+    with pytest.raises(UnexpectedInput):
+        parser_core_parse_source_text(code)
+    # Same rejection through the raw parser: comments are not whitespace.
+    with pytest.raises(UnexpectedInput):
+        create_sl_parser().parse(code)
+
+
+def test_comments_are_illegal_between_operands_and_operator():
+    code = (
+        '"SyntaxVersion"\n'
+        '"OriginalFileDate"\n'
+        '"ProgramDate"\n'
+        "BasePicture Invocation (0.0,0.0,0.0,1.0,1.0) : MODULEDEFINITION DateCode_ 1\n"
+        "LOCALVARIABLES\n"
+        "    X: integer := 0;\n"
+        "ModuleDef\n"
+        "ClippingBounds = ( -1.0 , -1.0 ) ( 1.0 , 1.0 )\n"
+        "ModuleCode\n"
+        "    EQUATIONBLOCK Main COORD 0.0, 0.0 OBJSIZE 1.0, 1.0 :\n"
+        "        X = 1 + (* comment *) 2;\n"
+        "ENDDEF (*BasePicture*);\n"
+    )
+    with pytest.raises(UnexpectedInput):
+        parser_core_parse_source_text(code)
