@@ -1,6 +1,9 @@
-# pyright: reportUnknownVariableType=false, reportPrivateUsage=false, reportUnusedImport=false
+# pyright: reportUnknownVariableType=false, reportPrivateUsage=false, reportUnusedImport=false, reportCallIssue=false
 # ruff: noqa: F403, F405
 from ._parser_core_test_support import *
+
+_META = SimpleNamespace(line=1, column=1)
+_SPAN = SourceSpan(1, 1)
 
 
 def test_tokens_mixin_coerces_supported_terminals_and_keywords():
@@ -70,52 +73,64 @@ def test_expressions_mixin_coerces_values_and_builds_expression_tuples():
     with pytest.raises(ValueError, match="invar_tail expected"):
         mixin.invar_tail([Token("NAME", "OnlyToken")])
     with pytest.raises(ValueError, match="function_call missing name"):
-        mixin.function_call([Token("LPAREN", "("), 42, Token("RPAREN", ")")])
+        mixin.function_call(_META, [Token("LPAREN", "("), 42, Token("RPAREN", ")")])
 
-    assert mixin.or_expression(["lhs"]) == "lhs"
-    assert mixin.or_expression(["lhs", Token("OR", "OR"), "rhs"]) == BoolOp("OR", ("lhs", "rhs"))
-    assert mixin.and_expression(["lhs"]) == "lhs"
-    assert mixin.and_expression(["lhs", Token("AND", "AND"), "rhs"]) == BoolOp("AND", ("lhs", "rhs"))
-    assert mixin.not_expression(["expr"]) == "expr"
-    assert mixin.not_expression([Token("NOT", "NOT"), "expr"]) == NotOp("expr")
-    assert mixin.not_expression([Token("NOT", "NOT")]) == Token("NOT", "NOT")
+    assert mixin.or_expression(_META, ["lhs"]) == "lhs"
+    assert mixin.or_expression(_META, ["lhs", Token("OR", "OR"), "rhs"]) == BoolOp("OR", ("lhs", "rhs"), span=_SPAN)
+    assert mixin.and_expression(_META, ["lhs"]) == "lhs"
+    assert mixin.and_expression(_META, ["lhs", Token("AND", "AND"), "rhs"]) == BoolOp("AND", ("lhs", "rhs"), span=_SPAN)
+    assert mixin.not_expression(_META, ["expr"]) == "expr"
+    assert mixin.not_expression(_META, [Token("NOT", "NOT"), "expr"]) == NotOp("expr", span=_SPAN)
+    assert mixin.not_expression(_META, [Token("NOT", "NOT")]) == Token("NOT", "NOT")
 
-    assert mixin.compare(["lhs"]) == "lhs"
-    assert mixin.compare([]) is None
-    assert mixin.compare(["lhs", Token("EQ", "="), "rhs", Token("NE", "<>"), "other"]) == (
-        Compare(Compare("lhs", "=", "rhs"), "<>", "other")
+    assert mixin.compare(_META, ["lhs"]) == "lhs"
+    assert mixin.compare(_META, []) is None
+    assert mixin.compare(_META, ["lhs", Token("EQ", "="), "rhs", Token("NE", "<>"), "other"]) == (
+        Compare(Compare("lhs", "=", "rhs", span=_SPAN), "<>", "other", span=_SPAN)
     )
-    assert mixin.additive_expression(["lhs", Token("PLUS", "+"), "rhs"]) == BinOp("lhs", "+", "rhs")
-    assert mixin.multiplicative_expression(["lhs", Token("STAR", "*"), "rhs"]) == BinOp("lhs", "*", "rhs")
-    assert mixin.compare(["lhs", Token("EQ", "=")]) == "lhs"
+    assert mixin.additive_expression(_META, ["lhs", Token("PLUS", "+"), "rhs"]) == BinOp("lhs", "+", "rhs", span=_SPAN)
+    assert mixin.multiplicative_expression(_META, ["lhs", Token("STAR", "*"), "rhs"]) == BinOp(
+        "lhs", "*", "rhs", span=_SPAN
+    )
+    assert mixin.compare(_META, ["lhs", Token("EQ", "=")]) == "lhs"
 
 
 def test_expressions_mixin_builds_statements_calls_and_conditionals():
     mixin = _ExpressionsHarness()
 
-    assert mixin.unary_expression(["expr"]) == "expr"
-    assert mixin.unary_expression([Token(parser_const.KEY_MINUS, "-"), "expr"]) == UnaryOp("-", "expr")
-    assert mixin.unary_expression([Token("PLUS", "+"), "expr"]) == UnaryOp("+", "expr")
-    assert mixin.not_expression([Token("NOT", "NOT"), Token("PLUS", "+")]) == Token("PLUS", "+")
-    assert mixin.additive_expression([Token("PLUS", "+")]) is None
-    assert mixin.additive_expression(["lhs", Token("PLUS", "+"), "rhs", Token("PLUS", "+")]) == BinOp("lhs", "+", "rhs")
-    assert mixin.multiplicative_expression([Token("STAR", "*")]) is None
-    assert mixin.multiplicative_expression(["lhs", Token("STAR", "*"), "rhs", Token("STAR", "*")]) == BinOp(
-        "lhs", "*", "rhs"
+    assert mixin.unary_expression(_META, ["expr"]) == "expr"
+    assert mixin.unary_expression(_META, [Token(parser_const.KEY_MINUS, "-"), "expr"]) == UnaryOp(
+        "-", "expr", span=_SPAN
     )
-    assert mixin.compare(["lhs", Token("EQ", "="), "rhs", Token("NE", "<>")]) == Compare("lhs", "=", "rhs")
+    assert mixin.unary_expression(_META, [Token("PLUS", "+"), "expr"]) == UnaryOp("+", "expr", span=_SPAN)
+    assert mixin.not_expression(_META, [Token("NOT", "NOT"), Token("PLUS", "+")]) == Token("PLUS", "+")
+    assert mixin.additive_expression(_META, [Token("PLUS", "+")]) is None
+    assert mixin.additive_expression(_META, ["lhs", Token("PLUS", "+"), "rhs", Token("PLUS", "+")]) == BinOp(
+        "lhs", "+", "rhs", span=_SPAN
+    )
+    assert mixin.multiplicative_expression(_META, [Token("STAR", "*")]) is None
+    assert mixin.multiplicative_expression(_META, ["lhs", Token("STAR", "*"), "rhs", Token("STAR", "*")]) == BinOp(
+        "lhs", "*", "rhs", span=_SPAN
+    )
+    assert mixin.compare(_META, ["lhs", Token("EQ", "="), "rhs", Token("NE", "<>")]) == Compare(
+        "lhs", "=", "rhs", span=_SPAN
+    )
     with pytest.raises(ValueError, match="expected operator and expression"):
-        mixin.unary_expression([Token("PLUS", "+"), Token("MINUS", "-")])
+        mixin.unary_expression(_META, [Token("PLUS", "+"), Token("MINUS", "-")])
 
     assert mixin.argument_list(["a", Token("COMMA", ","), "b"]) == ["a", "b"]
-    assert mixin.function_call(["Fn", ["arg"]]) == FuncCall("Fn", ("arg",))
-    assert mixin.function_call(["Fn", Token("LPAREN", "("), ["arg1", "arg2"], Token("RPAREN", ")")]) == (
-        FuncCall("Fn", ("arg1", "arg2"))
+    assert mixin.function_call(_META, ["Fn", ["arg"]]) == FuncCall("Fn", ("arg",), span=_SPAN)
+    assert mixin.function_call(_META, ["Fn", Token("LPAREN", "("), ["arg1", "arg2"], Token("RPAREN", ")")]) == FuncCall(
+        "Fn", ("arg1", "arg2"), span=_SPAN
     )
-    assert mixin.assignment_statement(["Target", "Value"]) == Assignment(VarRef("Target"), "Value")
-    assert mixin.assignment_statement(["Target", Token("EQUAL", "="), "Value"]) == (
-        Assignment(VarRef("Target"), "Value")
+    assert mixin.assignment_statement(_META, [VarRef("Target"), "Value"]) == Assignment(
+        VarRef("Target"), "Value", span=_SPAN
     )
+    assert mixin.assignment_statement(_META, [VarRef("Target"), Token("EQUAL", "="), "Value"]) == (
+        Assignment(VarRef("Target"), "Value", span=_SPAN)
+    )
+    with pytest.raises(ValueError, match="target must be a VarRef"):
+        mixin.assignment_statement(_META, ["Target", "Value"])
 
     ternary_items = [
         Token(parser_const.GRAMMAR_VALUE_IF, "IF"),
@@ -130,9 +145,10 @@ def test_expressions_mixin_builds_statements_calls_and_conditionals():
         "fallback",
         Token(parser_const.GRAMMAR_VALUE_ENDIF, "ENDIF"),
     ]
-    assert mixin.ternary_if(ternary_items) == TernaryOp(
+    assert mixin.ternary_if(_META, ternary_items) == TernaryOp(
         branches=(("cond1", "value1"), ("cond2", "value2")),
         else_expr="fallback",
+        span=_SPAN,
     )
 
     if_items = [
@@ -148,16 +164,21 @@ def test_expressions_mixin_builds_statements_calls_and_conditionals():
         "stmt3",
         Token(parser_const.GRAMMAR_VALUE_ENDIF, "ENDIF"),
     ]
-    assert mixin.if_statement(if_items) == IfStmt(
+    assert mixin.if_statement(_META, if_items) == IfStmt(
         branches=(("cond1", ("stmt1",)), ("cond2", ("stmt2",))),
         else_block=("stmt3",),
+        span=_SPAN,
     )
-    assert mixin.if_statement([Token("IGNORED", "?"), *if_items]) == IfStmt(
+    assert mixin.if_statement(_META, [Token("IGNORED", "?"), *if_items]) == IfStmt(
         branches=(("cond1", ("stmt1",)), ("cond2", ("stmt2",))),
         else_block=("stmt3",),
+        span=_SPAN,
     )
-    assert mixin.statement([Token("IGNORED", "?"), "assignment"]) == "assignment"
+    assert mixin.statement(_META, [Token("IGNORED", "?"), "assignment"]) == "assignment"
+    assert mixin.statement(_META, [Token("IGNORED", "?"), FuncCall("Fn", ("arg",))]) == FuncCallStmt(
+        FuncCall("Fn", ("arg",)), span=_SPAN
+    )
     with pytest.raises(ValueError, match="statement expected a non-Token child"):
-        mixin.statement([Token("ONLY", "token")])
+        mixin.statement(_META, [Token("ONLY", "token")])
     with pytest.raises(ValueError, match="statement expected a non-Token child"):
-        mixin.statement([])
+        mixin.statement(_META, [])

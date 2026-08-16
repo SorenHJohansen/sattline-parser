@@ -80,14 +80,7 @@ def library_dependency_map() -> dict[str, list[str]]:
     return {}
 
 
-def _unwrap_statement_node(value: Any, *, statement_key: str) -> Any:
-    if hasattr(value, "data") and value.data == statement_key:
-        children = getattr(value, "children", [])
-        return children[0] if children else value
-    return value
-
-
-def render_module_code(module_code: ModuleCode, *, statement_key: str) -> str:
+def render_module_code(module_code: ModuleCode) -> str:
     seq_lines: list[str] = []
     if module_code.sequences:
         for sequence in module_code.sequences:
@@ -102,10 +95,7 @@ def render_module_code(module_code: ModuleCode, *, statement_key: str) -> str:
     eq_lines: list[str] = []
     if module_code.equations:
         for equation in module_code.equations:
-            pretty_code = [
-                format_expr(_unwrap_statement_node(statement, statement_key=statement_key))
-                for statement in equation.code
-            ]
+            pretty_code = [format_expr(statement) for statement in equation.code]
             size_str = f" with size {equation.size}" if getattr(equation, "size", None) is not None else ""
             eq_lines.append(
                 f"EquationBlock name={equation.name!r} at {equation.position}{size_str}\n"

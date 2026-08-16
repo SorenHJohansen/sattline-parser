@@ -72,7 +72,7 @@ def test_ast_model_helpers_cover_reduce_usage_and_string_formats(monkeypatch: py
     assert (
         str(
             ParameterMapping(
-                target="Target",
+                target=VarRef("Target"),
                 source_type=parser_const.KEY_VALUE,
                 is_duration=False,
                 source_literal=42,
@@ -84,7 +84,7 @@ def test_ast_model_helpers_cover_reduce_usage_and_string_formats(monkeypatch: py
     assert (
         str(
             ParameterMapping(
-                target="Target",
+                target=VarRef("Target"),
                 source_type=parser_const.KEY_VALUE,
                 is_duration=False,
                 is_source_global=False,
@@ -93,8 +93,8 @@ def test_ast_model_helpers_cover_reduce_usage_and_string_formats(monkeypatch: py
         == "Target => <None>"
     )
 
-    sequence = Sequence(name="SeqA", type="sequence", position=(0.0, 0.0), size=(1.0, 1.0), code=["step"])
-    equation = Equation(name="EqA", position=(1.0, 2.0), size=(3.0, 4.0), code=["stmt"])
+    sequence = Sequence(name="SeqA", type="sequence", position=(0.0, 0.0), size=(1.0, 1.0), code=[])
+    equation = Equation(name="EqA", position=(1.0, 2.0), size=(3.0, 4.0), code=[])
     module_code = ModuleCode()
     rendered_module_code = ModuleCode(
         sequences=[sequence],
@@ -103,12 +103,7 @@ def test_ast_model_helpers_cover_reduce_usage_and_string_formats(monkeypatch: py
                 name="EqStmt",
                 position=(1.0, 2.0),
                 size=(3.0, 4.0),
-                code=[
-                    Tree(
-                        parser_const.KEY_STATEMENT,
-                        [(parser_const.KEY_ASSIGN, {parser_const.KEY_VAR_NAME: "Out"}, 1)],
-                    )
-                ],
+                code=[Assignment(VarRef("Out"), IntLiteral(1))],
             )
         ],
     )
@@ -118,7 +113,7 @@ def test_ast_model_helpers_cover_reduce_usage_and_string_formats(monkeypatch: py
                 name="EqEmpty",
                 position=(5.0, 6.0),
                 size=cast(Any, None),
-                code=[Tree(parser_const.KEY_STATEMENT, [])],
+                code=[],
             )
         ]
     )
@@ -128,7 +123,7 @@ def test_ast_model_helpers_cover_reduce_usage_and_string_formats(monkeypatch: py
                 name="EqDirect",
                 position=(7.0, 8.0),
                 size=cast(Any, None),
-                code=[(parser_const.KEY_ASSIGN, {parser_const.KEY_VAR_NAME: "Direct"}, 2)],
+                code=[Assignment(VarRef("Direct"), IntLiteral(2))],
             )
         ]
     )

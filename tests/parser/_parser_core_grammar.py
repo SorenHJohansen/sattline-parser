@@ -354,9 +354,21 @@ ENDDEF (*BasePicture*);
     assert bp.header.declaration_span is not None
     assert bp.header.declaration_span.line == 4
     assert assignment.target.name == "Counter"
+    assert assignment.target.span is not None
+    assert assignment.target.span.line == 11
+    assert assignment.target.span.column == 9
+    assert assignment.span == assignment.target.span
     assert isinstance(assignment.value, BinOp)
+    assert assignment.value.span is not None
+    assert assignment.value.span.line == 11
+    assert assignment.value.span.column == 19
     assert isinstance(assignment.value.left, VarRef)
     assert assignment.value.left.name == "Counter"
+    assert assignment.value.left.span == assignment.value.span
+    assert isinstance(assignment.value.right, IntLiteral)
+    assert assignment.value.right.span is not None
+    assert assignment.value.right.span.line == 11
+    assert assignment.value.right.span.column == 29
 
 
 def test_parser_core_preserves_invar_tails_in_invoke_coords_and_clipping_bounds():

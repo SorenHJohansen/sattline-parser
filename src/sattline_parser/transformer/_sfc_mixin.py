@@ -295,11 +295,7 @@ class SFCMixin:
                     size = coord
                 continue
 
-            if isinstance(item, Tree) and item.data == const.KEY_STATEMENT:
-                # Legacy: old-style Tree wrapper (kept for backward compat)
-                tree = cast(TransformerTree, item)
-                code.extend(tree_children(tree))
-            elif isinstance(item, (Assignment, FuncCallStmt, IfStmt, CodeComment, FuncCall)):
+            if isinstance(item, (Assignment, FuncCallStmt, IfStmt, CodeComment, FuncCall)):
                 code.append(item)
 
         if name is None:

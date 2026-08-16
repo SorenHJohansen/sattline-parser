@@ -2,14 +2,21 @@
 from types import SimpleNamespace
 
 from sattline_parser.formatting import formatter
-from sattline_parser.grammar import constants as const
 from sattline_parser.models import ast_model
-
-
-class _StatementNode:
-    def __init__(self, child) -> None:
-        self.data = const.KEY_STATEMENT
-        self.children = [child]
+from sattline_parser.models.ast_model import IntLiteral
+from sattline_parser.models.expressions import (
+    Assignment,
+    BinOp,
+    BoolOp,
+    Compare,
+    FuncCall,
+    FuncCallStmt,
+    IfStmt,
+    NotOp,
+    TernaryOp,
+    UnaryOp,
+    VarRef,
+)
 
 
 def test_format_list_handles_empty_and_inline_rendering():
@@ -37,32 +44,31 @@ def test_format_optional_and_literal_expression_rendering():
     assert formatter.format_optional(None) == "None"
     assert formatter.format_optional(5) == "5"
 
-    assert formatter.format_expr({const.KEY_VAR_NAME: "MyVar"}) == "MyVar"
+    assert formatter.format_expr(VarRef("MyVar")) == "MyVar"
     assert formatter.format_expr("Text") == "'Text'"
     assert formatter.format_expr(True) == "True"
 
 
 def test_format_expr_handles_statements_and_operators():
-    statement = _StatementNode((const.KEY_ASSIGN, {const.KEY_VAR_NAME: "A"}, 4))
-    if_expr = (
-        const.GRAMMAR_VALUE_IF,
-        [
-            (True, [statement]),
-            (False, [(const.KEY_ASSIGN, {const.KEY_VAR_NAME: "B"}, 2)]),
-        ],
-        [(const.KEY_ASSIGN, {const.KEY_VAR_NAME: "C"}, 3)],
+    statement = Assignment(VarRef("A"), IntLiteral(4))
+    if_stmt = IfStmt(
+        branches=(
+            (True, (statement,)),
+            (False, (Assignment(VarRef("B"), IntLiteral(2)),)),
+        ),
+        else_block=(Assignment(VarRef("C"), IntLiteral(3)),),
     )
-    ternary_expr = ("Ternary", [(True, "X")], "Y")
+    ternary_expr = TernaryOp(branches=((True, "X"),), else_expr="Y")
 
-    rendered_if = formatter.format_expr(if_expr)
+    rendered_if = formatter.format_expr(if_stmt)
     rendered_ternary = formatter.format_expr(ternary_expr)
-    rendered_or = formatter.format_expr((const.GRAMMAR_VALUE_OR, ["A", "B"]))
-    rendered_and = formatter.format_expr((const.GRAMMAR_VALUE_AND, ["A", "B"]))
-    rendered_not = formatter.format_expr((const.GRAMMAR_VALUE_NOT, "A"))
-    rendered_compare = formatter.format_expr((const.KEY_COMPARE, "A", [(">", 1)]))
-    rendered_add = formatter.format_expr((const.KEY_ADD, 1, [("+", 2)]))
-    rendered_mul = formatter.format_expr((const.KEY_MUL, 2, [("*", 3)]))
-    rendered_call = formatter.format_expr((const.KEY_FUNCTION_CALL, "Fn", [1, "x"]))
+    rendered_or = formatter.format_expr(BoolOp("OR", ("A", "B")))
+    rendered_and = formatter.format_expr(BoolOp("AND", ("A", "B")))
+    rendered_not = formatter.format_expr(NotOp("A"))
+    rendered_compare = formatter.format_expr(Compare("A", ">", 1))
+    rendered_add = formatter.format_expr(BinOp(1, "+", 2))
+    rendered_mul = formatter.format_expr(BinOp(2, "*", 3))
+    rendered_call = formatter.format_expr(FuncCall("Fn", (IntLiteral(1), "x")))
     rendered_fallback = formatter.format_expr(("unknown-op", 1))
 
     assert "IF True" in rendered_if
@@ -81,13 +87,14 @@ def test_format_expr_handles_statements_and_operators():
 
 
 def test_format_seq_nodes_renders_all_node_types():
+    assign_stmt = Assignment(VarRef("A"), IntLiteral(1))
     step = ast_model.SFCStep(
         kind="init",
         name="Start",
         code=ast_model.SFCCodeBlocks(
-            enter=[(const.KEY_ASSIGN, {const.KEY_VAR_NAME: "A"}, 1)],
-            active=[(const.KEY_ASSIGN, {const.KEY_VAR_NAME: "B"}, 2)],
-            exit=[(const.KEY_ASSIGN, {const.KEY_VAR_NAME: "C"}, 3)],
+            enter=[assign_stmt],
+            active=[Assignment(VarRef("B"), IntLiteral(2))],
+            exit=[Assignment(VarRef("C"), IntLiteral(3))],
         ),
     )
     nodes = [
@@ -119,20 +126,6 @@ def test_format_seq_nodes_renders_all_node_types():
 
 
 def test_format_expr_handles_new_typed_expression_nodes():
-    from sattline_parser.models.expressions import (  # noqa: PLC0415
-        Assignment,
-        BinOp,
-        BoolOp,
-        Compare,
-        FuncCall,
-        FuncCallStmt,
-        IfStmt,
-        NotOp,
-        TernaryOp,
-        UnaryOp,
-        VarRef,
-    )
-
     assert formatter.format_expr(VarRef("Pump.State")) == "Pump.State"
     assert formatter.format_expr(VarRef("X", state="old")) == "X:old"
     assert formatter.format_expr(Assignment(VarRef("A"), 1)) == "A = 1"

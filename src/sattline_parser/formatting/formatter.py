@@ -2,14 +2,10 @@
 
 from __future__ import annotations
 
-import pprint
 import textwrap
 from collections.abc import Sequence
 from typing import Any, Protocol, TypeGuard, cast
 
-from lark import Tree
-
-from ..grammar import constants as const
 from ..models.expressions import (
     Assignment,
     BinOp,
@@ -50,63 +46,6 @@ def _is_variable_like(value: object) -> TypeGuard[_VariableLike]:
         "description",
     )
     return type(value).__name__ == "Variable" and all(hasattr(value, attr) for attr in required_attrs)
-
-
-def _statement_children(expr: object) -> list[object] | None:
-    if isinstance(expr, Tree) and expr.data == const.KEY_STATEMENT:
-        return cast(list[object], cast(Tree[Any], expr).children)
-    return None
-
-
-def _var_name(expr: object) -> str | None:
-    if not isinstance(expr, dict) or const.KEY_VAR_NAME not in expr:
-        return None
-    name = cast(dict[str, object], expr).get(const.KEY_VAR_NAME)
-    return name if isinstance(name, str) else None
-
-
-def _object_list(raw: object) -> list[object]:
-    return cast(list[object], raw) if isinstance(raw, list) else []
-
-
-def _object_list_or_none(raw: object) -> list[object] | None:
-    return cast(list[object], raw) if isinstance(raw, list) else None
-
-
-def _statement_branches(raw: object) -> list[tuple[object, list[object]]]:
-    branches: list[tuple[object, list[object]]] = []
-    for item in _object_list(raw):
-        if not isinstance(item, tuple):
-            continue
-        branch = cast(tuple[object, ...], item)
-        if len(branch) != 2:
-            continue
-        branches.append((branch[0], _object_list(branch[1])))
-    return branches
-
-
-def _ternary_branches(raw: object) -> list[tuple[object, object]]:
-    branches: list[tuple[object, object]] = []
-    for item in _object_list(raw):
-        if not isinstance(item, tuple):
-            continue
-        branch = cast(tuple[object, ...], item)
-        if len(branch) != 2:
-            continue
-        branches.append((branch[0], branch[1]))
-    return branches
-
-
-def _comparison_pairs(raw: object) -> list[tuple[str, object]]:
-    pairs: list[tuple[str, object]] = []
-    for item in _object_list(raw):
-        if not isinstance(item, tuple):
-            continue
-        pair = cast(tuple[object, ...], item)
-        if len(pair) != 2 or not isinstance(pair[0], str):
-            continue
-        pairs.append((pair[0], pair[1]))
-    return pairs
 
 
 def format_list(
@@ -153,7 +92,7 @@ def format_optional(obj: object) -> str:
     return "None" if obj is None else str(obj)
 
 
-def format_expr(expr: object, indent: str = _DEFAULT_INDENT) -> str:  # noqa: PLR0915
+def format_expr(expr: object, indent: str = _DEFAULT_INDENT) -> str:
     """Pretty-print nested expressions and statements in a SattLine-like format."""
 
     # New typed nodes take priority over legacy tuple/dict forms
@@ -213,107 +152,8 @@ def format_expr(expr: object, indent: str = _DEFAULT_INDENT) -> str:  # noqa: PL
         out_lines2.append("ENDIF")
         return "\n".join(out_lines2)
 
-    # Legacy fallbacks for old tuple/dict forms (kept for backward compat)
-    children = _statement_children(expr)
-    if children:
-        return format_expr(children[0], indent)
-
-    variable_name = _var_name(expr)
-    if variable_name is not None:
-        return variable_name
-
     if isinstance(expr, int | float | bool | str):
         return repr(expr) if isinstance(expr, str) else str(expr)
-
-    if isinstance(expr, list):
-        return "\n".join(format_expr(item, indent) for item in cast(list[object], expr))
-
-    if isinstance(expr, tuple):
-        values = cast(tuple[object, ...], expr)
-        if not values:
-            return "()"
-        op = values[0]
-
-        if op == const.KEY_ASSIGN and len(values) == 3:
-            target = values[1]
-            value = values[2]
-            lhs = _var_name(target) or str(target)
-            rhs = format_expr(value, indent)
-            return f"{lhs} = {rhs}"
-
-        if op == const.GRAMMAR_VALUE_IF and len(values) == 3:
-            branches = _statement_branches(values[1])
-            else_block = _object_list_or_none(values[2])
-            out_lines: list[str] = []
-            for index, (condition, statements) in enumerate(branches):
-                head = "IF" if index == 0 else "ELSIF"
-                out_lines.append(f"{head} {format_expr(condition, indent)}")
-                out_lines.append("THEN")
-                for statement in statements:
-                    out_lines.append(textwrap.indent(format_expr(statement, indent), indent))
-            if else_block:
-                out_lines.append("ELSE")
-                for statement in else_block:
-                    out_lines.append(textwrap.indent(format_expr(statement, indent), indent))
-            out_lines.append("ENDIF")
-            return "\n".join(out_lines)
-
-        if op in (const.KEY_TERNARY, "Ternary") and len(values) == 3:
-            branches = _ternary_branches(values[1])
-            else_expr = values[2]
-            out_lines: list[str] = []
-            for index, (condition, then_expr) in enumerate(branches):
-                head = "IF" if index == 0 else "ELSIF"
-                out_lines.append(f"{head} {format_expr(condition, indent)}")
-                out_lines.append("THEN")
-                out_lines.append(textwrap.indent(format_expr(then_expr, indent), indent))
-            if else_expr is not None:
-                out_lines.append("ELSE")
-                out_lines.append(textwrap.indent(format_expr(else_expr, indent), indent))
-            out_lines.append("ENDIF")
-            return "\n".join(out_lines)
-
-        if op == const.GRAMMAR_VALUE_OR and len(values) >= 2:
-            parts = [format_expr(item, indent) for item in _object_list(values[1])]
-            return " OR \n".join(parts)
-
-        if op == const.GRAMMAR_VALUE_AND and len(values) >= 2:
-            parts = [format_expr(item, indent) for item in _object_list(values[1])]
-            return " AND \n".join(parts)
-
-        if op == const.GRAMMAR_VALUE_NOT and len(values) >= 2:
-            return "NOT(" + format_expr(values[1], indent) + ")"
-
-        if op in (const.KEY_COMPARE, "compare") and len(values) == 3:
-            left = values[1]
-            pairs = _comparison_pairs(values[2])
-            left_str = format_expr(left, indent)
-            if not pairs:
-                return left_str
-            rendered_pairs = [f"{left_str} {symbol} {format_expr(rhs, indent)}" for symbol, rhs in pairs]
-            return " AND ".join(rendered_pairs)
-
-        if op == const.KEY_ADD and len(values) == 3:
-            left = values[1]
-            parts = _comparison_pairs(values[2])
-            base = format_expr(left, indent)
-            tail = " ".join(f"{operator} {format_expr(rhs, indent)}" for operator, rhs in parts)
-            return f"({base} {tail})"
-
-        if op == const.KEY_MUL and len(values) == 3:
-            left = values[1]
-            parts = _comparison_pairs(values[2])
-            base = format_expr(left, indent)
-            tail = " ".join(f"{operator} {format_expr(rhs, indent)}" for operator, rhs in parts)
-            return f"({base} {tail})"
-
-        if op == const.KEY_FUNCTION_CALL and len(values) == 3:
-            fn_name = values[1]
-            args = _object_list(values[2])
-            arg_str = ", ".join(format_expr(arg, indent) for arg in args)
-            return f"{fn_name}({arg_str})"
-
-        return pprint.pformat(values)
 
     return str(expr)
 

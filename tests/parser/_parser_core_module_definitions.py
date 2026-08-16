@@ -136,22 +136,25 @@ def test_modules_mixin_transfer_and_variable_helpers_cover_fallback_branches():
     assert mixin.submodules(["ignored", [_module_header("Nope")]]).children == []
 
     duration_transfer = mixin.moduletype_par_transfer(
+        SimpleNamespace(line=3, column=1),
         [
             VarRef("Target"),
             True,
             parser_const.GRAMMAR_VALUE_DURATION_VALUE,
             {parser_const.GRAMMAR_VALUE_TIME_VALUE: "T#5S"},
-        ]
+        ],
     )
-    object_transfer = mixin.moduletype_par_transfer([VarRef("Target"), object()])
 
     assert duration_transfer.is_source_global is True
     assert duration_transfer.is_duration is True
     assert duration_transfer.source_literal == {parser_const.GRAMMAR_VALUE_TIME_VALUE: "T#5S"}
-    assert object_transfer.source_literal is not None
-    assert object_transfer.source_literal.startswith("<object object at")
-    assert mixin.moduletype_par_transfer(["TargetLiteral", "SourceLiteral"]).target == VarRef("TargetLiteral")
-    assert mixin.moduletype_par_transfer([123, "SourceLiteral"]).target == VarRef("123")
+    assert duration_transfer.span == SourceSpan(3, 1)
+    with pytest.raises(ValueError, match="unexpected source"):
+        mixin.moduletype_par_transfer(SimpleNamespace(line=4, column=1), [VarRef("Target"), object()])
+    with pytest.raises(ValueError, match="target must be a VarRef"):
+        mixin.moduletype_par_transfer(SimpleNamespace(line=5, column=1), ["TargetLiteral", "SourceLiteral"])
+    with pytest.raises(ValueError, match="target must be a VarRef"):
+        mixin.moduletype_par_transfer(SimpleNamespace(line=6, column=1), [123, "SourceLiteral"])
     assert mixin.moduletype_par_list([duration_transfer]).data == parser_const.TREE_TAG_MODULETYPE_PAR_LIST
 
     assert mixin.variable_group([]) == []
@@ -160,9 +163,9 @@ def test_modules_mixin_transfer_and_variable_helpers_cover_fallback_branches():
     assert literal_init_variables[0].init_is_duration is False
 
     with pytest.raises(ValueError, match="moduletype_par_transfer received empty items"):
-        mixin.moduletype_par_transfer([])
+        mixin.moduletype_par_transfer(SimpleNamespace(line=1, column=1), [])
     with pytest.raises(ValueError, match="moduletype_par_transfer missing target variable_name"):
-        mixin.moduletype_par_transfer([None])
+        mixin.moduletype_par_transfer(SimpleNamespace(line=1, column=1), [None])
     with pytest.raises(ValueError, match="Expected datatype NAME in variable_group"):
         mixin.variable_group([("Alpha", None, SourceSpan(1, 1)), 123])
     with pytest.raises(ValueError, match="record is missing datatype name"):

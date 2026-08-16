@@ -1,5 +1,7 @@
 # pyright: reportUnknownVariableType=false, reportUnknownMemberType=false, reportUnknownParameterType=false, reportMissingParameterType=false, reportUnknownArgumentType=false, reportCallIssue=false, reportUnknownLambdaType=false, reportUnusedImport=false
 # ruff: noqa: F403, F405
+from sattline_parser.models.ast_model import CodeItem
+
 from ._parser_core_test_support import *
 
 
@@ -16,7 +18,11 @@ def test_sfc_mixin_builds_modulecode_sequences_and_equations():
     )
     body_tree = mixin.sequence_body([init_step, transition])
 
-    assert code_blocks == SFCCodeBlocks(enter=["enter1"], active=["active1"], exit=["exit1"])
+    assert code_blocks == SFCCodeBlocks(
+        enter=cast(list[CodeItem], ["enter1"]),
+        active=cast(list[CodeItem], ["active1"]),
+        exit=cast(list[CodeItem], ["exit1"]),
+    )
     assert init_step == SFCStep(kind="init", name="Init", code=code_blocks)
     assert step == SFCStep(kind="step", name="Run", code=code_blocks)
     assert transition == SFCTransition(name="Gate", condition=True)
@@ -59,14 +65,14 @@ def test_sfc_mixin_builds_modulecode_sequences_and_equations():
             body_tree,
         ]
     )
-    equation = mixin.equationblock(["EqA", (5, 6), (7, 8), Tree(parser_const.KEY_STATEMENT, ["stmt"])])
+    equation = mixin.equationblock(["EqA", (5, 6), (7, 8), Assignment(VarRef("X"), IntLiteral(1))])
     tokenized_equation = mixin.equationblock(
         [
             Token(parser_const.GRAMMAR_VALUE_EQUATIONBLOCK, parser_const.GRAMMAR_VALUE_EQUATIONBLOCK),
             "EqToken",
             (6, 7),
             (8, 9),
-            Tree(parser_const.KEY_STATEMENT, ["token_stmt"]),
+            Assignment(VarRef("Y"), IntLiteral(2)),
         ]
     )
     nested_sequence = Sequence(name="Nested", type="SEQUENCE", position=(0, 0), size=(1, 1), code=[])
@@ -82,8 +88,18 @@ def test_sfc_mixin_builds_modulecode_sequences_and_equations():
         seqtimer=True,
         code=[init_step, transition],
     )
-    assert equation == Equation(name="EqA", position=(5.0, 6.0), size=(7.0, 8.0), code=["stmt"])
-    assert tokenized_equation == Equation(name="EqToken", position=(6.0, 7.0), size=(8.0, 9.0), code=["token_stmt"])
+    assert equation == Equation(
+        name="EqA",
+        position=(5.0, 6.0),
+        size=(7.0, 8.0),
+        code=[Assignment(VarRef("X"), IntLiteral(1))],
+    )
+    assert tokenized_equation == Equation(
+        name="EqToken",
+        position=(6.0, 7.0),
+        size=(8.0, 9.0),
+        code=[Assignment(VarRef("Y"), IntLiteral(2))],
+    )
     assert modulecode.sequences == [sequence, nested_sequence]
     assert modulecode.equations == [equation, nested_equation]
 
@@ -101,9 +117,9 @@ def test_sfc_mixin_normalizes_enter_active_exit_code_blocks():
     assert active == {"active": [Tree(parser_const.KEY_STATEMENT, ["active_stmt"])]}
     assert exit_ == {"exit": [Tree(parser_const.KEY_STATEMENT, ["exit_stmt"])]}
     assert code_blocks == SFCCodeBlocks(
-        enter=[Tree(parser_const.KEY_STATEMENT, ["enter_stmt"])],
-        active=[Tree(parser_const.KEY_STATEMENT, ["active_stmt"])],
-        exit=[Tree(parser_const.KEY_STATEMENT, ["exit_stmt"])],
+        enter=cast(list[CodeItem], [Tree(parser_const.KEY_STATEMENT, ["enter_stmt"])]),
+        active=cast(list[CodeItem], [Tree(parser_const.KEY_STATEMENT, ["active_stmt"])]),
+        exit=cast(list[CodeItem], [Tree(parser_const.KEY_STATEMENT, ["exit_stmt"])]),
     )
 
 
@@ -147,12 +163,15 @@ def test_parse_source_text_preserves_sfc_step_code_blocks():
     assert isinstance(enter_stmt, Assignment)
     assert isinstance(active_stmt, Assignment)
     assert isinstance(exit_stmt, Assignment)
-    assert enter_stmt.target == VarRef("Flag")
+    assert enter_stmt.target == VarRef("Flag", span=SourceSpan(16, 10))
     assert enter_stmt.value is True
-    assert active_stmt.target == VarRef("Counter")
+    assert enter_stmt.span == SourceSpan(16, 10)
+    assert active_stmt.target == VarRef("Counter", span=SourceSpan(18, 10))
     assert active_stmt.value == 1
-    assert exit_stmt.target == VarRef("Counter")
+    assert active_stmt.span == SourceSpan(18, 10)
+    assert exit_stmt.target == VarRef("Counter", span=SourceSpan(20, 10))
     assert exit_stmt.value == 0
+    assert exit_stmt.span == SourceSpan(20, 10)
 
 
 def test_sfc_mixin_rejects_malformed_shapes_and_missing_required_fields():

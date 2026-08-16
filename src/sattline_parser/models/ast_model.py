@@ -5,11 +5,10 @@ from __future__ import annotations
 import textwrap
 from dataclasses import MISSING, dataclass, field, fields
 from enum import Enum
-from typing import Any, cast
+from typing import Any
 
 from ..grammar import constants as const
 from ._ast_model_support import (
-    AstNodeDict,
     ModulePath,
     PropertyMap,
     UsageLocation,
@@ -275,12 +274,7 @@ class ParameterMapping:
     is_source_global: bool
     source: VarRef | None = None
     source_literal: Any | None = None
-
-    def __post_init__(self) -> None:
-        if not isinstance(self.target, VarRef):  # pyright: ignore[reportUnnecessaryIsInstance]
-            self.target = _normalize_variable_ref(self.target, field_name="target")
-        if self.source is not None and not isinstance(self.source, VarRef):  # pyright: ignore[reportUnnecessaryIsInstance]
-            self.source = _normalize_variable_ref(self.source, field_name="source")
+    span: SourceSpan | None = None
 
     def __str__(self) -> str:
         tgt = self.target.name
@@ -295,38 +289,6 @@ class ParameterMapping:
             return f"{tgt} => {self.source_literal!r}"
 
         return f"{tgt} => <None>"
-
-
-def _variable_ref_name(value: object) -> str | None:  # pyright: ignore[reportUnusedFunction]
-    """Return the name string from a VarRef (or legacy dict/str/Variable form)."""
-    if isinstance(value, VarRef):
-        return value.name
-    if isinstance(value, str):
-        return value
-    if isinstance(value, Variable):
-        return value.name
-    if isinstance(value, dict):
-        mapping = cast(AstNodeDict, value)
-        full_name = mapping.get(const.KEY_VAR_NAME)
-        if isinstance(full_name, str):
-            return full_name
-    return None
-
-
-def _normalize_variable_ref(value: object, *, field_name: str) -> VarRef:
-    """Coerce various variable-reference forms to VarRef."""
-    if isinstance(value, VarRef):
-        return value
-    if isinstance(value, str):
-        return VarRef(value)
-    if isinstance(value, Variable):
-        return VarRef(value.name)
-    if isinstance(value, dict):
-        mapping = cast(AstNodeDict, value)
-        full_name = mapping.get(const.KEY_VAR_NAME)
-        if isinstance(full_name, str):
-            return VarRef(full_name, state=cast(str | None, mapping.get("state")))
-    raise TypeError(f"ParameterMapping.{field_name} must be a variable reference")
 
 
 @dataclass
@@ -409,7 +371,7 @@ class ModuleCode:
     comments: list[CodeComment] = field(default_factory=code_comment_list)
 
     def __str__(self) -> str:
-        return render_module_code(self, statement_key=const.KEY_STATEMENT)
+        return render_module_code(self)
 
 
 @dataclass
