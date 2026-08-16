@@ -439,9 +439,10 @@ def test_parser_core_parses_nested_submodule_fixture_through_split_module_mixins
     assert middle_type.modulecode is not None
 
 
-def test_strict_grammar_parses_comment_free_programs_and_rejects_comments():
-    strict = create_sl_parser(strict=True)
-    comment_free = (
+def test_parser_builds_the_single_authoritative_grammar():
+    # There is exactly one parser: comments are legal where sattline.lark places
+    # them, and the API exposes no strict/comment-free mode.
+    code = (
         '"SyntaxVersion"\n'
         '"OriginalFileDate"\n'
         '"ProgramDate"\n'
@@ -453,46 +454,34 @@ def test_strict_grammar_parses_comment_free_programs_and_rejects_comments():
         "ModuleCode\n"
         "    EQUATIONBLOCK Main COORD 0.0, 0.0 OBJSIZE 1.0, 1.0 :\n"
         "        Counter = Counter + 1;\n"
-        "ENDDEF;\n"
+        "ENDDEF (*BasePicture*);\n"
     )
-    tree = strict.parse(comment_free)
-    assert tree.data == "start"
-
-    with_comment = comment_free.replace("ENDDEF;", "ENDDEF (*BasePicture*);")
-    with pytest.raises(UnexpectedInput):
-        strict.parse(with_comment)
+    parser = create_sl_parser()
+    assert parser.parse(code).data == "start"
 
 
-def test_strict_grammar_contains_no_comment_rule_definitions():
-    core = parser_api._core_grammar()  # pyright: ignore[reportPrivateUsage]
-    for prefix in (
+def test_authoritative_grammar_is_sattline_lark_with_constants_resolved():
+    # The resolved grammar is the single grammar file plus constant substitution;
+    # no comment rules are stripped or rewritten at any point.
+    resolved = parser_api._resolved_grammar()  # pyright: ignore[reportPrivateUsage]
+    for rule in (
         "comment:",
         "?comment_content:",
         "comments:",
         "code_comment:",
         "comment_stmt:",
         "change_description:",
-        "module_description_comment:",
         "module_typedescription:",
         "module_end_comment:",
-        "COMMENT_START:",
-        "COMMENT_END:",
-        "COMMENT_TEXT:",
     ):
-        assert all(not line.strip().startswith(prefix) for line in core.splitlines()), prefix
+        assert any(line.strip().startswith(rule) for line in resolved.splitlines()), rule
+    assert "COMMENT_START:" in resolved
+    assert "COMMENT_END:" in resolved
+    assert "COMMENT_TEXT:" in resolved
 
 
-def test_strict_grammar_reference_stripping_does_not_corrupt_rule_bodies():
-    # Rules whose names merely contain comment-rule substrings must survive intact.
-    core = parser_api._core_grammar()  # pyright: ignore[reportPrivateUsage]
-    assert "module_description_comment:" not in core
-    # The non-comment machinery that the transformer depends on is present.
-    for rule in ("modulecode:", "sequence:", "equationblock:", "variable_name:", "moduledef:"):
-        assert rule in core
-
-
-def test_strict_grammar_validation_fails_loudly_on_leaked_comment_rule():
-    with pytest.raises(RuntimeError, match="strict grammar generation leaked comment rule"):
-        parser_api._validate_strict_grammar(  # pyright: ignore[reportPrivateUsage]
-            "comment: COMMENT_START comment_content* COMMENT_END"
-        )
+def test_parser_resolves_grammar_constants_into_terminal_definitions():
+    resolved = parser_api._resolved_grammar()  # pyright: ignore[reportPrivateUsage]
+    assert "{GRAMMAR_VALUE_MODULEDEF}" not in resolved
+    assert "{GRAMMAR_REGEX_NAME}" not in resolved
+    assert resolved.count('COMMENT_START: "(*"') == 1

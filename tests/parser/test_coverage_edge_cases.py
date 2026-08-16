@@ -400,11 +400,63 @@ def test_source_document_map_range_generated_suffix_walks_forward() -> None:
     assert doc3.map_range(1, 2) == (0, 1)
 
 
-def test_source_document_map_position_clamps_out_of_range_offsets() -> None:
+def test_source_document_map_range_spanning_deleted_text_includes_deleted_region() -> None:
+    # original "AxB", normalized "AB" ("x" deleted): a range covering both
+    # survivors must span the deleted region -- the tightest contiguous
+    # original range that contains the real text.
+    doc = SourceDocument("AxB", "AB", (0, 2))
+    assert doc.map_range(0, 2) == (0, 3)
+    # Ranges adjacent to (not spanning) the deleted text stay tight.
+    assert doc.map_range(0, 1) == (0, 1)
+    assert doc.map_range(1, 2) == (2, 3)
+
+
+def test_source_document_map_range_with_generated_text_anchors() -> None:
+    # generated "G" between real "X" and "Y": "XY" -> "XGY".
+    doc = SourceDocument("XY", "XGY", (0, -1, 1))
+    assert doc.map_range(0, 3) == (0, 2)
+    assert doc.map_range(0, 1) == (0, 1)
+    assert doc.map_range(2, 3) == (1, 2)
+
+
+def test_source_document_map_range_ending_at_eof_maps_to_original_boundary() -> None:
+    # Trailing generated ";" must not extend the range past the last real char.
+    doc = SourceDocument("ENDDEF", "ENDDEF;", (0, 1, 2, 3, 4, 5, -1))
+    assert doc.map_range(0, 7) == (0, 6)
+    assert doc.map_range(0, 6) == (0, 6)
+    # A fully-real text ending at EOF maps to the full original range.
+    doc2 = SourceDocument("ab", "ab", (0, 1))
+    assert doc2.map_range(0, 2) == (0, 2)
+
+
+def test_source_document_map_range_empty_ranges_map_to_zero_width_boundary() -> None:
+    # Empty ranges are boundary positions: zero-width in the original too.
+    doc = SourceDocument("ab\ncd", "ab\ncd", tuple(range(5)))
+    assert doc.map_range(5, 5) == (5, 5)
+    assert doc.map_range(0, 0) == (0, 0)
+    assert doc.map_range(2, 2) == (2, 2)
+    # Empty range at EOF over trailing generated text anchors to the boundary.
+    doc2 = SourceDocument("ENDDEF", "ENDDEF;", (0, 1, 2, 3, 4, 5, -1))
+    assert doc2.map_range(7, 7) == (6, 6)
+    # Inverted (norm_start > norm_end) ranges are treated as empty.
+    assert doc.map_range(3, 1) == (3, 3)
+
+
+def test_source_document_map_position_maps_eof_to_original_boundary() -> None:
+    # Offsets at or past the end of the normalized text are the end-of-input
+    # boundary and map to the original boundary after the last real character
+    # (a valid half-open end), never to the position of the final character.
     doc = SourceDocument("ab", "ab", (0, 1))
-    assert doc.map_position(100) == 1
-    doc2 = SourceDocument("X", "GG", (-1, -1))
-    assert doc2.map_position(1) == 0
+    assert doc.map_position(2) == 2  # EOF boundary, not the last char (1)
+    assert doc.map_position(100) == 2
+    # Trailing generated characters: the boundary is after the last REAL char.
+    doc2 = SourceDocument("X", "XGG", (0, -1, -1))
+    assert doc2.map_position(3) == 1
+    doc3 = SourceDocument("ENDDEF;", "ENDDEF", (0, 1, 2, 3, 4, 5))
+    assert doc3.map_position(6) == 6
+    # Fully generated text: no real anchor exists, so the boundary is 0.
+    doc4 = SourceDocument("X", "GG", (-1, -1))
+    assert doc4.map_position(2) == 0
     empty = SourceDocument("", "", ())
     assert empty.map_position(0) == 0
 
