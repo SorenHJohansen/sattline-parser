@@ -308,7 +308,9 @@ def test_is_expected_parse_error_public_wrapper() -> None:
 @pytest.mark.parametrize("module_name", ["decode_fuzzer", "parser_fuzzer"])
 def test_fuzzer_entry_modules(monkeypatch: pytest.MonkeyPatch, module_name: str) -> None:
     calls: list[str] = []
+
     fake_atheris = types.SimpleNamespace(
+        instrument_all=lambda: calls.append("instrument_all"),
         Setup=lambda _argv, _fn: calls.append("setup"),
         Fuzz=lambda: calls.append("fuzz"),
     )
