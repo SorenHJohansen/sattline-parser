@@ -13,7 +13,7 @@ from typing import Any, LiteralString, cast
 
 import pytest
 from lark import Token, Tree
-from lark.exceptions import UnexpectedCharacters, UnexpectedEOF, UnexpectedToken
+from lark.exceptions import UnexpectedCharacters, UnexpectedEOF, UnexpectedInput, UnexpectedToken
 
 from sattline_parser import (
     api as parser_api,
@@ -72,7 +72,8 @@ from sattline_parser.models.expressions import (
     UnaryOp,
     VarRef,
 )
-from sattline_parser.preprocessing import preprocess_sl_text
+from sattline_parser.preprocessing import preprocess_sl_text, preprocess_source
+from sattline_parser.source_document import SourceDocument
 from sattline_parser.transformer._expressions_mixin import _ExpressionsMixin
 from sattline_parser.transformer._graphics_interact_mixin import _GraphicsInteractMixin
 from sattline_parser.transformer._modules_mixin import _ModulesMixin, flatten_items, meta_span
@@ -212,6 +213,7 @@ __all__ = [
     "SimpleNamespace",
     "Simple_DataType",
     "SingleModule",
+    "SourceDocument",
     "SourceSpan",
     "TernaryOp",
     "Token",
@@ -220,6 +222,7 @@ __all__ = [
     "UnaryOp",
     "UnexpectedCharacters",
     "UnexpectedEOF",
+    "UnexpectedInput",
     "UnexpectedToken",
     "VarRef",
     "Variable",
@@ -258,6 +261,7 @@ __all__ = [
     "parser_core_parse_source_text",
     "parser_fuzz_harness",
     "preprocess_sl_text",
+    "preprocess_source",
     "pytest",
     "sys",
 ]

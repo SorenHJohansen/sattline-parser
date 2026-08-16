@@ -47,8 +47,17 @@ class TokensMixin:
     def _token_span(self, tok: Token) -> SourceSpan | None:
         line = getattr(tok, "line", None)
         column = getattr(tok, "column", None)
-        if isinstance(line, int) and isinstance(column, int) and line > 0 and column > 0:
-            return SourceSpan(line=line, column=column)
+        start_pos = getattr(tok, "start_pos", None)
+        end_pos = getattr(tok, "end_pos", None)
+        if (
+            isinstance(line, int)
+            and isinstance(column, int)
+            and line > 0
+            and column > 0
+            and isinstance(start_pos, int)
+            and isinstance(end_pos, int)
+        ):
+            return SourceSpan(start=start_pos, end=end_pos, line=line, column=column)
         return None
 
     def SIGNED_INT(self, tok: Token) -> IntLiteral:

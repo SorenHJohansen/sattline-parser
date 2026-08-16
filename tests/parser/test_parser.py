@@ -48,14 +48,11 @@ class TestFuzzParseText:
     def test_accepts_valid_sattline_program(self):
         import pathlib  # noqa: PLC0415
 
-        from sattline_parser.models.ast_model import BasePicture  # noqa: PLC0415
-
         repo_root = pathlib.Path(__file__).resolve().parents[2]
         corpus_file = repo_root / "tests" / "fixtures" / "corpus" / "valid" / "MinimalProgram.s"
         source = corpus_file.read_text(encoding="utf-8")
         result = fuzz_parse_text(source, input_desc="valid-program")
         assert result.success
-        assert isinstance(result.result, BasePicture)
         assert result.error is None
         assert result.duration_ms >= 0
 
@@ -78,13 +75,17 @@ class TestFuzzParseText:
         result = fuzz_parse_text(source, input_desc="long-input", timeout=5.0)
         assert result.duration_ms >= 0
 
-    def test_timeout_enforced(self):
-        from sattline_parser.fuzz_harness import TimeoutError  # noqa: PLC0415
+    def test_timeout_enforced(self, monkeypatch: pytest.MonkeyPatch):
+        # A hard timeout must actually kill the worker: a worker that never
+        # replies must produce a TimeoutError, and the harness must recover.
+        from sattline_parser.fuzz_harness import TimeoutError, fuzz_parse_text  # noqa: PLC0415
 
-        source = "PROGRAM Hang\n" + "x := " * 50000 + "\nENDPROGRAM\n"
-        result = fuzz_parse_text(source, input_desc="timeout-test", timeout=0.5)
+        sleeping_worker = "import time\nimport sys\nwhile True:\n    time.sleep(3600)\n"
+        monkeypatch.setattr("sattline_parser.fuzz_harness._WORKER_SOURCE", sleeping_worker)
+        result = fuzz_parse_text("irrelevant", input_desc="timeout-test", timeout=0.5)
         assert not result.success
-        assert isinstance(result.error, TimeoutError) or result.error is not None
+        assert isinstance(result.error, TimeoutError)
+        assert "timed out" in str(result.error)
 
 
 class TestCollectCorpusInputs:

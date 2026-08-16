@@ -9,9 +9,11 @@ import sys
 import types
 from pathlib import Path
 from types import SimpleNamespace
+from typing import Any, cast
 
 import pytest
 from lark import Token, Tree
+from lark.exceptions import UnexpectedInput
 
 import sattline_parser
 from sattline_parser import api as parser_api
@@ -25,6 +27,7 @@ from sattline_parser.models.ast_model import (
     SourceSpan,
 )
 from sattline_parser.models.expressions import IfStmt, VarRef
+from sattline_parser.source_document import SourceDocument
 from sattline_parser.transformer._comments_mixin import CommentsMixin
 from sattline_parser.transformer._expressions_mixin import _ExpressionsMixin
 from sattline_parser.transformer._graphics_interact_mixin import _as_float, _is_coord_box, _is_coord_pair
@@ -82,11 +85,11 @@ def test_load_source_text_decode_failure(monkeypatch: pytest.MonkeyPatch, tmp_pa
     source_file = tmp_path / "compressed.s"
     source_file.write_text("#01#01#01", encoding="utf-8")
 
-    def _bad_preprocess(_text: str) -> tuple[str, dict[str, str]]:
+    def _bad_preprocess(_text: str) -> SourceDocument:
         raise ValueError("bad decode")
 
     monkeypatch.setattr(parser_api, "is_compressed", lambda _text: True)
-    monkeypatch.setattr(parser_api, "preprocess_sl_text", _bad_preprocess)
+    monkeypatch.setattr(parser_api, "preprocess_source", _bad_preprocess)
     with pytest.raises(ValueError, match="bad decode"):
         parser_api.load_source_text(source_file)
 
@@ -156,8 +159,10 @@ def test_module_shared_float_tuple_and_groupconn() -> None:
 
 def test_sfc_mixin_branch_branches() -> None:
     sfc = SFCMixin()
-    blocks = sfc.code_blocks([Token("A", "x"), {"enter": [("stmt",)], "active": [1], "exit": [2]}])
+    blocks = sfc.code_blocks([{"enter": [("stmt",)], "active": [1], "exit": [2]}])
     assert len(blocks.enter) == 1
+    with pytest.raises(ValueError, match="code_blocks expected block payload"):
+        sfc.code_blocks([Token("A", "x")])
 
 
 def test_comment_build_raises_on_empty_items() -> None:
@@ -167,8 +172,8 @@ def test_comment_build_raises_on_empty_items() -> None:
 
 def test_expressions_if_statement_flattens_nested_list_statements() -> None:
     mixin = _ExpressionsMixin()
-    meta = SimpleNamespace(line=1, column=1)
-    span = SourceSpan(1, 1)
+    meta = SimpleNamespace(line=1, column=1, start_pos=1, end_pos=2)
+    span = SourceSpan(start=1, end=2, line=1, column=1)
     if_items = [
         Token(const.GRAMMAR_VALUE_IF, "IF"),
         "cond",
@@ -289,7 +294,12 @@ def test_collect_corpus_without_corpus_dir(monkeypatch: pytest.MonkeyPatch) -> N
 
 
 def test_is_expected_parse_error_public_wrapper() -> None:
-    assert fuzzharness.is_expected_parse_error(ValueError("x")) is True
+    from lark.exceptions import UnexpectedToken  # noqa: PLC0415
+
+    assert fuzzharness.is_expected_parse_error(UnexpectedToken("TOK", "value")) is True
+    # Broad built-ins are NOT expected: an internal transformer ValueError is a crash.
+    assert fuzzharness.is_expected_parse_error(ValueError("x")) is False
+    assert fuzzharness.is_expected_parse_error(SyntaxError("x")) is False
 
 
 # ---- Atheris fuzzer entry modules ----
@@ -308,6 +318,29 @@ def test_fuzzer_entry_modules(monkeypatch: pytest.MonkeyPatch, module_name: str)
     module.test_one_input(b"data")
     runpy.run_path(Path(module.__file__).resolve(), run_name="__main__")
     assert "setup" in calls and "fuzz" in calls
+
+
+def test_decode_fuzzer_absorbs_only_expected_preprocess_errors() -> None:
+    from sattline_parser import decode_fuzzer  # noqa: PLC0415
+
+    # Unknown marker -> PreprocessError -> absorbed, no crash.
+    decode_fuzzer.test_one_input(b"#XX")
+    # Plain text -> no error.
+    decode_fuzzer.test_one_input(b"just text")
+
+
+def test_parser_fuzzer_propagates_internal_exceptions(monkeypatch: pytest.MonkeyPatch) -> None:
+    from sattline_parser import parser_fuzzer  # noqa: PLC0415
+
+    class InternalTransformerError(ValueError):
+        pass
+
+    def _explode(_source: str, **kwargs: object) -> object:
+        raise InternalTransformerError("internal transformer failure")
+
+    monkeypatch.setattr(parser_fuzzer, "parse_source_text", _explode)
+    with pytest.raises(InternalTransformerError, match="internal transformer failure"):
+        parser_fuzzer.test_one_input(b"anything")
 
 
 def test_parameter_mapping_str_variable_source() -> None:
@@ -329,3 +362,190 @@ def test_parameter_mapping_global_source() -> None:
         is_source_global=True,
     )
     assert str(mapping) == "A => GLOBAL"
+
+
+# ---- Source provenance branch coverage ----
+
+
+def test_source_document_map_position_negative_returns_none() -> None:
+    doc = SourceDocument.identity("abc")
+    assert doc.map_position(-1) is None
+    assert doc.map_position(-5) is None
+
+
+def test_source_document_map_position_fully_generated_anchors_to_zero() -> None:
+    doc = SourceDocument("X", "GGG", (-1, -1, -1))
+    assert doc.map_position(0) == 0
+    assert doc.map_position(2) == 0
+
+
+def test_source_document_map_range_fully_generated_uses_whole_original() -> None:
+    doc = SourceDocument("hello", "GGGGG", (-1, -1, -1, -1, -1))
+    assert doc.map_range(0, 5) == (0, 5)
+    doc2 = SourceDocument("hello world", "GGGGG", (-1, -1, -1, -1, -1))
+    assert doc2.map_range(0, 5) == (0, 11)
+
+
+def test_source_document_map_range_generated_suffix_walks_forward() -> None:
+    # "ab" original, normalized "abGG" where "GG" is generated.
+    doc = SourceDocument("ab", "abGG", (0, 1, -1, -1))
+    assert doc.map_range(2, 4) == (1, 2)
+    # Fully generated range extends to the end of the original text.
+    doc2 = SourceDocument("abc", "GGG", (-1, -1, -1))
+    assert doc2.map_range(0, 3) == (0, 3)
+    # Forward walk passes over a generated char before finding a mapped anchor.
+    doc3 = SourceDocument("A", "XGG", (0, -1, -1))
+    assert doc3.map_range(1, 2) == (0, 1)
+
+
+def test_source_document_map_position_clamps_out_of_range_offsets() -> None:
+    doc = SourceDocument("ab", "ab", (0, 1))
+    assert doc.map_position(100) == 1
+    doc2 = SourceDocument("X", "GG", (-1, -1))
+    assert doc2.map_position(1) == 0
+    empty = SourceDocument("", "", ())
+    assert empty.map_position(0) == 0
+
+
+def test_remap_parse_error_updates_unexpected_characters_context() -> None:
+    from lark.exceptions import UnexpectedCharacters  # noqa: PLC0415
+
+    from sattline_parser.source_document import remap_parse_error  # noqa: PLC0415
+
+    # normalized "abXY", original "aXYb" (Y and b swapped).
+    doc = SourceDocument("aXYb", "abXY", (0, 3, 1, 2))
+    exc = UnexpectedCharacters("abXY", 2, 1, 3, allowed=cast(Any, {"NAME"}))
+    remap_parse_error(exc, doc)
+    assert exc.pos_in_stream == 1
+    assert exc.char == "X"
+    assert exc._context is not None
+
+
+def test_remap_parse_error_ignores_non_unexpected_input() -> None:
+    from sattline_parser.source_document import remap_parse_error  # noqa: PLC0415
+
+    exc = ValueError("plain failure")
+    remap_parse_error(exc, SourceDocument.identity("abc"))
+    assert str(exc) == "plain failure"
+    assert not hasattr(exc, "_sattline_remapped")
+
+
+def test_remap_tree_handles_negative_token_positions() -> None:
+    from sattline_parser.source_document import remap_tree_to_original  # noqa: PLC0415
+
+    # A token with a negative start_pos cannot be mapped; the walk must not crash.
+    doc = SourceDocument("abcdef", "Xbcdef!", (0, 0, 2, 3, 4, 5, -1))
+    tree = cast(Any, Tree("wrapper", [Token("NAME", "x", start_pos=-5, end_pos=-4)]))
+    remap_tree_to_original(tree, doc)
+    assert tree.children[0].start_pos == -5
+
+
+def test_remap_tree_skips_tokens_without_positions() -> None:
+    from sattline_parser.source_document import remap_tree_to_original  # noqa: PLC0415
+
+    doc = SourceDocument("abcdef", "Xbcdef!", (0, 0, 2, 3, 4, 5, -1))
+    tree = cast(Any, Tree("wrapper", [Token("NAME", "x")]))
+    remap_tree_to_original(tree, doc)
+    assert tree.children[0].line is None
+
+
+def test_remap_tree_handles_negative_meta_positions() -> None:
+    from sattline_parser.source_document import remap_tree_to_original  # noqa: PLC0415
+
+    doc = SourceDocument("abcdef", "Xbcdef!", (0, 0, 2, 3, 4, 5, -1))
+    tree = cast(Any, Tree("wrapper", [Token("NAME", "x", start_pos=0, end_pos=1)]))
+    tree.meta.start_pos = -3
+    tree.meta.end_pos = -2
+    tree.meta.line = 1
+    tree.meta.column = 1
+    remap_tree_to_original(tree, doc)
+    assert tree.meta.start_pos == -3
+
+
+def test_load_source_text_returns_plain_text_unchanged(tmp_path: Path) -> None:
+    plain_file = tmp_path / "plain.s"
+    plain_file.write_text("not compressed at all", encoding="utf-8")
+    assert parser_api.load_source_text(plain_file) == "not compressed at all"
+
+
+def test_parse_source_text_emits_debug_for_compressed_input() -> None:
+    events: list[str] = []
+
+    from ._parser_core_provenance import _COMPRESSED  # noqa: PLC0415
+
+    parser_api.parse_source_text(_COMPRESSED, debug=events.append)
+    assert "Compressed format detected; decoding before parsing" in events
+
+
+def test_parse_source_file_emits_debug(tmp_path: Path) -> None:
+    events: list[str] = []
+    file_path = tmp_path / "Program.s"
+    file_path.write_text(
+        '"SyntaxVersion"\n'
+        '"OriginalFileDate"\n'
+        '"ProgramDate"\n'
+        "BasePicture Invocation (0.0,0.0,0.0,1.0,1.0) : MODULEDEFINITION DateCode_ 1\n"
+        "ModuleDef\n"
+        "ClippingBounds = ( -1.0 , -1.0 ) ( 1.0 , 1.0 )\n"
+        "ENDDEF (*BasePicture*);\n",
+        encoding="utf-8",
+    )
+    parser_api.parse_source_file(file_path, debug=events.append)
+    assert f"Parsing file: {file_path}" in events
+
+
+def test_log_parser_failure_without_source_text(caplog: pytest.LogCaptureFixture) -> None:
+    parser_api._log_parser_failure(stage="boom", exc=ValueError("no source"))
+    assert any("Parser boom failure" in r.message for r in caplog.records)
+
+
+def test_parse_source_text_log_failures_disabled_paths() -> None:
+    # Parse-error path with logging disabled.
+    with pytest.raises(UnexpectedInput):
+        parser_api.parse_source_text("garbage input", log_failures=False)
+    # Decode-error path with logging disabled.
+    with pytest.raises(ValueError):
+        parser_api.parse_source_text("#ZZ", log_failures=False)
+
+    # Transform-error path with logging disabled.
+    class _BrokenTransformer:
+        def transform(self, _tree: object) -> object:
+            raise RuntimeError("transform boom")
+
+    with pytest.raises(RuntimeError, match="transform boom"):
+        parser_api.parse_source_text(
+            '"SyntaxVersion"\n"OriginalFileDate"\n"ProgramDate"\n'
+            "BasePicture Invocation (0.0,0.0,0.0,1.0,1.0) : MODULEDEFINITION DateCode_ 1\n"
+            "ModuleDef\n"
+            "ClippingBounds = ( -1.0 , -1.0 ) ( 1.0 , 1.0 )\n"
+            "ENDDEF (*BasePicture*);\n",
+            transformer=_BrokenTransformer(),
+            log_failures=False,
+        )
+
+
+def test_opaque_registry_string_text_lookup_failures() -> None:
+    from sattline_parser.preprocessing.compressed import _OpaqueRegistry  # noqa: PLC0415
+
+    registry = _OpaqueRegistry('"a string"')
+    assert registry.string_text("not-a-placeholder") is None
+    assert registry.string_text("\x00C0\x00") is None  # comment slot, not a string
+    assert registry.string_text("\x00S9\x00") is None  # out-of-range index
+    assert registry.string_text("\x00S") is None  # malformed placeholder
+    assert registry.string_text("\x00Sxx\x00") is None  # non-numeric index
+
+
+def test_opaque_registry_restore_rejects_unknown_placeholder() -> None:
+    from sattline_parser.preprocessing.compressed import PreprocessError, _OpaqueRegistry  # noqa: PLC0415
+
+    registry = _OpaqueRegistry('"a string"')
+    with pytest.raises(PreprocessError, match="unknown placeholder"):
+        registry.restore("\x00S9\x00", [-1, -1, -1, -1, -1, -1])
+
+
+def test_opaque_registry_restore_detects_unrestored_nul() -> None:
+    from sattline_parser.preprocessing.compressed import PreprocessError, _OpaqueRegistry  # noqa: PLC0415
+
+    registry = _OpaqueRegistry('"a string"')
+    with pytest.raises(PreprocessError, match="placeholder not restored"):
+        registry.restore("\x00leftover", [0, -1, -1, -1, -1, -1, -1, -1])

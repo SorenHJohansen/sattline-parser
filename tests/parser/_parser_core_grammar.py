@@ -357,14 +357,22 @@ ENDDEF (*BasePicture*);
     assert assignment.target.span is not None
     assert assignment.target.span.line == 11
     assert assignment.target.span.column == 9
-    assert assignment.span == assignment.target.span
+    assert assignment.span is not None
+    assert assignment.span.line == 11
+    assert assignment.span.column == 9
+    assert assignment.span.start == assignment.target.span.start
+    assert assignment.span.end > assignment.target.span.end
+    assert code[assignment.span.start : assignment.span.end] == "Counter = Counter + 1"
     assert isinstance(assignment.value, BinOp)
     assert assignment.value.span is not None
     assert assignment.value.span.line == 11
     assert assignment.value.span.column == 19
     assert isinstance(assignment.value.left, VarRef)
     assert assignment.value.left.name == "Counter"
-    assert assignment.value.left.span == assignment.value.span
+    assert assignment.value.left.span is not None
+    assert assignment.value.left.span.start == assignment.value.span.start
+    assert assignment.value.left.span.end < assignment.value.span.end
+    assert code[assignment.value.left.span.start : assignment.value.left.span.end] == "Counter"
     assert isinstance(assignment.value.right, IntLiteral)
     assert assignment.value.right.span is not None
     assert assignment.value.right.span.line == 11
@@ -429,3 +437,62 @@ def test_parser_core_parses_nested_submodule_fixture_through_split_module_mixins
     assert [sub.header.name for sub in middle_type.submodules] == ["Inner"]
     assert middle_type.moduledef is not None
     assert middle_type.modulecode is not None
+
+
+def test_strict_grammar_parses_comment_free_programs_and_rejects_comments():
+    strict = create_sl_parser(strict=True)
+    comment_free = (
+        '"SyntaxVersion"\n'
+        '"OriginalFileDate"\n'
+        '"ProgramDate"\n'
+        "BasePicture Invocation (0.0,0.0,0.0,1.0,1.0) : MODULEDEFINITION DateCode_ 1\n"
+        "LOCALVARIABLES\n"
+        "    Counter: integer := 0;\n"
+        "ModuleDef\n"
+        "ClippingBounds = ( -1.0 , -1.0 ) ( 1.0 , 1.0 )\n"
+        "ModuleCode\n"
+        "    EQUATIONBLOCK Main COORD 0.0, 0.0 OBJSIZE 1.0, 1.0 :\n"
+        "        Counter = Counter + 1;\n"
+        "ENDDEF;\n"
+    )
+    tree = strict.parse(comment_free)
+    assert tree.data == "start"
+
+    with_comment = comment_free.replace("ENDDEF;", "ENDDEF (*BasePicture*);")
+    with pytest.raises(UnexpectedInput):
+        strict.parse(with_comment)
+
+
+def test_strict_grammar_contains_no_comment_rule_definitions():
+    core = parser_api._core_grammar()  # pyright: ignore[reportPrivateUsage]
+    for prefix in (
+        "comment:",
+        "?comment_content:",
+        "comments:",
+        "code_comment:",
+        "comment_stmt:",
+        "change_description:",
+        "module_description_comment:",
+        "module_typedescription:",
+        "module_end_comment:",
+        "COMMENT_START:",
+        "COMMENT_END:",
+        "COMMENT_TEXT:",
+    ):
+        assert all(not line.strip().startswith(prefix) for line in core.splitlines()), prefix
+
+
+def test_strict_grammar_reference_stripping_does_not_corrupt_rule_bodies():
+    # Rules whose names merely contain comment-rule substrings must survive intact.
+    core = parser_api._core_grammar()  # pyright: ignore[reportPrivateUsage]
+    assert "module_description_comment:" not in core
+    # The non-comment machinery that the transformer depends on is present.
+    for rule in ("modulecode:", "sequence:", "equationblock:", "variable_name:", "moduledef:"):
+        assert rule in core
+
+
+def test_strict_grammar_validation_fails_loudly_on_leaked_comment_rule():
+    with pytest.raises(RuntimeError, match="strict grammar generation leaked comment rule"):
+        parser_api._validate_strict_grammar(  # pyright: ignore[reportPrivateUsage]
+            "comment: COMMENT_START comment_content* COMMENT_END"
+        )

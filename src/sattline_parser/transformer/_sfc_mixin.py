@@ -68,7 +68,7 @@ class SFCMixin:
         blocks: CodeBlockPayload = {"enter": [], "active": [], "exit": []}
         for item in items:
             if not isinstance(item, dict):
-                continue
+                raise ValueError(f"code_blocks expected block payload dicts; got: {type(item).__name__}: {item!r}")
             payload = cast(CodeBlockPayload, item)
             for key in ("enter", "active", "exit"):
                 statements = payload.get(key)
@@ -88,12 +88,18 @@ class SFCMixin:
         comments: list[CodeComment] = []
 
         for item in items:
+            if isinstance(item, Token):
+                continue
             if isinstance(item, Sequence):
                 sequences.append(item)
             elif isinstance(item, Equation):
                 equations.append(item)
             elif isinstance(item, CodeComment):
                 comments.append(item)
+            else:
+                raise ValueError(
+                    f"modulecode expected Sequence/Equation/CodeComment; got: {type(item).__name__}: {item!r}"
+                )
 
         if sequences:
             module_code.sequences = sequences
@@ -157,22 +163,30 @@ class SFCMixin:
         tree = cast(TransformerTree, items[2])
         return SFCSubsequence(name=items[1], body=tree_children(tree))
 
-    def seqalternative(self, items: list[TransformerItem]) -> SFCAlternative:
-        """Grammar seqalternative -> ALTERNATIVESEQ sequence_body (ALTERNATIVEBRANCH sequence_body)+ ENDALTERNATIVE."""
+    def _collect_sequence_branches(self, items: list[TransformerItem], rule: str) -> list[SfcBody]:
         branches: list[SfcBody] = []
         for item in items:
-            if isinstance(item, Tree) and item.data == const.KEY_SEQUENCE_BODY:
+            if isinstance(item, Token):
+                continue
+            if isinstance(item, Tree):
                 tree = cast(TransformerTree, item)
+                if tree.data != const.KEY_SEQUENCE_BODY:
+                    raise ValueError(f"{rule} expected sequence_body Trees; got Tree({tree.data!r})")
                 branches.append(tree_children(tree))
+                continue
+            raise ValueError(f"{rule} expected sequence_body Trees; got: {type(item).__name__}: {item!r}")
+        if not branches:
+            raise ValueError(f"{rule} expected at least two sequence_body branches; got: {items!r}")
+        return branches
+
+    def seqalternative(self, items: list[TransformerItem]) -> SFCAlternative:
+        """Grammar seqalternative -> ALTERNATIVESEQ sequence_body (ALTERNATIVEBRANCH sequence_body)+ ENDALTERNATIVE."""
+        branches = self._collect_sequence_branches(items, "seqalternative")
         return SFCAlternative(branches=branches)
 
     def seqparallel(self, items: list[TransformerItem]) -> SFCParallel:
         """Grammar seqparallel -> PARALLELSEQ sequence_body (PARALLELBRANCH sequence_body)+ ENDPARALLEL."""
-        branches: list[SfcBody] = []
-        for item in items:
-            if isinstance(item, Tree) and item.data == const.KEY_SEQUENCE_BODY:
-                tree = cast(TransformerTree, item)
-                branches.append(tree_children(tree))
+        branches = self._collect_sequence_branches(items, "seqparallel")
         return SFCParallel(branches=branches)
 
     def seqfork(self, items: list[TransformerItem]) -> SFCFork:
@@ -194,11 +208,11 @@ class SFCMixin:
         """Grammar seqbreak -> SEQBREAK."""
         return SFCBreak()
 
-    def seq_element(self, items: list[TransformerItem]) -> TransformerItem | None:
+    def seq_element(self, items: list[TransformerItem]) -> TransformerItem:
         """Grammar seq_element -> passthrough SFC node."""
         for item in items:
             return item
-        return None
+        raise ValueError("seq_element expected an SFC element; got no items")
 
     def sequence_body(self, items: list[TransformerItem]) -> TransformerTree:
         """Grammar sequence_body -> Tree of SFC sequence elements with CodeComments inline."""
@@ -283,6 +297,10 @@ class SFCMixin:
             if isinstance(item, Token):
                 continue
 
+            if isinstance(item, int):
+                # layer_info: currently not modeled on Equation; explicitly ignored.
+                continue
+
             if isinstance(item, str) and name is None:
                 name = item
                 continue
@@ -297,6 +315,8 @@ class SFCMixin:
 
             if isinstance(item, (Assignment, FuncCallStmt, IfStmt, CodeComment, FuncCall)):
                 code.append(item)
+            else:
+                raise ValueError(f"equationblock unexpected code item: {type(item).__name__}: {cast(object, item)!r}")
 
         if name is None:
             raise ValueError("Name can't be None")

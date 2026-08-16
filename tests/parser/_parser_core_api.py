@@ -111,6 +111,45 @@ def test_create_parser_uses_regex_and_disk_cache(monkeypatch, tmp_path):
     assert options["parser"] == "lalr"
 
 
+def test_parser_cache_path_isolates_version_dimensions(monkeypatch, tmp_path):
+    monkeypatch.setattr(parser_api, "_PARSER_CACHE_DIR", tmp_path)
+    base = parser_api._parser_cache_path(start="start", propagate_positions=True, strict=False)
+    assert Path(base).parent == tmp_path
+
+    different_strict = parser_api._parser_cache_path(start="start", propagate_positions=True, strict=True)
+    different_start = parser_api._parser_cache_path(start="modulecode", propagate_positions=True, strict=False)
+    different_positions = parser_api._parser_cache_path(start="start", propagate_positions=False, strict=False)
+    assert len({base, different_strict, different_start, different_positions}) == 4
+
+    monkeypatch.setattr(parser_api, "lark_version", "999.0.0")
+    different_lark = parser_api._parser_cache_path(start="start", propagate_positions=True, strict=False)
+    assert different_lark != base
+
+
+def test_build_lark_parser_tolerates_corrupted_cache_file(monkeypatch, tmp_path):
+    cache_dir = tmp_path / "lark-cache"
+    cache_dir.mkdir()
+    cache_path = str(cache_dir / "corrupt.lark")
+    (cache_dir / "corrupt.lark").write_bytes(b"\x00\x01corrupted-not-a-pickle" * 50)
+
+    parser = parser_api.build_lark_parser(start="start", propagate_positions=True, strict=False)
+    assert parser is not None
+    # A real cache lookup against the (still corrupt) disk file must not break parsing.
+    tree = parser.parse(
+        '"SyntaxVersion"\n'
+        '"OriginalFileDate"\n'
+        '"ProgramDate"\n'
+        "BasePicture Invocation (0.0,0.0,0.0,1.0,1.0) : MODULEDEFINITION DateCode_ 1\n"
+        "ModuleDef\n"
+        "ClippingBounds = ( -1.0 , -1.0 ) ( 1.0 , 1.0 )\n"
+        "ENDDEF (*BasePicture*);\n"
+    )
+    assert tree.data == "start"
+    monkeypatch.setattr(parser_api, "_parser_cache_path", lambda **_: cache_path)
+    parser2 = parser_api.build_lark_parser(start="start", propagate_positions=True, strict=False)
+    assert parser2 is not None
+
+
 def test_create_sl_parser_delegates_to_create_parser(monkeypatch):
     sentinel = object()
     captured: dict[str, object] = {}
@@ -146,7 +185,11 @@ def test_load_source_text_decodes_compressed_sources_and_emits_debug(monkeypatch
 
     monkeypatch.setattr(parser_api, "_read_text_simple", lambda path: "compressed-body")
     monkeypatch.setattr(parser_api, "is_compressed", lambda text: text == "compressed-body")
-    monkeypatch.setattr(parser_api, "preprocess_sl_text", lambda text: ("decoded-source", {"kind": "compressed"}))
+    monkeypatch.setattr(
+        parser_api,
+        "preprocess_source",
+        lambda text: SourceDocument("compressed-body", "decoded-source", tuple(range(len("decoded-source")))),
+    )
 
     loaded = parser_api.load_source_text(tmp_path / "Program.s", debug=events.append)
 
