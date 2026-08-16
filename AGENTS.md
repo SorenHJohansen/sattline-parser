@@ -36,6 +36,8 @@
 - Start from the owning file, symbol, or failing command.
 - Smallest grounded edit that tests the current hypothesis, then the first focused validation immediately (`pytest tests/parser` or targeted file).
 - Widen to Ruff, Pyright, or pre-commit only after the local check passes.
+- Never commit directly to `main`. Always work on a feature branch and land
+  changes through a pull request; `main` only ever receives merges.
 
 ## Last Updated
 
