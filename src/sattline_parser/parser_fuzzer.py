@@ -2,9 +2,15 @@
 
 ClusterFuzzLite uses atheris-based fuzz targets.
 
+``atheris.instrument_all()`` is called right before ``Setup`` so libFuzzer
+receives real Python coverage feedback. (A ``with atheris.instrument_imports()``
+block does not work here: importing this module as ``python -m ...`` loads the
+``sattline_parser`` package — including ``api``/``preprocessing`` — before the
+fuzzer body runs, so the modules are already imported and never instrumented.)
+
 This target parses input directly and lets **unexpected** exceptions escape so
-atheris/ClusterFuzzLite reports them. Only expected invalid-input errors
-(Lark ``UnexpectedInput`` and :class:`~sattline_parser.preprocessing.PreprocessError`)
+atheris/ClusterFuzzLite reports them. Only expected invalid-input errors (Lark
+``UnexpectedInput`` and :class:`~sattline_parser.preprocessing.PreprocessError`)
 are absorbed; an internal ``ValueError``/``TypeError``/``KeyError`` from the
 transformer or parser internals is treated as a fuzz failure.
 """
@@ -28,5 +34,6 @@ def test_one_input(data: bytes) -> None:
 
 
 if __name__ == "__main__":
+    atheris.instrument_all()  # pyright: ignore[reportAttributeAccessIssue, reportUnknownMemberType]
     atheris.Setup(sys.argv, test_one_input)
     atheris.Fuzz()
