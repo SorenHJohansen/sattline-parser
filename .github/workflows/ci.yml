@@ -100,24 +100,16 @@ jobs:
 
       # Deterministic corpus regression: every corpus fixture must either parse
       # or produce an *expected* invalid-input error, and nothing may time out.
+      # (Kept as a single line: YAML folded scalars with indented continuation
+      # lines produce literal newlines that break python -c.)
       - name: Deterministic corpus regression
         run: >-
-          uv run python -c
-          "from sattline_parser.fuzz_harness import run_corpus_regression, assert_no_crashes, assert_no_timeouts;
-           results = run_corpus_regression();
-           assert_no_crashes(results);
-           assert_no_timeouts(results);
-           expected = sum(1 for r in results if 'valid:' not in r.input_desc or r.success);
-           print(f'corpus regression OK ({len(results)} files)')"
+          uv run python -c "from sattline_parser.fuzz_harness import run_corpus_regression, assert_no_crashes, assert_no_timeouts; results = run_corpus_regression(); assert_no_crashes(results); assert_no_timeouts(results); print(f'corpus regression OK ({len(results)} files)')"
 
       # PR fuzz smoke: random input generation must not crash the parser.
       - name: Random fuzz smoke
         run: >-
-          uv run python -c
-          "from sattline_parser.fuzz_harness import run_random_fuzz, assert_no_crashes;
-           results = run_random_fuzz(rounds=50);
-           assert_no_crashes(results);
-           print('random fuzz smoke OK')"
+          uv run python -c "from sattline_parser.fuzz_harness import run_random_fuzz, assert_no_crashes; results = run_random_fuzz(rounds=50); assert_no_crashes(results); print('random fuzz smoke OK')"
 
   security:
     name: Dependency Security Audit
@@ -203,14 +195,14 @@ jobs:
       - name: Install uv
         uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
 
-      # Unlocked install: resolves the *latest* lark matching the declared
-      # range (>=1.3.1,<2), in addition to the locked min (1.3.1) tested in the
-      # main tests job.
-      - name: Install dev extras (unlocked, latest deps)
-        run: uv sync --all-extras --upgrade lark
+      # Resolves the *latest* lark matching the declared range (>=1.3.1,<2), in
+      # addition to the locked min (1.3.1) tested in the main tests job.
+      - name: Install dev extras and upgrade lark to latest in range
+        run: uv sync --all-extras --upgrade-package lark
 
+      # --no-sync so uv does not revert lark to the locked version.
       - name: Run full test suite against latest lark
-        run: uv run python -m pytest
+        run: uv run --no-sync python -m pytest
 
   windows:
     name: Windows Compatibility
