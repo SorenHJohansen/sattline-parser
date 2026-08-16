@@ -7,7 +7,7 @@ def test_modules_mixin_definition_trees_keep_only_supported_children():
     mixin = _ModulesHarness()
     record_field = Variable(name="Field", datatype="integer")
     record = mixin.record(
-        SimpleNamespace(line=8, column=2),
+        SimpleNamespace(line=8, column=2, start_pos=80, end_pos=90),
         [
             "Payload",
             "desc",
@@ -16,7 +16,7 @@ def test_modules_mixin_definition_trees_keep_only_supported_children():
         ],
     )
     moduletype = mixin.moduletype_definition(
-        SimpleNamespace(line=3, column=1),
+        SimpleNamespace(line=3, column=1, start_pos=30, end_pos=40),
         [
             "PumpType",
             400,
@@ -38,7 +38,7 @@ def test_modules_mixin_definition_trees_keep_only_supported_children():
     invocation_tail = mixin.invocation_tail([moduletype_tree, Tree(parser_const.TREE_TAG_MODULETYPE_PAR_LIST, [])])
 
     assert record.name == "Payload"
-    assert record.declaration_span == SourceSpan(line=8, column=2)
+    assert record.declaration_span == SourceSpan(start=80, end=90, line=8, column=2)
     assert record.var_list == [record_field]
     assert moduletype.groupconn == VarRef("ScanType")
     assert moduletype.groupconn_global is True
@@ -136,7 +136,7 @@ def test_modules_mixin_transfer_and_variable_helpers_cover_fallback_branches():
     assert mixin.submodules(["ignored", [_module_header("Nope")]]).children == []
 
     duration_transfer = mixin.moduletype_par_transfer(
-        SimpleNamespace(line=3, column=1),
+        SimpleNamespace(line=3, column=1, start_pos=30, end_pos=31),
         [
             VarRef("Target"),
             True,
@@ -148,7 +148,7 @@ def test_modules_mixin_transfer_and_variable_helpers_cover_fallback_branches():
     assert duration_transfer.is_source_global is True
     assert duration_transfer.is_duration is True
     assert duration_transfer.source_literal == {parser_const.GRAMMAR_VALUE_TIME_VALUE: "T#5S"}
-    assert duration_transfer.span == SourceSpan(3, 1)
+    assert duration_transfer.span == SourceSpan(start=30, end=31, line=3, column=1)
     with pytest.raises(ValueError, match="unexpected source"):
         mixin.moduletype_par_transfer(SimpleNamespace(line=4, column=1), [VarRef("Target"), object()])
     with pytest.raises(ValueError, match="target must be a VarRef"):
@@ -157,8 +157,17 @@ def test_modules_mixin_transfer_and_variable_helpers_cover_fallback_branches():
         mixin.moduletype_par_transfer(SimpleNamespace(line=6, column=1), [123, "SourceLiteral"])
     assert mixin.moduletype_par_list([duration_transfer]).data == parser_const.TREE_TAG_MODULETYPE_PAR_LIST
 
+    int_literal_transfer = mixin.moduletype_par_transfer(
+        SimpleNamespace(line=2, column=1, start_pos=20, end_pos=21),
+        [VarRef("Target"), 42],
+    )
+    assert int_literal_transfer.source_literal == 42
+    assert int_literal_transfer.source_type == parser_const.KEY_VALUE
+
     assert mixin.variable_group([]) == []
-    literal_init_variables = mixin.variable_group([("Beta", None, SourceSpan(2, 2)), "integer", 7])
+    literal_init_variables = mixin.variable_group(
+        [("Beta", None, SourceSpan(start=2, end=3, line=2, column=2)), "integer", 7]
+    )
     assert literal_init_variables[0].init_value == 7
     assert literal_init_variables[0].init_is_duration is False
 
@@ -167,7 +176,7 @@ def test_modules_mixin_transfer_and_variable_helpers_cover_fallback_branches():
     with pytest.raises(ValueError, match="moduletype_par_transfer missing target variable_name"):
         mixin.moduletype_par_transfer(SimpleNamespace(line=1, column=1), [None])
     with pytest.raises(ValueError, match="Expected datatype NAME in variable_group"):
-        mixin.variable_group([("Alpha", None, SourceSpan(1, 1)), 123])
+        mixin.variable_group([("Alpha", None, SourceSpan(start=1, end=2, line=1, column=1)), 123])
     with pytest.raises(ValueError, match="record is missing datatype name"):
         mixin.record(SimpleNamespace(line=1, column=1), [100])
 
@@ -219,6 +228,18 @@ def test_modules_mixin_layout_helpers_cover_moduledef_and_numeric_errors():
 
     tuple_moduledef = mixin.moduledef([((2.0, 2.0), (3.0, 3.0))])
     assert tuple_moduledef.clipping_bounds == ((2.0, 2.0), (3.0, 3.0))
+
+    # Module options arriving through the real grammar (moduledef_opts /
+    # moduledef_option) must reach the ModuleDef, including Two_Layers_ and
+    # bare-float grid values.
+    option = mixin.moduledef_option([{parser_const.GRAMMAR_VALUE_ZOOMABLE: True}, 0.75])
+    assert option == {parser_const.GRAMMAR_VALUE_ZOOMABLE: True, parser_const.GRAMMAR_VALUE_GRID: 0.75}
+    opts = mixin.moduledef_opts([option, {parser_const.GRAMMAR_VALUE_TWO_LAYERS: 3.0}])
+    assert opts[parser_const.GRAMMAR_VALUE_TWO_LAYERS] == 3.0
+    options_moduledef = mixin.moduledef([opts])
+    assert options_moduledef.zoomable is True
+    assert options_moduledef.grid == 0.75
+    assert options_moduledef.seq_layers == 3.0
 
     with pytest.raises(ValueError, match="coord_invar_tail expected"):
         mixin.coord_invar_tail([Token("JUNK", ",")])

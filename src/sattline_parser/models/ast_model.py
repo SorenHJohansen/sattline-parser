@@ -99,11 +99,22 @@ __all__ = [
 
 @dataclass(frozen=True)
 class SourceSpan:
+    """A source range in the *original* (un-preprocessed) source text.
+
+    ``start`` and ``end`` are zero-based character offsets into the original
+    source, with ``end`` exclusive. ``line`` and ``column`` are one-based and
+    describe the start of the span (``line`` starting at 1, ``column`` starting
+    at 1). All positions refer to the original source even when the text was
+    compressed/decoded before parsing (see ``sattline_parser.source_document``).
+    """
+
+    start: int
+    end: int
     line: int
     column: int
 
     def __reduce__(self):
-        return (type(self), (self.line, self.column))
+        return (type(self), (self.start, self.end, self.line, self.column))
 
 
 @dataclass(frozen=True)
@@ -475,11 +486,18 @@ class BasePicture:
     graphics_picture_display_occurrences: list[Any] = field(default_factory=any_list)
     library_dependencies: dict[str, list[str]] = field(default_factory=library_dependency_map)
     trailing_comments: list[CodeComment] = field(default_factory=code_comment_list)
+    #: The original Lark parse tree, attached by ``parse_source_text`` as a
+    #: debugging/tooling convenience. It is deliberately *not* part of the
+    #: persistent semantic AST: pickling strips it (see ``__getstate__``) so
+    #: cached/serialized payloads stay small and self-contained. Code should not
+    #: rely on ``parse_tree`` surviving a pickle round-trip.
     parse_tree: Any | None = None
 
     def __getstate__(self) -> dict[str, Any]:
         state = self.__dict__.copy()
-        # Cached AST payloads do not need the original Lark tree and it dominates pickle size.
+        # The Lark tree is parse-result/tooling state, not persistent AST state;
+        # dropping it keeps pickled payloads small and avoids accidentally
+        # serializing huge trees.
         state["parse_tree"] = None
         return state
 

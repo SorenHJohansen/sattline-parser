@@ -4,11 +4,11 @@ from ._parser_core_test_support import *
 
 
 def test_ast_model_helpers_cover_reduce_usage_and_string_formats(monkeypatch: pytest.MonkeyPatch):  # noqa: PLR0915
-    span = SourceSpan(2, 3)
+    span = SourceSpan(start=2, end=3, line=1, column=3)
     int_lit = IntLiteral(7, span)
     float_lit = FloatLiteral(2.5, span)
 
-    assert span.__reduce__() == (SourceSpan, (2, 3))
+    assert span.__reduce__() == (SourceSpan, (2, 3, 1, 3))
     assert int_lit.__reduce__() == (IntLiteral, (7, span))
     assert float_lit.__reduce__() == (FloatLiteral, (2.5, span))
     assert Simple_DataType.from_any(Simple_DataType.BOOLEAN) is Simple_DataType.BOOLEAN

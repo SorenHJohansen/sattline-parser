@@ -6,13 +6,18 @@ LALR state machine merges "inside a comment" and "awaiting the next entry"
 states, so trailing code would lex as comment text.
 
 This module registers :class:`SattLineLexer` through the ``_plugins`` hook as
-the ``ContextualLexer``. It tracks a comment-depth counter:
+the ``ContextualLexer``. It tracks a comment-depth counter *per lexer run*:
 
 * depth ``0``: delegate to the normal per-state contextual lexer.
 * depth ``> 0``: delegate to a dedicated comment scanner that only recognizes
   ``COMMENT_START`` / ``COMMENT_END`` / ``COMMENT_TEXT`` and is oblivious to
   the parser state. Nested comments increment the depth; ``COMMENT_END``
   decrements it.
+
+The depth is a generator-local variable inside :meth:`SattLineLexer.lex`. The
+lexer instance is shared by the cached parser across parses, so the depth must
+never be stored on ``self``: concurrent parses would otherwise corrupt each
+other's nested-comment state.
 
 To keep the merged LALR states safe, ``COMMENT_END`` and ``COMMENT_TEXT`` are
 removed from every per-state accepted-terminal set (``COMMENT_START`` stays,
@@ -63,8 +68,6 @@ class SattLineLexer(ContextualLexer):
         )
         self.root_lexer = self.BasicLexer(self._stripped_conf)
 
-        self._comment_depth = 0
-
         comment_conf = copy(conf)
         comment_conf.terminals = [conf.terminals_by_name[name] for name in sorted(COMMENT_TERMINALS)]
         # WS must stay inside COMMENT_TEXT so a whole comment body lexes as a
@@ -73,18 +76,21 @@ class SattLineLexer(ContextualLexer):
         self._comment_lexer = BasicLexer(comment_conf)
 
     def lex(self, lexer_state: LexerState, parser_state: Any) -> Iterator[Token]:
-        self._comment_depth = 0
+        # Per-run depth: this generator runs once per parse, and the lexer
+        # instance is shared by the cached parser, so instance state would leak
+        # between concurrent parses.
+        comment_depth = 0
         try:
             while True:
-                if self._comment_depth > 0:
+                if comment_depth > 0:
                     token = self._comment_lexer.next_token(lexer_state, parser_state)
                 else:
                     token = self.lexers[parser_state.position].next_token(lexer_state, parser_state)
                 token_type = token.type
                 if token_type == TOKEN_COMMENT_START:
-                    self._comment_depth += 1
+                    comment_depth += 1
                 elif token_type == TOKEN_COMMENT_END:
-                    self._comment_depth -= 1
+                    comment_depth -= 1
                 yield token
         except EOFError:
             pass

@@ -36,16 +36,11 @@ class _VariableLike(Protocol):
 
 
 def _is_variable_like(value: object) -> TypeGuard[_VariableLike]:
-    required_attrs = (
-        "name",
-        "datatype",
-        "global_var",
-        "const",
-        "state",
-        "init_value",
-        "description",
-    )
-    return type(value).__name__ == "Variable" and all(hasattr(value, attr) for attr in required_attrs)
+    # Imported lazily: models.ast_model depends on this formatter module via
+    # _ast_model_support, so a module-level import would create a cycle.
+    from ..models.ast_model import Variable  # noqa: PLC0415
+
+    return isinstance(value, Variable)
 
 
 def format_list(

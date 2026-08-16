@@ -4,11 +4,11 @@ from ._parser_core_test_support import *
 
 
 def test_code_comment_dataclass_exposes_full_text_and_inner_content():
-    comment = CodeComment(text="(* outer (* nested *) text *)", span=SourceSpan(line=3, column=5))
+    comment = CodeComment(text="(* outer (* nested *) text *)", span=SourceSpan(start=0, end=26, line=3, column=5))
 
     assert comment.content == " outer (* nested *) text "
     assert str(comment) == "(* outer (* nested *) text *)"
-    assert comment.span == SourceSpan(line=3, column=5)
+    assert comment.span == SourceSpan(start=0, end=26, line=3, column=5)
     assert CodeComment("plain").content == "plain"
 
 

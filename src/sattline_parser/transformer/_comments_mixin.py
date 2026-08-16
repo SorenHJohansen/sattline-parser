@@ -13,7 +13,7 @@ from typing import cast
 
 from lark import Token, Tree
 
-from sattline_parser.models.ast_model import CodeComment
+from sattline_parser.models.ast_model import CodeComment, SourceSpan
 
 from ._module_shared import TransformerItem, TransformerTree, tree_children
 
@@ -55,8 +55,18 @@ class CommentsMixin:
         comment_tree = cast(TransformerTree, items[0])
         pieces = self._comment_pieces(comment_tree)
         text = "".join(str(tok) for tok in pieces)
-        span = self._token_span(pieces[0]) if pieces else None  # type: ignore[attr-defined]
-        return CodeComment(text=text, span=span)  # type: ignore[arg-type]
+        span: SourceSpan | None = None
+        if pieces:
+            first_span = cast(SourceSpan | None, self._token_span(pieces[0]))  # type: ignore[attr-defined]
+            last_span = cast(SourceSpan | None, self._token_span(pieces[-1]))  # type: ignore[attr-defined]
+            if first_span is not None and last_span is not None:
+                span = SourceSpan(
+                    start=first_span.start,
+                    end=last_span.end,
+                    line=first_span.line,
+                    column=first_span.column,
+                )
+        return CodeComment(text=text, span=span)
 
     def code_comment(self, items: list[TransformerItem]) -> CodeComment:
         """Grammar code_comment -> CodeComment kept inline in ModuleCode lists."""

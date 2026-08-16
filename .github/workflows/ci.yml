@@ -5,6 +5,8 @@ on:
   push:
     branches:
       - main
+    tags:
+      - "v*"
   workflow_dispatch:
 
 concurrency:
@@ -15,30 +17,45 @@ permissions:
   contents: read
 
 jobs:
-  clean-install:
-    name: Clean Venv Install
+  lint:
+    name: Lint & Typecheck
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
     steps:
-      - name: Check out repository
-        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v6
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v6
 
       - name: Set up Python 3.13
         uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
         with:
           python-version: "3.13"
 
-      - name: Install into fresh venv
-        shell: bash
-        run: |
-          python -m venv /tmp/clean-venv
-          /tmp/clean-venv/bin/pip install .
-          /tmp/clean-venv/bin/python -c "import sattline_parser; print(sattline_parser.__version__)"
+      - name: Install uv
+        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+
+      - name: Install locked dev environment
+        run: uv sync --frozen --all-extras
+
+      - name: Ruff lint
+        run: uv run ruff check src tests scripts
+
+      - name: Ruff format check
+        run: uv run ruff format --check src tests scripts
+
+      - name: Pyright strict
+        run: uv run pyright src tests
+
+      # -c pyproject.toml is required: bandit does not auto-discover
+      # [tool.bandit] skips/exclude_dirs in this environment.
+      - name: Bandit
+        run: uv run bandit -q -r src -x tests -c pyproject.toml
+
+      - name: pre-commit
+        run: uv run pre-commit run --all-files
 
   tests:
-    name: Tests & Coverage
+    name: Tests & Coverage (full suite)
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v6
 
@@ -47,24 +64,26 @@ jobs:
         with:
           python-version: "3.13"
 
-      - name: Install dev dependencies
-        run: |
-          python -m pip install --upgrade pip
-          python -m pip install -e ".[dev]"
+      - name: Install uv
+        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
 
-      - name: Run Ruff
-        run: ruff check src tests
+      - name: Install locked dev environment
+        run: uv sync --frozen --all-extras
 
-      - name: Run pytest with coverage
-        run: python -m pytest tests/parser -q --tb=short
+      # Runs the complete configured test suite (pyproject testpaths =
+      # ["tests"]), including tests/test_packaging.py outside tests/parser,
+      # and enforces both coverage gates: 100% line coverage (the project's
+      # documented guarantee) and a minimum branch coverage.
+      - name: Run full suite and enforce line + branch coverage gates
+        run: uv run python scripts/check_branch_coverage.py
 
-      - name: Run pre-commit
-        run: python -m pre_commit run --all-files
+      - name: Verify full-suite coverage file was produced
+        run: test -s coverage.xml
 
-  fuzz-smoke:
-    name: Fuzz Harness Smoke
+  fuzz:
+    name: Deterministic Fuzz Regression + PR Fuzz Smoke
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v6
 
@@ -73,10 +92,139 @@ jobs:
         with:
           python-version: "3.13"
 
-      - name: Install dev dependencies
-        run: |
-          python -m pip install --upgrade pip
-          python -m pip install -e ".[dev]"
+      - name: Install uv
+        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
 
-      - name: Run fuzz smoke
-        run: python -c "from sattline_parser.fuzz_harness import run_random_fuzz, assert_no_crashes; results = run_random_fuzz(rounds=50); assert_no_crashes(results)"
+      - name: Install locked dev environment
+        run: uv sync --frozen --all-extras
+
+      # Deterministic corpus regression: every corpus fixture must either parse
+      # or produce an *expected* invalid-input error, and nothing may time out.
+      # (Kept as a single line: YAML folded scalars with indented continuation
+      # lines produce literal newlines that break python -c.)
+      - name: Deterministic corpus regression
+        run: >-
+          uv run python -c "from sattline_parser.fuzz_harness import run_corpus_regression, assert_no_crashes, assert_no_timeouts; results = run_corpus_regression(); assert_no_crashes(results); assert_no_timeouts(results); print(f'corpus regression OK ({len(results)} files)')"
+
+      # PR fuzz smoke: random input generation must not crash the parser.
+      - name: Random fuzz smoke
+        run: >-
+          uv run python -c "from sattline_parser.fuzz_harness import run_random_fuzz, assert_no_crashes; results = run_random_fuzz(rounds=50); assert_no_crashes(results); print('random fuzz smoke OK')"
+
+  security:
+    name: Dependency Security Audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v6
+
+      - name: Set up Python 3.13
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: "3.13"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+
+      - name: Install locked dev environment
+        run: uv sync --frozen --all-extras
+
+      # Audits the exact locked dependency set for known vulnerabilities.
+      - name: pip-audit
+        run: uv run pip-audit
+
+  build-package:
+    name: Build & Install Package Artifacts
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v6
+
+      - name: Set up Python 3.13
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: "3.13"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+
+      - name: Install locked dev environment
+        run: uv sync --frozen --all-extras
+
+      - name: Build wheel and sdist
+        run: uv run python -m build
+
+      - name: Check distribution metadata
+        run: uv run python -m twine check dist/*
+
+      - name: Install wheel into clean venv and run smoke test
+        shell: bash
+        run: |
+          python -m venv /tmp/wheel-venv
+          /tmp/wheel-venv/bin/pip install --quiet dist/*.whl
+          /tmp/wheel-venv/bin/python scripts/smoke_installed.py
+
+      - name: Install sdist into clean venv and run smoke test
+        shell: bash
+        run: |
+          python -m venv /tmp/sdist-venv
+          /tmp/sdist-venv/bin/pip install --quiet dist/*.tar.gz
+          /tmp/sdist-venv/bin/python scripts/smoke_installed.py
+
+      - name: Upload distributions
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          if-no-files-found: error
+          name: pypi-dist-${{ github.run_id }}
+          path: |
+            dist/*.whl
+            dist/*.tar.gz
+
+  lark-compat:
+    name: Lark Compatibility (latest <2)
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v6
+
+      - name: Set up Python 3.13
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: "3.13"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+
+      # Resolves the *latest* lark matching the declared range (>=1.3.1,<2), in
+      # addition to the locked min (1.3.1) tested in the main tests job.
+      - name: Install dev extras and upgrade lark to latest in range
+        run: uv sync --all-extras --upgrade-package lark
+
+      # --no-sync so uv does not revert lark to the locked version.
+      - name: Run full test suite against latest lark
+        run: uv run --no-sync python -m pytest
+
+  windows:
+    name: Windows Compatibility
+    runs-on: windows-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v6
+
+      - name: Set up Python 3.13
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: "3.13"
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+
+      # atheris (the `fuzz` extra) is Linux/FreeBSD-only, so install the test
+      # extra only here. The fuzz tests monkeypatch atheris and never import it.
+      - name: Install locked test environment
+        run: uv sync --frozen --extra test
+
+      # Full suite on Windows: encodings, paths, and packaging are platform
+      # sensitive, so the entire suite (including fuzz-worker subprocesses) runs.
+      - name: Run full pytest suite
+        run: uv run python -m pytest

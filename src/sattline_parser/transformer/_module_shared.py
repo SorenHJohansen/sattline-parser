@@ -68,12 +68,22 @@ def coord_pair(raw: object) -> tuple[float, float] | None:
 
 
 def meta_span(meta: Any) -> SourceSpan | None:
-    """Extract source span from Lark meta."""
+    """Extract source span from Lark meta.
+
+    Returns a span carrying character offsets (``start``/``end``) plus the
+    one-based line/column of the span start. Requires ``start_pos``/``end_pos``,
+    which Lark populates when ``propagate_positions`` is enabled; returns
+    ``None`` when the meta lacks them.
+    """
     line = getattr(meta, "line", None)
     column = getattr(meta, "column", None)
-    if line is None or column is None:
+    start_pos = getattr(meta, "start_pos", None)
+    end_pos = getattr(meta, "end_pos", None)
+    if not isinstance(line, int) or not isinstance(column, int):
         return None
-    return SourceSpan(line=int(line), column=int(column))
+    if not isinstance(start_pos, int) or not isinstance(end_pos, int):
+        return None
+    return SourceSpan(start=start_pos, end=end_pos, line=line, column=column)
 
 
 def flatten_items(items: Iterable[TransformerItem]) -> Iterator[TransformerItem]:

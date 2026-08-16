@@ -8,13 +8,14 @@ This package owns the Lark grammar, the strict single-file syntax behavior, the 
 
 - Lark LALR parser for SattLine sources (grammar in `grammar/sattline.lark`)
 - Parses plain text and files (`.s`, `.g`, `.l`, `.x`, `.y`, `.z` and any other extension; the parser is content-based, not extension-based)
-- Strict, no-silent-fallback parsing
+- Strict, no-silent-fallback parsing: unknown compressed markers and unexpected transformer structures raise errors instead of being silently rewritten or dropped
 - Structural comments (`(* ... *)`, nested) preserved as role-tagged AST nodes
-- Automatic compressed-source decoding (`preprocess_sl_text`, `is_compressed`)
+- Automatic compressed-source decoding with full source provenance: AST spans and error locations always refer to the *original* source (`SourceSpan` carries character offsets plus line/column)
+- Lexically aware decoding: string literals and comments are protected, so syntax-looking text inside them is never rewritten
 - Error reporting with line/column locations in the original source (`describe_parse_error`)
 - AST models in `sattline_parser.models`
 - `SLTransformer` tree transformer in `sattline_parser.transformer`
-- Standalone fuzz harness with timeout protection and corpus regression
+- Standalone fuzz harness with hard subprocess timeouts and corpus regression
 - Zero runtime dependencies beyond `lark` and `regex`
 
 ## Install
@@ -63,13 +64,32 @@ The exposed helpers below exist for the rare case where you are building tooling
 ### For power users: handle compressed sources
 
 ```python
-from sattline_parser import is_compressed, preprocess_sl_text
+from sattline_parser import is_compressed, preprocess_sl_text, preprocess_source
 
 if is_compressed(source):
     decoded, mapping = preprocess_sl_text(source)
+    # ... or, when you need original-source provenance:
+    doc = preprocess_source(source)
+    doc.original_text, doc.normalized_text  # preprocessed vs original
 ```
 
-`is_compressed` answers whether the text uses the compressed encoding, and `preprocess_sl_text` decodes it, returning the decoded text plus a mapping back to the original. Since both parse entry points already detect and decode compressed sources, these are only needed by tooling that must decode without parsing (for example, saving a plain-text copy) or by the fuzz harness that drives `preprocess_sl_text` with adversarial inputs.
+`is_compressed` answers whether the text uses the compressed encoding.
+`preprocess_sl_text` decodes it, returning the decoded text plus the *marker
+substitution table* (the seed mapping that was applied). That mapping is **not**
+a position map — use `preprocess_source` for provenance. `preprocess_source`
+returns a `SourceDocument` carrying the original text, the decoded text, and a
+per-character map from decoded offsets back to the original source; `parse_source_text`
+uses it internally so every AST span and diagnostic points into the original source.
+
+Decoding is lexically aware: string literals and `(* ... *)` comments are
+protected before any transformation runs, so `#markers` and other syntax-looking
+text inside them are never rewritten. An unknown compressed marker raises
+`PreprocessError` instead of being silently replaced with whitespace.
+
+Since both parse entry points already detect and decode compressed sources,
+these helpers are only needed by tooling that must decode without parsing (for
+example, saving a plain-text copy) or by the fuzz harness that drives the
+decoder with adversarial inputs.
 
 ### Report errors with source locations
 
@@ -113,10 +133,40 @@ Think of the AST as a structured, machine-readable view of the program, that too
 ```bash
 python -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"
-pytest tests/parser -q
-ruff check src tests
+pytest -q                                   # full configured suite
+ruff check src tests scripts
+ruff format --check src tests scripts
 pyright src tests
+bandit -q -r src -x tests -c pyproject.toml
+pip-audit
+python scripts/check_branch_coverage.py     # line >= 100%, branch >= 93%
 ```
+
+Line coverage is enforced at 100%; branch coverage is measured and gated by
+`scripts/check_branch_coverage.py` (both enforced in CI). The full test suite
+is run by CI via `pytest` (the project's configured `testpaths`), including the
+packaging tests in `tests/test_packaging.py` that live outside `tests/parser`.
+
+Fuzzing runs in three tiers, each enforced separately:
+
+- **Deterministic corpus regression** — every fixture in `tests/fixtures/corpus/`
+  must parse or produce an *expected* invalid-input error; runs in normal CI.
+- **PR fuzz smoke** — a small number of random inputs must not crash the
+  parser; runs in normal CI.
+- **Continuous fuzzing** — long-running, coverage-guided fuzzing via
+  ClusterFuzzLite (`.github/workflows/fuzz.yml`).
+
+The fuzz harness enforces timeouts with a worker subprocess (killed on timeout,
+reused across inputs) and classifies expected invalid-input errors (`UnexpectedInput`,
+`PreprocessError`) separately from internal bugs — a `ValueError`/`TypeError`
+from the transformer is treated as a crash, not as ordinary invalid input.
+
+## Dependencies
+
+The declared runtime dependencies are `lark[interegular]>=1.3.1,<2` and
+`regex`. CI tests both the locked minimum (lark 1.3.1) and the latest lark that
+satisfies the range, so the supported range is actually exercised. Installs use
+`uv.lock` for reproducibility.
 
 ## Project layout
 

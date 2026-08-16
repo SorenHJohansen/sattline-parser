@@ -46,7 +46,8 @@ def test_sfc_mixin_builds_modulecode_sequences_and_equations():
     assert mixin.seqfork([Token("SEQFORK", "SEQFORK"), "PathA", "PathB"]) == SFCFork(targets=("PathA", "PathB"))
     assert isinstance(mixin.seqbreak([]), SFCBreak)
     assert mixin.seq_element([step]) is step
-    assert mixin.seq_element([]) is None
+    with pytest.raises(ValueError, match="seq_element expected"):
+        mixin.seq_element([])
 
     seqcontrol_tree = Tree(
         parser_const.KEY_SEQ_CONTROL_OPS,
@@ -163,15 +164,15 @@ def test_parse_source_text_preserves_sfc_step_code_blocks():
     assert isinstance(enter_stmt, Assignment)
     assert isinstance(active_stmt, Assignment)
     assert isinstance(exit_stmt, Assignment)
-    assert enter_stmt.target == VarRef("Flag", span=SourceSpan(16, 10))
+    assert enter_stmt.target == VarRef("Flag", span=SourceSpan(start=415, end=419, line=16, column=10))
     assert enter_stmt.value is True
-    assert enter_stmt.span == SourceSpan(16, 10)
-    assert active_stmt.target == VarRef("Counter", span=SourceSpan(18, 10))
+    assert enter_stmt.span == SourceSpan(start=415, end=426, line=16, column=10)
+    assert active_stmt.target == VarRef("Counter", span=SourceSpan(start=454, end=461, line=18, column=10))
     assert active_stmt.value == 1
-    assert active_stmt.span == SourceSpan(18, 10)
-    assert exit_stmt.target == VarRef("Counter", span=SourceSpan(20, 10))
+    assert active_stmt.span == SourceSpan(start=454, end=465, line=18, column=10)
+    assert exit_stmt.target == VarRef("Counter", span=SourceSpan(start=491, end=498, line=20, column=10))
     assert exit_stmt.value == 0
-    assert exit_stmt.span == SourceSpan(20, 10)
+    assert exit_stmt.span == SourceSpan(start=491, end=502, line=20, column=10)
 
 
 def test_sfc_mixin_rejects_malformed_shapes_and_missing_required_fields():
@@ -201,9 +202,29 @@ def test_sfc_mixin_rejects_malformed_shapes_and_missing_required_fields():
         mixin.sequence([Token(parser_const.GRAMMAR_VALUE_SEQUENCE, parser_const.GRAMMAR_VALUE_SEQUENCE), "Seq"])
     with pytest.raises(ValueError, match="Size can't be None"):
         mixin.sequence([Token(parser_const.GRAMMAR_VALUE_SEQUENCE, parser_const.GRAMMAR_VALUE_SEQUENCE), "Seq", (1, 2)])
-    with pytest.raises(ValueError, match="Name can't be None"):
+    with pytest.raises(ValueError, match="equationblock unexpected code item"):
         mixin.equationblock([(1, 2), (3, 4), Tree(parser_const.KEY_STATEMENT, ["stmt"])])
+    with pytest.raises(ValueError, match="Name can't be None"):
+        mixin.equationblock([(1, 2), (3, 4)])
     with pytest.raises(ValueError, match="Position can't be None"):
         mixin.equationblock(["EqA"])
     with pytest.raises(ValueError, match="Size can't be None"):
         mixin.equationblock(["EqA", (1, 2)])
+
+
+def test_sfc_mixin_fails_loudly_on_unexpected_modulecode_and_branch_structures():
+    mixin = _SFCHarness()
+
+    with pytest.raises(ValueError, match="modulecode expected Sequence/Equation/CodeComment"):
+        mixin.modulecode([object()])
+
+    with pytest.raises(ValueError, match="seqalternative expected sequence_body Trees; got Tree"):
+        mixin.seqalternative([Tree("wrong", [])])
+    with pytest.raises(ValueError, match="seqparallel expected sequence_body Trees; got: int"):
+        mixin.seqparallel([42])
+    with pytest.raises(ValueError, match="seqalternative expected at least two sequence_body branches"):
+        mixin.seqalternative([Token("ALT", "ALT")])
+
+    # layer_info in equationblock is explicitly ignored, not an error.
+    eq = mixin.equationblock(["EqA", (1, 2), (3, 4), 7, Assignment(VarRef("A"), 1)])
+    assert eq.name == "EqA"
