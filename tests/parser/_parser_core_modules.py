@@ -130,7 +130,7 @@ def test_modules_mixin_invocation_new_module_collects_decls_and_frame_marker(fra
     local_var = Variable(name="Local", datatype="integer")
     child = ModuleTypeInstance(header=_module_header("Nested"), moduletype_name="NestedType")
     mapping = ParameterMapping(
-        target="Target",
+        target=VarRef("Target"),
         source_type=parser_const.KEY_VALUE,
         is_duration=False,
         is_source_global=False,
@@ -233,12 +233,13 @@ def test_modules_mixin_variable_group_and_mapping_helpers_preserve_modifiers_and
         ],
     )
     mapping = mixin.moduletype_par_transfer(
+        SimpleNamespace(line=9, column=3),
         [
             parsed_name,
             True,
             parser_const.GRAMMAR_VALUE_DURATION_VALUE,
             VarRef("SourceVar"),
-        ]
+        ],
     )
     variables = mixin.variable_group(
         [
@@ -257,8 +258,8 @@ def test_modules_mixin_variable_group_and_mapping_helpers_preserve_modifiers_and
     locals_tree = mixin.localvariables([list_tree])
     scan_group = mixin.scan_group([True, parsed_name])
 
-    assert parsed_name == VarRef("Pump.State", state="old")
-    assert mapping.target == VarRef("Pump.State", state="old")
+    assert parsed_name == VarRef("Pump.State", state="old", span=SourceSpan(9, 3))
+    assert mapping.target == VarRef("Pump.State", state="old", span=SourceSpan(9, 3))
     assert mapping.source == VarRef("SourceVar")
     assert mapping.source_type == parser_const.TREE_TAG_VARIABLE_NAME
     assert mapping.is_duration is True
@@ -280,4 +281,4 @@ def test_modules_mixin_variable_group_and_mapping_helpers_preserve_modifiers_and
         ["Pump", ".", "State", "new"],
     )
 
-    assert string_state_name == VarRef("Pump.State", state="new")
+    assert string_state_name == VarRef("Pump.State", state="new", span=SourceSpan(10, 5))

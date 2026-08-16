@@ -170,6 +170,7 @@ ENDDEF (*BasePicture*);
     bp = parser_core_parse_source_text(code)
 
     assert bp.modulecode is not None
+    assert bp.modulecode.equations is not None
     equation = bp.modulecode.equations[0]
     comment_items = [x for x in equation.code if isinstance(x, CodeComment)]
     assert [c.text for c in comment_items] == ["(* comment as statement *)"]

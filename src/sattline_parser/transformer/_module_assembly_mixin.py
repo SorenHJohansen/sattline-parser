@@ -227,7 +227,7 @@ class ModuleAssemblyMixin:
                 elif child not in (":",):
                     parts.append(child)
 
-        return VarRef(name="".join(parts), state=state)
+        return VarRef(name="".join(parts), state=state, span=meta_span(meta))
 
     @v_args(meta=True)
     def moduletype_definition(self, meta: Any, items: list[TransformerItem]) -> ModuleTypeDef:
@@ -309,7 +309,8 @@ class ModuleAssemblyMixin:
                         out.append(child)
         return Tree(const.TREE_TAG_MODULETYPE_LIST, out)
 
-    def moduletype_par_transfer(self, items: list[TransformerItem]) -> ParameterMapping:
+    @v_args(meta=True)
+    def moduletype_par_transfer(self, meta: Any, items: list[TransformerItem]) -> ParameterMapping:
         """Grammar moduletype_par_transfer -> ParameterMapping (variable => value)."""
         if not items:
             raise ValueError("moduletype_par_transfer received empty items")
@@ -320,13 +321,9 @@ class ModuleAssemblyMixin:
 
         if target_raw is None:
             raise ValueError("moduletype_par_transfer missing target variable_name")
-
-        if isinstance(target_raw, VarRef):
-            target_val: VarRef = target_raw
-        elif isinstance(target_raw, str):
-            target_val = VarRef(target_raw)
-        else:
-            target_val = VarRef(str(target_raw))
+        if not isinstance(target_raw, VarRef):
+            raise ValueError(f"moduletype_par_transfer target must be a VarRef; got: {target_raw!r}")
+        target_val: VarRef = target_raw
 
         is_global = False
         if idx < len(items):
@@ -356,8 +353,7 @@ class ModuleAssemblyMixin:
                 source_literal = cast(dict[str, object], source)
                 source_type = const.KEY_VALUE
             else:
-                source_literal = str(cast(object, source))
-                source_type = const.KEY_VALUE
+                raise ValueError(f"moduletype_par_transfer unexpected source: {source!r}")
 
         return ParameterMapping(
             target=target_val,
@@ -366,6 +362,7 @@ class ModuleAssemblyMixin:
             is_duration=is_duration,
             source=source_var,
             source_literal=source_literal,
+            span=meta_span(meta),
         )
 
     def moduletype_par_list(self, items: list[TransformerItem]) -> TransformerTree:
