@@ -16,7 +16,10 @@ def test_sl_transformer_top_level_helpers_cover_header_quote_and_tree_iteration_
         ["beta", Tree(parser_const.TREE_TAG_BASE_MODULE_BODY, ["gamma"])],
     )
 
-    assert _sl_meta_span(SimpleNamespace(line=9, column=3)) == SourceSpan(line=9, column=3)
+    assert _sl_meta_span(SimpleNamespace(line=9, column=3, start_pos=40, end_pos=50)) == SourceSpan(
+        start=40, end=50, line=9, column=3
+    )
+    assert _sl_meta_span(SimpleNamespace(line=9, column=3)) is None
     assert _sl_meta_span(SimpleNamespace(line=None, column=3)) is None
     assert _extract_program_name_from_header_lines(header_lines) == "UnitProgram"
     assert (

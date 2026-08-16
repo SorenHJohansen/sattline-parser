@@ -4,14 +4,17 @@ from ._parser_core_test_support import *
 
 
 def test_modules_mixin_helpers_flatten_nested_module_trees_and_meta_spans():
-    meta = SimpleNamespace(line=12, column=4)
+    meta = SimpleNamespace(line=12, column=4, start_pos=100, end_pos=120)
     nested_tree = Tree(
         parser_const.TREE_TAG_MODULE_BODY,
         ["beta", Tree(parser_const.TREE_TAG_BASE_MODULE_BODY, ["gamma"])],
     )
 
-    assert meta_span(meta) == SourceSpan(line=12, column=4)
+    assert meta_span(meta) == SourceSpan(start=100, end=120, line=12, column=4)
     assert meta_span(SimpleNamespace(line=None, column=4)) is None
+    assert meta_span(SimpleNamespace(line=12, column=4, start_pos=1, end_pos=1)) == SourceSpan(
+        start=1, end=1, line=12, column=4
+    )
     assert _is_tree(nested_tree) is True
     assert _is_tree("not-a-tree") is False
     assert list(flatten_items(["alpha", ["delta"], nested_tree])) == ["alpha", "delta", "beta", "gamma"]
@@ -21,7 +24,7 @@ def test_modules_mixin_module_header_collects_argument_metadata():
     mixin = _ModulesHarness()
 
     header = mixin.module_header(
-        SimpleNamespace(line=5, column=2),
+        SimpleNamespace(line=5, column=2, start_pos=20, end_pos=30),
         [
             "Motor",
             {
@@ -52,7 +55,7 @@ def test_modules_mixin_module_header_collects_argument_metadata():
     )
 
     assert header.name == "Motor"
-    assert header.declaration_span == SourceSpan(line=5, column=2)
+    assert header.declaration_span == SourceSpan(start=20, end=30, line=5, column=2)
     assert header.invoke_coord == (1.0, 2.0, 3.0, 4.0, 5.0)
     assert header.invoke_coord_tails == ["PosX", "Allow.RecpSupParameters"]
     assert header.layer_info == "7"
@@ -224,7 +227,7 @@ def test_modules_mixin_base_picture_module_collects_nested_children_and_scan_gro
 def test_modules_mixin_variable_group_and_mapping_helpers_preserve_modifiers_and_state_suffixes():
     mixin = _ModulesHarness()
     parsed_name = mixin.variable_name(
-        SimpleNamespace(line=9, column=3),
+        SimpleNamespace(line=9, column=3, start_pos=90, end_pos=100),
         [
             Token(parser_const.KEY_NAME, "Pump"),
             Token(parser_const.KEY_DOT, "."),
@@ -233,7 +236,7 @@ def test_modules_mixin_variable_group_and_mapping_helpers_preserve_modifiers_and
         ],
     )
     mapping = mixin.moduletype_par_transfer(
-        SimpleNamespace(line=9, column=3),
+        SimpleNamespace(line=9, column=3, start_pos=90, end_pos=100),
         [
             parsed_name,
             True,
@@ -243,7 +246,7 @@ def test_modules_mixin_variable_group_and_mapping_helpers_preserve_modifiers_and
     )
     variables = mixin.variable_group(
         [
-            ("Alpha", "desc", SourceSpan(4, 1)),
+            ("Alpha", "desc", SourceSpan(start=4, end=5, line=4, column=1)),
             True,
             "integer",
             parser_const.GRAMMAR_VALUE_CONST_KW,
@@ -258,8 +261,8 @@ def test_modules_mixin_variable_group_and_mapping_helpers_preserve_modifiers_and
     locals_tree = mixin.localvariables([list_tree])
     scan_group = mixin.scan_group([True, parsed_name])
 
-    assert parsed_name == VarRef("Pump.State", state="old", span=SourceSpan(9, 3))
-    assert mapping.target == VarRef("Pump.State", state="old", span=SourceSpan(9, 3))
+    assert parsed_name == VarRef("Pump.State", state="old", span=SourceSpan(start=90, end=100, line=9, column=3))
+    assert mapping.target == VarRef("Pump.State", state="old", span=SourceSpan(start=90, end=100, line=9, column=3))
     assert mapping.source == VarRef("SourceVar")
     assert mapping.source_type == parser_const.TREE_TAG_VARIABLE_NAME
     assert mapping.is_duration is True
@@ -277,8 +280,19 @@ def test_modules_mixin_variable_group_and_mapping_helpers_preserve_modifiers_and
     assert scan_group == {"groupconn": parsed_name, "global": True}
 
     string_state_name = mixin.variable_name(
-        SimpleNamespace(line=10, column=5),
+        SimpleNamespace(line=10, column=5, start_pos=50, end_pos=60),
         ["Pump", ".", "State", "new"],
     )
 
-    assert string_state_name == VarRef("Pump.State", state="new", span=SourceSpan(10, 5))
+    assert string_state_name == VarRef("Pump.State", state="new", span=SourceSpan(start=50, end=60, line=10, column=5))
+
+    suffix_state_name = mixin.variable_name(
+        SimpleNamespace(line=11, column=3, start_pos=70, end_pos=80),
+        [
+            Token(parser_const.KEY_NAME, "Pump"),
+            Token(parser_const.KEY_DOT, "."),
+            Token(parser_const.KEY_NAME, "State"),
+            Token("STATE_SUFFIX", ":Old"),
+        ],
+    )
+    assert suffix_state_name == VarRef("Pump.State", state="old", span=SourceSpan(start=70, end=80, line=11, column=3))

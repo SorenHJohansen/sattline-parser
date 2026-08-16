@@ -1,8 +1,32 @@
-"""Helpers for decoding compressed SattLine text before parsing."""
+"""Helpers for decoding compressed SattLine text before parsing.
+
+The decoder is *lexically aware*: string literals and structural
+``(* ... *)`` comments are protected (replaced by opaque placeholders) before
+any syntax-level transformation runs, so syntax-looking text inside strings or
+comments can never be rewritten accidentally.
+
+The decoder also builds a per-character map from the decoded (normalized) text
+back to the original source, so the parser can report AST spans and diagnostics
+against the original source (:class:`sattline_parser.source_document.SourceDocument`).
+"""
+
+from __future__ import annotations
 
 import re
+from collections.abc import Callable
 
-__all__ = ["SEED_MAPPING", "decode_compressed", "is_compressed", "preprocess_sl_text"]
+from sattline_parser.source_document import SourceDocument
+
+__all__ = [
+    "SEED_MAPPING",
+    "PreprocessError",
+    "decode_compressed",
+    "is_compressed",
+    "preprocess_sl_text",
+    "preprocess_source",
+]
+
+_GENERATED = -1
 
 # Seed mappings from sample files (kept explicit for traceability).
 SEED_MAPPING: dict[str, str] = {
@@ -171,11 +195,6 @@ SEED_MAPPING: dict[str, str] = {
     "#<>": "Signer2Name_",
 }
 
-# You can optionally seed more when you see stable pairs in other files.
-# For example, many compressed samples also use:
-# "#01" often appears at the start of tuples like "( 0.0 , 0.0 , ...", but since "(" remains visible,
-# we avoid guessing punctuation for "#01" until learned via an aligned pair.
-
 _MARKER_RE = re.compile(r"#[0-9A-Za-z;:=><?]+")
 _WHITESPACE_RE = re.compile(r"\s+")
 _ENDDEF_TRAILING_SEMI_RE = re.compile(r"\bENDDEF\b\s*;")
@@ -184,9 +203,12 @@ _ENDIF_SEMI_COMMA_RE = re.compile(r"ENDIF;\s*,")
 _ENDIF_SEMI_PAREN_RE = re.compile(r"ENDIF;\s*\)")
 _EMPTY_ASSIGN_RE = re.compile(r":=\s*;")
 _GRAPHOBJECTS_INTERACT_RE = re.compile(r"\bGraphObjects\b\s*:\s*InteractObjects\b")
-_DURATION_STR_RE = re.compile(r'(\bduration\b(?:\s+OpSave)?\s*:=\s*)("[^"]*")', re.IGNORECASE)
-_TIME_STR_RE = re.compile(r'(\btime\b(?:\s+OpSave)?\s*:=\s*)("[^"]*")', re.IGNORECASE)
-_DATE_TIMESTAMP_RE = re.compile(r'(=>\s*)("\d{4}-\d{2}-\d{2}-\d{2}:\d{2}:\d{2}\.\d{3}")')
+# String literals are protected placeholders by the time these run.
+_STRING_PLACEHOLDER = r"(\x00S\d+\x00)"
+_DURATION_STR_RE = re.compile(r"(\bduration\b(?:\s+OpSave)?\s*:=\s*)" + _STRING_PLACEHOLDER, re.IGNORECASE)
+_TIME_STR_RE = re.compile(r"(\btime\b(?:\s+OpSave)?\s*:=\s*)" + _STRING_PLACEHOLDER, re.IGNORECASE)
+_DATE_TIMESTAMP_RE = re.compile(r"(=>\s*)" + _STRING_PLACEHOLDER)
+_DATE_TIMESTAMP_PATTERN = re.compile(r'"\d{4}-\d{2}-\d{2}-\d{2}:\d{2}:\d{2}\.\d{3}"')
 _EXECUTE_LOCAL_ENDDEF_RE = re.compile(r"(ExecuteLocalOld\s*=\s*ExecuteLocal:Old)\s+ENDDEF")
 _EXECUTE_STATE_IF_RE = re.compile(r"(ExecuteState:Old)\s+IF\b")
 _ENDIF_NO_TERM_RE = re.compile(r"\bENDIF\b(?!\s*[;,\)])")
@@ -196,6 +218,16 @@ _ENABLE_OUTVAR_RE = re.compile(r"(Enable_\s*=\s*\w+\s*:)\s*OutVar_")
 _TRUEVAR_RE = re.compile(r"\bTrueVar\b")
 _EQUATIONBLOCK_RE = re.compile(r"\bEQUATIONBLOCK\b")
 _EMPTY_TRAILING_ARG_RE = re.compile(r"\b([A-Za-z_][A-Za-z0-9_]*)\(([^)]*?),\s*\)")
+_PLACEHOLDER_RE = re.compile(r"\x00[SC]\d+\x00")
+
+
+class PreprocessError(ValueError):
+    """Raised when compressed SattLine source cannot be decoded safely.
+
+    Distinct from Lark parse errors: this signals malformed compressed input
+    (for example an unknown ``#marker``) rather than a syntax error in the
+    decoded program.
+    """
 
 
 def is_compressed(text: str) -> bool:
@@ -219,8 +251,177 @@ def is_compressed(text: str) -> bool:
     return marker_count >= 50 or marker_char_ratio >= 0.02 or (marker_count >= 10 and keyword_hits == 0)
 
 
-def decode_compressed(text: str, mapping: dict[str, str]) -> str:
-    """Replace #markers using the mapping. Leaves unknown markers as-is."""
+# ---------------------------------------------------------------------------
+# Lexically-aware protection of string literals and comments
+# ---------------------------------------------------------------------------
+
+
+def _scan_opaque_regions(text: str) -> list[tuple[str, int, int]]:
+    """Return ``(kind, start, end)`` for every string ('S') and comment ('C').
+
+    The scanner understands nested ``(* ... *)`` comments, doubled ``""``
+    quote escapes, and does not treat text inside a string as a comment (or
+    vice versa).
+    """
+    regions: list[tuple[str, int, int]] = []
+    index = 0
+    length = len(text)
+    while index < length:
+        if text.startswith("(*", index):
+            depth = 1
+            cursor = index + 2
+            while cursor < length and depth > 0:
+                if text.startswith("(*", cursor):
+                    depth += 1
+                    cursor += 2
+                elif text.startswith("*)", cursor):
+                    depth -= 1
+                    cursor += 2
+                else:
+                    cursor += 1
+            regions.append(("C", index, cursor))
+            index = cursor
+        elif text[index] == '"':
+            cursor = index + 1
+            while cursor < length:
+                if text[cursor] == '"':
+                    if cursor + 1 < length and text[cursor + 1] == '"':
+                        cursor += 2
+                        continue
+                    cursor += 1
+                    break
+                cursor += 1
+            regions.append(("S", index, cursor))
+            index = cursor
+        else:
+            index += 1
+    return regions
+
+
+class _OpaqueRegistry:
+    """Holds protected string/comment regions so they can be restored later."""
+
+    def __init__(self, text: str) -> None:
+        self._strings: list[tuple[int, str]] = []
+        self._comments: list[tuple[int, str]] = []
+        self._regions: list[tuple[str, int, int, int]] = []
+        for kind, start, end in _scan_opaque_regions(text):
+            entry = (start, text[start:end])
+            if kind == "S":
+                index = len(self._strings)
+                self._strings.append(entry)
+            else:
+                index = len(self._comments)
+                self._comments.append(entry)
+            self._regions.append((kind, index, start, end))
+
+    def protect(self, text: str) -> tuple[str, list[int]]:
+        parts: list[str] = []
+        map_parts: list[list[int]] = []
+        last = 0
+        for kind, index, start, end in self._regions:
+            if start > last:
+                parts.append(text[last:start])
+                map_parts.append(list(range(last, start)))
+            placeholder = f"\x00{kind}{index}\x00"
+            parts.append(placeholder)
+            map_parts.append([_GENERATED] * len(placeholder))
+            last = end
+        if last < len(text):
+            parts.append(text[last:])
+            map_parts.append(list(range(last, len(text))))
+        decoded = "".join(parts)
+        char_map: list[int] = []
+        for part in map_parts:
+            char_map.extend(part)
+        if len(char_map) != len(decoded):  # pragma: no cover - invariant by construction
+            raise PreprocessError("internal error: opaque protection map mismatch")  # pragma: no cover
+        return decoded, char_map
+
+    def string_text(self, placeholder: str) -> str | None:
+        return self._lookup_text(placeholder, "S")
+
+    def _lookup_text(self, placeholder: str, kind: str) -> str | None:
+        if len(placeholder) < 4 or placeholder[1] != kind:
+            return None
+        try:
+            index = int(placeholder[2:-1])
+        except (ValueError, IndexError):
+            return None
+        entries = self._strings if kind == "S" else self._comments
+        if 0 <= index < len(entries):
+            return entries[index][1]
+        return None
+
+    def restore(self, decoded: str, char_map: list[int]) -> tuple[str, list[int]]:
+        for match in reversed(list(_PLACEHOLDER_RE.finditer(decoded))):
+            placeholder = match.group(0)
+            kind = placeholder[1]
+            index = int(placeholder[2:-1])
+            entries = self._strings if kind == "S" else self._comments
+            if not (0 <= index < len(entries)):
+                raise PreprocessError(f"internal error: unknown placeholder {placeholder!r}")
+            orig_start, orig_text = entries[index]
+            start, end = match.start(), match.end()
+            decoded = decoded[:start] + orig_text + decoded[end:]
+            char_map = char_map[:start] + [orig_start + i for i in range(len(orig_text))] + char_map[end:]
+        if "\x00" in decoded:
+            raise PreprocessError("internal error: placeholder not restored during decode")
+        return decoded, char_map
+
+
+# ---------------------------------------------------------------------------
+# Edit-aware regex substitution
+# ---------------------------------------------------------------------------
+
+
+def _regex_sub(
+    decoded: str,
+    char_map: list[int],
+    pattern: re.Pattern[str],
+    repl: str | Callable[[re.Match[str]], str],
+) -> tuple[str, list[int]]:
+    """Mirror ``re.sub`` semantics while maintaining the character map.
+
+    Matches are computed against the pre-operation string exactly like
+    ``re.sub``; the replacement text is then left-aligned onto the matched
+    original region so position mapping stays anchored to real source.
+    """
+    parts: list[str] = []
+    map_parts: list[list[int]] = []
+    last = 0
+    for match in pattern.finditer(decoded):
+        start, end = match.start(), match.end()
+        if start > last:
+            parts.append(decoded[last:start])
+            map_parts.append(char_map[last:start])
+        replacement = match.expand(repl) if isinstance(repl, str) else repl(match)
+        parts.append(replacement)
+        region = char_map[start:end]
+        replacement_map: list[int] = []
+        for index, _char in enumerate(replacement):
+            if index < len(region) and region[index] >= 0:
+                replacement_map.append(region[index])
+            else:
+                replacement_map.append(_GENERATED)
+        map_parts.append(replacement_map)
+        last = end
+    if last < len(decoded):
+        parts.append(decoded[last:])
+        map_parts.append(char_map[last:])
+    new_decoded = "".join(parts)
+    new_map: list[int] = []
+    for part in map_parts:
+        new_map.extend(part)
+    if len(new_map) != len(new_decoded):  # pragma: no cover - invariant by construction
+        raise PreprocessError("internal error: decoded text / map length mismatch")  # pragma: no cover
+    return new_decoded, new_map
+
+
+def _decode_with_map(text: str, mapping: dict[str, str]) -> tuple[str, list[int]]:
+    """Decode *text* with *mapping*, returning (decoded, char_map)."""
+    registry = _OpaqueRegistry(text)
+    decoded, char_map = registry.protect(text)
 
     def _subst(m: re.Match[str]) -> str:
         tok = m.group(0)
@@ -230,33 +431,18 @@ def decode_compressed(text: str, mapping: dict[str, str]) -> str:
             return "*"
         if tok.startswith("#0<") and len(tok) > 3:
             return "* " + tok[3:]
-        return mapping.get(tok, " ")
+        value = mapping.get(tok)
+        if value is None:
+            raise PreprocessError(f"Unknown compressed marker {tok!r} at character offset {m.start()}")
+        return value
 
-    decoded = _MARKER_RE.sub(_subst, text)
-    # Normalize common ABB formatting quirks
-    decoded = _ENDDEF_TRAILING_SEMI_RE.sub("ENDDEF", decoded)
-    decoded = _SEMI_BEFORE_ASSIGN_RE.sub(" :=", decoded)
-    decoded = _ENDIF_SEMI_COMMA_RE.sub("ENDIF,", decoded)
-    decoded = _ENDIF_SEMI_PAREN_RE.sub("ENDIF)", decoded)
-    decoded = _EMPTY_ASSIGN_RE.sub(":= Default;", decoded)
-    decoded = _GRAPHOBJECTS_INTERACT_RE.sub("InteractObjects", decoded)
-    decoded = _DURATION_STR_RE.sub(r"\1Duration_Value \2", decoded)
-    decoded = _TIME_STR_RE.sub(r"\1Time_Value \2", decoded)
-    decoded = _DATE_TIMESTAMP_RE.sub(r"\1Time_Value \2", decoded)
-    decoded = _EXECUTE_LOCAL_ENDDEF_RE.sub(r"\1; ENDDEF", decoded)
-    decoded = _EXECUTE_STATE_IF_RE.sub(r"\1; IF", decoded)
-    # Ensure IF statements terminate with ';' (but not inside expressions)
-    decoded = _ENDIF_NO_TERM_RE.sub("ENDIF;", decoded)
-    # Drop empty GraphObjects sections before ENDDEF
-    decoded = _GRAPHOBJECTS_ENDDEF_RE.sub("ENDDEF", decoded)
-    # Ensure variable groups end with ';' before ENDDEF
-    decoded = _TYPE_ENDDEF_RE.sub(r"\1 ; ENDDEF", decoded)
-    # Normalize Enable_ tails to use InVar_ for grammar compatibility
-    decoded = _ENABLE_OUTVAR_RE.sub(r"\1 InVar_", decoded)
-    # Avoid BOOL tokenizing identifiers like TrueVar
-    decoded = _TRUEVAR_RE.sub("TTrueVar", decoded)
+    def _date_timestamp_sub(m: re.Match[str]) -> str:
+        placeholder = m.group(2)
+        original = registry.string_text(placeholder)
+        if original is not None and _DATE_TIMESTAMP_PATTERN.match(original):
+            return f"{m.group(1)}Time_Value {placeholder}"
+        return m.group(0)
 
-    # Inject missing ModuleCode before EQUATIONBLOCK when none exists in the same module
     def _ensure_modulecode(m: re.Match[str]) -> str:
         last_enddef = decoded.rfind("ENDDEF", 0, m.start())
         last_modulecode = decoded.rfind("ModuleCode", 0, m.start())
@@ -264,13 +450,67 @@ def decode_compressed(text: str, mapping: dict[str, str]) -> str:
             return m.group(0)
         return "ModuleCode " + m.group(0)
 
-    decoded = _EQUATIONBLOCK_RE.sub(_ensure_modulecode, decoded)
+    decoded, char_map = _regex_sub(decoded, char_map, _MARKER_RE, _subst)
+    # Normalize common ABB formatting quirks
+    decoded, char_map = _regex_sub(decoded, char_map, _ENDDEF_TRAILING_SEMI_RE, "ENDDEF")
+    decoded, char_map = _regex_sub(decoded, char_map, _SEMI_BEFORE_ASSIGN_RE, " :=")
+    decoded, char_map = _regex_sub(decoded, char_map, _ENDIF_SEMI_COMMA_RE, "ENDIF,")
+    decoded, char_map = _regex_sub(decoded, char_map, _ENDIF_SEMI_PAREN_RE, "ENDIF)")
+    decoded, char_map = _regex_sub(decoded, char_map, _EMPTY_ASSIGN_RE, ":= Default;")
+    decoded, char_map = _regex_sub(decoded, char_map, _GRAPHOBJECTS_INTERACT_RE, "InteractObjects")
+    decoded, char_map = _regex_sub(decoded, char_map, _DURATION_STR_RE, r"\1Duration_Value \2")
+    decoded, char_map = _regex_sub(decoded, char_map, _TIME_STR_RE, r"\1Time_Value \2")
+    decoded, char_map = _regex_sub(decoded, char_map, _DATE_TIMESTAMP_RE, _date_timestamp_sub)
+    decoded, char_map = _regex_sub(decoded, char_map, _EXECUTE_LOCAL_ENDDEF_RE, r"\1; ENDDEF")
+    decoded, char_map = _regex_sub(decoded, char_map, _EXECUTE_STATE_IF_RE, r"\1; IF")
+    # Ensure IF statements terminate with ';' (but not inside expressions)
+    decoded, char_map = _regex_sub(decoded, char_map, _ENDIF_NO_TERM_RE, "ENDIF;")
+    # Drop empty GraphObjects sections before ENDDEF
+    decoded, char_map = _regex_sub(decoded, char_map, _GRAPHOBJECTS_ENDDEF_RE, "ENDDEF")
+    # Ensure variable groups end with ';' before ENDDEF
+    decoded, char_map = _regex_sub(decoded, char_map, _TYPE_ENDDEF_RE, r"\1 ; ENDDEF")
+    # Normalize Enable_ tails to use InVar_ for grammar compatibility
+    decoded, char_map = _regex_sub(decoded, char_map, _ENABLE_OUTVAR_RE, r"\1 InVar_")
+    # Avoid BOOL tokenizing identifiers like TrueVar
+    decoded, char_map = _regex_sub(decoded, char_map, _TRUEVAR_RE, "TTrueVar")
+    # Inject missing ModuleCode before EQUATIONBLOCK when none exists in the same module
+    decoded, char_map = _regex_sub(decoded, char_map, _EQUATIONBLOCK_RE, _ensure_modulecode)
     # Fill empty trailing function arguments (e.g., "Func(a, )")
-    return _EMPTY_TRAILING_ARG_RE.sub(r"\1(\2, 0)", decoded)
+    decoded, char_map = _regex_sub(decoded, char_map, _EMPTY_TRAILING_ARG_RE, r"\1(\2, 0)")
+    return registry.restore(decoded, char_map)
+
+
+def decode_compressed(text: str, mapping: dict[str, str]) -> str:
+    """Decode ``#markers`` using *mapping*.
+
+    String literals and ``(* ... *)`` comments are never rewritten. Unknown
+    markers raise :class:`PreprocessError` instead of being silently destroyed.
+    """
+    decoded, _char_map = _decode_with_map(text, mapping)
+    return decoded
 
 
 def preprocess_sl_text(text: str) -> tuple[str, dict[str, str]]:
-    """Decode compressed text using the seed mapping (no file output)."""
+    """Decode compressed text using the seed mapping (no file output).
+
+    Returns ``(decoded_text, marker_mapping)``. The returned mapping is the
+    marker substitution table; it is **not** a position map. Use
+    :func:`preprocess_source` to obtain original-source provenance.
+    """
     mapping = dict(SEED_MAPPING)
     decoded = decode_compressed(text, mapping)
     return decoded, mapping
+
+
+def preprocess_source(text: str) -> SourceDocument:
+    """Return a :class:`SourceDocument` with full original-source provenance.
+
+    Plain text is returned as an identity document (no normalization). For
+    compressed text the returned document carries the decoded text and the
+    per-character map back to the original source.
+    """
+    if not is_compressed(text):
+        return SourceDocument.identity(text)
+    mapping = dict(SEED_MAPPING)
+    decoded, char_map = _decode_with_map(text, mapping)
+    return SourceDocument(text, decoded, tuple(char_map))

@@ -79,9 +79,15 @@ markers = [
     "quarantine: marks flaky tests that should be skipped in CI",
 ]
 
+[tool.coverage.run]
+# The fuzz harness reads worker results on a daemon thread; measure threads so
+# the reader-loop code paths count toward coverage.
+concurrency = ["thread"]
+
 [tool.coverage.report]
 precision = 2
 exclude_lines = [
+    "#\\s*(pragma|PRAGMA)[:\\s]?\\s*(no|NO)\\s*(cover|COVER)",
     "if TYPE_CHECKING:",
     "if not fitting_tokens:",
     'encoding="latin-1"',
