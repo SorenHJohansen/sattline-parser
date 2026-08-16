@@ -5,10 +5,30 @@ Lark parser sees it. Lark therefore reports positions in the *normalized* text,
 while AST spans and diagnostics must refer to the *original* source.
 
 :class:`SourceDocument` carries the original text, the normalized text, and a
-per-character map from normalized offsets back to original offsets. Generated
-characters (inserted text with no exact source equivalent) map to ``-1`` and are
-anchored to the nearest real source position when a position/range is requested,
-so no misleading original positions are ever invented.
+per-character map from normalized offsets back to original offsets. The mapping
+distinguishes four situations:
+
+* **Exact mappings** -- characters that exist in the original source map to
+  their exact original offset.
+* **Generated characters** -- inserted text with no exact source equivalent
+  (for example a trailing ``;`` injected by the decoder) maps to ``-1`` and is
+  *anchored* to the nearest preceding real source offset when a position or
+  range is requested. A generated character never claims an exact original
+  position of its own.
+* **Anchor positions** -- generated characters and end-of-input boundaries map
+  through their nearest real source character (the anchor). Generated text
+  inside a span is covered by the anchor's original range.
+* **Deleted source regions** -- original text removed by the preprocessor has
+  no normalized counterpart and therefore no map entries. A range spanning the
+  surviving text around a deleted region necessarily includes the deleted
+  region in its original-range result; the map never invents a position for
+  deleted text itself.
+
+Spans use the half-open model ``[start, end)`` in both coordinate systems, so
+an end offset equal to the length of a text is a valid boundary. A normalized
+offset at or past the end of the normalized text maps to the original boundary
+just after the last real source character, never to the position of the final
+character.
 """
 
 from __future__ import annotations
@@ -71,14 +91,21 @@ class SourceDocument:
 
         Returns the exact original offset when the character exists in the
         original source. For generated characters, returns the nearest
-        preceding original offset (its anchor). Returns ``None`` only for a
-        negative input offset.
+        preceding original offset (its anchor). An offset at or past the end of
+        the normalized text is the end-of-input boundary: it maps to the
+        original boundary just after the last real source character (a valid
+        half-open ``end`` offset), so EOF is a boundary, never the position of
+        the final character. Returns ``None`` only for a negative input offset.
         """
         if norm_offset < 0:
             return None
         if norm_offset >= len(self._char_map):
-            norm_offset = len(self._char_map) - 1
-        if norm_offset < 0:
+            cursor = len(self._char_map) - 1
+            while cursor >= 0:
+                value = self._char_map[cursor]
+                if value >= 0:
+                    return value + 1
+                cursor -= 1
             return 0
         value = self._char_map[norm_offset]
         if value >= 0:
@@ -94,10 +121,22 @@ class SourceDocument:
     def map_range(self, norm_start: int, norm_end: int) -> tuple[int, int]:
         """Map a normalized half-open range to the tightest original range.
 
-        Generated characters inside the range are anchored to the nearest real
-        original position, so the returned range always points into the
-        original source without inventing positions.
+        The result is the smallest contiguous original range whose real
+        characters cover the real characters of the normalized range. Text that
+        the preprocessor deleted has no normalized counterpart, so a range that
+        spans the surviving text around it includes the deleted region in the
+        result. Generated characters inside the range are anchored to the
+        nearest real original position, so the returned range always points
+        into the original source without inventing positions.
+
+        An empty range (``norm_start >= norm_end``) maps to a zero-width range
+        at the mapped boundary position. A range ending at the end of the
+        normalized text maps to the corresponding original end boundary.
         """
+        if norm_start >= norm_end:
+            boundary = self.map_position(norm_start)
+            pos = 0 if boundary is None else boundary
+            return pos, pos
         mapped_start = self.map_position(norm_start)
         start = 0 if mapped_start is None else mapped_start
         end: int | None = None

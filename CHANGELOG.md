@@ -55,8 +55,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `parse_source_text`, so compression/provenance happen exactly once and
   consistently.
 - Fuzz harness no longer uses `ThreadPoolExecutor`; timeouts are real.
-- Strict-grammar generation is validated (a comment rule leaking into the
-  strict grammar fails loudly).
+- **Single authoritative grammar**: `sattline.lark` is the only grammar; the
+  generated comment-free "strict" grammar and all `text.replace()`-based
+  grammar manipulation are removed. Comments remain explicit grammar elements
+  at the exact syntactic positions SattLine defines and are preserved as
+  `CodeComment` nodes, and are still rejected inside expressions.
+- The `strict` parameter is removed from `build_lark_parser`, `create_parser`,
+  and `create_sl_parser`: there is one authoritative parser that accepts
+  comments exactly where the grammar permits them.
+- Source-map boundary semantics: `SourceDocument.map_position` maps offsets at
+  or past the end of the normalized text to the original end-of-input boundary
+  (a valid half-open `end`), never to the position of the final character;
+  `map_range` maps empty ranges to zero-width original ranges.
 - Coverage measurement now includes branch coverage (`scripts/check_branch_coverage.py`),
   gated at 93% while line coverage stays gated at 100%.
 

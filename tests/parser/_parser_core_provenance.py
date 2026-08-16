@@ -358,6 +358,52 @@ def test_concurrent_parses_with_nested_comments_do_not_interfere():
         assert any("level 3" in c.text for c in comments)
 
 
+def test_compressed_source_eof_maps_to_original_boundary():
+    # EOF is a boundary position, not the position of the final character:
+    # map_position(len(normalized)) must equal the end of the original source
+    # when the trailing characters are real.
+    doc = preprocess_source(_COMPRESSED)
+    eof = doc.map_position(len(doc.normalized_text))
+    assert eof == len(_COMPRESSED)
+    assert doc.normalized_text[-1] == "\n"
+    assert _COMPRESSED[eof - 1] == "\n"
+
+
+def test_compressed_source_generated_text_has_anchor_not_exact_position():
+    # "Counter = Counter + 1;" replaced by an unterminated ENDIF expression so
+    # the decoder injects a generated ";" after ENDIF (ENDIF without terminator).
+    source = _PROGRAM.replace(
+        "Counter = Counter + 1;",
+        "Counter = IF Counter > 0 THEN Counter + 1 ENDIF",
+    )
+    compressed = _compress(source)
+    doc = preprocess_source(compressed)
+    assert doc.normalized_text.count("ENDIF;") == 1
+    idx = doc.normalized_text.index("ENDIF;")
+    # The ';' is generated: it has no exact original position, only an anchor.
+    assert doc._char_map[idx + 5] == -1  # type: ignore[attr-defined]
+    assert doc.map_position(idx + 5) == doc.map_position(idx + 4)
+    # EOF still maps to the original boundary because the final characters are real.
+    eof = doc.map_position(len(doc.normalized_text))
+    assert eof == len(compressed)
+
+
+def test_compressed_source_parser_error_at_eof_maps_into_original_source():
+    truncated = _COMPRESSED[: _COMPRESSED.rindex("#85")]
+    assert truncated  # program is missing its closing ENDDEF
+    doc = preprocess_source(truncated)
+    raw_parser = create_sl_parser()
+    with pytest.raises(UnexpectedInput) as exc_info:
+        raw_parser.parse(doc.normalized_text)
+    exc = exc_info.value
+    mapped = doc.map_position(getattr(exc, "pos_in_stream", -1) or 0)
+    assert mapped is not None
+    assert 0 <= mapped <= len(truncated)
+    details = parser_api.describe_parse_error(exc, truncated, source_document=doc)
+    assert details.line is not None
+    assert details.line == len(truncated.splitlines())
+
+
 def test_remap_tree_to_original_is_noop_for_identity_documents():
     from sattline_parser.source_document import remap_tree_to_original  # noqa: PLC0415
 

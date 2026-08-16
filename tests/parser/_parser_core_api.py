@@ -113,16 +113,15 @@ def test_create_parser_uses_regex_and_disk_cache(monkeypatch, tmp_path):
 
 def test_parser_cache_path_isolates_version_dimensions(monkeypatch, tmp_path):
     monkeypatch.setattr(parser_api, "_PARSER_CACHE_DIR", tmp_path)
-    base = parser_api._parser_cache_path(start="start", propagate_positions=True, strict=False)
+    base = parser_api._parser_cache_path(start="start", propagate_positions=True)
     assert Path(base).parent == tmp_path
 
-    different_strict = parser_api._parser_cache_path(start="start", propagate_positions=True, strict=True)
-    different_start = parser_api._parser_cache_path(start="modulecode", propagate_positions=True, strict=False)
-    different_positions = parser_api._parser_cache_path(start="start", propagate_positions=False, strict=False)
-    assert len({base, different_strict, different_start, different_positions}) == 4
+    different_start = parser_api._parser_cache_path(start="modulecode", propagate_positions=True)
+    different_positions = parser_api._parser_cache_path(start="start", propagate_positions=False)
+    assert len({base, different_start, different_positions}) == 3
 
     monkeypatch.setattr(parser_api, "lark_version", "999.0.0")
-    different_lark = parser_api._parser_cache_path(start="start", propagate_positions=True, strict=False)
+    different_lark = parser_api._parser_cache_path(start="start", propagate_positions=True)
     assert different_lark != base
 
 
@@ -132,7 +131,7 @@ def test_build_lark_parser_tolerates_corrupted_cache_file(monkeypatch, tmp_path)
     cache_path = str(cache_dir / "corrupt.lark")
     (cache_dir / "corrupt.lark").write_bytes(b"\x00\x01corrupted-not-a-pickle" * 50)
 
-    parser = parser_api.build_lark_parser(start="start", propagate_positions=True, strict=False)
+    parser = parser_api.build_lark_parser(start="start", propagate_positions=True)
     assert parser is not None
     # A real cache lookup against the (still corrupt) disk file must not break parsing.
     tree = parser.parse(
@@ -146,24 +145,19 @@ def test_build_lark_parser_tolerates_corrupted_cache_file(monkeypatch, tmp_path)
     )
     assert tree.data == "start"
     monkeypatch.setattr(parser_api, "_parser_cache_path", lambda **_: cache_path)
-    parser2 = parser_api.build_lark_parser(start="start", propagate_positions=True, strict=False)
+    parser2 = parser_api.build_lark_parser(start="start", propagate_positions=True)
     assert parser2 is not None
 
 
 def test_create_sl_parser_delegates_to_create_parser(monkeypatch):
     sentinel = object()
-    captured: dict[str, object] = {}
 
-    def fake_create_parser(*, strict: bool = False):
-        captured["strict"] = strict
+    def fake_create_parser():
         return sentinel
 
     monkeypatch.setattr(parser_api, "create_parser", fake_create_parser)
 
-    parser = parser_api.create_sl_parser(strict=True)
-
-    assert parser is sentinel
-    assert captured == {"strict": True}
+    assert parser_api.create_sl_parser() is sentinel
 
 
 def test_read_text_with_fallback_accepts_cp1252_bytes(tmp_path):
@@ -286,7 +280,25 @@ def test_parse_source_file_logs_parse_failures_with_path(caplog, tmp_path):
     assert "Unexpected" in record.parser_context
 
 
-def test_parser_core_strict_mode_compiles_cleanly():
-    parser = parser_api.create_parser(strict=True)
-
+def test_parser_core_create_parser_accepts_legal_comments():
+    parser = parser_api.create_parser()
     assert parser is not None
+    # The single authoritative parser accepts comments where the grammar
+    # permits them (there is no comment-free mode).
+    tree = parser.parse(
+        '"SyntaxVersion"\n'
+        '"OriginalFileDate"\n'
+        '"ProgramDate"\n'
+        "BasePicture Invocation (0.0,0.0,0.0,1.0,1.0) : MODULEDEFINITION DateCode_ 1\n"
+        "ModuleDef\n"
+        "ClippingBounds = ( -1.0 , -1.0 ) ( 1.0 , 1.0 )\n"
+        "ENDDEF (*BasePicture*);\n"
+    )
+    assert tree.data == "start"
+
+
+def test_parser_core_default_parser_is_lru_cached():
+    # The default parser is built once and reused.
+    parser1 = parser_api._default_parser()
+    parser2 = parser_api._default_parser()
+    assert parser1 is parser2
