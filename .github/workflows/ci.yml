@@ -30,7 +30,7 @@ jobs:
           python-version: "3.13"
 
       - name: Install uv
-        uses: astral-sh/setup-uv@0c5bed2c0c1c4f6e6f9b0a0f2c1e4d4f1a0f2c1 # v6
+        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
 
       - name: Install locked dev environment
         run: uv sync --frozen --all-extras
@@ -65,7 +65,7 @@ jobs:
           python-version: "3.13"
 
       - name: Install uv
-        uses: astral-sh/setup-uv@0c5bed2c0c1c4f6e6f9b0a0f2c1e4d4f1a0f2c1 # v6
+        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
 
       - name: Install locked dev environment
         run: uv sync --frozen --all-extras
@@ -93,7 +93,7 @@ jobs:
           python-version: "3.13"
 
       - name: Install uv
-        uses: astral-sh/setup-uv@0c5bed2c0c1c4f6e6f9b0a0f2c1e4d4f1a0f2c1 # v6
+        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
 
       - name: Install locked dev environment
         run: uv sync --frozen --all-extras
@@ -132,7 +132,7 @@ jobs:
           python-version: "3.13"
 
       - name: Install uv
-        uses: astral-sh/setup-uv@0c5bed2c0c1c4f6e6f9b0a0f2c1e4d4f1a0f2c1 # v6
+        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
 
       - name: Install locked dev environment
         run: uv sync --frozen --all-extras
@@ -154,7 +154,7 @@ jobs:
           python-version: "3.13"
 
       - name: Install uv
-        uses: astral-sh/setup-uv@0c5bed2c0c1c4f6e6f9b0a0f2c1e4d4f1a0f2c1 # v6
+        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
 
       - name: Install locked dev environment
         run: uv sync --frozen --all-extras
@@ -201,7 +201,7 @@ jobs:
           python-version: "3.13"
 
       - name: Install uv
-        uses: astral-sh/setup-uv@0c5bed2c0c1c4f6e6f9b0a0f2c1e4d4f1a0f2c1 # v6
+        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
 
       # Unlocked install: resolves the *latest* lark matching the declared
       # range (>=1.3.1,<2), in addition to the locked min (1.3.1) tested in the
@@ -225,10 +225,12 @@ jobs:
           python-version: "3.13"
 
       - name: Install uv
-        uses: astral-sh/setup-uv@0c5bed2c0c1c4f6e6f9b0a0f2c1e4d4f1a0f2c1 # v6
+        uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
 
-      - name: Install locked dev environment
-        run: uv sync --frozen --all-extras
+      # atheris (the `fuzz` extra) is Linux/FreeBSD-only, so install the test
+      # extra only here. The fuzz tests monkeypatch atheris and never import it.
+      - name: Install locked test environment
+        run: uv sync --frozen --extra test
 
       # Full suite on Windows: encodings, paths, and packaging are platform
       # sensitive, so the entire suite (including fuzz-worker subprocesses) runs.
