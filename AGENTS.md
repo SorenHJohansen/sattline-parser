@@ -17,6 +17,7 @@
 | `src/sattline_parser/models/` | AST models (`ast_model.py`) |
 | `src/sattline_parser/transformer/` | Transformer mixins and `SLTransformer` |
 | `src/sattline_parser/fuzz_harness.py` | Standalone fuzz harness |
+| `src/sattline_parser/source_document.py` | Source provenance: original/normalized text + source map, span remapping |
 | `tests/` | Parser-core tests including the `tests/parser/` suite |
 | `tests/fixtures/corpus/` | Corpus fixtures (`.s` sources only) for regression and fuzz seeding |
 
@@ -24,7 +25,9 @@
 
 - Strict single-source validation stays the default; no silent fallback behavior.
 - Keep touched Python files Pyright strict-clean.
-- Hard cap of 500 lines per checked-in file.
+- Prefer splitting a file when it makes architectural sense (separate
+  responsibility). Do **not** split purely to stay under a line budget or into
+  mechanical `_part1`/`_part2` files; a cohesive module may exceed 500 lines.
 - Do not add imports back into consumer tooling; keep the layers clean.
 - Use the grammar file `src/sattline_parser/grammar/sattline.lark` as canonical.
 
@@ -36,4 +39,4 @@
 
 ## Last Updated
 
-2026-08-09
+2026-08-16

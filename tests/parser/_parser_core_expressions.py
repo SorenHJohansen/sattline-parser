@@ -2,14 +2,14 @@
 # ruff: noqa: F403, F405
 from ._parser_core_test_support import *
 
-_META = SimpleNamespace(line=1, column=1)
-_SPAN = SourceSpan(1, 1)
+_META = SimpleNamespace(line=1, column=1, start_pos=10, end_pos=20, end_line=1, end_column=11)
+_SPAN = SourceSpan(start=10, end=20, line=1, column=1)
 
 
 def test_tokens_mixin_coerces_supported_terminals_and_keywords():
     mixin = _TokensHarness()
-    signed_int = Token("SIGNED_INT", "-7", line=4, column=2)
-    real_value = Token("REAL", "3.25", line=8, column=6)
+    signed_int = Token("SIGNED_INT", "-7", start_pos=10, line=4, column=2, end_line=4, end_column=4, end_pos=12)
+    real_value = Token("REAL", "3.25", start_pos=20, line=8, column=6, end_line=8, end_column=10, end_pos=24)
 
     assert mixin._unwrap_token(Token("NAME", "Motor")) == "Motor"
     assert mixin._unwrap_token("AlreadyString") == "AlreadyString"
@@ -19,10 +19,10 @@ def test_tokens_mixin_coerces_supported_terminals_and_keywords():
     assert mixin.STRING_CRLF(Token("STRING_CRLF", '"Line"\n')) == '"Line"'
     assert mixin.STRING_NOTAIL(Token("STRING_NOTAIL", '"Tail"')) == "Tail"
 
-    assert mixin.SIGNED_INT(signed_int) == IntLiteral(-7, SourceSpan(line=4, column=2))
-    assert mixin.SIGNED_INT_NOTAIL(signed_int) == IntLiteral(-7, SourceSpan(line=4, column=2))
-    assert mixin.REAL(real_value) == FloatLiteral(3.25, SourceSpan(line=8, column=6))
-    assert mixin.REAL_NOTAIL(real_value) == FloatLiteral(3.25, SourceSpan(line=8, column=6))
+    assert mixin.SIGNED_INT(signed_int) == IntLiteral(-7, SourceSpan(start=10, end=12, line=4, column=2))
+    assert mixin.SIGNED_INT_NOTAIL(signed_int) == IntLiteral(-7, SourceSpan(start=10, end=12, line=4, column=2))
+    assert mixin.REAL(real_value) == FloatLiteral(3.25, SourceSpan(start=20, end=24, line=8, column=6))
+    assert mixin.REAL_NOTAIL(real_value) == FloatLiteral(3.25, SourceSpan(start=20, end=24, line=8, column=6))
     assert mixin.BOOL(Token("BOOL", parser_const.GRAMMAR_VALUE_BOOL_TRUE)) is True
     assert mixin.BOOL_NOTAIL(Token("BOOL_NOTAIL", parser_const.GRAMMAR_VALUE_BOOL_FALSE)) is False
 

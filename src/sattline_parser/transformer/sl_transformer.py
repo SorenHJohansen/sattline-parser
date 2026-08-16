@@ -190,13 +190,9 @@ class SLTransformer(
                 return
             if isinstance(value, dict):
                 payload = cast(dict[str, object], value)
+                # A tail is appended exactly once per dict, including enable
+                # dicts which also carry TREE_TAG_ENABLE.
                 if const.KEY_TAIL in payload and payload[const.KEY_TAIL] is not None:
-                    tails.append(payload[const.KEY_TAIL])
-                if (
-                    const.TREE_TAG_ENABLE in payload
-                    and const.KEY_TAIL in payload
-                    and payload[const.KEY_TAIL] is not None
-                ):
                     tails.append(payload[const.KEY_TAIL])
                 for nested in payload.values():
                     visit(nested)

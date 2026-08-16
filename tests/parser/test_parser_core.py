@@ -11,5 +11,6 @@ from ._parser_core_graphics import *
 from ._parser_core_module_definitions import *
 from ._parser_core_modules import *
 from ._parser_core_preprocessing import *
+from ._parser_core_provenance import *
 from ._parser_core_sfc import *
 from ._parser_core_transformer import *

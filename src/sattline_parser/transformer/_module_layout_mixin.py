@@ -132,6 +132,28 @@ class ModuleLayoutMixin:
 
         return nums[-1]
 
+    def moduledef_option(self, items: list[TransformerItem]) -> dict[str, object]:
+        """Grammar moduledef_option -> merged option dict.
+
+        ``grid`` returns a bare float; it is wrapped under the GRID key so no
+        option value is lost.
+        """
+        merged: dict[str, object] = {}
+        for payload in items:
+            if isinstance(payload, dict):
+                merged.update(cast(dict[str, object], payload))
+            elif isinstance(payload, int | float):
+                merged[const.GRAMMAR_VALUE_GRID] = float(payload)
+        return merged
+
+    def moduledef_opts(self, items: list[TransformerItem]) -> dict[str, object]:
+        """Grammar moduledef_opts -> merged dict of all module options."""
+        merged: dict[str, object] = {}
+        for payload in items:
+            if isinstance(payload, dict):
+                merged.update(cast(dict[str, object], payload))
+        return merged
+
     def moduledef_opts_seq(self, items: list[TransformerItem]) -> TransformerTree:
         """Grammar moduledef_opts_seq -> Tree with merged option dict."""
         merged: dict[str, object] = {}
@@ -190,6 +212,8 @@ class ModuleLayoutMixin:
                         module_def.grid = float(grid_value)
                 if const.KEY_SEQ_LAYERS in payload:
                     module_def.seq_layers = payload[const.KEY_SEQ_LAYERS]
+                if const.GRAMMAR_VALUE_TWO_LAYERS in payload:
+                    module_def.seq_layers = payload[const.GRAMMAR_VALUE_TWO_LAYERS]
         return module_def
 
 

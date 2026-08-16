@@ -7,6 +7,7 @@ and source pre-processing lives in :mod:`sattline_parser.preprocessing`.
 
 from __future__ import annotations
 
+import sys
 from collections.abc import Callable
 from functools import lru_cache
 from hashlib import sha256
@@ -20,6 +21,7 @@ from lark.exceptions import UnexpectedInput
 from lark.lexer import ContextualLexer
 
 from sattline_parser.models.ast_model import BasePicture
+from sattline_parser.source_document import remap_parse_error, remap_tree_to_original
 from sattline_parser.transformer.sl_transformer import SLTransformer
 
 from .errors import (
@@ -35,7 +37,7 @@ from .errors import (
 )
 from .grammar import constants as const
 from .grammar.sattline_lexer import SattLineLexer
-from .preprocessing import is_compressed, preprocess_sl_text
+from .preprocessing import is_compressed, preprocess_source
 
 __all__ = [
     "ParseErrorDetails",
@@ -96,7 +98,14 @@ _COMMENT_TERMINAL_PREFIXES = ("COMMENT_START:", "COMMENT_END:", "COMMENT_TEXT:")
 
 @lru_cache(maxsize=1)
 def _core_grammar() -> str:
-    """The comment-free grammar used by strict-mode builds."""
+    """The comment-free grammar used by strict-mode builds.
+
+    Derivation is structured: whole comment-rule and comment-terminal lines are
+    filtered out first, then remaining comment references are stripped from the
+    bodies of kept rules. The result is validated so a grammar edit that leaves
+    a comment rule in the strict grammar fails loudly instead of silently
+    changing strict-mode behavior.
+    """
     lines = _formatted_grammar().splitlines()
     kept: list[str] = []
     for line in lines:
@@ -108,7 +117,7 @@ def _core_grammar() -> str:
         kept.append(line)
     text = "\n".join(kept)
     # Longest role-tagged rules first to avoid partial-match corruption.
-    return (
+    core = (
         text.replace("code_comment | ", "")
         .replace("comments | ", "")
         .replace("comments? ", "")
@@ -125,6 +134,18 @@ def _core_grammar() -> str:
         .replace(" module_end_comment ", " ")
         .replace("| comment_stmt", "")
     )
+    _validate_strict_grammar(core)
+    return core
+
+
+def _validate_strict_grammar(core: str) -> None:
+    """Fail loudly if comment rules leaked into the strict grammar."""
+    for prefix in _COMMENT_RULE_PREFIXES:
+        for line in core.splitlines():
+            if line.strip().startswith(prefix):
+                raise RuntimeError(
+                    f"strict grammar generation leaked comment rule {prefix!r}; update _core_grammar to strip it"
+                )
 
 
 def _parser_cache_path(
@@ -140,6 +161,9 @@ def _parser_cache_path(
     cache_key.update(str(propagate_positions).encode("ascii"))
     cache_key.update(str(strict).encode("ascii"))
     cache_key.update(lark_version.encode("utf-8"))
+    # Lark's own cache payload already includes sys.version_info[:2]; include it
+    # in the filename too so a cache written by another interpreter is never read.
+    cache_key.update(f"py-{sys.version_info[0]}.{sys.version_info[1]}".encode("ascii"))
     _PARSER_CACHE_DIR.mkdir(parents=True, exist_ok=True)
     return str(_PARSER_CACHE_DIR / f"{cache_key.hexdigest()}.lark")
 
@@ -193,17 +217,22 @@ def _decode_compressed_source(
     source_path: Path | None = None,
     log_failures: bool = True,
 ) -> str:
+    """Decode compressed *src*, returning the decoded text (no provenance).
+
+    ``parse_source_text`` uses :func:`preprocess_source` instead so that
+    original-source provenance is preserved; this helper exists for
+    :func:`load_source_text` callers that only need the decoded text.
+    """
     if not is_compressed(src):
         return src
     if debug is not None:
         debug("Compressed format detected; decoding before parsing")
     try:
-        src, _ = preprocess_sl_text(src)
+        return preprocess_source(src).normalized_text
     except Exception as exc:
         if log_failures:
             _log_parser_failure(stage="decode", exc=exc, source_text=src, source_path=source_path)
         raise
-    return src
 
 
 def read_text_with_fallback(path: Path) -> str:
@@ -245,21 +274,34 @@ def parse_source_text(
     source_path: Path | None = None,
     log_failures: bool = True,
 ) -> BasePicture:
-    decoded = _decode_compressed_source(
-        src,
-        debug=debug,
-        source_path=source_path,
-        log_failures=log_failures,
-    )
+    try:
+        source_doc = preprocess_source(src)
+    except Exception as exc:
+        if log_failures:
+            _log_parser_failure(stage="decode", exc=exc, source_text=src, source_path=source_path)
+        raise
+    if debug is not None and not source_doc.is_identity():
+        debug("Compressed format detected; decoding before parsing")
+
     active_parser = parser if parser is not None else _default_parser()
     active_transformer = transformer if transformer is not None else SLTransformer()
     parser_runner = cast(_ParserProtocol, active_parser)
     try:
-        tree = parser_runner.parse(decoded)
+        tree = parser_runner.parse(source_doc.normalized_text)
     except Exception as exc:
+        remap_parse_error(exc, source_doc)
         if log_failures:
-            _log_parser_failure(stage="parse", exc=exc, source_text=src, source_path=source_path)
+            _log_parser_failure(
+                stage="parse",
+                exc=exc,
+                source_text=src,
+                source_path=source_path,
+                source_document=source_doc,
+            )
         raise
+
+    # Rewrite every AST-visible position from normalized to original coordinates.
+    remap_tree_to_original(tree, source_doc)
 
     if debug is not None:
         debug("Parse OK, transforming with SLTransformer")
@@ -294,12 +336,18 @@ def parse_source_file(
     debug: Callable[[str], None] | None = None,
     log_failures: bool = True,
 ) -> BasePicture:
-    src = load_source_text(code_path, debug=debug)
+    source_path = Path(code_path)
+    if debug is not None:
+        debug(f"Parsing file: {source_path}")
+    # Read the raw file (with encoding fallback) and hand the original text to
+    # parse_source_text so compression/decoding and source provenance happen
+    # exactly once and consistently with parse_source_text().
+    raw = _read_text_simple(source_path)
     return parse_source_text(
-        src,
+        raw,
         parser=parser,
         transformer=transformer,
         debug=debug,
-        source_path=code_path,
+        source_path=source_path,
         log_failures=log_failures,
     )

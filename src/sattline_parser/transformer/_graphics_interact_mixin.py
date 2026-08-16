@@ -79,6 +79,39 @@ def _as_float(value: object) -> float:
 class _GraphicsInteractMixin:
     """Mixin providing graphics and interact object transformation methods."""
 
+    #: Keys merged from the ``common_properties`` rule into GraphObject properties.
+    _COMMON_PROPERTY_KEYS = ("layer", "colours", const.TREE_TAG_ENABLE)
+
+    def common_properties(self, items: list[TransformerItem]) -> dict[str, object]:
+        """Grammar common_properties -> merged dict of layer/enable/colour content.
+
+        Un-modeled colour trees are preserved verbatim under ``colours`` so no
+        source data is silently discarded.
+        """
+        merged: dict[str, object] = {}
+        colours: list[object] = []
+        for it in items:
+            if is_comment_tree(it):
+                continue
+            if isinstance(it, int):
+                merged["layer"] = it
+            elif isinstance(it, dict):
+                merged.update(cast(dict[str, object], it))
+            elif isinstance(it, Tree):
+                colours.append(cast(object, it))
+        if colours:
+            merged["colours"] = colours
+        return merged
+
+    def _apply_common_properties(self, properties: dict[str, object], items: list[TransformerItem]) -> None:
+        for it in items:
+            if not isinstance(it, dict):
+                continue
+            payload = cast(dict[str, object], it)
+            for key in self._COMMON_PROPERTY_KEYS:
+                if key in payload and payload[key] is not None:
+                    properties[key] = payload[key]
+
     def text_object(self, items: list[TransformerItem]) -> GraphObject:
         """Grammar text_object -> GraphObject (TEXTOBJECT with text and coordinates)."""
         go = GraphObject(const.GRAMMAR_VALUE_TEXTOBJECT)
@@ -95,6 +128,8 @@ class _GraphicsInteractMixin:
         tails = _merged_tails(self, items, coord_tails)
         if tails:
             properties[const.KEY_TAILS] = tails
+
+        self._apply_common_properties(properties, items)
 
         # Pair each VARNAME with the nearest preceding top-level text (STRING or text_content)
         text_vars: list[str] = []
@@ -147,6 +182,7 @@ class _GraphicsInteractMixin:
         tails = _merged_tails(self, items, coord_tails)
         if tails:
             properties[const.KEY_TAILS] = tails
+        self._apply_common_properties(properties, items)
         return go
 
     def line_object(self, items: list[TransformerItem]) -> GraphObject:
@@ -161,6 +197,7 @@ class _GraphicsInteractMixin:
         tails = _merged_tails(self, items, coord_tails)
         if tails:
             properties[const.KEY_TAILS] = tails
+        self._apply_common_properties(properties, items)
         return go
 
     def oval_object(self, items: list[TransformerItem]) -> GraphObject:
@@ -175,6 +212,7 @@ class _GraphicsInteractMixin:
         tails = _merged_tails(self, items, coord_tails)
         if tails:
             properties[const.KEY_TAILS] = tails
+        self._apply_common_properties(properties, items)
         return go
 
     def polygon_object(self, items: list[TransformerItem]) -> GraphObject:
@@ -185,6 +223,7 @@ class _GraphicsInteractMixin:
         tails = _merged_tails(self, items, coord_tails)
         if tails:
             properties[const.KEY_TAILS] = tails
+        self._apply_common_properties(properties, items)
         return go
 
     def segment_object(self, items: list[TransformerItem]) -> GraphObject:
@@ -199,6 +238,7 @@ class _GraphicsInteractMixin:
         tails = _merged_tails(self, items, coord_tails)
         if tails:
             properties[const.KEY_TAILS] = tails
+        self._apply_common_properties(properties, items)
         return go
 
     def composite_object(self, items: list[TransformerItem]) -> GraphObject:
@@ -209,6 +249,7 @@ class _GraphicsInteractMixin:
         tails = _merged_tails(self, items, coord_tails)
         if tails:
             properties[const.KEY_TAILS] = tails
+        self._apply_common_properties(properties, items)
         return go
 
     def graph_object(self, items: list[TransformerItem]) -> GraphObject:
@@ -247,6 +288,34 @@ class _GraphicsInteractMixin:
                         out.append(child)
         return out
 
+    def _collect_combutproc_tail(self, it: object, props: dict[str, object]) -> dict[str, object] | None:
+        """Classify a combutproc tail item; returns an updated procedure dict when found."""
+        proc_payload = _procedure_payload(it)
+        if proc_payload is not None:
+            return proc_payload
+        if isinstance(it, int):
+            cast(list[object], props.setdefault("layers", [])).append(it)
+        elif isinstance(it, dict):
+            if const.KEY_ASSIGN in it:
+                cast(list[object], props.setdefault("assigns", [])).append(cast(object, it))
+            elif const.TREE_TAG_ENABLE in it:
+                cast(list[object], props.setdefault("enables", [])).append(cast(object, it))
+            else:
+                cast(list[object], props.setdefault("flags", [])).append(cast(object, it))
+        elif isinstance(it, Tree) and it.data in ("outline_colour", "fill_colour"):
+            cast(list[object], props.setdefault("colours", [])).append(cast(object, it))
+        return None
+
+    def combutproc_tail(self, items: list[TransformerItem]) -> TransformerItem:
+        """Grammar combutproc_tail -> pass through the single tail item.
+
+        Without this unwrap, every tail would stay a raw ``combutproc_tail``
+        Tree and the assignment/flag/enable/layer content would be silently lost.
+        """
+        for item in items:
+            return item
+        raise ValueError("combutproc_tail expected a tail item; got no items")
+
     def combutproc_item(self, items: list[TransformerItem]) -> InteractObject:
         """Grammar combutproc_item -> InteractObject (COMBUTPROC with coordinates and procedure)."""
         props: dict[str, object] = {}
@@ -261,11 +330,11 @@ class _GraphicsInteractMixin:
                 coords.append(payload[const.KEY_COORDS])
             elif isinstance(it, list):
                 for sub in cast(list[object], it):
-                    proc_payload = _procedure_payload(sub)
+                    proc_payload = self._collect_combutproc_tail(sub, props)
                     if proc_payload is not None:
                         proc = proc_payload
             else:
-                proc_payload = _procedure_payload(it)
+                proc_payload = self._collect_combutproc_tail(cast(object, it), props)
                 if proc_payload is not None:
                     proc = proc_payload
         props[const.KEY_COORDS] = coords or None
@@ -277,12 +346,21 @@ class _GraphicsInteractMixin:
         return InteractObject(type=const.GRAMMAR_VALUE_COMBUTPROC, properties=props)
 
     def procedure_call(self, items: list[TransformerItem]) -> dict[str, dict[str, object]]:
-        """Grammar procedure_call -> dict with procedure call details."""
+        """Grammar procedure_call -> dict with procedure call details.
+
+        The procedure name is the leading NAME terminal (arrives as a ``str``
+        after token coercion) and must never be buried in ``args``.
+        """
         name: str | None = None
         args: list[object] = []
         for it in items:
-            if isinstance(it, Token) and it.type == const.KEY_NAME and name is None:
-                name = it.value
+            if name is None:
+                if isinstance(it, Token) and it.type == "NAME":
+                    name = it.value
+                elif isinstance(it, str) and not isinstance(it, Token):
+                    name = it
+                else:
+                    args.append(it)
             else:
                 args.append(it)
         return {const.KEY_PROCEDURE_CALL: {const.KEY_NAME: name, const.KEY_ARGS: args}}
@@ -322,8 +400,13 @@ class _GraphicsInteractMixin:
         body: list[object] = []
         _coord_payloads, coord_tails = _coord_parts(self, items)
         for it in items:
-            if isinstance(it, Token) and itype is None:
+            if itype is None and isinstance(it, Token):
                 itype = it.value
+            elif itype is None and isinstance(it, Tree) and it.data == "interact_type_simple":
+                for child in _tree_children(cast(TransformerTree, it)):
+                    if isinstance(child, Token):
+                        itype = child.value
+                        break
             elif isinstance(it, tuple):
                 coords.append(cast(tuple[object, ...], it))
             elif isinstance(it, dict) and const.KEY_COORDS in it:
@@ -335,11 +418,14 @@ class _GraphicsInteractMixin:
             elif isinstance(it, list):
                 for child in cast(list[object], it):
                     body.append(child)
+        if itype is None:
+            types = ", ".join(type(x).__name__ for x in items)
+            raise ValueError(f"interact_simple_item expected an interactor type token; got: {types}")
         props: dict[str, object] = {const.KEY_COORDS: coords or None, const.KEY_BODY: body or None}
         tails = _merged_tails(self, items, coord_tails)
         if tails:
             props[const.KEY_TAILS] = tails
-        return InteractObject(type=itype or const.KEY_INTERACT, properties=props)
+        return InteractObject(type=itype, properties=props)
 
     def interact_assign_variable_tailed(self, items: list[TransformerItem]) -> dict[str, object | None]:
         """Grammar interact_assign_variable_tailed -> variable assignment with tail."""
@@ -374,7 +460,11 @@ class _GraphicsInteractMixin:
         raise ValueError(f"interact_assign_variable expected an assignment payload; got: {items}")
 
     def interact_flag(self, items: list[TransformerItem]) -> dict[str, object | None]:
-        """Grammar interact_flag -> flag with name, optional extra, and tail."""
+        """Grammar interact_flag -> flag with name, optional extra, and tail.
+
+        The flag name is the leading NAME terminal, which arrives as a ``str``
+        after token coercion and must land in ``name`` rather than ``tail``.
+        """
         name: str | None = None
         extra: str | None = None
         tail: object | None = None
@@ -386,6 +476,8 @@ class _GraphicsInteractMixin:
                 const.KEY_SIGNED_INT,
             ):
                 extra = it.value
+            elif isinstance(it, str) and name is None:
+                name = it
             elif not isinstance(it, Token):
                 tail = it
         return {const.KEY_NAME: name, const.KEY_EXTRA: extra, const.KEY_TAIL: tail}
@@ -422,12 +514,19 @@ class _GraphicsInteractMixin:
         return (_as_float(items_filtered[0]), _as_float(items_filtered[1]))
 
     def two_layers(self, items: list[TransformerItem]) -> dict[str, float]:
-        """Grammar two_layers -> dict with top and bottom layer values."""
-        layers: dict[str, float] = {}
+        """Grammar two_layers -> dict with the layer limit value.
+
+        The rule is ``TWO_LAYERS LAYERLIMIT "=" REAL``; the numeric value must
+        never be dropped (it feeds ``ModuleDef.seq_layers``).
+        """
+        value: float | None = None
         for it in items:
-            if isinstance(it, dict):
-                layers.update(cast(dict[str, float], it))
-        return layers
+            if isinstance(it, int | float):
+                value = float(it)
+        if value is None:
+            types = ", ".join(type(x).__name__ for x in items)
+            raise ValueError(f"two_layers expected a numeric layer value; got: {types}")
+        return {const.GRAMMAR_VALUE_TWO_LAYERS: value}
 
 
 GraphicsInteractMixin = _GraphicsInteractMixin
