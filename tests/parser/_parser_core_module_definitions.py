@@ -27,7 +27,7 @@ def test_modules_mixin_definition_trees_keep_only_supported_children():
                 [ModuleTypeInstance(header=_module_header("Nested"), moduletype_name="NestedType")],
             ),
             ModuleDef(),
-            {"groupconn": VarRef("ScanType"), "global": True},
+            GroupConnInfo(VarRef("ScanType"), True),
         ],
     )
     datatype_tree = mixin.datatype_typedefinitions([record, Tree("wrapper", [record])])
@@ -188,9 +188,7 @@ def test_modules_mixin_layout_helpers_cover_moduledef_and_numeric_errors():
 
     assert mixin.origo_coord([1, 2, 3]) == [1, 2, 3]
     assert mixin.size([4, 5]) == [4, 5]
-    assert mixin.clippingbounds(
-        [{parser_const.KEY_COORDS: ((0.0, 0.0), (1.0, 1.0)), parser_const.KEY_TAILS: ["TailA"]}]
-    ) == {
+    assert mixin.clippingbounds([InterimCoords(coords=((0.0, 0.0), (1.0, 1.0)), tails=["TailA"])]) == {
         parser_const.GRAMMAR_VALUE_CLIPPINGBOUNDS: ((0.0, 0.0), (1.0, 1.0)),
         parser_const.KEY_TAILS: ["TailA"],
     }
@@ -199,6 +197,10 @@ def test_modules_mixin_layout_helpers_cover_moduledef_and_numeric_errors():
     }
     assert mixin.seq_layers(["LayerA"]) == {parser_const.KEY_SEQ_LAYERS: "LayerA"}
     assert mixin.zoomlimits([0.5, 2.0]) == {parser_const.GRAMMAR_VALUE_ZOOMLIMITS: (0.5, 2.0)}
+    with pytest.raises(ValueError, match="zoomlimits expected two REAL values"):
+        mixin.zoomlimits([0.5])
+    with pytest.raises(ValueError, match="clippingbounds expected a payload"):
+        mixin.clippingbounds([])
     assert mixin.ZOOMABLE(None) == {parser_const.GRAMMAR_VALUE_ZOOMABLE: True}
     assert mixin.grid([Token("JUNK", ","), 0.5, 1.5]) == 1.5
     assert mixin.moduledef_opts_seq(

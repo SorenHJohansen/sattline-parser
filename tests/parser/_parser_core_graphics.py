@@ -11,7 +11,7 @@ def test_graphics_interact_mixin_builds_graph_objects_and_lists():
         [
             Tree(parser_const.TREE_TAG_TEXT_CONTENT, ["Caption"]),
             Token(parser_const.TOKEN_VARNAME, "TextVar"),
-            {parser_const.KEY_COORDS: coords, parser_const.KEY_TAILS: ["PayloadTail"]},
+            InterimCoords(coords=coords, tails=["PayloadTail"]),
         ]
     )
 
@@ -25,7 +25,7 @@ def test_graphics_interact_mixin_builds_graph_objects_and_lists():
             "Caption",
             "",
             Token(parser_const.TOKEN_VARNAME, "FallbackTextVar"),
-            {parser_const.KEY_COORDS: coords},
+            InterimCoords(coords=coords),
         ]
     )
 
@@ -43,7 +43,7 @@ def test_graphics_interact_mixin_builds_graph_objects_and_lists():
         ("segment_object", parser_const.GRAMMAR_VALUE_SEGMENTOBJECT, True),
         ("composite_object", parser_const.GRAMMAR_VALUE_COMPOSITEOBJECT, False),
     ):
-        graph_object = getattr(mixin, method_name)([{parser_const.KEY_COORDS: coords}])
+        graph_object = getattr(mixin, method_name)([InterimCoords(coords=coords)])
         assert graph_object.type == expected_type
         if keeps_coords:
             assert graph_object.properties[parser_const.KEY_COORDS] == coords
@@ -111,7 +111,7 @@ def test_common_properties_preserves_layer_enable_and_colour_content():
 
     obj = mixin.rectangle_object(
         [
-            {parser_const.KEY_COORDS: ((0.0, 0.0), (1.0, 1.0))},
+            InterimCoords(coords=((0.0, 0.0), (1.0, 1.0))),
             merged,
         ]
     )

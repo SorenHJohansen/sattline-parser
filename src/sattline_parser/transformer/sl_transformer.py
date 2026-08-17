@@ -19,7 +19,7 @@ from ._graphics_interact_mixin import GraphicsInteractMixin
 from ._module_assembly_mixin import ModuleAssemblyMixin
 from ._module_header_mixin import ModuleHeaderMixin
 from ._module_layout_mixin import ModuleLayoutMixin
-from ._module_shared import TransformerItem, TransformerTree, tree_children
+from ._module_shared import InterimCoords, TransformerItem, TransformerTree, tree_children
 from ._sfc_mixin import SFCMixin
 from ._tokens_mixin import TokensMixin
 
@@ -150,12 +150,10 @@ class SLTransformer(
         coords: list[object] = []
         tails: list[object] = []
         for item in items:
-            if isinstance(item, dict) and const.KEY_COORDS in item:
-                payload = cast(dict[str, object], item)
-                coords.append(payload[const.KEY_COORDS])
-                raw_tails = payload.get(const.KEY_TAILS)
-                if isinstance(raw_tails, list):
-                    tails.extend(cast(list[object], raw_tails))
+            if isinstance(item, InterimCoords):
+                coords.append(item.coords)
+                if item.tails:
+                    tails.extend(item.tails)
             elif isinstance(item, tuple):
                 coords.append(cast(tuple[object, ...], item))
         return coords, tails

@@ -24,6 +24,7 @@ from sattline_parser.models.ast_model import (
     CodeComment,
     ModuleHeader,
     ParameterMapping,
+    Sequence,
     SourceSpan,
 )
 from sattline_parser.models.expressions import IfStmt, VarRef
@@ -37,7 +38,12 @@ from sattline_parser.transformer._module_header_mixin import (
     _normalize_module_header_tail,
 )
 from sattline_parser.transformer._module_layout_mixin import ModuleLayoutMixin
-from sattline_parser.transformer._module_shared import float_tuple, groupconn_value  # used below
+from sattline_parser.transformer._module_shared import (  # used below
+    CodeBlockPayload,
+    GroupConnInfo,
+    float_tuple,
+    groupconn_value,
+)
 from sattline_parser.transformer._sfc_mixin import SFCMixin
 from sattline_parser.transformer._tokens_mixin import TokensMixin
 
@@ -144,25 +150,34 @@ def test_module_layout_grid_and_def_tails() -> None:
         [
             {const.GRAMMAR_VALUE_CLIPPINGBOUNDS: ((0.0, 0.0), (1.0, 1.0)), const.KEY_TAILS: ["a"]},
             {const.GRAMMAR_VALUE_CLIPPINGBOUNDS: ((2.0, 2.0), (3.0, 3.0)), const.KEY_TAILS: ["b"]},
+            {const.KEY_SEQ_LAYERS: 2},
         ]
     )
     assert module_def.properties[const.KEY_TAILS] == ["a", "b"]
+    assert module_def.seq_layers == 2.0
 
 
 def test_module_shared_float_tuple_and_groupconn() -> None:
     assert groupconn_value(None) is None
-    assert groupconn_value({"groupconn": VarRef("ScanGroup")}) == VarRef("ScanGroup")
-    assert groupconn_value({"groupconn": {"x": 1}}) is None
+    assert groupconn_value(GroupConnInfo(VarRef("ScanGroup"), True)) == VarRef("ScanGroup")
+    assert groupconn_value(GroupConnInfo(None, False)) is None
     assert float_tuple((1,), 2) is None
     assert float_tuple(("a", "b"), 2) is None
 
 
 def test_sfc_mixin_branch_branches() -> None:
     sfc = SFCMixin()
-    blocks = sfc.code_blocks([{"enter": [("stmt",)], "active": [1], "exit": [2]}])
+    blocks = sfc.code_blocks(
+        [
+            CodeBlockPayload(kind="enter", items=(("stmt",),)),
+            CodeBlockPayload(kind="active", items=(1,)),
+            CodeBlockPayload(kind="exit", items=(2,)),
+        ]
+    )
     assert len(blocks.enter) == 1
-    with pytest.raises(ValueError, match="code_blocks expected block payload"):
+    with pytest.raises(ValueError, match="code_blocks expected CodeBlockPayload items"):
         sfc.code_blocks([Token("A", "x")])
+    assert Sequence(name="Headless", type=None, position=(0.0, 0.0), size=(1.0, 1.0)).code == []
 
 
 def test_comment_build_raises_on_empty_items() -> None:
