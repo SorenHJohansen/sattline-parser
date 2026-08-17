@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Callable, Iterable, Iterator
+from dataclasses import dataclass
 from typing import Any, Literal, cast
 
 from lark import Tree
@@ -16,6 +17,41 @@ TransformerItem = object
 ModuleInvocation = SingleModule | FrameModule | ModuleTypeInstance
 type VArgsDecorator = Callable[[object], object]
 _V_ARGS_FACTORY = cast(Callable[..., VArgsDecorator], _lark_v_args)
+
+CoordPair = tuple[float, float]
+CoordBox = tuple[CoordPair, CoordPair]
+
+
+@dataclass(frozen=True)
+class InterimCoords:
+    """Coordinate payload passed between layout/graphics transformer rules.
+
+    Replaces the previous ``{KEY_COORDS: ..., KEY_TAILS: ...}`` /
+    ``{TREE_TAG_INVOKE_COORD: ..., KEY_TAILS: ...}`` dict protocol: a rule that
+    produces coordinates (:func:`coordinates`, :func:`origo_size_pair`,
+    :func:`invoke_coord`) returns an ``InterimCoords`` that downstream rules
+    unpack. ``coords`` is a coordinate pair ``(x, y)``, a coordinate box
+    ``((x, y), (w, h))``, or a five-value invocation coordinate.
+    """
+
+    coords: CoordPair | CoordBox | tuple[float, float, float, float, float]
+    tails: list[object] | None = None
+
+
+@dataclass(frozen=True)
+class GroupConnInfo:
+    """``scan_group`` payload: an optional group connection and its global flag."""
+
+    groupconn: VarRef | None
+    is_global: bool
+
+
+@dataclass(frozen=True)
+class CodeBlockPayload:
+    """One SFC code block (enter/active/exit) with its flattened statements."""
+
+    kind: Literal["enter", "active", "exit"]
+    items: tuple[object, ...]
 
 
 def v_args(*args: Any, **kwargs: Any) -> VArgsDecorator:
@@ -51,13 +87,10 @@ def float_tuple(raw: object, size: Literal[2, 5]) -> tuple[float, ...] | None:
     return tuple(float(cast(int | float, value)) for value in values)
 
 
-def groupconn_value(info: dict[str, object] | None) -> VarRef | None:
+def groupconn_value(info: GroupConnInfo | None) -> VarRef | None:
     if info is None:
         return None
-    groupconn = info.get("groupconn")
-    if isinstance(groupconn, VarRef):
-        return groupconn
-    return None
+    return info.groupconn
 
 
 def coord_pair(raw: object) -> tuple[float, float] | None:
@@ -102,6 +135,11 @@ def flatten_items(items: Iterable[TransformerItem]) -> Iterator[TransformerItem]
 
 
 __all__ = [
+    "CodeBlockPayload",
+    "CoordBox",
+    "CoordPair",
+    "GroupConnInfo",
+    "InterimCoords",
     "ModuleInvocation",
     "TransformerItem",
     "TransformerTree",

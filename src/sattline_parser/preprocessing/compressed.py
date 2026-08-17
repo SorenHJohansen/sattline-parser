@@ -230,9 +230,35 @@ class PreprocessError(ValueError):
     """
 
 
+def _markers_outside_opaque_regions(text: str) -> list[str]:
+    """Return ``#marker`` matches that lie entirely outside strings/comments.
+
+    Detection must agree with the decoder (:func:`_decode_with_map`), which
+    protects string literals and ``(* ... *)`` comments before any rewrite. A
+    marker that overlaps an opaque region (for example a ``#``-sequence inside
+    a string literal) is never decoded and must therefore not count toward the
+    compressed heuristic -- otherwise plain source containing such text would
+    be misclassified as compressed and preprocessed.
+    """
+    regions = _scan_opaque_regions(text)
+    markers: list[str] = []
+    for match in _MARKER_RE.finditer(text):
+        start, end = match.start(), match.end()
+        if any(start < region_end and region_start < end for _kind, region_start, region_end in regions):
+            continue
+        markers.append(match.group(0))
+    return markers
+
+
 def is_compressed(text: str) -> bool:
-    """Heuristic detector for compressed SattLine format."""
-    markers = _MARKER_RE.findall(text)
+    """Heuristic detector for compressed SattLine format.
+
+    Only markers outside string literals and ``(* ... *)`` comments are
+    counted, mirroring the decoder's opaque-region protection so plain source
+    containing ``#...``-looking text inside strings or comments is never
+    misclassified as compressed.
+    """
+    markers = _markers_outside_opaque_regions(text)
     if not markers:
         return False
     compact_len = max(len(_WHITESPACE_RE.sub("", text)), 1)
@@ -418,8 +444,14 @@ def _regex_sub(
     return new_decoded, new_map
 
 
-def _decode_with_map(text: str, mapping: dict[str, str]) -> tuple[str, list[int]]:
-    """Decode *text* with *mapping*, returning (decoded, char_map)."""
+def _decode_markers(text: str, mapping: dict[str, str]) -> tuple[_OpaqueRegistry, str, list[int]]:
+    """Replace ``#markers`` with their mapped text, keeping strings/comments protected.
+
+    Returns ``(registry, decoded, char_map)``: the decoded text still holds
+    opaque placeholders for strings and comments. Those placeholders must
+    survive :func:`_normalize_compat` untouched and are restored by
+    :func:`_OpaqueRegistry.restore` at the end of the pipeline.
+    """
     registry = _OpaqueRegistry(text)
     decoded, char_map = registry.protect(text)
 
@@ -436,6 +468,21 @@ def _decode_with_map(text: str, mapping: dict[str, str]) -> tuple[str, list[int]
             raise PreprocessError(f"Unknown compressed marker {tok!r} at character offset {m.start()}")
         return value
 
+    decoded, char_map = _regex_sub(decoded, char_map, _MARKER_RE, _subst)
+    return registry, decoded, char_map
+
+
+def _normalize_compat(registry: _OpaqueRegistry, decoded: str, char_map: list[int]) -> tuple[str, list[int]]:
+    """Apply SattLine syntax-variant repairs to already-decoded text.
+
+    These rewrites fix common ABB formatting quirks in decoded source (missing
+    terminators, spacing, grammar-incompatible spellings). They are
+    compatibility normalizations, not compressed decoding: markers are already
+    substituted by :func:`_decode_markers` before this stage runs. Strings and
+    comments are still protected placeholders here and are restored afterwards,
+    so no repair can touch text inside them.
+    """
+
     def _date_timestamp_sub(m: re.Match[str]) -> str:
         placeholder = m.group(2)
         original = registry.string_text(placeholder)
@@ -450,7 +497,6 @@ def _decode_with_map(text: str, mapping: dict[str, str]) -> tuple[str, list[int]
             return m.group(0)
         return "ModuleCode " + m.group(0)
 
-    decoded, char_map = _regex_sub(decoded, char_map, _MARKER_RE, _subst)
     # Normalize common ABB formatting quirks
     decoded, char_map = _regex_sub(decoded, char_map, _ENDDEF_TRAILING_SEMI_RE, "ENDDEF")
     decoded, char_map = _regex_sub(decoded, char_map, _SEMI_BEFORE_ASSIGN_RE, " :=")
@@ -477,6 +523,19 @@ def _decode_with_map(text: str, mapping: dict[str, str]) -> tuple[str, list[int]
     decoded, char_map = _regex_sub(decoded, char_map, _EQUATIONBLOCK_RE, _ensure_modulecode)
     # Fill empty trailing function arguments (e.g., "Func(a, )")
     decoded, char_map = _regex_sub(decoded, char_map, _EMPTY_TRAILING_ARG_RE, r"\1(\2, 0)")
+    return decoded, char_map
+
+
+def _decode_with_map(text: str, mapping: dict[str, str]) -> tuple[str, list[int]]:
+    """Decode *text* with *mapping*, returning (decoded, char_map).
+
+    Compressed decoding (:func:`_decode_markers`) and SattLine syntax-variant
+    normalization (:func:`_normalize_compat`) are separate stages; string
+    literals and ``(* ... *)`` comments stay protected through both and are
+    restored last so provenance mapping is preserved.
+    """
+    registry, decoded, char_map = _decode_markers(text, mapping)
+    decoded, char_map = _normalize_compat(registry, decoded, char_map)
     return registry.restore(decoded, char_map)
 
 

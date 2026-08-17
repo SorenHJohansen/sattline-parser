@@ -7,7 +7,13 @@ from ._parser_core_test_support import *
 
 def test_sfc_mixin_builds_modulecode_sequences_and_equations():
     mixin = _SFCHarness()
-    code_blocks = mixin.code_blocks([{"enter": ["enter1"]}, {"active": ["active1"]}, {"exit": ["exit1"]}])
+    code_blocks = mixin.code_blocks(
+        [
+            CodeBlockPayload(kind="enter", items=("enter1",)),
+            CodeBlockPayload(kind="active", items=("active1",)),
+            CodeBlockPayload(kind="exit", items=("exit1",)),
+        ]
+    )
     init_step = mixin.seqinitstep([Token("SEQINITSTEP", "SEQINITSTEP"), "Init", code_blocks])
     step = mixin.seqstep([Token("SEQSTEP", "SEQSTEP"), "Run", code_blocks])
     transition = mixin.seqtransition(
@@ -114,9 +120,9 @@ def test_sfc_mixin_normalizes_enter_active_exit_code_blocks():
 
     code_blocks = mixin.code_blocks([enter, active, exit_])
 
-    assert enter == {"enter": [Tree(parser_const.KEY_STATEMENT, ["enter_stmt"])]}
-    assert active == {"active": [Tree(parser_const.KEY_STATEMENT, ["active_stmt"])]}
-    assert exit_ == {"exit": [Tree(parser_const.KEY_STATEMENT, ["exit_stmt"])]}
+    assert enter == CodeBlockPayload(kind="enter", items=(Tree(parser_const.KEY_STATEMENT, ["enter_stmt"]),))
+    assert active == CodeBlockPayload(kind="active", items=(Tree(parser_const.KEY_STATEMENT, ["active_stmt"]),))
+    assert exit_ == CodeBlockPayload(kind="exit", items=(Tree(parser_const.KEY_STATEMENT, ["exit_stmt"]),))
     assert code_blocks == SFCCodeBlocks(
         enter=cast(list[CodeItem], [Tree(parser_const.KEY_STATEMENT, ["enter_stmt"])]),
         active=cast(list[CodeItem], [Tree(parser_const.KEY_STATEMENT, ["active_stmt"])]),
@@ -188,6 +194,8 @@ def test_sfc_mixin_rejects_malformed_shapes_and_missing_required_fields():
         mixin.seqtransition([Token("SEQTRANSITION", "SEQTRANSITION"), Token("NAME", "NAME"), True])
     with pytest.raises(ValueError, match=r"seqtransition expected \(SEQTRANSITION"):
         mixin.seqtransition([Token("SEQTRANSITION", "SEQTRANSITION")])
+    with pytest.raises(ValueError, match="seqtransition expected an expression after WAIT_FOR"):
+        mixin.seqtransition([Token("SEQTRANSITION", "SEQTRANSITION"), Token("WAIT_FOR", "WAIT_FOR")])
     with pytest.raises(ValueError, match="seqtransitionsub expected"):
         mixin.seqtransitionsub(
             [Token("SUBSEQTRANSITION", "SUBSEQTRANSITION"), "Sub", Tree("wrong", []), Token("END", "END")]

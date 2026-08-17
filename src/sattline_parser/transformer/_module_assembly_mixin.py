@@ -25,11 +25,11 @@ from sattline_parser.models.ast_model import (
 )
 
 from ._module_shared import (
+    GroupConnInfo,
     ModuleInvocation,
     TransformerItem,
     TransformerTree,
     flatten_items,
-    groupconn_value,
     meta_span,
     submodule_children,
     tree_children,
@@ -63,7 +63,7 @@ class ModuleAssemblyMixin:
         submodules: list[ModuleInvocation] = []
         moduledef: ModuleDef | None = None
         modulecode: ModuleCode | None = None
-        scan_group_info: dict[str, object] | None = None
+        scan_group_info: GroupConnInfo | None = None
         trailing_comments: list[CodeComment] = []
 
         for it in flatten_items(items[1:]):
@@ -77,8 +77,8 @@ class ModuleAssemblyMixin:
                 modulecode = it
             elif isinstance(it, CodeComment):
                 trailing_comments.append(it)
-            elif isinstance(it, dict) and "groupconn" in it:
-                scan_group_info = cast(dict[str, object], it)
+            elif isinstance(it, GroupConnInfo):
+                scan_group_info = it
             elif isinstance(it, Tree):
                 tree = cast(TransformerTree, it)
                 if tree.data == const.TREE_TAG_DATATYPE_LIST:
@@ -91,8 +91,8 @@ class ModuleAssemblyMixin:
                     submodules.extend(submodule_children(tree_children(tree)))
 
         if scan_group_info:
-            header.groupconn = groupconn_value(scan_group_info)
-            header.groupconn_global = bool(scan_group_info.get("global", False))
+            header.groupconn = scan_group_info.groupconn
+            header.groupconn_global = scan_group_info.is_global
 
         return BasePicture(
             header=header,
@@ -117,7 +117,7 @@ class ModuleAssemblyMixin:
         moduledef: ModuleDef | None = None
         modulecode: ModuleCode | None = None
         param_mappings: list[ParameterMapping] = []
-        scan_group_info: dict[str, object] | None = None
+        scan_group_info: GroupConnInfo | None = None
         trailing_comments: list[CodeComment] = []
         is_frame_module = any(it is True for it in items)
 
@@ -132,8 +132,8 @@ class ModuleAssemblyMixin:
                 moduledef = item
             elif isinstance(item, ModuleCode):
                 modulecode = item
-            elif isinstance(item, dict) and "groupconn" in item:
-                scan_group_info = cast(dict[str, object], item)
+            elif isinstance(item, GroupConnInfo):
+                scan_group_info = item
             elif isinstance(item, Tree):
                 tree = cast(TransformerTree, item)
                 if tree.data == const.GRAMMAR_VALUE_MODULEPARAMETERS:
@@ -149,8 +149,8 @@ class ModuleAssemblyMixin:
             raise ValueError("Missing module header")
 
         if scan_group_info:
-            header.groupconn = groupconn_value(scan_group_info)
-            header.groupconn_global = bool(scan_group_info.get("global", False))
+            header.groupconn = scan_group_info.groupconn
+            header.groupconn_global = scan_group_info.is_global
 
         if is_frame_module:
             return FrameModule(
@@ -239,7 +239,7 @@ class ModuleAssemblyMixin:
         moduledef: ModuleDef | None = None
         modulecode: ModuleCode | None = None
         name: str | None = None
-        scan_group_info: dict[str, object] | None = None
+        scan_group_info: GroupConnInfo | None = None
         description_comments: list[CodeComment] = []
         trailing_comments: list[CodeComment] = []
         seen_enddef = False
@@ -262,8 +262,8 @@ class ModuleAssemblyMixin:
                 moduledef = it
             elif isinstance(it, ModuleCode):
                 modulecode = it
-            elif isinstance(it, dict) and "groupconn" in it:
-                scan_group_info = cast(dict[str, object], it)
+            elif isinstance(it, GroupConnInfo):
+                scan_group_info = it
             elif isinstance(it, Tree):
                 if it.data == const.GRAMMAR_VALUE_MODULEPARAMETERS:
                     moduleparameters.extend(
@@ -292,8 +292,8 @@ class ModuleAssemblyMixin:
             trailing_comments=trailing_comments,
         )
         if scan_group_info:
-            moduletype.groupconn = groupconn_value(scan_group_info)
-            moduletype.groupconn_global = bool(scan_group_info.get("global", False))
+            moduletype.groupconn = scan_group_info.groupconn
+            moduletype.groupconn_global = scan_group_info.is_global
         return moduletype
 
     def moduletype_definitions(self, items: list[TransformerItem]) -> TransformerTree:
@@ -379,14 +379,14 @@ class ModuleAssemblyMixin:
                 return cast(TransformerTree, it)
         return None
 
-    def scan_group(self, items: list[TransformerItem]) -> dict[str, object]:
-        """Grammar scan_group -> dict with groupconn VarRef and global flag."""
+    def scan_group(self, items: list[TransformerItem]) -> GroupConnInfo:
+        """Grammar scan_group -> group connection info with VarRef and global flag."""
         is_global = any(isinstance(it, bool) and it for it in items)
         var: VarRef | None = None
         for it in items:
             if isinstance(it, VarRef):
                 var = it
-        return {"groupconn": var, "global": is_global}
+        return GroupConnInfo(var, is_global)
 
     @v_args(meta=True)
     def variable_item(self, meta: Any, items: list[TransformerItem]) -> tuple[str, str | None, SourceSpan | None]:

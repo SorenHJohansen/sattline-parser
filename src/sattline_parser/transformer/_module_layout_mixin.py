@@ -11,7 +11,12 @@ from lark import Token, Tree
 from sattline_parser.grammar import constants as const
 from sattline_parser.models.ast_model import GraphObject, InteractObject, ModuleDef
 
-from ._module_shared import TransformerItem, TransformerTree, coord_pair
+from ._module_shared import (
+    InterimCoords,
+    TransformerItem,
+    TransformerTree,
+    coord_pair,
+)
 
 
 class ModuleLayoutMixin:
@@ -25,31 +30,26 @@ class ModuleLayoutMixin:
         """Grammar size -> size values list."""
         return items
 
-    def coordinates(self, items: list[TransformerItem]) -> dict[str, object]:
-        """Grammar coordinates -> dict with (x,y) and optional coordinate tails."""
+    def coordinates(self, items: list[TransformerItem]) -> InterimCoords:
+        """Grammar coordinates -> (x, y) with optional coordinate tails."""
         items_filtered = [value for value in items if not isinstance(value, Token)]
         nums = [float(value) for value in items_filtered if isinstance(value, int | float)]
         if len(nums) < 2:
             raise ValueError(f"coordinates missing REAL values (got {len(nums)})")
-        tails = self._extract_coord_tails(cast(list[Any], items))  # type: ignore[attr-defined]
-        return {
-            const.KEY_COORDS: (nums[0], nums[1]),
-            const.KEY_TAILS: tails or None,
-        }
+        tails = cast(list[object], self._extract_coord_tails(cast(list[Any], items)))  # type: ignore[attr-defined]
+        return InterimCoords((nums[0], nums[1]), tails or None)
 
-    def origo_size_pair(self, items: list[TransformerItem]) -> dict[str, object]:
-        """Grammar origo_size_pair -> dict with two coordinate pairs and tails."""
+    def origo_size_pair(self, items: list[TransformerItem]) -> InterimCoords:
+        """Grammar origo_size_pair -> ((x, y), (w, h)) with coordinate tails."""
         coords: list[tuple[float, float]] = []
         tails: list[Any] = []
         for it in items:
-            if isinstance(it, dict) and const.KEY_COORDS in it:
-                payload = cast(dict[str, object], it)
-                coord = coord_pair(payload[const.KEY_COORDS])
+            if isinstance(it, InterimCoords):
+                coord = coord_pair(it.coords)
                 if coord is not None:
                     coords.append(coord)
-                    raw_tails = payload.get(const.KEY_TAILS)
-                    if isinstance(raw_tails, list):
-                        tails.extend(cast(list[Any], raw_tails))
+                    if it.tails:
+                        tails.extend(it.tails)
             elif isinstance(it, Tree) and it.data == const.TREE_TAG_COORDINATES:
                 tree = cast(TransformerTree, it)
                 nums = [float(x) for x in tree.children if isinstance(x, int | float)]
@@ -61,22 +61,16 @@ class ModuleLayoutMixin:
                     coords.append(coord)
         if len(coords) != 2:
             raise ValueError(f"origo_size_pair expected 2 coordinate pairs, found {len(coords)}")
-        return {
-            const.KEY_COORDS: (coords[0], coords[1]),
-            const.KEY_TAILS: tails or None,
-        }
+        return InterimCoords((coords[0], coords[1]), tails or None)
 
-    def invoke_coord(self, items: list[TransformerItem]) -> dict[str, object]:
-        """Grammar invoke_coord -> dict with 5-tuple and coordinate tails."""
+    def invoke_coord(self, items: list[TransformerItem]) -> InterimCoords:
+        """Grammar invoke_coord -> five-value invocation coordinate with tails."""
         items_filtered = [value for value in items if not isinstance(value, Token)]
         nums = [float(value) for value in items_filtered if isinstance(value, int | float)]
         if len(nums) < 5:
             raise ValueError(f"invoke_coord expected 5 REALs, found {len(nums)}")
-        tails = self._extract_coord_tails(cast(list[Any], items))  # type: ignore[attr-defined]
-        return {
-            const.TREE_TAG_INVOKE_COORD: tuple(nums[:5]),
-            const.KEY_TAILS: tails or None,
-        }
+        tails = cast(list[object], self._extract_coord_tails(cast(list[Any], items)))  # type: ignore[attr-defined]
+        return InterimCoords(cast(tuple[float, float, float, float, float], tuple(nums[:5])), tails or None)
 
     def coord_invar_tail(self, items: list[TransformerItem]) -> TransformerItem:
         """Grammar coord_invar_tail -> connected variable value."""
@@ -91,14 +85,19 @@ class ModuleLayoutMixin:
 
     def clippingbounds(self, items: list[TransformerItem]) -> dict[str, object]:
         """Grammar clippingbounds -> dict with clipping values and tails."""
-        payload = items[-1]
-        if isinstance(payload, dict) and const.KEY_COORDS in payload:
-            payload_dict = cast(dict[str, object], payload)
+        payload: InterimCoords | None = None
+        for it in items:
+            if isinstance(it, InterimCoords):
+                payload = it
+                break
+        if payload is not None:
             return {
-                const.GRAMMAR_VALUE_CLIPPINGBOUNDS: payload_dict[const.KEY_COORDS],
-                const.KEY_TAILS: payload_dict.get(const.KEY_TAILS) or None,
+                const.GRAMMAR_VALUE_CLIPPINGBOUNDS: payload.coords,
+                const.KEY_TAILS: payload.tails or None,
             }
-        return {const.GRAMMAR_VALUE_CLIPPINGBOUNDS: payload}
+        if not items:
+            raise ValueError("clippingbounds expected a payload; got no items")
+        return {const.GRAMMAR_VALUE_CLIPPINGBOUNDS: items[-1]}
 
     def seq_layers(self, items: list[TransformerItem]) -> dict[str, object]:
         """Grammar seq_layers -> dict with sequence layer mapping."""
@@ -106,7 +105,10 @@ class ModuleLayoutMixin:
 
     def zoomlimits(self, items: list[TransformerItem]) -> dict[str, tuple[TransformerItem, TransformerItem]]:
         """Grammar zoomlimits -> dict with min/max zoom values."""
-        return {const.GRAMMAR_VALUE_ZOOMLIMITS: (items[-2], items[-1])}
+        values = [it for it in items if not isinstance(it, Token)]
+        if len(values) < 2:
+            raise ValueError(f"zoomlimits expected two REAL values; got: {items!r}")
+        return {const.GRAMMAR_VALUE_ZOOMLIMITS: (values[-2], values[-1])}
 
     def ZOOMABLE(self, _: object) -> dict[str, bool]:
         """Grammar ZOOMABLE -> dict marking module as zoomable."""
@@ -211,9 +213,15 @@ class ModuleLayoutMixin:
                     if isinstance(grid_value, int | float | str):
                         module_def.grid = float(grid_value)
                 if const.KEY_SEQ_LAYERS in payload:
-                    module_def.seq_layers = payload[const.KEY_SEQ_LAYERS]
+                    layers_value = payload[const.KEY_SEQ_LAYERS]
+                    if isinstance(layers_value, dict):
+                        module_def.seq_layers = cast(dict[str, float], layers_value)
+                    elif isinstance(layers_value, int | float):
+                        module_def.seq_layers = float(layers_value)
                 if const.GRAMMAR_VALUE_TWO_LAYERS in payload:
-                    module_def.seq_layers = payload[const.GRAMMAR_VALUE_TWO_LAYERS]
+                    layers_value = payload[const.GRAMMAR_VALUE_TWO_LAYERS]
+                    if isinstance(layers_value, int | float):
+                        module_def.seq_layers = float(layers_value)
         return module_def
 
 

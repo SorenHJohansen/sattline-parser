@@ -14,6 +14,7 @@ from sattline_parser.grammar import constants as const
 from sattline_parser.models.ast_model import GraphObject, InteractObject
 
 from ._comments_mixin import is_comment_tree
+from ._module_shared import InterimCoords
 
 TransformerItem = object
 TransformerTree = Tree[object]
@@ -325,16 +326,15 @@ class _GraphicsInteractMixin:
         for it in items:
             if isinstance(it, tuple):
                 coords.append(cast(tuple[object, ...], it))
-            elif isinstance(it, dict) and const.KEY_COORDS in it:
-                payload = cast(dict[str, object], it)
-                coords.append(payload[const.KEY_COORDS])
+            elif isinstance(it, InterimCoords):
+                coords.append(it.coords)
             elif isinstance(it, list):
                 for sub in cast(list[object], it):
                     proc_payload = self._collect_combutproc_tail(sub, props)
                     if proc_payload is not None:
                         proc = proc_payload
             else:
-                proc_payload = self._collect_combutproc_tail(cast(object, it), props)
+                proc_payload = self._collect_combutproc_tail(it, props)
                 if proc_payload is not None:
                     proc = proc_payload
         props[const.KEY_COORDS] = coords or None
@@ -409,8 +409,8 @@ class _GraphicsInteractMixin:
                         break
             elif isinstance(it, tuple):
                 coords.append(cast(tuple[object, ...], it))
-            elif isinstance(it, dict) and const.KEY_COORDS in it:
-                coords.append(cast(dict[str, object], it)[const.KEY_COORDS])
+            elif isinstance(it, InterimCoords):
+                coords.append(it.coords)
             elif isinstance(it, Tree) and it.data == const.TREE_TAG_INTERACT_BODY_SEQ:
                 tree = cast(TransformerTree, it)
                 for child in _tree_children(tree):
