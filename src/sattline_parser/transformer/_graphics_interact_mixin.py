@@ -273,8 +273,20 @@ class _GraphicsInteractMixin:
         return obj
 
     def graph_objects(self, items: list[TransformerItem]) -> list[GraphObject]:
-        """Grammar graph_objects -> list of GraphObjects."""
-        return [it for it in items if isinstance(it, GraphObject)]
+        """Grammar graph_objects -> list of GraphObjects.
+
+        A section-level ``Layer_ = N`` applies to every object in the section
+        (the grammar allows at most one ``layer_info`` per ``GraphObjects``
+        section), so it is propagated onto objects that do not declare their
+        own explicit layer rather than being silently dropped.
+        """
+        section_layer = next((it for it in items if isinstance(it, int)), None)
+        objects = [it for it in items if isinstance(it, GraphObject)]
+        if section_layer is not None:
+            for obj in objects:
+                if "layer" not in _graph_properties(obj):
+                    _graph_properties(obj)["layer"] = section_layer
+        return objects
 
     def interact_objects(self, items: list[TransformerItem]) -> list[InteractObject]:
         """Grammar interact_objects -> list of InteractObjects."""

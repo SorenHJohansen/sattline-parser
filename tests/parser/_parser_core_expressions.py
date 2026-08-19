@@ -182,3 +182,72 @@ def test_expressions_mixin_builds_statements_calls_and_conditionals():
         mixin.statement(_META, [Token("ONLY", "token")])
     with pytest.raises(ValueError, match="statement expected a non-Token child"):
         mixin.statement(_META, [])
+
+
+def test_expression_and_value_literal_allowlists_are_symmetric():
+    # Expressions end their recursion in the same `value` production that the
+    # standalone value contexts (interact assignments, format strings, colour
+    # tails, proc args) use, so the literal allowlist is one source of truth.
+    # Pin that structure so the two contexts can never drift apart.
+    grammar = _repo_path("src", "sattline_parser", "grammar", "sattline.lark").read_text(encoding="utf-8")
+    value_line = next(line.strip() for line in grammar.splitlines() if line.startswith("value:"))
+    assert {t for t in value_line.split()[1:] if t != "|"} == {"BOOL", "REAL", "STRING", "SIGNED_INT"}
+
+    plain_value_line = next(line.strip() for line in grammar.splitlines() if line.startswith("plain_value:"))
+    assert {t for t in plain_value_line.split()[1:] if t != "|"} == {
+        "BOOL_NOTAIL",
+        "REAL_NOTAIL",
+        "STRING_NOTAIL",
+        "SIGNED_INT_NOTAIL",
+    }
+
+    # The expression `term` rule must route literals through `value` (never
+    # through a separate, parallel literal set).
+    term_block = grammar.split("?term:", 1)[1].split("?")[0]
+    assert "| value" in term_block
+
+    # Behavioural check: each literal kind accepted by `value` also parses as
+    # an expression operand, and each is accepted in a standalone value
+    # context (interact assignment) too.
+    cases = {
+        "int": "Sink = 1;",
+        "real": "Sink = 1.5;",
+        "bool": "Sink = True;",
+    }
+    for literal_kind, equation_stmt in cases.items():
+        bp = _parse_to_basepicture(
+            '"SyntaxVersion"\n'
+            '"OriginalFileDate"\n'
+            '"ProgramDate"\n'
+            "BasePicture Invocation (0.0,0.0,0.0,1.0,1.0) : MODULEDEFINITION DateCode_ 1\n"
+            "LOCALVARIABLES\n"
+            "   Sink: integer := 0;\n"
+            "   Flag: boolean := False;\n"
+            "ModuleDef\n"
+            "ClippingBounds = ( -1.0 , -1.0 ) ( 1.0 , 1.0 )\n"
+            "ModuleCode\n"
+            "   EQUATIONBLOCK Main COORD 0.0, 0.0 OBJSIZE 1.0, 1.0 :\n"
+            f"      {equation_stmt}\n"
+            "ENDDEF (*BasePicture*);\n"
+        )
+        assignment = bp.modulecode.equations[0].code[0]
+        assert isinstance(assignment, Assignment)
+        assert not isinstance(assignment.value, VarRef), f"{literal_kind} literal did not parse as expression operand"
+
+        value_bp = _parse_to_basepicture(
+            '"SyntaxVersion"\n'
+            '"OriginalFileDate"\n'
+            '"ProgramDate"\n'
+            "BasePicture Invocation (0.0,0.0,0.0,1.0,1.0) : MODULEDEFINITION DateCode_ 1\n"
+            "LOCALVARIABLES\n"
+            "   Flag: boolean := False;\n"
+            "ModuleDef\n"
+            "ClippingBounds = ( -1.0 , -1.0 ) ( 1.0 , 1.0 )\n"
+            "InteractObjects :\n"
+            "   ComBut_ ( -0.8 , 0.6 ) ( 0.8 , 0.4 )\n"
+            "      Bool_Value\n"
+            f"      Variable = {'0' if literal_kind == 'int' else '0.5' if literal_kind == 'real' else 'False'}\n"
+            "ENDDEF (*BasePicture*);\n"
+        )
+        assert value_bp.moduledef is not None
+        assert value_bp.moduledef.interact_objects

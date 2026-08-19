@@ -9,14 +9,15 @@ def test_sfc_mixin_builds_modulecode_sequences_and_equations():
     mixin = _SFCHarness()
     code_blocks = mixin.code_blocks(
         [
-            CodeBlockPayload(kind="enter", items=("enter1",)),
-            CodeBlockPayload(kind="active", items=("active1",)),
-            CodeBlockPayload(kind="exit", items=("exit1",)),
+            CodeBlockPayload(kind="enter", items=cast(tuple[CodeItem, ...], ("enter1",))),
+            CodeBlockPayload(kind="active", items=cast(tuple[CodeItem, ...], ("active1",))),
+            CodeBlockPayload(kind="exit", items=cast(tuple[CodeItem, ...], ("exit1",))),
         ]
     )
     init_step = mixin.seqinitstep([Token("SEQINITSTEP", "SEQINITSTEP"), "Init", code_blocks])
     anonymous_init_step = mixin.seqinitstep([Token("SEQINITSTEP", "SEQINITSTEP"), code_blocks])
     step = mixin.seqstep([Token("SEQSTEP", "SEQSTEP"), "Run", code_blocks])
+    anonymous_step = mixin.seqstep([Token("SEQSTEP", "SEQSTEP"), code_blocks])
     transition = mixin.seqtransition(
         [Token("SEQTRANSITION", "SEQTRANSITION"), "Gate", Token("WAIT_FOR", "WAIT_FOR"), True]
     )
@@ -33,6 +34,7 @@ def test_sfc_mixin_builds_modulecode_sequences_and_equations():
     assert init_step == SFCStep(kind="init", name="Init", code=code_blocks)
     assert anonymous_init_step == SFCStep(kind="init", name=None, code=code_blocks)
     assert step == SFCStep(kind="step", name="Run", code=code_blocks)
+    assert anonymous_step == SFCStep(kind="step", name=None, code=code_blocks)
     assert transition == SFCTransition(name="Gate", condition=True)
     assert anonymous_transition == SFCTransition(name=None, condition=False)
     assert mixin.seqtransitionsub(
@@ -137,9 +139,15 @@ def test_sfc_mixin_normalizes_enter_active_exit_code_blocks():
 
     code_blocks = mixin.code_blocks([enter, active, exit_])
 
-    assert enter == CodeBlockPayload(kind="enter", items=(Tree(parser_const.KEY_STATEMENT, ["enter_stmt"]),))
-    assert active == CodeBlockPayload(kind="active", items=(Tree(parser_const.KEY_STATEMENT, ["active_stmt"]),))
-    assert exit_ == CodeBlockPayload(kind="exit", items=(Tree(parser_const.KEY_STATEMENT, ["exit_stmt"]),))
+    assert enter == CodeBlockPayload(
+        kind="enter", items=cast(tuple[CodeItem, ...], (Tree(parser_const.KEY_STATEMENT, ["enter_stmt"]),))
+    )
+    assert active == CodeBlockPayload(
+        kind="active", items=cast(tuple[CodeItem, ...], (Tree(parser_const.KEY_STATEMENT, ["active_stmt"]),))
+    )
+    assert exit_ == CodeBlockPayload(
+        kind="exit", items=cast(tuple[CodeItem, ...], (Tree(parser_const.KEY_STATEMENT, ["exit_stmt"]),))
+    )
     assert code_blocks == SFCCodeBlocks(
         enter=cast(list[CodeItem], [Tree(parser_const.KEY_STATEMENT, ["enter_stmt"])]),
         active=cast(list[CodeItem], [Tree(parser_const.KEY_STATEMENT, ["active_stmt"])]),
@@ -198,6 +206,70 @@ def test_parse_source_text_preserves_sfc_step_code_blocks():
     assert exit_stmt.span == SourceSpan(start=491, end=502, line=20, column=10)
 
 
+def test_parse_source_text_accepts_unnamed_ordinary_step():
+    # Regression: real SattLine accepts ordinary SEQSTEP blocks without a name
+    # (verified against the actual parser); the grammar previously required a
+    # NAME after SEQSTEP, so this input failed to lex/parse.
+    bp = _parse_to_basepicture(
+        '"SyntaxVersion"\n'
+        '"OriginalFileDate"\n'
+        '"ProgramDate"\n'
+        "BasePicture Invocation (0.0,0.0,0.0,1.0,1.0) : MODULEDEFINITION DateCode_ 1\n"
+        "ModuleDef\n"
+        "ClippingBounds = ( -1.0 , -1.0 ) ( 1.0 , 1.0 )\n"
+        "ModuleCode\n"
+        "SEQUENCE Main (SeqControl) COORD 0.0, 0.0 OBJSIZE 1.0, 1.0\n"
+        "   SEQINITSTEP Init\n"
+        "   SEQTRANSITION Tr1 WAIT_FOR True\n"
+        "   SEQSTEP\n"
+        "      ENTERCODE\n"
+        "         Flag = True;\n"
+        "   SEQTRANSITION Tr2 WAIT_FOR True\n"
+        "   SEQSTEP\n"
+        "   SEQTRANSITION Tr3 WAIT_FOR False\n"
+        "ENDSEQUENCE\n"
+        "ENDDEF (*BasePicture*);\n"
+    )
+
+    sequence = bp.modulecode.sequences[0]
+    steps = [node for node in sequence.code if isinstance(node, SFCStep) and node.kind == "step"]
+    assert len(steps) == 2
+    assert all(step.name is None for step in steps)
+    assert len(steps[0].code.enter) == 1
+    assert steps[1].code.enter == []
+
+
+def test_sequence_and_equation_layer_info_is_accepted_but_not_modeled():
+    # Layer_ directives after SEQUENCE/OPENSEQUENCE head and EQUATIONBLOCK head
+    # are legal SattLine; the AST has no layer field on these nodes, so the
+    # value is explicitly ignored (never silently misinterpreted as a code
+    # item or coordinate).
+    bp = _parse_to_basepicture(
+        '"SyntaxVersion"\n'
+        '"OriginalFileDate"\n'
+        '"ProgramDate"\n'
+        "BasePicture Invocation (0.0,0.0,0.0,1.0,1.0) : MODULEDEFINITION DateCode_ 1\n"
+        "ModuleDef\n"
+        "ClippingBounds = ( -1.0 , -1.0 ) ( 1.0 , 1.0 )\n"
+        "ModuleCode\n"
+        "SEQUENCE Main (SeqControl) COORD 0.0, 0.0 OBJSIZE 1.0, 1.0 Layer_ = 2\n"
+        "   SEQINITSTEP Init\n"
+        "   SEQTRANSITION TrGo WAIT_FOR True\n"
+        "ENDSEQUENCE\n"
+        "EQUATIONBLOCK Calc COORD 0.0, 0.0 OBJSIZE 1.0, 1.0 Layer_ = 2 :\n"
+        "   Flag = True;\n"
+        "ENDDEF (*BasePicture*);\n"
+    )
+    assert bp.modulecode is not None
+    assert bp.modulecode.sequences is not None
+    assert [type(node).__name__ for node in bp.modulecode.sequences[0].code] == ["SFCStep", "SFCTransition"]
+    assert bp.modulecode.equations is not None
+    equation = bp.modulecode.equations[0]
+    assert equation.name == "Calc"
+    assert len(equation.code) == 1
+    assert isinstance(equation.code[0], Assignment)
+
+
 def test_sfc_mixin_rejects_malformed_shapes_and_missing_required_fields():
     mixin = _SFCHarness()
 
@@ -211,6 +283,10 @@ def test_sfc_mixin_rejects_malformed_shapes_and_missing_required_fields():
         mixin.seqinitstep([Token("SEQINITSTEP", "SEQINITSTEP"), "not-code-blocks"])
     with pytest.raises(ValueError, match="seqstep expected"):
         mixin.seqstep([Token("SEQSTEP", "SEQSTEP"), "Step", "not-code-blocks"])
+    with pytest.raises(ValueError, match="seqstep expected"):
+        mixin.seqstep([Token("SEQSTEP", "SEQSTEP")])
+    with pytest.raises(ValueError, match="seqstep expected"):
+        mixin.seqstep([Token("SEQSTEP", "SEQSTEP"), "not-code-blocks"])
     with pytest.raises(ValueError, match="seqtransition expected WAIT_FOR"):
         mixin.seqtransition([Token("SEQTRANSITION", "SEQTRANSITION"), "Gate", Token("NAME", "NAME"), True])
     with pytest.raises(ValueError, match="seqtransition expected WAIT_FOR"):
