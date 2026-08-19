@@ -255,11 +255,7 @@ def _markers_outside_opaque_regions(text: str) -> list[str]:
         start, end = match.start(), match.end()
         while region_index < region_count and regions[region_index][2] <= start:
             region_index += 1
-        if (
-            region_index < region_count
-            and start < regions[region_index][2]
-            and regions[region_index][1] < end
-        ):
+        if region_index < region_count and start < regions[region_index][2] and regions[region_index][1] < end:
             continue
         markers.append(match.group(0))
     return markers
