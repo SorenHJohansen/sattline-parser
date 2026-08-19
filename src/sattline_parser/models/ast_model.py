@@ -21,6 +21,8 @@ from ._ast_model_support import (
     graph_object_list,
     interact_object_list,
     library_dependency_map,
+    modulecode_list,
+    moduledef_list,
     moduletype_def_list,
     parameter_mapping_list,
     property_map,
@@ -414,6 +416,15 @@ class SingleModule:
     localvariables: list[Variable] = field(default_factory=variable_list)
     submodules: list[SingleModule | FrameModule | ModuleTypeInstance] = field(default_factory=submodule_list)
     modulecode: ModuleCode | None = None
+    #: Every ``ModuleDef`` block from a ``moduledef_block*`` run, in source
+    #: order. Legacy coded files repeat one ``ModuleDef ... [ModuleCode ...]
+    #: ENDDEF`` block per layer, so ``moduledef`` alone cannot represent them
+    #: without silently dropping all but the last block.
+    moduledefs: list[ModuleDef] = field(default_factory=moduledef_list)
+    #: Every ``ModuleCode`` block from a ``moduledef_block*`` run, in source
+    #: order (``moduledef``/``modulecode`` expose the last block for backwards
+    #: compatibility; nothing is lost).
+    modulecodes: list[ModuleCode] = field(default_factory=modulecode_list)
     parametermappings: list[ParameterMapping] = field(default_factory=parameter_mapping_list)
     trailing_comments: list[CodeComment] = field(default_factory=code_comment_list)
 
@@ -428,6 +439,8 @@ class FrameModule:
     submodules: list[SingleModule | FrameModule | ModuleTypeInstance] = field(default_factory=submodule_list)
     moduledef: ModuleDef | None = None
     modulecode: ModuleCode | None = None
+    moduledefs: list[ModuleDef] = field(default_factory=moduledef_list)
+    modulecodes: list[ModuleCode] = field(default_factory=modulecode_list)
     trailing_comments: list[CodeComment] = field(default_factory=code_comment_list)
 
     def __str__(self) -> str:
@@ -453,6 +466,8 @@ class ModuleTypeDef:
     submodules: list[SingleModule | FrameModule | ModuleTypeInstance] = field(default_factory=submodule_list)
     moduledef: ModuleDef | None = None
     modulecode: ModuleCode | None = None
+    moduledefs: list[ModuleDef] = field(default_factory=moduledef_list)
+    modulecodes: list[ModuleCode] = field(default_factory=modulecode_list)
     parametermappings: list[ParameterMapping] = field(default_factory=parameter_mapping_list)
     groupconn: VarRef | None = None
     groupconn_global: bool = False
@@ -478,6 +493,8 @@ class BasePicture:
     submodules: list[SingleModule | FrameModule | ModuleTypeInstance] = field(default_factory=submodule_list)
     moduledef: ModuleDef | None = None
     modulecode: ModuleCode | None = None
+    moduledefs: list[ModuleDef] = field(default_factory=moduledef_list)
+    modulecodes: list[ModuleCode] = field(default_factory=modulecode_list)
     origin_file: str | None = None
     origin_lib: str | None = None
     graphics_file: str | None = None

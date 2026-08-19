@@ -40,14 +40,14 @@ SfcBody = list[SFCBodyItem]
 class SFCMixin:
     """Mixin providing SFC (sequence function chart) transformation methods."""
 
-    def _flatten_code_body(self, items: list[TransformerItem]) -> list[object]:
+    def _flatten_code_body(self, items: list[TransformerItem]) -> list[CodeItem]:
         """Flatten code-comment runs into a flat code list with CodeComment inline."""
-        flat: list[object] = []
+        flat: list[CodeItem] = []
         for item in items:
             if isinstance(item, list):
-                flat.extend(cast(list[object], item))
+                flat.extend(cast(list[CodeItem], item))
             elif not isinstance(item, Token):
-                flat.append(item)
+                flat.append(cast(CodeItem, item))
         return flat
 
     def entercode(self, items: list[TransformerItem]) -> CodeBlockPayload:
@@ -64,15 +64,15 @@ class SFCMixin:
 
     def code_blocks(self, items: list[TransformerItem]) -> SFCCodeBlocks:
         """Grammar code_blocks -> SFCCodeBlocks with enter/active/exit blocks."""
-        statements: dict[str, list[object]] = {"enter": [], "active": [], "exit": []}
+        statements: dict[str, list[CodeItem]] = {"enter": [], "active": [], "exit": []}
         for item in items:
             if not isinstance(item, CodeBlockPayload):
                 raise ValueError(f"code_blocks expected CodeBlockPayload items; got: {type(item).__name__}: {item!r}")
             statements[item.kind].extend(item.items)
         return SFCCodeBlocks(
-            enter=cast(list[CodeItem], statements["enter"]),
-            active=cast(list[CodeItem], statements["active"]),
-            exit=cast(list[CodeItem], statements["exit"]),
+            enter=statements["enter"],
+            active=statements["active"],
+            exit=statements["exit"],
         )
 
     def modulecode(self, items: list[TransformerItem]) -> ModuleCode:
@@ -123,10 +123,20 @@ class SFCMixin:
         return SFCStep(kind="init", name=name, code=code)
 
     def seqstep(self, items: list[TransformerItem]) -> SFCStep:
-        """Grammar seqstep -> SEQSTEP NAME code_blocks."""
-        if len(items) != 3 or not isinstance(items[1], str) or not isinstance(items[2], SFCCodeBlocks):
-            raise ValueError(f"seqstep expected (SEQSTEP, NAME, code_blocks); got: {items!r}")
-        return SFCStep(kind="step", name=items[1], code=items[2])
+        """Grammar seqstep -> SEQSTEP NAME? code_blocks.
+
+        Ordinary steps may be unnamed in real SattLine, mirroring the already
+        optional ``seqinitstep`` name.
+        """
+        if len(items) not in (2, 3):
+            raise ValueError(f"seqstep expected (SEQSTEP, NAME?, code_blocks); got: {items!r}")
+        if len(items) == 3:
+            if not isinstance(items[1], str) or not isinstance(items[2], SFCCodeBlocks):
+                raise ValueError(f"seqstep expected (SEQSTEP, NAME?, code_blocks); got: {items!r}")
+            return SFCStep(kind="step", name=items[1], code=items[2])
+        if not isinstance(items[1], SFCCodeBlocks):
+            raise ValueError(f"seqstep expected (SEQSTEP, NAME?, code_blocks); got: {items!r}")
+        return SFCStep(kind="step", name=None, code=items[1])
 
     def seqtransition(self, items: list[TransformerItem]) -> SFCTransition:
         """Grammar seqtransition -> SEQTRANSITION NAME? WAIT_FOR expression."""
