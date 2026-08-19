@@ -27,10 +27,7 @@ def test_modules_mixin_module_header_collects_argument_metadata():
         SimpleNamespace(line=5, column=2, start_pos=20, end_pos=30),
         [
             "Motor",
-            {
-                parser_const.TREE_TAG_INVOKE_COORD: (1, 2, 3, 4, 5),
-                parser_const.KEY_TAILS: ["PosX"],
-            },
+            InterimCoords(coords=(1, 2, 3, 4, 5), tails=["PosX"]),
             Tree(
                 parser_const.TREE_TAG_ARGUMENTS,
                 [
@@ -88,28 +85,18 @@ def test_modules_mixin_coordinate_helpers_preserve_pairs_tails_and_clipping_tree
     pair = mixin.origo_size_pair(
         [
             coords,
-            {
-                parser_const.KEY_COORDS: (3, 4),
-                parser_const.KEY_TAILS: ["PanelScale"],
-            },
+            InterimCoords(coords=(3, 4), tails=["PanelScale"]),
         ]
     )
     invoke = mixin.invoke_coord([1, 2, 3, 4, 5, "ignored"])
     clipping = mixin.coord_clippingbounds([coords])
 
-    assert coords == {parser_const.KEY_COORDS: (1.0, 2.0), parser_const.KEY_TAILS: ["PanelResize"]}
-    assert pair == {
-        parser_const.KEY_COORDS: ((1.0, 2.0), (3.0, 4.0)),
-        parser_const.KEY_TAILS: ["PanelResize", "PanelScale"],
-    }
-    assert invoke == {
-        parser_const.TREE_TAG_INVOKE_COORD: (1.0, 2.0, 3.0, 4.0, 5.0),
-        parser_const.KEY_TAILS: ["PanelResize"],
-    }
-    assert mixin.origo_size_pair([(1.0, 2.0), Tree(parser_const.TREE_TAG_COORDINATES, [3.0, 4.0])]) == {
-        parser_const.KEY_COORDS: ((1.0, 2.0), (3.0, 4.0)),
-        parser_const.KEY_TAILS: None,
-    }
+    assert coords == InterimCoords(coords=(1.0, 2.0), tails=["PanelResize"])
+    assert pair == InterimCoords(coords=((1.0, 2.0), (3.0, 4.0)), tails=["PanelResize", "PanelScale"])
+    assert invoke == InterimCoords(coords=(1.0, 2.0, 3.0, 4.0, 5.0), tails=["PanelResize"])
+    assert mixin.origo_size_pair([(1.0, 2.0), Tree(parser_const.TREE_TAG_COORDINATES, [3.0, 4.0])]) == (
+        InterimCoords(coords=((1.0, 2.0), (3.0, 4.0)), tails=None)
+    )
     assert mixin.coord_invar_tail([Token("COMMA", ","), "WidthSource"]) == "WidthSource"
     assert isinstance(clipping, Tree)
     assert clipping.data == parser_const.GRAMMAR_VALUE_CLIPPINGBOUNDS
@@ -147,7 +134,7 @@ def test_modules_mixin_invocation_new_module_collects_decls_and_frame_marker(fra
         Tree(parser_const.TREE_TAG_SUBMODULES, [child]),
         Tree(parser_const.TREE_TAG_MODULETYPE_PAR_LIST, [mapping]),
         ModuleDef(),
-        {"groupconn": VarRef("ScanGroup"), "global": False},
+        GroupConnInfo(VarRef("ScanGroup"), False),
     ]
     if frame_marker:
         items.append(True)
@@ -199,7 +186,7 @@ def test_modules_mixin_base_picture_module_collects_nested_children_and_scan_gro
                         Tree(parser_const.GRAMMAR_VALUE_LOCALVARIABLES, [local_var]),
                         Tree(parser_const.TREE_TAG_SUBMODULES, [[child]]),
                         moduledef,
-                        {"groupconn": VarRef("ScanRoot"), "global": True},
+                        GroupConnInfo(VarRef("ScanRoot"), True),
                     ],
                 ),
             ),
@@ -277,7 +264,7 @@ def test_modules_mixin_variable_group_and_mapping_helpers_preserve_modifiers_and
     assert variables[0].init_is_duration is True
     assert params_tree.data == parser_const.GRAMMAR_VALUE_MODULEPARAMETERS
     assert locals_tree.data == parser_const.GRAMMAR_VALUE_LOCALVARIABLES
-    assert scan_group == {"groupconn": parsed_name, "global": True}
+    assert scan_group == GroupConnInfo(parsed_name, True)
 
     string_state_name = mixin.variable_name(
         SimpleNamespace(line=10, column=5, start_pos=50, end_pos=60),

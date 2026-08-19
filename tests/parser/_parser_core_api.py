@@ -177,6 +177,8 @@ def test_read_text_with_fallback_falls_back_to_latin1(tmp_path):
 def test_load_source_text_decodes_compressed_sources_and_emits_debug(monkeypatch, tmp_path):
     events: list[str] = []
 
+    (tmp_path / "Program.s").write_text("compressed-body")
+    monkeypatch.setattr(parser_api, "is_coded", lambda data: False)
     monkeypatch.setattr(parser_api, "_read_text_simple", lambda path: "compressed-body")
     monkeypatch.setattr(parser_api, "is_compressed", lambda text: text == "compressed-body")
     monkeypatch.setattr(

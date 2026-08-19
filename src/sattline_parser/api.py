@@ -36,7 +36,8 @@ from .errors import (
 )
 from .grammar import constants as const
 from .grammar.sattline_lexer import SattLineLexer
-from .preprocessing import is_compressed, preprocess_source
+from .preprocessing import is_coded, is_compressed, preprocess_source
+from .preprocessing.coded import decode_coded_stream
 
 __all__ = [
     "ParseErrorDetails",
@@ -167,6 +168,26 @@ def _decode_compressed_source(
         raise
 
 
+def _decode_coded_file_bytes(
+    raw_bytes: bytes,
+    *,
+    debug: Callable[[str], None] | None = None,
+    source_path: Path | None = None,
+    log_failures: bool = True,
+) -> str:
+    """Decode the binary framing of a coded SattLine file (no provenance)."""
+    if not is_coded(raw_bytes):
+        raise ValueError("not a coded stream")
+    if debug is not None:
+        debug("Coded format detected; decoding binary stream")
+    try:
+        return decode_coded_stream(raw_bytes)
+    except Exception as exc:
+        if log_failures:
+            _log_parser_failure(stage="decode", exc=exc, source_path=source_path)
+        raise
+
+
 def read_text_with_fallback(path: Path) -> str:
     """Read a text file trying utf-8, then cp1252, then latin-1."""
     for encoding in ("utf-8", "cp1252", "latin-1"):
@@ -193,6 +214,9 @@ def load_source_text(
     if debug is not None:
         debug(f"Parsing file: {source_path}")
 
+    raw_bytes = source_path.read_bytes()
+    if is_coded(raw_bytes):
+        return _decode_coded_file_bytes(raw_bytes, debug=debug, source_path=source_path)
     src = _read_text_simple(source_path)
     return _decode_compressed_source(src, debug=debug, source_path=source_path)
 
@@ -274,7 +298,16 @@ def parse_source_file(
     # Read the raw file (with encoding fallback) and hand the original text to
     # parse_source_text so compression/decoding and source provenance happen
     # exactly once and consistently with parse_source_text().
-    raw = _read_text_simple(source_path)
+    raw_bytes = source_path.read_bytes()
+    if is_coded(raw_bytes):
+        raw = _decode_coded_file_bytes(
+            raw_bytes,
+            debug=debug,
+            source_path=source_path,
+            log_failures=log_failures,
+        )
+    else:
+        raw = _read_text_simple(source_path)
     return parse_source_text(
         raw,
         parser=parser,

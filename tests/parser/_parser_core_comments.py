@@ -36,22 +36,23 @@ def test_base_picture_and_modules_capture_end_comments():
 "SyntaxVersion"
 "OriginalFileDate"
 "ProgramDate"
-BasePicture Invocation (0.0,0.0,0.0,1.0,1.0) : MODULEDEFINITION DateCode_ 1
-SUBMODULES
-    Child Invocation (0.0,0.0,0.0,1.0,1.0) : MODULEDEFINITION DateCode_ 2
+    BasePicture Invocation (0.0,0.0,0.0,1.0,1.0) : MODULEDEFINITION DateCode_ 1
+    SUBMODULES
+        Child Invocation (0.0,0.0,0.0,1.0,1.0) : MODULEDEFINITION DateCode_ 2
+        ModuleDef
+        ClippingBounds = ( -1.0 , -1.0 ) ( 1.0 , 1.0 )
+        ENDDEF (*child end*);
+        ENDDEF (*child module end*);
     ModuleDef
     ClippingBounds = ( -1.0 , -1.0 ) ( 1.0 , 1.0 )
-    ENDDEF (*child end*);
-ModuleDef
-ClippingBounds = ( -1.0 , -1.0 ) ( 1.0 , 1.0 )
-ENDDEF (*root end*);
-"""
+    ENDDEF (*root end*);
+    """
     bp = parser_core_parse_source_text(code)
 
     assert [c.text for c in bp.trailing_comments] == ["(*root end*)"]
     child = bp.submodules[0]
     assert isinstance(child, SingleModule)
-    assert [c.text for c in child.trailing_comments] == ["(*child end*)"]
+    assert [c.text for c in child.trailing_comments] == ["(*child end*)", "(*child module end*)"]
 
 
 def test_record_and_moduletype_definition_capture_role_comments():
@@ -70,6 +71,7 @@ TYPEDEFINITIONS
         ModuleDef
         ClippingBounds = ( -1.0 , -1.0 ) ( 1.0 , 1.0 )
         ENDDEF (*type end*);
+    ENDDEF (*type module end*);
 ModuleDef
 ClippingBounds = ( -1.0 , -1.0 ) ( 1.0 , 1.0 )
 ENDDEF (*BasePicture*);
@@ -81,7 +83,7 @@ ENDDEF (*BasePicture*);
 
     moduletype = bp.moduletype_defs[0]
     assert [c.text for c in moduletype.description_comments] == ["(* type desc *)"]
-    assert [c.text for c in moduletype.trailing_comments] == ["(*type end*)"]
+    assert [c.text for c in moduletype.trailing_comments] == ["(*type end*)", "(*type module end*)"]
 
 
 def test_modulecode_keeps_top_level_code_comments_and_inline_equation_comments():

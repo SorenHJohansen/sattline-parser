@@ -9,11 +9,13 @@ from typing import Any
 
 from ..grammar import constants as const
 from ._ast_model_support import (
+    InitValue,
     ModulePath,
     PropertyMap,
     UsageLocation,
     any_list,
     code_comment_list,
+    code_item_list,
     datatype_def_list,
     format_list,
     graph_object_list,
@@ -28,6 +30,7 @@ from ._ast_model_support import (
     render_moduletype_def,
     render_moduletype_instance,
     render_single_module,
+    sfc_body_list,
     submodule_list,
     usage_location_list,
     variable_list,
@@ -213,7 +216,7 @@ class Variable:
     state: bool | None = False
     opsave: bool | None = False
     secure: bool | None = False
-    init_value: Any | None = None
+    init_value: InitValue | None = None
     description: str | None = None
     declaration_span: SourceSpan | None = None
     init_is_duration: bool = False
@@ -284,7 +287,7 @@ class ParameterMapping:
     is_duration: bool
     is_source_global: bool
     source: VarRef | None = None
-    source_literal: Any | None = None
+    source_literal: InitValue | None = None
     span: SourceSpan | None = None
 
     def __str__(self) -> str:
@@ -326,7 +329,7 @@ class GraphicsBinding:
 class ModuleDef:
     clipping_bounds: tuple[tuple[float, float], tuple[float, float]] | None = None
     zoom_limits: tuple[float, float] | None = None
-    seq_layers: Any | None = None
+    seq_layers: float | dict[str, float] | None = None
     grid: float = 0.2
     zoomable: bool = False
     graph_objects: list[GraphObject] = field(default_factory=graph_object_list)
@@ -348,13 +351,13 @@ class ModuleDef:
 
 @dataclass
 class Sequence:
-    name: str
+    name: str | None
     type: str
     position: tuple[float, float]
     size: tuple[float, float]
     seqcontrol: bool = False
     seqtimer: bool = False
-    code: list[SFCBodyItem] = field(default_factory=any_list)  # type: ignore[assignment]
+    code: list[SFCBodyItem] = field(default_factory=sfc_body_list)
 
     def __str__(self) -> str:
         return (
@@ -369,7 +372,7 @@ class Equation:
     name: str
     position: tuple[float, float]
     size: tuple[float, float]
-    code: list[CodeItem] = field(default_factory=any_list)  # type: ignore[assignment]
+    code: list[CodeItem] = field(default_factory=code_item_list)
 
     def __str__(self) -> str:
         return f"Equation(name={self.name}, pos={self.position},\n    code={format_list(self.code)})"
@@ -396,7 +399,7 @@ class ModuleHeader:
     zoom_limits: tuple[float, float] | None = None
     zoomable: bool = False
     enable_tail: object | None = None
-    invoke_coord_tails: list[Any] = field(default_factory=any_list)
+    invoke_coord_tails: list[object] = field(default_factory=any_list)
     groupconn: VarRef | None = None
     groupconn_global: bool = False
     description_comments: list[CodeComment] = field(default_factory=code_comment_list)
@@ -519,15 +522,15 @@ class BasePicture:
 
 @dataclass
 class SFCCodeBlocks:
-    enter: list[CodeItem] = field(default_factory=any_list)  # type: ignore[assignment]
-    active: list[CodeItem] = field(default_factory=any_list)  # type: ignore[assignment]
-    exit: list[CodeItem] = field(default_factory=any_list)  # type: ignore[assignment]
+    enter: list[CodeItem] = field(default_factory=code_item_list)
+    active: list[CodeItem] = field(default_factory=code_item_list)
+    exit: list[CodeItem] = field(default_factory=code_item_list)
 
 
 @dataclass
 class SFCStep:
     kind: str  # 'init' or 'step'
-    name: str
+    name: str | None
     code: SFCCodeBlocks
 
 
@@ -539,24 +542,24 @@ class SFCTransition:
 
 @dataclass
 class SFCAlternative:
-    branches: list[list[Any]]  # each branch is a list of SFC nodes
+    branches: list[list[SFCBodyItem]]  # each branch is a list of SFC nodes
 
 
 @dataclass
 class SFCParallel:
-    branches: list[list[Any]]
+    branches: list[list[SFCBodyItem]]
 
 
 @dataclass
 class SFCSubsequence:
     name: str
-    body: list[Any]
+    body: list[SFCBodyItem]
 
 
 @dataclass
 class SFCTransitionSub:
     name: str
-    body: list[Any]
+    body: list[SFCBodyItem]
 
 
 @dataclass

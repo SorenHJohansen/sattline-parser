@@ -11,7 +11,7 @@ from lark import Token, Tree
 from sattline_parser.grammar import constants as const
 from sattline_parser.models.ast_model import CodeComment, ModuleHeader
 
-from ._module_shared import TransformerItem, TransformerTree, float_tuple, meta_span, v_args
+from ._module_shared import InterimCoords, TransformerItem, TransformerTree, float_tuple, meta_span, v_args
 
 
 def _normalize_module_header_tail(value: object) -> object:
@@ -126,15 +126,12 @@ class ModuleHeaderMixin:
                 name = it
             elif isinstance(it, CodeComment):
                 description_comments.append(it)
-            elif isinstance(it, dict) and const.TREE_TAG_INVOKE_COORD in it:
-                mapping = cast(dict[str, object], it)
-                raw = mapping[const.TREE_TAG_INVOKE_COORD]
-                coords = float_tuple(raw, 5)
+            elif isinstance(it, InterimCoords):
+                coords = float_tuple(it.coords, 5)
                 if coords is not None:
                     coords5 = cast(tuple[float, float, float, float, float], coords)
-                    tails = mapping.get(const.KEY_TAILS)
-                    if isinstance(tails, list):
-                        coord_tails = [_normalize_module_header_tail(tail) for tail in cast(list[Any], tails)]
+                    if it.tails:
+                        coord_tails = [_normalize_module_header_tail(tail) for tail in it.tails]
             elif isinstance(it, tuple):
                 coords = float_tuple(cast(tuple[object, ...], it), 5)
                 if coords is not None:
