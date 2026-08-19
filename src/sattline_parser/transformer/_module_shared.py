@@ -127,6 +127,7 @@ def flatten_items(items: Iterable[TransformerItem]) -> Iterator[TransformerItem]
         elif isinstance(it, Tree) and it.data in (
             const.TREE_TAG_BASE_MODULE_BODY,
             const.TREE_TAG_MODULE_BODY,
+            const.TREE_TAG_MODULEDEF_BLOCK,
         ):
             tree = cast(TransformerTree, it)
             yield from flatten_items(cast(list[TransformerItem], tree.children))

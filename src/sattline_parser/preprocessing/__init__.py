@@ -10,6 +10,7 @@ that preserves original-source provenance through decoding.
 
 from __future__ import annotations
 
+from .coded import decode_coded_stream, is_coded
 from .compressed import (
     SEED_MAPPING,
     PreprocessError,
@@ -22,7 +23,9 @@ from .compressed import (
 __all__ = [
     "SEED_MAPPING",
     "PreprocessError",
+    "decode_coded_stream",
     "decode_compressed",
+    "is_coded",
     "is_compressed",
     "preprocess_sl_text",
     "preprocess_source",

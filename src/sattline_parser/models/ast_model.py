@@ -351,7 +351,7 @@ class ModuleDef:
 
 @dataclass
 class Sequence:
-    name: str
+    name: str | None
     type: str
     position: tuple[float, float]
     size: tuple[float, float]
@@ -530,7 +530,7 @@ class SFCCodeBlocks:
 @dataclass
 class SFCStep:
     kind: str  # 'init' or 'step'
-    name: str
+    name: str | None
     code: SFCCodeBlocks
 
 

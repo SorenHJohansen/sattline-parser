@@ -15,6 +15,7 @@ def test_sfc_mixin_builds_modulecode_sequences_and_equations():
         ]
     )
     init_step = mixin.seqinitstep([Token("SEQINITSTEP", "SEQINITSTEP"), "Init", code_blocks])
+    anonymous_init_step = mixin.seqinitstep([Token("SEQINITSTEP", "SEQINITSTEP"), code_blocks])
     step = mixin.seqstep([Token("SEQSTEP", "SEQSTEP"), "Run", code_blocks])
     transition = mixin.seqtransition(
         [Token("SEQTRANSITION", "SEQTRANSITION"), "Gate", Token("WAIT_FOR", "WAIT_FOR"), True]
@@ -30,6 +31,7 @@ def test_sfc_mixin_builds_modulecode_sequences_and_equations():
         exit=cast(list[CodeItem], ["exit1"]),
     )
     assert init_step == SFCStep(kind="init", name="Init", code=code_blocks)
+    assert anonymous_init_step == SFCStep(kind="init", name=None, code=code_blocks)
     assert step == SFCStep(kind="step", name="Run", code=code_blocks)
     assert transition == SFCTransition(name="Gate", condition=True)
     assert anonymous_transition == SFCTransition(name=None, condition=False)
@@ -72,6 +74,14 @@ def test_sfc_mixin_builds_modulecode_sequences_and_equations():
             body_tree,
         ]
     )
+    anonymous_sequence = mixin.sequence(
+        [
+            Token(parser_const.GRAMMAR_VALUE_SEQUENCE, parser_const.GRAMMAR_VALUE_SEQUENCE),
+            (1, 2),
+            (3, 4),
+            body_tree,
+        ]
+    )
     equation = mixin.equationblock(["EqA", (5, 6), (7, 8), Assignment(VarRef("X"), IntLiteral(1))])
     tokenized_equation = mixin.equationblock(
         [
@@ -93,6 +103,13 @@ def test_sfc_mixin_builds_modulecode_sequences_and_equations():
         size=(3.0, 4.0),
         seqcontrol=True,
         seqtimer=True,
+        code=[init_step, transition],
+    )
+    assert anonymous_sequence == Sequence(
+        name=None,
+        type=parser_const.GRAMMAR_VALUE_SEQUENCE,
+        position=(1.0, 2.0),
+        size=(3.0, 4.0),
         code=[init_step, transition],
     )
     assert equation == Equation(
@@ -186,6 +203,12 @@ def test_sfc_mixin_rejects_malformed_shapes_and_missing_required_fields():
 
     with pytest.raises(ValueError, match="seqinitstep expected"):
         mixin.seqinitstep([Token("SEQINITSTEP", "SEQINITSTEP"), "Init"])
+    with pytest.raises(ValueError, match="seqinitstep expected"):
+        mixin.seqinitstep([Token("SEQINITSTEP", "SEQINITSTEP")])
+    with pytest.raises(ValueError, match="seqinitstep expected"):
+        mixin.seqinitstep([Token("SEQINITSTEP", "SEQINITSTEP"), "Init", "not-code-blocks"])
+    with pytest.raises(ValueError, match="seqinitstep expected"):
+        mixin.seqinitstep([Token("SEQINITSTEP", "SEQINITSTEP"), "not-code-blocks"])
     with pytest.raises(ValueError, match="seqstep expected"):
         mixin.seqstep([Token("SEQSTEP", "SEQSTEP"), "Step", "not-code-blocks"])
     with pytest.raises(ValueError, match="seqtransition expected WAIT_FOR"):
@@ -204,8 +227,6 @@ def test_sfc_mixin_rejects_malformed_shapes_and_missing_required_fields():
         mixin.seqsub([Token("SUBSEQUENCE", "SUBSEQUENCE"), "Sub", Tree("wrong", []), Token("END", "END")])
     with pytest.raises(ValueError, match="seqfork expected"):
         mixin.seqfork([Token("SEQFORK", "SEQFORK")])
-    with pytest.raises(ValueError, match="Name can't be None"):
-        mixin.sequence([(1, 2), (3, 4), Tree(parser_const.KEY_SEQUENCE_BODY, [])])
     with pytest.raises(ValueError, match="Position can't be None"):
         mixin.sequence([Token(parser_const.GRAMMAR_VALUE_SEQUENCE, parser_const.GRAMMAR_VALUE_SEQUENCE), "Seq"])
     with pytest.raises(ValueError, match="Size can't be None"):
