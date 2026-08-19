@@ -61,8 +61,8 @@ class ModuleAssemblyMixin:
         moduletype_defs: list[ModuleTypeDef] = []
         localvariables: list[Variable] = []
         submodules: list[ModuleInvocation] = []
-        moduledef: ModuleDef | None = None
-        modulecode: ModuleCode | None = None
+        moduledefs: list[ModuleDef] = []
+        modulecodes: list[ModuleCode] = []
         scan_group_info: GroupConnInfo | None = None
         trailing_comments: list[CodeComment] = []
 
@@ -72,9 +72,9 @@ class ModuleAssemblyMixin:
             elif isinstance(it, ModuleTypeDef):
                 moduletype_defs.append(it)
             elif isinstance(it, ModuleDef):
-                moduledef = it
+                moduledefs.append(it)
             elif isinstance(it, ModuleCode):
-                modulecode = it
+                modulecodes.append(it)
             elif isinstance(it, CodeComment):
                 trailing_comments.append(it)
             elif isinstance(it, GroupConnInfo):
@@ -102,8 +102,10 @@ class ModuleAssemblyMixin:
             moduletype_defs=moduletype_defs,
             localvariables=localvariables,
             submodules=submodules,
-            moduledef=moduledef,
-            modulecode=modulecode,
+            moduledef=moduledefs[-1] if moduledefs else None,
+            modulecode=modulecodes[-1] if modulecodes else None,
+            moduledefs=moduledefs,
+            modulecodes=modulecodes,
             trailing_comments=trailing_comments,
         )
 
@@ -114,8 +116,8 @@ class ModuleAssemblyMixin:
         moduleparameters: list[Variable] = []
         localvariables: list[Variable] = []
         submodules: list[ModuleInvocation] = []
-        moduledef: ModuleDef | None = None
-        modulecode: ModuleCode | None = None
+        moduledefs: list[ModuleDef] = []
+        modulecodes: list[ModuleCode] = []
         param_mappings: list[ParameterMapping] = []
         scan_group_info: GroupConnInfo | None = None
         trailing_comments: list[CodeComment] = []
@@ -129,9 +131,9 @@ class ModuleAssemblyMixin:
             elif isinstance(item, int) and datecode is None:
                 datecode = item
             elif isinstance(item, ModuleDef):
-                moduledef = item
+                moduledefs.append(item)
             elif isinstance(item, ModuleCode):
-                modulecode = item
+                modulecodes.append(item)
             elif isinstance(item, GroupConnInfo):
                 scan_group_info = item
             elif isinstance(item, Tree):
@@ -157,8 +159,10 @@ class ModuleAssemblyMixin:
                 header=header,
                 datecode=datecode,
                 submodules=submodules,
-                moduledef=moduledef,
-                modulecode=modulecode,
+                moduledef=moduledefs[-1] if moduledefs else None,
+                modulecode=modulecodes[-1] if modulecodes else None,
+                moduledefs=moduledefs,
+                modulecodes=modulecodes,
                 trailing_comments=trailing_comments,
             )
         return SingleModule(
@@ -167,8 +171,10 @@ class ModuleAssemblyMixin:
             moduleparameters=moduleparameters,
             localvariables=localvariables,
             submodules=submodules,
-            moduledef=moduledef,
-            modulecode=modulecode,
+            moduledef=moduledefs[-1] if moduledefs else None,
+            modulecode=modulecodes[-1] if modulecodes else None,
+            moduledefs=moduledefs,
+            modulecodes=modulecodes,
             parametermappings=param_mappings,
             trailing_comments=trailing_comments,
         )
@@ -236,8 +242,8 @@ class ModuleAssemblyMixin:
         moduleparameters: list[Variable] = []
         localvariables: list[Variable] = []
         submodules: list[ModuleInvocation] = []
-        moduledef: ModuleDef | None = None
-        modulecode: ModuleCode | None = None
+        moduledefs: list[ModuleDef] = []
+        modulecodes: list[ModuleCode] = []
         name: str | None = None
         scan_group_info: GroupConnInfo | None = None
         description_comments: list[CodeComment] = []
@@ -259,9 +265,9 @@ class ModuleAssemblyMixin:
             elif isinstance(it, int) and datecode is None:
                 datecode = it
             elif isinstance(it, ModuleDef):
-                moduledef = it
+                moduledefs.append(it)
             elif isinstance(it, ModuleCode):
-                modulecode = it
+                modulecodes.append(it)
             elif isinstance(it, GroupConnInfo):
                 scan_group_info = it
             elif isinstance(it, Tree):
@@ -285,8 +291,10 @@ class ModuleAssemblyMixin:
             moduleparameters=moduleparameters,
             localvariables=localvariables,
             submodules=submodules,
-            moduledef=moduledef,
-            modulecode=modulecode,
+            moduledef=moduledefs[-1] if moduledefs else None,
+            modulecode=modulecodes[-1] if modulecodes else None,
+            moduledefs=moduledefs,
+            modulecodes=modulecodes,
             declaration_span=meta_span(meta),
             description_comments=description_comments,
             trailing_comments=trailing_comments,

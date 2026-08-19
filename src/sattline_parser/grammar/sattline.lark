@@ -149,7 +149,9 @@ objsizedef:                 OBJSIZE REAL "," REAL
 
 // SEQUENCE ELEMENTS
 seqinitstep:                SEQINITSTEP NAME? code_blocks
-seqstep:                    SEQSTEP NAME code_blocks
+// Ordinary steps may be unnamed in real SattLine (verified against the actual
+// SattLine parser); only the name is optional, never the code block run.
+seqstep:                    SEQSTEP NAME? code_blocks
 seqtransition:              SEQTRANSITION NAME? WAIT_FOR comments? expression
 seqtransitionsub:           SUBSEQTRANSITION NAME sequence_body ENDSUBSEQTRANSITION
 seqalternative:             ALTERNATIVESEQ sequence_body (ALTERNATIVEBRANCH sequence_body)+ ENDALTERNATIVE

@@ -11,8 +11,9 @@ distinguishes four situations:
 * **Exact mappings** -- characters that exist in the original source map to
   their exact original offset.
 * **Generated characters** -- inserted text with no exact source equivalent
-  (for example a trailing ``;`` injected by the decoder) maps to ``-1`` and is
-  *anchored* to the nearest preceding real source offset when a position or
+  (for example a trailing ``;`` injected by the decoder) maps to the
+  first-class :data:`GENERATED` marker (:class:`Generated`, value ``-1``) and
+  is *anchored* to the nearest preceding real source offset when a position or
   range is requested. A generated character never claims an exact original
   position of its own.
 * **Anchor positions** -- generated characters and end-of-input boundaries map
@@ -23,6 +24,13 @@ distinguishes four situations:
   surviving text around a deleted region necessarily includes the deleted
   region in its original-range result; the map never invents a position for
   deleted text itself.
+
+The per-character map is ``tuple[int, ...]``; every entry is either a real
+original offset (``>= 0``) or the :data:`GENERATED` sentinel. The sentinel is
+a distinct type rather than a bare ``-1`` so code that builds or rewrites maps
+can tell "this character was inserted by the preprocessor" apart from an
+ordinary offset value, and so a generated character can never be mistaken for
+(and never silently becomes) a real source position.
 
 Spans use the half-open model ``[start, end)`` in both coordinate systems, so
 an end offset equal to the length of a text is a valid boundary. A normalized
@@ -42,12 +50,37 @@ from lark.tree import Meta
 from sattline_parser.models.ast_model import SourceSpan
 
 __all__ = [
+    "GENERATED",
+    "Generated",
     "SourceDocument",
     "remap_parse_error",
     "remap_tree_to_original",
 ]
 
-_GENERATED = -1
+
+class Generated(int):
+    """First-class provenance marker for generated (inserted) characters.
+
+    A generated character has no exact original-source offset. In the
+    per-character source map it is stored as this distinct type with value
+    ``-1``; :class:`SourceDocument` anchors it to the nearest real source
+    character when a position or range is requested. Subclassing ``int`` keeps
+    the map compatible with offset arithmetic and ``>= 0`` checks while giving
+    generated provenance a verifiable, first-class type (``isinstance(entry,
+    Generated)``), so a generated character is never conflated with a real
+    offset merely because it occupies a position in the normalized text.
+    """
+
+    __slots__ = ()
+
+    def __new__(cls) -> Generated:
+        return int.__new__(cls, -1)
+
+    def __repr__(self) -> str:
+        return "GENERATED"
+
+
+GENERATED = Generated()
 
 
 def _line_starts(text: str) -> tuple[int, ...]:
@@ -62,7 +95,7 @@ class SourceDocument:
     """Original text, normalized text, and the mapping between the two.
 
     ``char_map`` maps each character offset of ``normalized_text`` to the
-    corresponding offset in ``original_text``, or ``_GENERATED`` when the
+    corresponding offset in ``original_text``, or :data:`GENERATED` when the
     character was produced by the preprocessor (inserted/generated text).
     """
 
