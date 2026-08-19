@@ -9,6 +9,8 @@ from ..formatting.formatter import format_expr, format_list, format_optional, fo
 if TYPE_CHECKING:
     from .ast_model import (
         BasePicture,
+        CodeComment,
+        CodeItem,
         DataType,
         FrameModule,
         GraphObject,
@@ -17,6 +19,7 @@ if TYPE_CHECKING:
         ModuleTypeDef,
         ModuleTypeInstance,
         ParameterMapping,
+        SFCBodyItem,
         SingleModule,
         Variable,
     )
@@ -30,6 +33,9 @@ type PropertyMap = dict[str, Any]
 type ModulePath = list[str]
 type UsageKind = Literal["read", "write"]
 type UsageLocation = tuple[ModulePath, UsageKind]
+#: Values a variable init or parameter-mapping source can hold: a literal, a
+#: boolean, or a parsed ``time_value`` dictionary.
+type InitValue = bool | int | float | str | dict[str, str | None]
 
 
 def variable_list() -> list[Variable]:
@@ -56,7 +62,15 @@ def any_list() -> list[Any]:
     return []
 
 
-def code_comment_list() -> list[Any]:
+def code_comment_list() -> list[CodeComment]:
+    return []
+
+
+def code_item_list() -> list[CodeItem]:
+    return []
+
+
+def sfc_body_list() -> list[SFCBodyItem]:
     return []
 
 

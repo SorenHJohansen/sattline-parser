@@ -96,6 +96,30 @@ def test_source_document_map_position_anchors_generated_chars_backward():
     assert doc.map_range(1, 2) == (0, 2)
 
 
+def test_source_document_map_range_fully_inside_generated_run():
+    # A two-character generated run ";;" sits between the real chars "A" and "B".
+    doc = SourceDocument("AB", "A;;B", (0, -1, -1, 1))
+    # Entirely generated range: never invents an exact position; the start
+    # anchors to the nearest preceding real char, the end to the following one.
+    assert doc.map_range(1, 3) == (0, 2)
+    assert doc.map_range(1, 2) == (0, 2)
+    # Ranges on surviving real characters stay exact.
+    assert doc.map_range(0, 1) == (0, 1)
+    assert doc.map_range(3, 4) == (1, 2)
+    # Start in the generated run, end at a real char: both anchors apply.
+    assert doc.map_range(2, 4) == (0, 2)
+
+
+def test_source_document_map_range_spans_deleted_region():
+    # "X" is deleted from the original: it has no normalized counterpart.
+    doc = SourceDocument("ABXCD", "ABCD", (0, 1, 3, 4))
+    # A range spanning the surviving text around the deletion must include the
+    # deleted region in its original-range result (no invented position).
+    assert doc.map_range(1, 3) == (1, 4)
+    assert doc.map_range(1, 2) == (1, 2)
+    assert doc.map_range(2, 3) == (3, 4)
+
+
 def test_preprocess_source_returns_identity_for_plain_text():
     doc = preprocess_source(_PROGRAM)
     assert doc.is_identity() is True

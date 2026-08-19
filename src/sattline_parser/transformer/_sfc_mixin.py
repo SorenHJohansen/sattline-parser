@@ -32,10 +32,9 @@ from sattline_parser.models.ast_model import (
 from sattline_parser.models.expressions import Assignment, FuncCall, FuncCallStmt, IfStmt, SLExpression
 
 from ._comments_mixin import is_comment_tree
-from ._module_shared import TransformerItem, TransformerTree, coord_pair, tree_children
+from ._module_shared import CodeBlockPayload, TransformerItem, TransformerTree, coord_pair, tree_children
 
-CodeBlockPayload = dict[str, list[object]]
-SfcBody = list[object]
+SfcBody = list[SFCBodyItem]
 
 
 class SFCMixin:
@@ -53,31 +52,27 @@ class SFCMixin:
 
     def entercode(self, items: list[TransformerItem]) -> CodeBlockPayload:
         """Grammar entercode -> normalized enter block payload."""
-        return {"enter": self._flatten_code_body(items)}
+        return CodeBlockPayload(kind="enter", items=tuple(self._flatten_code_body(items)))
 
     def activecode(self, items: list[TransformerItem]) -> CodeBlockPayload:
         """Grammar activecode -> normalized active block payload."""
-        return {"active": self._flatten_code_body(items)}
+        return CodeBlockPayload(kind="active", items=tuple(self._flatten_code_body(items)))
 
     def exitcode(self, items: list[TransformerItem]) -> CodeBlockPayload:
         """Grammar exitcode -> normalized exit block payload."""
-        return {"exit": self._flatten_code_body(items)}
+        return CodeBlockPayload(kind="exit", items=tuple(self._flatten_code_body(items)))
 
     def code_blocks(self, items: list[TransformerItem]) -> SFCCodeBlocks:
         """Grammar code_blocks -> SFCCodeBlocks with enter/active/exit blocks."""
-        blocks: CodeBlockPayload = {"enter": [], "active": [], "exit": []}
+        statements: dict[str, list[object]] = {"enter": [], "active": [], "exit": []}
         for item in items:
-            if not isinstance(item, dict):
-                raise ValueError(f"code_blocks expected block payload dicts; got: {type(item).__name__}: {item!r}")
-            payload = cast(CodeBlockPayload, item)
-            for key in ("enter", "active", "exit"):
-                statements = payload.get(key)
-                if statements:
-                    blocks[key].extend(statements)
+            if not isinstance(item, CodeBlockPayload):
+                raise ValueError(f"code_blocks expected CodeBlockPayload items; got: {type(item).__name__}: {item!r}")
+            statements[item.kind].extend(item.items)
         return SFCCodeBlocks(
-            enter=cast(list[CodeItem], blocks["enter"]),
-            active=cast(list[CodeItem], blocks["active"]),
-            exit=cast(list[CodeItem], blocks["exit"]),
+            enter=cast(list[CodeItem], statements["enter"]),
+            active=cast(list[CodeItem], statements["active"]),
+            exit=cast(list[CodeItem], statements["exit"]),
         )
 
     def modulecode(self, items: list[TransformerItem]) -> ModuleCode:
@@ -111,10 +106,21 @@ class SFCMixin:
         return module_code
 
     def seqinitstep(self, items: list[TransformerItem]) -> SFCStep:
-        """Grammar seqinitstep -> SEQINITSTEP NAME code_blocks."""
-        if len(items) != 3 or not isinstance(items[1], str) or not isinstance(items[2], SFCCodeBlocks):
-            raise ValueError(f"seqinitstep expected (SEQINITSTEP, NAME, code_blocks); got: {items!r}")
-        return SFCStep(kind="init", name=items[1], code=items[2])
+        """Grammar seqinitstep -> SEQINITSTEP NAME? code_blocks."""
+        if len(items) != 2 and len(items) != 3:
+            raise ValueError(f"seqinitstep expected (SEQINITSTEP, NAME?, code_blocks); got: {items!r}")
+        name: str | None = None
+        code: SFCCodeBlocks
+        if len(items) == 3:
+            if not isinstance(items[1], str) or not isinstance(items[2], SFCCodeBlocks):
+                raise ValueError(f"seqinitstep expected (SEQINITSTEP, NAME?, code_blocks); got: {items!r}")
+            name = items[1]
+            code = items[2]
+        elif isinstance(items[1], SFCCodeBlocks):
+            code = items[1]
+        else:
+            raise ValueError(f"seqinitstep expected (SEQINITSTEP, NAME?, code_blocks); got: {items!r}")
+        return SFCStep(kind="init", name=name, code=code)
 
     def seqstep(self, items: list[TransformerItem]) -> SFCStep:
         """Grammar seqstep -> SEQSTEP NAME code_blocks."""
@@ -125,17 +131,35 @@ class SFCMixin:
     def seqtransition(self, items: list[TransformerItem]) -> SFCTransition:
         """Grammar seqtransition -> SEQTRANSITION NAME? WAIT_FOR expression."""
         items = [it for it in items if not is_comment_tree(it)]
-        if len(items) == 4 and isinstance(items[1], str) and isinstance(items[2], Token):
-            if items[2].type != "WAIT_FOR":
-                raise ValueError(f"seqtransition expected WAIT_FOR; got token {items[2]!r}")
-            return SFCTransition(name=items[1], condition=cast(SLExpression, items[3]))
+        wait_index = -1
+        for index, item in enumerate(items):
+            if isinstance(item, Token) and item.type == "WAIT_FOR":
+                wait_index = index
+                break
+        if wait_index < 0:
+            if any(isinstance(item, Token) and item.type == "NAME" for item in items):
+                raise ValueError(f"seqtransition expected WAIT_FOR; got: {items!r}")
+            raise ValueError(f"seqtransition expected (SEQTRANSITION, NAME?, WAIT_FOR, expr); got: {items!r}")
 
-        if len(items) == 3 and isinstance(items[1], Token):
-            if items[1].type != "WAIT_FOR":
-                raise ValueError(f"seqtransition expected WAIT_FOR; got token {items[1]!r}")
-            return SFCTransition(name=None, condition=cast(SLExpression, items[2]))
+        name: str | None = None
+        for item in items[:wait_index]:
+            if isinstance(item, Token):
+                if item.type == "NAME":
+                    name = item.value
+                    break
+            elif isinstance(item, str):
+                name = item
+                break
 
-        raise ValueError(f"seqtransition expected (SEQTRANSITION, NAME?, WAIT_FOR, expr); got: {items!r}")
+        condition: object | None = None
+        for item in reversed(items[wait_index + 1 :]):
+            if not isinstance(item, Token):
+                condition = item
+                break
+        if condition is None:
+            raise ValueError(f"seqtransition expected an expression after WAIT_FOR; got: {items!r}")
+
+        return SFCTransition(name=name, condition=cast(SLExpression, condition))
 
     def seqtransitionsub(self, items: list[TransformerItem]) -> SFCTransitionSub:
         """Grammar seqtransitionsub -> SUBSEQTRANSITION NAME sequence_body ENDSUBSEQTRANSITION."""
@@ -150,7 +174,7 @@ class SFCMixin:
                 f"got: {items!r}"
             )
         tree = cast(TransformerTree, items[2])
-        return SFCTransitionSub(name=items[1], body=tree_children(tree))
+        return SFCTransitionSub(name=items[1], body=cast(SfcBody, tree_children(tree)))
 
     def seqsub(self, items: list[TransformerItem]) -> SFCSubsequence:
         """Grammar seqsub -> SUBSEQUENCE NAME sequence_body ENDSUBSEQUENCE."""
@@ -161,7 +185,7 @@ class SFCMixin:
         ):
             raise ValueError(f"seqsub expected (SUBSEQUENCE, NAME, sequence_body, ENDSUBSEQUENCE); got: {items!r}")
         tree = cast(TransformerTree, items[2])
-        return SFCSubsequence(name=items[1], body=tree_children(tree))
+        return SFCSubsequence(name=items[1], body=cast(SfcBody, tree_children(tree)))
 
     def _collect_sequence_branches(self, items: list[TransformerItem], rule: str) -> list[SfcBody]:
         branches: list[SfcBody] = []
@@ -172,7 +196,7 @@ class SFCMixin:
                 tree = cast(TransformerTree, item)
                 if tree.data != const.KEY_SEQUENCE_BODY:
                     raise ValueError(f"{rule} expected sequence_body Trees; got Tree({tree.data!r})")
-                branches.append(tree_children(tree))
+                branches.append(cast(SfcBody, tree_children(tree)))
                 continue
             raise ValueError(f"{rule} expected sequence_body Trees; got: {type(item).__name__}: {item!r}")
         if not branches:
@@ -269,8 +293,6 @@ class SFCMixin:
                 tree = cast(TransformerTree, item)
                 code.extend(tree_children(tree))
 
-        if name is None:
-            raise ValueError("Name can't be None")
         if position is None:
             raise ValueError("Position can't be None")
         if size is None:

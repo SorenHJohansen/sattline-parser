@@ -76,6 +76,7 @@ from sattline_parser.preprocessing import preprocess_sl_text, preprocess_source
 from sattline_parser.source_document import SourceDocument
 from sattline_parser.transformer._expressions_mixin import _ExpressionsMixin
 from sattline_parser.transformer._graphics_interact_mixin import _GraphicsInteractMixin
+from sattline_parser.transformer._module_shared import CodeBlockPayload, GroupConnInfo, InterimCoords
 from sattline_parser.transformer._modules_mixin import _ModulesMixin, flatten_items, meta_span
 from sattline_parser.transformer._sfc_mixin import SFCMixin
 from sattline_parser.transformer._tokens_mixin import DEFAULT_INIT, TokensMixin
@@ -128,6 +129,10 @@ class _GraphicsHarness(_GraphicsInteractMixin):
         for item in items:
             if isinstance(item, tuple):
                 payloads.append(item)
+            elif isinstance(item, InterimCoords):
+                payloads.append(item.coords)
+                if item.tails:
+                    tails.extend(item.tails)
             elif isinstance(item, dict) and parser_const.KEY_COORDS in item:
                 payloads.append(item[parser_const.KEY_COORDS])
                 tails.extend(item.get(parser_const.KEY_TAILS, []))
@@ -177,6 +182,7 @@ __all__ = [
     "BasePicture",
     "BinOp",
     "BoolOp",
+    "CodeBlockPayload",
     "CodeComment",
     "Compare",
     "DataType",
@@ -186,9 +192,11 @@ __all__ = [
     "FuncCall",
     "FuncCallStmt",
     "GraphObject",
+    "GroupConnInfo",
     "IfStmt",
     "IntLiteral",
     "InteractObject",
+    "InterimCoords",
     "LiteralString",
     "ModuleCode",
     "ModuleDef",

@@ -22,6 +22,7 @@ TREE_TAG_MODULEDEF_OPTS_SEQ = "moduledef_opts_seq"
 TREE_TAG_INTERACT_BODY_SEQ = "interact_body_seq"
 TREE_TAG_BASE_MODULE_BODY = "base_module_body"
 TREE_TAG_MODULE_BODY = "module_body"
+TREE_TAG_MODULEDEF_BLOCK = "moduledef_block"
 TREE_TAG_MODULETYPE_DEFINITION = "moduletype_definition"
 TREE_TAG_SUBMODULES = "submodules"
 TREE_TAG_COORDINATES = "coordinates"
@@ -213,6 +214,13 @@ TOKEN_VARNAME = "VARNAME"  # nosec B105 - grammar token literal, not a credentia
 TOKEN_COMMENT_START = "COMMENT_START"  # nosec B105 - grammar token literal
 TOKEN_COMMENT_END = "COMMENT_END"  # nosec B105 - grammar token literal
 TOKEN_COMMENT_TEXT = "COMMENT_TEXT"  # nosec B105 - grammar token literal
+#: Terminal emitted by the contextual lexer when an identifier is directly
+#: followed by ``=`` (skipping whitespace and comments): the module-type /
+#: record definition head. Kept distinct from NAME so the LALR table can
+#: terminate a submodule run on it (a new definition is never a submodule
+#: invocation), which a bare NAME cannot express.
+TOKEN_MODULE_TYPE_NAME = "MODULE_TYPE_NAME"  # nosec B105 - grammar token literal
+TOKEN_NAME = "NAME"  # nosec B105 - grammar token literal
 
 COMMENT_TERMINALS = frozenset({TOKEN_COMMENT_START, TOKEN_COMMENT_END, TOKEN_COMMENT_TEXT})
 

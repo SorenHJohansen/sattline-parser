@@ -67,7 +67,7 @@ def test_sl_transformer_helper_methods_cover_nested_tail_and_payload_collection(
     assert transformer._merge_tails(["Left"], [], ["Right"]) == ["Left", "Right"]
     assert transformer._extract_coord_payloads(
         [
-            {parser_const.KEY_COORDS: (1.0, 2.0), parser_const.KEY_TAILS: ["CoordTail"]},
+            InterimCoords(coords=(1.0, 2.0), tails=["CoordTail"]),
             (3.0, 4.0),
             "ignored",
         ]
