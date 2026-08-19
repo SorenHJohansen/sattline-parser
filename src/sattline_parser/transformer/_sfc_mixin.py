@@ -106,10 +106,21 @@ class SFCMixin:
         return module_code
 
     def seqinitstep(self, items: list[TransformerItem]) -> SFCStep:
-        """Grammar seqinitstep -> SEQINITSTEP NAME code_blocks."""
-        if len(items) != 3 or not isinstance(items[1], str) or not isinstance(items[2], SFCCodeBlocks):
-            raise ValueError(f"seqinitstep expected (SEQINITSTEP, NAME, code_blocks); got: {items!r}")
-        return SFCStep(kind="init", name=items[1], code=items[2])
+        """Grammar seqinitstep -> SEQINITSTEP NAME? code_blocks."""
+        if len(items) != 2 and len(items) != 3:
+            raise ValueError(f"seqinitstep expected (SEQINITSTEP, NAME?, code_blocks); got: {items!r}")
+        name: str | None = None
+        code: SFCCodeBlocks
+        if len(items) == 3:
+            if not isinstance(items[1], str) or not isinstance(items[2], SFCCodeBlocks):
+                raise ValueError(f"seqinitstep expected (SEQINITSTEP, NAME?, code_blocks); got: {items!r}")
+            name = items[1]
+            code = items[2]
+        elif isinstance(items[1], SFCCodeBlocks):
+            code = items[1]
+        else:
+            raise ValueError(f"seqinitstep expected (SEQINITSTEP, NAME?, code_blocks); got: {items!r}")
+        return SFCStep(kind="init", name=name, code=code)
 
     def seqstep(self, items: list[TransformerItem]) -> SFCStep:
         """Grammar seqstep -> SEQSTEP NAME code_blocks."""
@@ -282,8 +293,6 @@ class SFCMixin:
                 tree = cast(TransformerTree, item)
                 code.extend(tree_children(tree))
 
-        if name is None:
-            raise ValueError("Name can't be None")
         if position is None:
             raise ValueError("Position can't be None")
         if size is None:

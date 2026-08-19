@@ -120,6 +120,7 @@ SEED_MAPPING: dict[str, str] = {
     "#94;": "Default;",
     "#94": "Default",
     "#7;": "Const",
+    "#76": "PRIVATE_",
     "#;5": "Layer_",
     "#;7": "Int_Value",
     "#;6": "Bool_Value",
@@ -140,6 +141,8 @@ SEED_MAPPING: dict[str, str] = {
     "#9?": "Event_Tag_",
     "#9=": "Value_Changed",
     "#9<": "Enable_",
+    "#9;": "Time_Value",
+    "#9:": "Duration_Value",
     "#96": "LitString",
     "#:0": "Event_Severity_",
     "#:1": "Event_Class_",
@@ -154,10 +157,14 @@ SEED_MAPPING: dict[str, str] = {
     "#:?": "Decimal_",
     "#:;": "Visible_",
     "#:<": "Abs_",
+    "#:=": "Abs_",
     "#;0": "Digits_",
     "#;1": "NoOf_",
     "#;3": "SetApp_",
     "#;4": "Two_Layers_",
+    "#;8": "Real_Value",
+    "#;2": "TextObject",
+    "#;>": "Zoomable",
     "#;?": "LayerLimit_",
     "#;:": "Alt_Text",
     "#;9": "String_Value",
@@ -242,9 +249,17 @@ def _markers_outside_opaque_regions(text: str) -> list[str]:
     """
     regions = _scan_opaque_regions(text)
     markers: list[str] = []
+    region_index = 0
+    region_count = len(regions)
     for match in _MARKER_RE.finditer(text):
         start, end = match.start(), match.end()
-        if any(start < region_end and region_start < end for _kind, region_start, region_end in regions):
+        while region_index < region_count and regions[region_index][2] <= start:
+            region_index += 1
+        if (
+            region_index < region_count
+            and start < regions[region_index][2]
+            and regions[region_index][1] < end
+        ):
             continue
         markers.append(match.group(0))
     return markers
@@ -380,7 +395,10 @@ class _OpaqueRegistry:
         return None
 
     def restore(self, decoded: str, char_map: list[int]) -> tuple[str, list[int]]:
-        for match in reversed(list(_PLACEHOLDER_RE.finditer(decoded))):
+        parts: list[str] = []
+        map_parts: list[list[int]] = []
+        last = 0
+        for match in _PLACEHOLDER_RE.finditer(decoded):
             placeholder = match.group(0)
             kind = placeholder[1]
             index = int(placeholder[2:-1])
@@ -389,11 +407,24 @@ class _OpaqueRegistry:
                 raise PreprocessError(f"internal error: unknown placeholder {placeholder!r}")
             orig_start, orig_text = entries[index]
             start, end = match.start(), match.end()
-            decoded = decoded[:start] + orig_text + decoded[end:]
-            char_map = char_map[:start] + [orig_start + i for i in range(len(orig_text))] + char_map[end:]
-        if "\x00" in decoded:
+            if start > last:
+                parts.append(decoded[last:start])
+                map_parts.append(char_map[last:start])
+            parts.append(orig_text)
+            map_parts.append([orig_start + i for i in range(len(orig_text))])
+            last = end
+        if last < len(decoded):
+            parts.append(decoded[last:])
+            map_parts.append(char_map[last:])
+        restored = "".join(parts)
+        restored_map: list[int] = []
+        for part in map_parts:
+            restored_map.extend(part)
+        if "\x00" in restored:
             raise PreprocessError("internal error: placeholder not restored during decode")
-        return decoded, char_map
+        if len(restored_map) != len(restored):  # pragma: no cover - invariant by construction
+            raise PreprocessError("internal error: placeholder restore map mismatch")  # pragma: no cover
+        return restored, restored_map
 
 
 # ---------------------------------------------------------------------------
