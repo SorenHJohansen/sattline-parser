@@ -10,7 +10,7 @@ from lark import Tree
 from lark.visitors import v_args as _lark_v_args  # pyright: ignore[reportUnknownVariableType]
 
 from sattline_parser.grammar import constants as const
-from sattline_parser.models.ast_model import FrameModule, ModuleTypeInstance, SingleModule, SourceSpan, VarRef
+from sattline_parser.models.ast_model import CodeItem, FrameModule, ModuleTypeInstance, SingleModule, SourceSpan, VarRef
 
 TransformerTree = Tree[Any]
 TransformerItem = object
@@ -51,7 +51,7 @@ class CodeBlockPayload:
     """One SFC code block (enter/active/exit) with its flattened statements."""
 
     kind: Literal["enter", "active", "exit"]
-    items: tuple[object, ...]
+    items: tuple[CodeItem, ...]
 
 
 def v_args(*args: Any, **kwargs: Any) -> VArgsDecorator:

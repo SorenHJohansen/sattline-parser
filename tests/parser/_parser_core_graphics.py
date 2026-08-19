@@ -68,6 +68,46 @@ def test_graphics_interact_mixin_builds_graph_objects_and_lists():
         mixin.text_content([1, 2])
 
 
+def test_graph_objects_propagates_section_level_layer_to_objects():
+    mixin = _GraphicsHarness(coord_tails=[], extra_tails=[])
+    rect = mixin.rectangle_object([InterimCoords(coords=((0.0, 0.0), (1.0, 1.0)))])
+    text = mixin.text_object([Tree(parser_const.TREE_TAG_TEXT_CONTENT, ["Caption"])])
+    explicit = mixin.rectangle_object(
+        [InterimCoords(coords=((0.0, 0.0), (1.0, 1.0))), {parser_const.KEY_COORDS: None, "layer": 9}]
+    )
+
+    # A section-level Layer_ = 2 applies to every object lacking an explicit one.
+    result = mixin.graph_objects([2, rect, text, explicit])
+    assert result == [rect, text, explicit]
+    assert rect.properties["layer"] == 2
+    assert text.properties["layer"] == 2
+    assert explicit.properties["layer"] == 9
+
+    # Without a section layer, objects are untouched.
+    fresh_rect = mixin.rectangle_object([InterimCoords(coords=((0.0, 0.0), (1.0, 1.0)))])
+    untouched = mixin.graph_objects([fresh_rect, "ignored"])
+    assert untouched == [fresh_rect]
+    assert "layer" not in fresh_rect.properties
+
+
+def test_parse_source_text_propagates_graphobjects_section_layer():
+    bp = parser_core_parse_source_text(
+        '"SyntaxVersion"\n'
+        '"OriginalFileDate"\n'
+        '"ProgramDate"\n'
+        "BasePicture Invocation (0.0,0.0,0.0,1.0,1.0) : MODULEDEFINITION DateCode_ 1\n"
+        "ModuleDef\n"
+        "ClippingBounds = ( -1.0 , -1.0 ) ( 1.0 , 1.0 )\n"
+        "GraphObjects : Layer_ = 2\n"
+        "   RectangleObject ( -1.0 , 1.0 ) ( 1.0 , -1.0 )\n"
+        "   TextObject ( -0.8 , 0.5 ) ( 0.8 , -0.5 )\n"
+        '      "DisplayValue"\n'
+        "ENDDEF (*BasePicture*);\n"
+    )
+    assert bp.moduledef is not None
+    assert [go.properties.get("layer") for go in bp.moduledef.graph_objects] == [2, 2]
+
+
 def test_interact_simple_item_extracts_type_from_grammar_tree():
     # The real grammar yields interact_type_simple as a Tree wrapping the type
     # token; the type must be extracted, never defaulted to "Interact".

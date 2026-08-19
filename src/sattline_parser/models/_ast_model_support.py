@@ -16,6 +16,7 @@ if TYPE_CHECKING:
         GraphObject,
         InteractObject,
         ModuleCode,
+        ModuleDef,
         ModuleTypeDef,
         ModuleTypeInstance,
         ParameterMapping,
@@ -78,6 +79,14 @@ def submodule_list() -> list[SingleModule | FrameModule | ModuleTypeInstance]:
     return []
 
 
+def moduledef_list() -> list[ModuleDef]:
+    return []
+
+
+def modulecode_list() -> list[ModuleCode]:
+    return []
+
+
 def parameter_mapping_list() -> list[ParameterMapping]:
     return []
 
@@ -135,6 +144,8 @@ def render_single_module(module: SingleModule) -> str:
         f"Localvariables  : {format_list(module.localvariables)}",
         f"Submodules      : {format_list(module.submodules)}",
         f"ModuleCode      : {format_optional(module.modulecode)}",
+        f"ModuleDefBlocks : {len(module.moduledefs)}",
+        f"ModuleCodeBlocks: {len(module.modulecodes)}",
         f"ParameterMappings: {format_list(module.parametermappings)}",
     ]
     return "SingleModule{\n" + textwrap.indent("\n".join(lines), "    ") + "}"
@@ -148,6 +159,8 @@ def render_frame_module(module: FrameModule) -> str:
         f"Datecode     : {module.datecode!r}",
         f"Submodules   : {format_list(module.submodules)}",
         f"ModuleCode   : {format_optional(module.modulecode)}",
+        f"ModuleDefBlocks : {len(module.moduledefs)}",
+        f"ModuleCodeBlocks: {len(module.modulecodes)}",
     ]
     return "FrameModule{\n" + textwrap.indent("\n".join(lines), "    ") + "}"
 
@@ -174,6 +187,8 @@ def render_moduletype_def(moduletype: ModuleTypeDef) -> str:
         f"Localvariables  : {format_list(moduletype.localvariables)}",
         f"Submodules      : {format_list(moduletype.submodules)}",
         f"ModuleCode      : {format_optional(moduletype.modulecode)}",
+        f"ModuleDefBlocks : {len(moduletype.moduledefs)}",
+        f"ModuleCodeBlocks: {len(moduletype.modulecodes)}",
         f"ParameterMappings: {format_list(moduletype.parametermappings)}",
     ]
     return "ModulType{\n" + textwrap.indent("\n".join(lines), "    ") + "}"
@@ -188,5 +203,6 @@ def render_base_picture(base_picture: BasePicture) -> str:
         f"Localvariables: {format_list(base_picture.localvariables)}\n\n"
         f"Submodules: {format_list(base_picture.submodules)}\n\n"
         f"ModuleCode: {base_picture.modulecode}\n\n"
+        f"ModuleDefBlocks: {len(base_picture.moduledefs)}\n\n"
     ]
     return "BasePicture{\n" + textwrap.indent("\n  ".join(lines), "    ") + "}"
