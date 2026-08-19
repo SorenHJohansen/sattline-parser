@@ -45,9 +45,7 @@ def decode_coded_stream(data: bytes) -> str:
     payload = data[len(_HEADER) + 2 :]
     block_count, remainder = divmod(len(payload), _FRAME_BYTES)
     if remainder:
-        raise PreprocessError(
-            f"coded stream: payload is not a multiple of {_FRAME_BYTES} bytes"
-        )
+        raise PreprocessError(f"coded stream: payload is not a multiple of {_FRAME_BYTES} bytes")
 
     decoded_parts: list[str] = []
     key_index = 0
