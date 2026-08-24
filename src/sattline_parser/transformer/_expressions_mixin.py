@@ -10,6 +10,7 @@ from typing import Any, cast
 from lark import Token, Tree
 
 from sattline_parser.grammar import constants as const
+from sattline_parser.models.ast_model import CodeItem
 from sattline_parser.models.expressions import (
     Assignment,
     BinOp,
@@ -19,6 +20,7 @@ from sattline_parser.models.expressions import (
     FuncCallStmt,
     IfStmt,
     NotOp,
+    SLExpression,
     TernaryOp,
     UnaryOp,
     VarRef,
@@ -32,7 +34,7 @@ __all__ = ["ExpressionsMixin", "_ExpressionsMixin"]
 class _ExpressionsMixin:
     """Mixin providing expression and statement transformation methods."""
 
-    def value(self, items: list[Any]) -> Any:
+    def value(self, items: list[Any]) -> SLExpression:
         """Grammar value rule -> the base value (BOOL | REAL | STRING | SIGNED_INT)."""
         if not items:
             raise ValueError("value expected one item (BOOL|REAL|STRING|SIGNED_INT); got empty list")
@@ -43,7 +45,7 @@ class _ExpressionsMixin:
             raise ValueError("value item is None")
         return v
 
-    def connected_variable(self, items: list[Any]) -> Any:
+    def connected_variable(self, items: list[Any]) -> SLExpression:
         """Grammar connected_variable rule -> variable or variable reference."""
         for it in items:
             if not isinstance(it, Token):
@@ -63,7 +65,7 @@ class _ExpressionsMixin:
         raise ValueError(f"invar_tail expected a non-Token child; got: {items}")
 
     @v_args(meta=True)
-    def or_expression(self, meta: Any, items: list[Any]) -> Any:
+    def or_expression(self, meta: Any, items: list[Any]) -> SLExpression:
         """Grammar or_expression -> BoolOp("OR", ...) | single expression."""
         exprs = [it for it in items if not isinstance(it, Token)]
         if len(exprs) == 1:
@@ -71,7 +73,7 @@ class _ExpressionsMixin:
         return BoolOp(op="OR", operands=tuple(exprs), span=meta_span(meta))
 
     @v_args(meta=True)
-    def and_expression(self, meta: Any, items: list[Any]) -> Any:
+    def and_expression(self, meta: Any, items: list[Any]) -> SLExpression:
         """Grammar and_expression -> BoolOp("AND", ...) | single expression."""
         exprs = [it for it in items if not isinstance(it, Token)]
         if len(exprs) == 1:
@@ -79,11 +81,11 @@ class _ExpressionsMixin:
         return BoolOp(op="AND", operands=tuple(exprs), span=meta_span(meta))
 
     @v_args(meta=True)
-    def not_expression(self, meta: Any, items: list[Any]) -> Any:
+    def not_expression(self, meta: Any, items: list[Any]) -> SLExpression:
         """Grammar not_expression -> NotOp(...) | single expression."""
         if len(items) == 1:
             return items[0]
-        expr: Any | None = None
+        expr: SLExpression | None = None
         for it in items:
             if not isinstance(it, Token):
                 expr = it
@@ -92,7 +94,7 @@ class _ExpressionsMixin:
         return items[-1]
 
     @v_args(meta=True)
-    def compare(self, meta: Any, items: list[Any]) -> Any:
+    def compare(self, meta: Any, items: list[Any]) -> SLExpression | None:
         """Grammar compare -> Compare(left, op, right) | single expression."""
         values = [it for it in items if it is not None and not isinstance(it, Token)]
         operators = [str(it) for it in items if isinstance(it, Token)]
@@ -105,7 +107,7 @@ class _ExpressionsMixin:
         return result
 
     @v_args(meta=True)
-    def additive_expression(self, meta: Any, items: list[Any]) -> Any:
+    def additive_expression(self, meta: Any, items: list[Any]) -> SLExpression | None:
         """Grammar additive_expression -> BinOp (left-associative) | single expression."""
         values = [it for it in items if it is not None and not isinstance(it, Token)]
         operators = [str(it) for it in items if isinstance(it, Token)]
@@ -117,7 +119,7 @@ class _ExpressionsMixin:
         return result
 
     @v_args(meta=True)
-    def multiplicative_expression(self, meta: Any, items: list[Any]) -> Any:
+    def multiplicative_expression(self, meta: Any, items: list[Any]) -> SLExpression | None:
         """Grammar multiplicative_expression -> BinOp (left-associative) | single expression."""
         values = [it for it in items if it is not None and not isinstance(it, Token)]
         operators = [str(it) for it in items if isinstance(it, Token)]
@@ -129,12 +131,12 @@ class _ExpressionsMixin:
         return result
 
     @v_args(meta=True)
-    def unary_expression(self, meta: Any, items: list[Any]) -> Any:
+    def unary_expression(self, meta: Any, items: list[Any]) -> SLExpression:
         """Grammar unary_expression -> UnaryOp | single expression."""
         if len(items) == 1:
             return items[0]
         op: Token | None = None
-        expr: Any | None = None
+        expr: SLExpression | None = None
         for it in items:
             if isinstance(it, Token):
                 op = it
@@ -143,31 +145,34 @@ class _ExpressionsMixin:
         if op is None or expr is None:
             raise ValueError(f"unary_expression expected operator and expression; got: {items}")
         op_str = "-" if op.type == const.KEY_MINUS else "+"
-        return UnaryOp(op=op_str, operand=expr, span=meta_span(meta))  # type: ignore[arg-type]
+        return UnaryOp(op=op_str, operand=expr, span=meta_span(meta))
 
     @v_args(meta=True)
     def function_call(self, meta: Any, items: list[Any]) -> FuncCall:
         """Grammar function_call -> FuncCall(name, args)."""
         fn_name: str | None = None
-        args: list[Any] = []
+        args: list[SLExpression] = []
         for it in items:
             if isinstance(it, str) and not isinstance(it, Token) and fn_name is None:
                 fn_name = it
             elif not isinstance(it, Token):
-                args = cast(list[Any], it) if isinstance(it, list) else [it]
+                if isinstance(it, list):
+                    args.extend(cast(list[SLExpression], it))
+                else:
+                    args.append(it)
         if fn_name is None:
             raise ValueError(f"function_call missing name; got: {items}")
         return FuncCall(name=fn_name, args=tuple(args), span=meta_span(meta))
 
-    def argument_list(self, items: list[Any]) -> list[Any]:
+    def argument_list(self, items: list[Any]) -> list[SLExpression]:
         """Grammar argument_list -> expression (COMMA expression)*."""
         return [it for it in items if not isinstance(it, Token)]
 
     @v_args(meta=True)
     def ternary_if(self, meta: Any, items: list[Any]) -> TernaryOp:
         """Grammar ternary_if -> TernaryOp(branches, else_expr)."""
-        branches: list[tuple[Any, Any]] = []
-        else_expr: Any | None = None
+        branches: list[tuple[SLExpression, SLExpression]] = []
+        else_expr: SLExpression | None = None
         i = 0
         while i < len(items):
             tok = items[i]
@@ -199,8 +204,8 @@ class _ExpressionsMixin:
     @v_args(meta=True)
     def if_statement(self, meta: Any, items: list[Any]) -> IfStmt:
         """Grammar if_statement -> IfStmt(branches, else_block)."""
-        branches: list[tuple[Any, tuple[Any, ...]]] = []
-        else_block: tuple[Any, ...] | None = None
+        branches: list[tuple[SLExpression, tuple[CodeItem, ...]]] = []
+        else_block: tuple[CodeItem, ...] | None = None
         i = 0
         while i < len(items):
             tok = items[i]
@@ -210,7 +215,7 @@ class _ExpressionsMixin:
             ):
                 cond = items[i + 1]
                 i += 3  # skip cond + THEN
-                stmts: list[Any] = []
+                stmts: list[CodeItem] = []
                 while i < len(items):
                     t = items[i]
                     if isinstance(t, Token) and t.type in (
@@ -220,22 +225,22 @@ class _ExpressionsMixin:
                     ):
                         break
                     if isinstance(t, list):
-                        stmts.extend(cast(list[Any], t))
-                    else:
+                        stmts.extend(cast(list[CodeItem], t))
+                    elif not isinstance(t, Token):
                         stmts.append(t)
                     i += 1
                 branches.append((cond, tuple(stmts)))
             elif isinstance(tok, Token) and tok.type == const.GRAMMAR_VALUE_ELSE:
                 i += 1
-                elst: list[Any] = []
+                elst: list[CodeItem] = []
                 while i < len(items):
                     t = items[i]
                     if isinstance(t, Token) and t.type == const.GRAMMAR_VALUE_ENDIF:
                         i += 1
                         break
                     if isinstance(t, list):
-                        elst.extend(cast(list[Any], t))
-                    else:
+                        elst.extend(cast(list[CodeItem], t))
+                    elif not isinstance(t, Token):
                         elst.append(t)
                     i += 1
                 else_block = tuple(elst)
