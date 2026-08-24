@@ -133,25 +133,23 @@ def test_sfc_mixin_builds_modulecode_sequences_and_equations():
 def test_sfc_mixin_normalizes_enter_active_exit_code_blocks():
     mixin = _SFCHarness()
 
-    enter = mixin.entercode([Token("ENTERCODE", "ENTERCODE"), Tree(parser_const.KEY_STATEMENT, ["enter_stmt"])])
-    active = mixin.activecode([Token("ACTIVECODE", "ACTIVECODE"), Tree(parser_const.KEY_STATEMENT, ["active_stmt"])])
-    exit_ = mixin.exitcode([Token("EXITCODE", "EXITCODE"), Tree(parser_const.KEY_STATEMENT, ["exit_stmt"])])
+    enter_item = FuncCallStmt(call=FuncCall(name="enter_fn", args=()))
+    active_item = FuncCallStmt(call=FuncCall(name="active_fn", args=()))
+    exit_item = FuncCallStmt(call=FuncCall(name="exit_fn", args=()))
+
+    enter = mixin.entercode([Token("ENTERCODE", "ENTERCODE"), enter_item])
+    active = mixin.activecode([Token("ACTIVECODE", "ACTIVECODE"), active_item])
+    exit_ = mixin.exitcode([Token("EXITCODE", "EXITCODE"), exit_item])
 
     code_blocks = mixin.code_blocks([enter, active, exit_])
 
-    assert enter == CodeBlockPayload(
-        kind="enter", items=cast(tuple[CodeItem, ...], (Tree(parser_const.KEY_STATEMENT, ["enter_stmt"]),))
-    )
-    assert active == CodeBlockPayload(
-        kind="active", items=cast(tuple[CodeItem, ...], (Tree(parser_const.KEY_STATEMENT, ["active_stmt"]),))
-    )
-    assert exit_ == CodeBlockPayload(
-        kind="exit", items=cast(tuple[CodeItem, ...], (Tree(parser_const.KEY_STATEMENT, ["exit_stmt"]),))
-    )
+    assert enter == CodeBlockPayload(kind="enter", items=(enter_item,))
+    assert active == CodeBlockPayload(kind="active", items=(active_item,))
+    assert exit_ == CodeBlockPayload(kind="exit", items=(exit_item,))
     assert code_blocks == SFCCodeBlocks(
-        enter=cast(list[CodeItem], [Tree(parser_const.KEY_STATEMENT, ["enter_stmt"])]),
-        active=cast(list[CodeItem], [Tree(parser_const.KEY_STATEMENT, ["active_stmt"])]),
-        exit=cast(list[CodeItem], [Tree(parser_const.KEY_STATEMENT, ["exit_stmt"])]),
+        enter=[enter_item],
+        active=[active_item],
+        exit=[exit_item],
     )
 
 
