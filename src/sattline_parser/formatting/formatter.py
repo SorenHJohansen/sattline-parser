@@ -4,8 +4,11 @@ from __future__ import annotations
 
 import textwrap
 from collections.abc import Sequence
-from typing import Any, Protocol, TypeGuard, cast
+from typing import TYPE_CHECKING, Any, Protocol, TypeGuard
 
+if TYPE_CHECKING:
+    from ..models._ast_model_support import InitValue
+    from ..models.ast_model import CodeItem
 from ..models.expressions import (
     Assignment,
     BinOp,
@@ -26,13 +29,13 @@ __all__ = ["format_expr", "format_list", "format_optional", "format_seq_nodes"]
 
 
 class _VariableLike(Protocol):
-    name: object
-    datatype: object
-    global_var: object
-    const: object
-    state: object
-    init_value: object
-    description: object
+    name: str
+    datatype: str
+    global_var: bool | None
+    const: bool | None
+    state: bool | None
+    init_value: InitValue | None
+    description: str | None
 
 
 def _is_variable_like(value: object) -> TypeGuard[_VariableLike]:
@@ -159,7 +162,7 @@ def format_seq_nodes(nodes: list[Any], indent: str = _DEFAULT_INDENT) -> str:
 
     from ..models import ast_model  # noqa: PLC0415
 
-    def _fmt_stmt_list(statements: list[object], level: int = 2) -> None:
+    def _fmt_stmt_list(statements: list[CodeItem], level: int = 2) -> None:
         for statement in statements:
             lines.append(indent * level + format_expr(statement, indent))
 
@@ -169,13 +172,13 @@ def format_seq_nodes(nodes: list[Any], indent: str = _DEFAULT_INDENT) -> str:
             lines.append(f"{header} {node.name}")
             if node.code.enter:
                 lines.append(indent + "Enter:")
-                _fmt_stmt_list(cast(list[object], node.code.enter))
+                _fmt_stmt_list(node.code.enter)
             if node.code.active:
                 lines.append(indent + "Active:")
-                _fmt_stmt_list(cast(list[object], node.code.active))
+                _fmt_stmt_list(node.code.active)
             if node.code.exit:
                 lines.append(indent + "Exit:")
-                _fmt_stmt_list(cast(list[object], node.code.exit))
+                _fmt_stmt_list(node.code.exit)
 
         elif isinstance(node, ast_model.SFCTransition):
             name_suffix = f" {node.name}" if node.name else ""
@@ -186,7 +189,7 @@ def format_seq_nodes(nodes: list[Any], indent: str = _DEFAULT_INDENT) -> str:
             lines.append("Alternative:")
             for index, branch in enumerate(node.branches, start=1):
                 lines.append(indent + f"Branch {index}:")
-                branch_str = format_seq_nodes(cast(list[object], branch), indent)
+                branch_str = format_seq_nodes(list(branch), indent)
                 for line in branch_str.splitlines():
                     lines.append(indent * 2 + line)
             lines.append("EndAlternative")
@@ -195,21 +198,21 @@ def format_seq_nodes(nodes: list[Any], indent: str = _DEFAULT_INDENT) -> str:
             lines.append("Parallel:")
             for index, branch in enumerate(node.branches, start=1):
                 lines.append(indent + f"Branch {index}:")
-                branch_str = format_seq_nodes(cast(list[object], branch), indent)
+                branch_str = format_seq_nodes(list(branch), indent)
                 for line in branch_str.splitlines():
                     lines.append(indent * 2 + line)
             lines.append("EndParallel")
 
         elif isinstance(node, ast_model.SFCSubsequence):
             lines.append(f"Subsequence {node.name}:")
-            sub_str = format_seq_nodes(cast(list[object], node.body), indent)
+            sub_str = format_seq_nodes(list(node.body), indent)
             for line in sub_str.splitlines():
                 lines.append(indent + line)
             lines.append("EndSubsequence")
 
         elif isinstance(node, ast_model.SFCTransitionSub):
             lines.append(f"TransitionSub {node.name}:")
-            sub_str = format_seq_nodes(cast(list[object], node.body), indent)
+            sub_str = format_seq_nodes(list(node.body), indent)
             for line in sub_str.splitlines():
                 lines.append(indent + line)
             lines.append("EndTransitionSub")
