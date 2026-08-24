@@ -66,11 +66,17 @@ def test_decode_coded_stream_empty_payload() -> None:
 
 def test_decode_coded_stream_strips_trailer_after_last_cr() -> None:
     buried = _encode("\rbody\rline\r\x04\x7fgarbage")
-    assert decode_coded_stream(buried) == "\rbody\rline"
+    assert decode_coded_stream(buried) == "\r\nbody\r\nline\r\n"
 
 
 def test_decode_coded_stream_no_cr_returns_all() -> None:
     assert decode_coded_stream(_encode("wholething")) == "wholething"
+
+
+def test_decode_coded_stream_repairs_bit7_damaged_curly_quote() -> None:
+    # cp1252 curly quotes lose bit 7 through the decode mask and surface as
+    # DC3/DC4; the decoder must restore them.
+    assert decode_coded_stream(_encode("A\x14")) == "A”"
 
 
 def test_decode_coded_stream_rejects_missing_header() -> None:

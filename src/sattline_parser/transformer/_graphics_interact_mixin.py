@@ -87,7 +87,8 @@ class _GraphicsInteractMixin:
         """Grammar common_properties -> merged dict of layer/enable/colour content.
 
         Un-modeled colour trees are preserved verbatim under ``colours`` so no
-        source data is silently discarded.
+        source data is silently discarded. Bare ``ConnectionNode`` entries are
+        position-only markers and carry no property payload.
         """
         merged: dict[str, object] = {}
         colours: list[object] = []
@@ -98,6 +99,11 @@ class _GraphicsInteractMixin:
                 merged["layer"] = it
             elif isinstance(it, dict):
                 merged.update(cast(dict[str, object], it))
+            elif isinstance(it, Tree) and getattr(it, "data", "") in (
+                "connection_node",
+                "connection_node_bare",
+            ):
+                continue
             elif isinstance(it, Tree):
                 colours.append(cast(object, it))
         if colours:
@@ -253,6 +259,10 @@ class _GraphicsInteractMixin:
         self._apply_common_properties(properties, items)
         return go
 
+    def connection_node_bare(self, _items: list[TransformerItem]) -> GraphObject:
+        """Grammar connection_node_bare -> standalone ConnectionNode object."""
+        return GraphObject(const.GRAMMAR_VALUE_CONNECTIONNODE)
+
     def graph_object(self, items: list[TransformerItem]) -> GraphObject:
         """Grammar graph_object -> GraphObject with optional layer."""
         obj: GraphObject | None = None
@@ -262,6 +272,11 @@ class _GraphicsInteractMixin:
                 obj = it
             elif isinstance(it, int):
                 layer = it
+            elif isinstance(it, Tree) and getattr(it, "data", "") == "connection_node":
+                obj = GraphObject(const.GRAMMAR_VALUE_CONNECTIONNODE)
+                coords = [child for child in it.children if _is_coord_pair(child)]
+                if coords:
+                    _graph_properties(obj)[const.KEY_COORDS] = cast(CoordPair, coords[0])
 
         if obj is None:
             types = ", ".join(type(x).__name__ for x in items)

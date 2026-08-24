@@ -142,6 +142,19 @@ def test_compat_transform_catalog_documents_empty_trailing_arg_semantics():
     assert "Func(a, 0)" in transform.description
 
 
+def test_seed_mapping_expands_marker_70_to_composite_object():
+    assert SEED_MAPPING["#70"] == "CompositeObject"
+
+
+def test_abs_textobject_value_transform_drops_spurious_value_keyword():
+    transform = next(t for t in _COMPAT_TRANSFORMS if t.name == "abs_textobject_value")
+
+    assert transform.kind is NormalizationKind.SYNTAX_REPAIR
+    assert transform.pattern.sub("Abs_ TextObject =", "Abs_ TextObject Value_ = 0 : InVar_ 1") == (
+        "Abs_ TextObject = 0 : InVar_ 1"
+    )
+
+
 # ---------------------------------------------------------------------------
 # Golden normalization outputs
 # ---------------------------------------------------------------------------
