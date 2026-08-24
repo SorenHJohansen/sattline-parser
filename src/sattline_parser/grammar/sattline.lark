@@ -193,10 +193,10 @@ grid:                       GRID "=" REAL
 
 //Graph objects
 graph_objects:              GRAPHOBJECTS ":" layer_info? (comments | graph_object)+
-graph_object:               text_object | rectangle_object | line_object | oval_object | polygon_object | segment_object | composite_object
+graph_object:               text_object | rectangle_object | line_object | oval_object | polygon_object | segment_object | composite_object | connection_node | connection_node_bare
 
 //Common properties
-common_properties:          (comments | layer_info | enable | color_properties)*
+common_properties:          (comments | layer_info | enable | color_properties | connection_node_bare)*
 layer_info:                 LAYER_PREFIX "=" SIGNED_INT
 enable:                     ENABLE_PREFIX "=" BOOL (invar | enable_expression)
 enable_expression:          ":" "(" expression ")"
@@ -210,6 +210,7 @@ value_fraction:             value_fraction_tailed | value_fraction_plain
 value_fraction_tailed.1:    VALUEFRACTION "=" SIGNED_INT (invar | enable_expression)
 value_fraction_plain:       VALUEFRACTION "=" SIGNED_INT_NOTAIL
 connection_node:            CONNECTIONNODE "(" REAL "," REAL ")"
+connection_node_bare:       CONNECTIONNODE
 alignment:                  LEFTALIGNED | RIGHTALIGNED
 
 //Color handling

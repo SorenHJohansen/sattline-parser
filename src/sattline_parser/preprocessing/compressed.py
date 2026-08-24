@@ -77,7 +77,7 @@ SEED_MAPPING: dict[str, str] = {
     "#::": "TextBox_",
     "#4?": "GraphObjects",
     "#56": "TextObject",
-    "#70": "",
+    "#70": "CompositeObject",
     "#52": "RectangleObject",
     "#50": "LineObject",
     "#51": "OvalObject",
@@ -223,6 +223,7 @@ _EXECUTE_LOCAL_ENDDEF_RE = re.compile(r"(ExecuteLocalOld\s*=\s*ExecuteLocal:Old)
 _EXECUTE_STATE_IF_RE = re.compile(r"(ExecuteState:Old)\s+IF\b")
 _ENDIF_NO_TERM_RE = re.compile(r"\bENDIF\b(?!\s*[;,\)])")
 _GRAPHOBJECTS_ENDDEF_RE = re.compile(r"\bGraphObjects\b\s*:\s*ENDDEF\b")
+_ABS_TEXTOBJECT_VALUE_RE = re.compile(r"\bAbs_\s+TextObject\s+Value_\s*=")
 _TYPE_ENDDEF_RE = re.compile(r"\b(integer|real|boolean|string)\b\s+ENDDEF\b", re.IGNORECASE)
 _ENABLE_OUTVAR_RE = re.compile(r"(Enable_\s*=\s*\w+\s*:)\s*OutVar_")
 _TRUEVAR_RE = re.compile(r"\bTrueVar\b")
@@ -375,6 +376,14 @@ _COMPAT_TRANSFORMS: tuple[CompatTransform, ...] = (
         pattern=_GRAPHOBJECTS_ENDDEF_RE,
         replacement="ENDDEF",
         description="Drop an empty GraphObjects section before ENDDEF.",
+    ),
+    CompatTransform(
+        name="abs_textobject_value",
+        kind=NormalizationKind.SYNTAX_REPAIR,
+        pattern=_ABS_TEXTOBJECT_VALUE_RE,
+        replacement="Abs_ TextObject =",
+        description="Drop the spurious 'Value_' between 'Abs_ TextObject' and '=' "
+        "(the IDE never writes this spelling and rejects it).",
     ),
     CompatTransform(
         name="type_enddef_terminator",

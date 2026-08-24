@@ -8,12 +8,17 @@ A coded file is a binary stream:
   with a stream key: ``p = (b & 0x7F) ^ key[n]`` with ``key[n] = (7*n + 8) % 128``;
 * a stored ``0x01`` is a sync byte: it is skipped and does not advance ``n``.
 
-The decoded payload is the original SattLine text (CR-only line endings).
+The decoded payload is the original SattLine text with CRLF line endings:
+stored lone ``\r`` terminators are normalized to ``\r\n``, and genuine
+``\r\n`` pairs pass through untouched. The text always ends with a line
+terminator, matching native SattLine sources.
 A coded stream may carry a short non-text trailer after its final ``\r``
-(file-format residue); decoding drops everything after the last ``\r``.
+(file-format residue); decoding drops the trailer but keeps that ``\r``.
 """
 
 from __future__ import annotations
+
+import re
 
 from .compressed import PreprocessError
 
@@ -26,6 +31,11 @@ _HEADER = b"\x80 3.1"
 _BLOCK_BYTES = 100
 _FRAME_BYTES = _BLOCK_BYTES + 2
 _SYNC_BYTE = 0x01
+_LONE_CR_RE = re.compile(r"\r(?!\n)")
+# The ``(b & 0x7F) ^ key`` decode mask destroys bit 7, so cp1252 curly
+# quotes (0x93/0x94) surface as the control characters DC3/DC4. Those can
+# never occur in legitimate SattLine source, so restoring them is unambiguous.
+_BIT7_REPAIRS = {"\x13": "“", "\x14": "”"}
 
 
 def is_coded(data: bytes) -> bool:
@@ -63,7 +73,11 @@ def decode_coded_stream(data: bytes) -> str:
             key_index += 1
 
     decoded = "".join(decoded_parts)
+    for stray, repaired in _BIT7_REPAIRS.items():
+        if stray in decoded:
+            decoded = decoded.replace(stray, repaired)
     last_cr = decoded.rfind("\r")
     if last_cr < 0:
         return decoded
-    return decoded[:last_cr]
+    decoded = decoded[:last_cr + 1]
+    return _LONE_CR_RE.sub("\r\n", decoded)
