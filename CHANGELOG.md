@@ -7,68 +7,46 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2026.8.3] - 2026-08-24
+
 ### Added
 
-- **Source provenance architecture** (`sattline_parser.source_document`):
-  - `SourceSpan` is now a real span: `start`/`end` character offsets plus
-    `line`/`column`, always referring to the *original* source.
-  - `SourceDocument` carries the original text, the normalized/decoded text,
-    and a per-character map back to the original source.
-  - AST spans and `describe_parse_error` locations map through the source map,
-    including for compressed input; `parse_source_text` and `parse_source_file`
-    share the same provenance semantics.
-- **Lexically aware compressed-source decoding**: string literals and
-  `(* ... *)` comments are protected before any transformation, so
-  syntax-looking text inside them is never rewritten.
-- `PreprocessError` for unknown compressed markers — never silently converted
-  to whitespace.
-- `preprocess_source()` returning a `SourceDocument` with original-source
-  provenance.
-- **Fuzz hardening**: hard subprocess timeouts (worker killed on timeout and
-  reused across inputs), and strict classification of expected invalid-input
-  errors (`UnexpectedInput`, `PreprocessError`) vs. internal bugs — an internal
-  `ValueError`/`TypeError` is now a fuzz failure, not ordinary invalid input.
-- **No silent data loss** in the transformer: unexpected `modulecode`,
-  `equationblock`, `code_blocks`, `seqalternative`/`seqparallel` structures
-  raise; interactor types, flag names, procedure names, ModuleDef options
-  (`Zoomable`, `ZoomLimits`, `Grid`, `Two_Layers_`), and ComButProc assignment
-  lines are preserved instead of silently dropped.
-- Per-parse comment depth in the custom lexer (concurrent parses of
-  nested-comment sources can no longer interfere).
-- CI now enforces the project's quality claims: Ruff lint + format, Pyright
-  strict, full test suite, 100% line coverage plus a branch-coverage gate,
-  Bandit, pip-audit, wheel/sdist build + install + smoke, deterministic corpus
-  regression, a Lark compatibility job, and a Windows compatibility job.
-- Release workflow enforces a git-tag == package-version consistency check and
-  re-runs the critical validation before publishing.
-- `tests/test_packaging.py` outside `tests/parser` verifies installed-package
-  behavior (imports, grammar resources, parse, transform, public API).
+- Source provenance tracking with `SourceDocument` and `SourceSpan` mappings
+  back to the original source, including compressed input.
+- Support for decoding coded `.x` streams used by ABB/SattLine.
+- End-to-end parsing and transformation of real `ControlLib.x` and `BatchLib.x`
+  libraries.
+- Corpus regression tests covering real SattLine constructs and edge cases.
+- Stronger fuzzing infrastructure with deterministic corpus regression,
+  subprocess timeouts, and better failure classification.
 
 ### Changed
 
-- `SourceSpan` semantics changed from a (line, column) position to a real
-  span; consumers reading `span.line`/`span.column` still work, and
-  `span.start`/`span.end` are new.
-- `describe_parse_error` accepts an optional `source_document` to map error
-  locations back to the original source.
-- `parse_source_file` reads the raw file and hands the original text to
-  `parse_source_text`, so compression/provenance happen exactly once and
-  consistently.
-- Fuzz harness no longer uses `ThreadPoolExecutor`; timeouts are real.
-- **Single authoritative grammar**: `sattline.lark` is the only grammar; the
-  generated comment-free "strict" grammar and all `text.replace()`-based
-  grammar manipulation are removed. Comments remain explicit grammar elements
-  at the exact syntactic positions SattLine defines and are preserved as
-  `CodeComment` nodes, and are still rejected inside expressions.
-- The `strict` parameter is removed from `build_lark_parser`, `create_parser`,
-  and `create_sl_parser`: there is one authoritative parser that accepts
-  comments exactly where the grammar permits them.
-- Source-map boundary semantics: `SourceDocument.map_position` maps offsets at
-  or past the end of the normalized text to the original end-of-input boundary
-  (a valid half-open `end`), never to the position of the final character;
-  `map_range` maps empty ranges to zero-width original ranges.
-- Coverage measurement now includes branch coverage (`scripts/check_branch_coverage.py`),
-  gated at 93% while line coverage stays gated at 100%.
+- Hardened preprocessing so syntax-looking text inside strings and comments is
+  never rewritten.
+- Reworked preprocessing into explicit decoding and normalization stages with
+  source-map preservation.
+- Refactored the grammar to use `sattline.lark` as the single authoritative
+  grammar.
+- Improved source-position mapping, including end-of-input boundaries.
+- Preserved multi-layer `ModuleDef` blocks and unnamed SFC steps.
+- Added support for additional SattLine/ABB constructs including module
+  definition options, layer information, enable-expression tails, and
+  optional SFC names.
+- Strengthened transformer validation to prevent unexpected structures from
+  silently disappearing.
+- Improved concurrent parsing by making comment-depth state local to each parse.
+- Expanded CI to enforce linting, formatting, strict typing, coverage,
+  security checks, packaging, compatibility, and installed-package tests.
+
+### Fixed
+
+- Prevented compressed-source detection from being triggered by markers inside
+  strings or comments.
+- Fixed silent data loss for interactor types, flag names, procedure names,
+  module options, communication procedure assignments, and duplicated enable
+  tails.
+- Fixed parser type-safety issues and removed unnecessary `Any`/`cast` usage.
 
 ## [2026.8.1] - 2026-08-16
 
