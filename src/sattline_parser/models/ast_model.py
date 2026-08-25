@@ -296,6 +296,8 @@ class ParameterMapping:
         tgt = self.target.name
 
         if self.is_source_global:
+            if self.source is not None:
+                return f"{tgt} => GLOBAL {self.source.name}"
             return f"{tgt} => GLOBAL"
 
         if self.source_type == const.TREE_TAG_VARIABLE_NAME and self.source:

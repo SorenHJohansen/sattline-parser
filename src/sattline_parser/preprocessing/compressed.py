@@ -272,12 +272,18 @@ class CompatTransform:
       program.
     * ``GRAMMAR_COMPAT`` -- renames tokens to grammar-accepted spellings to
       avoid tokenizer/grammar conflicts.
+
+    ``replacement=None`` marks a *dedicated single pass* (dispatched through
+    ``_DEDICATED_PASSES`` by ``name``) instead of a generic ``_regex_sub``
+    step. Dedicated passes are used when a repair needs cross-match state or
+    a structurally known mapping that the generic LCS alignment cannot
+    provide.
     """
 
     name: str
     kind: NormalizationKind
     pattern: re.Pattern[str]
-    replacement: str | CompatReplacer
+    replacement: str | CompatReplacer | None
     description: str
 
 
@@ -410,7 +416,7 @@ _COMPAT_TRANSFORMS: tuple[CompatTransform, ...] = (
         name="equationblock_modulecode",
         kind=NormalizationKind.SEMANTIC_REPAIR,
         pattern=_EQUATIONBLOCK_RE,
-        replacement=lambda registry, decoded, m: _ensure_modulecode(registry, decoded, m),
+        replacement=None,
         description="Inject a missing ModuleCode keyword before EQUATIONBLOCK.",
     ),
     CompatTransform(
@@ -726,12 +732,52 @@ def _date_timestamp_sub(registry: _OpaqueRegistry, _decoded: str, m: re.Match[st
     return m.group(0)
 
 
-def _ensure_modulecode(_registry: _OpaqueRegistry, decoded: str, m: re.Match[str]) -> str:
-    last_enddef = decoded.rfind("ENDDEF", 0, m.start())
-    last_modulecode = decoded.rfind("ModuleCode", 0, m.start())
-    if last_modulecode > last_enddef:
-        return m.group(0)
-    return "ModuleCode " + m.group(0)
+def _apply_modulecode_repair(decoded: str, char_map: list[int]) -> tuple[str, list[int]]:
+    """Inject missing ``ModuleCode`` markers section-aware in a single pass.
+
+    Generic ``_regex_sub`` callbacks all observe the pre-substitution text,
+    so a per-match ``rfind`` would inject one ``ModuleCode`` before *every*
+    EQUATIONBLOCK of the same code section. This pass instead walks the
+    matches left to right and remembers where it last inserted: an insertion
+    covers all later EQUATIONBLOCKs until an ENDDEF opens a new section.
+    The inserted keyword is entirely generated; the matched text keeps its
+    source mapping, so no alignment is needed.
+    """
+    parts: list[str] = []
+    map_parts: list[list[int]] = []
+    last = 0
+    inserted_at: int | None = None
+    for match in _EQUATIONBLOCK_RE.finditer(decoded):
+        start = match.start()
+        last_enddef = decoded.rfind("ENDDEF", 0, start)
+        has_modulecode = decoded.rfind("ModuleCode", 0, start)
+        covered = has_modulecode > last_enddef or (
+            inserted_at is not None and decoded.find("ENDDEF", inserted_at, start) == -1
+        )
+        if covered:
+            continue
+        if start > last:
+            parts.append(decoded[last:start])
+            map_parts.append(char_map[last:start])
+        parts.append("ModuleCode ")
+        map_parts.append([GENERATED] * len("ModuleCode "))
+        inserted_at = start
+        last = start
+    if last < len(decoded):
+        parts.append(decoded[last:])
+        map_parts.append(char_map[last:])
+    new_decoded = "".join(parts)
+    new_map: list[int] = []
+    for part in map_parts:
+        new_map.extend(part)
+    return new_decoded, new_map
+
+
+#: Dedicated single passes for catalog entries whose ``replacement`` is None,
+#: keyed by the entry's ``name``.
+_DEDICATED_PASSES: dict[str, Callable[[str, list[int]], tuple[str, list[int]]]] = {
+    "equationblock_modulecode": _apply_modulecode_repair,
+}
 
 
 def _normalize_compat(registry: _OpaqueRegistry, decoded: str, char_map: list[int]) -> tuple[str, list[int]]:
@@ -748,6 +794,9 @@ def _normalize_compat(registry: _OpaqueRegistry, decoded: str, char_map: list[in
     """
     for transform in _COMPAT_TRANSFORMS:
         replacement = transform.replacement
+        if replacement is None:
+            decoded, char_map = _DEDICATED_PASSES[transform.name](decoded, char_map)
+            continue
         if callable(replacement):
             repl: str | Callable[[re.Match[str]], str] = partial(replacement, registry, decoded)
         else:

@@ -63,6 +63,18 @@ def test_ast_model_helpers_cover_reduce_usage_and_string_formats(monkeypatch: py
                 target=VarRef("Target"),
                 source_type=parser_const.TREE_TAG_VARIABLE_NAME,
                 is_duration=False,
+                is_source_global=True,
+                source=VarRef("GlobalSrc"),
+            )
+        )
+        == "Target => GLOBAL GlobalSrc"
+    )
+    assert (
+        str(
+            ParameterMapping(
+                target=VarRef("Target"),
+                source_type=parser_const.TREE_TAG_VARIABLE_NAME,
+                is_duration=False,
                 source=VarRef("Source"),
                 is_source_global=False,
             )
