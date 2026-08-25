@@ -79,5 +79,5 @@ def decode_coded_stream(data: bytes) -> str:
     last_cr = decoded.rfind("\r")
     if last_cr < 0:
         return decoded
-    decoded = decoded[:last_cr + 1]
+    decoded = decoded[: last_cr + 1]
     return _LONE_CR_RE.sub("\r\n", decoded)
