@@ -27,6 +27,17 @@ def test_preprocess_sl_text_injects_modulecode_before_equationblock_when_missing
     assert mapping["#84"] == "ModuleCode"
 
 
+def test_preprocess_sl_text_injects_modulecode_only_once_per_section():
+    decoded, _ = preprocess_sl_text("#71 EQUATIONBLOCK A EQUATIONBLOCK B\n")
+    assert decoded.count("ModuleCode ") == 1
+    assert decoded == "MODULEDEFINITION ModuleCode EQUATIONBLOCK A EQUATIONBLOCK B\n"
+
+
+def test_preprocess_sl_text_injects_modulecode_in_each_section():
+    decoded, _ = preprocess_sl_text("#71 EQUATIONBLOCK A ENDDEF #71 EQUATIONBLOCK B\n")
+    assert decoded.count("ModuleCode ") == 2
+
+
 def test_is_compressed_ignores_markers_inside_comments():
     src = "(* signal tags: #aa #bb #cc #dd #ee #ff #gg #hh #ii #jj #kk #ll #mm #nn *)\nMODULEDEFINITION Demo\nENDDEF\n"
 

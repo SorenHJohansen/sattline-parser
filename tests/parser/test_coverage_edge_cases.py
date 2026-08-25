@@ -552,6 +552,34 @@ def test_remap_parse_error_ignores_non_unexpected_input() -> None:
     assert not hasattr(exc, "_sattline_remapped")
 
 
+def test_remap_parse_error_remaps_token_end_fields() -> None:
+    from typing import Any, cast  # noqa: PLC0415
+
+    from lark import Token  # noqa: PLC0415
+    from lark.exceptions import UnexpectedToken  # noqa: PLC0415
+
+    from sattline_parser.source_document import SourceDocument, remap_parse_error  # noqa: PLC0415
+
+    # Original "A0_X" (indices: A=0, 0=1, _=2, X=3), normalized "A_X" (A=0, _=1, X=2).
+    # map = (0, 2, 3): normalized[0]->orig[0], normalized[1]->orig[2], normalized[2]->orig[3].
+    doc = SourceDocument("A0_X", "A_X", (0, 2, 3))
+    tok = Token("VALUE", "_X")
+    tok.start_pos = 1  # position of "_" in normalized
+    tok.end_pos = 3  # exclusive end (after "X")
+    tok.line = 1
+    tok.column = 2
+    tok.end_line = 1
+    tok.end_column = 4
+    exc = UnexpectedToken(tok, cast(Any, {"END"}))
+    exc.line = 1
+    exc.column = 2
+    exc.pos_in_stream = 1
+    remap_parse_error(exc, doc)
+    # start maps 1->2, end-1 maps 2->3 so end = 4.
+    assert tok.start_pos == 2
+    assert tok.end_pos == 4
+
+
 def test_remap_tree_handles_negative_token_positions() -> None:
     from sattline_parser.source_document import remap_tree_to_original  # noqa: PLC0415
 

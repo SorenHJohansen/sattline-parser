@@ -119,3 +119,25 @@ def test_parse_source_file_decodes_coded_before_parsing(tmp_path) -> None:
     path.write_bytes(_encode("\nInvalid SattLine = ;"))
     with pytest.raises(UnexpectedToken):  # lark parse error: decode succeeded first
         parser_api.parse_source_file(path)
+
+
+def test_is_coded_requires_header_crlf() -> None:
+    assert is_coded(b"\x80 3.1\r\n" + b"\x80" * 10) is True
+    assert is_coded(b"\x80 3.1XX") is False
+    assert is_coded(b"\x80 3.1\n") is False
+    assert is_coded(b"\x80 3.1") is False
+    assert is_coded(b"\x80 3.0\r\n") is False
+
+
+def test_decode_coded_stream_rejects_header_without_crlf() -> None:
+    with pytest.raises(PreprocessError, match="CRLF terminator"):
+        decode_coded_stream(b"\x80 3.1XX")
+    with pytest.raises(PreprocessError, match="CRLF terminator"):
+        decode_coded_stream(b"\x80 3.1\n\n")
+    with pytest.raises(PreprocessError, match="CRLF terminator"):
+        decode_coded_stream(b"\x80 3.1")
+
+
+def test_decode_coded_stream_rejects_header_with_lf_only() -> None:
+    with pytest.raises(PreprocessError, match="CRLF terminator"):
+        decode_coded_stream(b"\x80 3.1\n")

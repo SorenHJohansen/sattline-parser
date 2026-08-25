@@ -28,6 +28,7 @@ __all__ = [
 ]
 
 _HEADER = b"\x80 3.1"
+_HEADER_LINE = _HEADER + b"\r\n"
 _BLOCK_BYTES = 100
 _FRAME_BYTES = _BLOCK_BYTES + 2
 _SYNC_BYTE = 0x01
@@ -39,20 +40,22 @@ _BIT7_REPAIRS = {"\x13": "“", "\x14": "”"}
 
 
 def is_coded(data: bytes) -> bool:
-    """True when *data* starts with the coded-stream header."""
-    return data.startswith(_HEADER)
+    """True when *data* starts with the complete coded-stream header (``\\x80 3.1\\r\\n``)."""
+    return data.startswith(_HEADER_LINE)
 
 
 def decode_coded_stream(data: bytes) -> str:
     """Decode a coded stream into the embedded SattLine text.
 
     Raises :class:`PreprocessError` when the framing is malformed (missing
-    header, payload not an exact multiple of the block frame, or a block
-    without its CRLF terminator).
+    header, header missing its CRLF terminator, payload not an exact multiple
+    of the block frame, or a block without its CRLF terminator).
     """
     if not data.startswith(_HEADER):
         raise PreprocessError("coded stream: missing '\\x80 3.1' header")
-    payload = data[len(_HEADER) + 2 :]
+    if not data.startswith(_HEADER_LINE):
+        raise PreprocessError("coded stream: header missing CRLF terminator")
+    payload = data[len(_HEADER_LINE) :]
     block_count, remainder = divmod(len(payload), _FRAME_BYTES)
     if remainder:
         raise PreprocessError(f"coded stream: payload is not a multiple of {_FRAME_BYTES} bytes")
