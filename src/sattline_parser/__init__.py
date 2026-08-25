@@ -22,7 +22,12 @@ from sattline_parser.models.expressions import (
     UnaryOp,
     VarRef,
 )
-from sattline_parser.preprocessing import is_compressed, preprocess_sl_text, preprocess_source
+from sattline_parser.preprocessing import (
+    is_compressed,
+    preprocess_sl_text,
+    preprocess_source,
+    render_ide_text,
+)
 from sattline_parser.transformer.sl_transformer import SLTransformer
 
 from .__version__ import __version__
@@ -112,6 +117,7 @@ __all__ = [
     "parse_source_text",
     "preprocess_sl_text",
     "preprocess_source",
+    "render_ide_text",
     "run_corpus_regression",
     "run_random_fuzz",
 ]

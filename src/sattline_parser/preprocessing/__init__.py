@@ -19,8 +19,10 @@ from .compressed import (
     preprocess_sl_text,
     preprocess_source,
 )
+from .ide_text import MAX_IDE_LINE_LENGTH, render_ide_text
 
 __all__ = [
+    "MAX_IDE_LINE_LENGTH",
     "SEED_MAPPING",
     "PreprocessError",
     "decode_coded_stream",
@@ -29,4 +31,5 @@ __all__ = [
     "is_compressed",
     "preprocess_sl_text",
     "preprocess_source",
+    "render_ide_text",
 ]

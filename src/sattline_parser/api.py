@@ -36,7 +36,7 @@ from .errors import (
 )
 from .grammar import constants as const
 from .grammar.sattline_lexer import SattLineLexer
-from .preprocessing import is_coded, is_compressed, preprocess_source
+from .preprocessing import is_coded, is_compressed, preprocess_source, render_ide_text
 from .preprocessing.coded import decode_coded_stream
 
 __all__ = [
@@ -49,6 +49,7 @@ __all__ = [
     "parse_source_file",
     "parse_source_text",
     "read_text_with_fallback",
+    "render_ide_text",
 ]
 
 GRAMMAR_PATH = Path(__file__).resolve().parent / "grammar" / "sattline.lark"
