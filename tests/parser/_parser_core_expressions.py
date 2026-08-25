@@ -153,25 +153,31 @@ def test_expressions_mixin_builds_statements_calls_and_conditionals():
 
     if_items = [
         Token(parser_const.GRAMMAR_VALUE_IF, "IF"),
-        "cond1",
+        VarRef("cond1"),
         Token("THEN", "THEN"),
-        "stmt1",
+        CodeComment("(* stmt1 *)"),
         Token(parser_const.GRAMMAR_VALUE_ELSIF, "ELSIF"),
-        "cond2",
+        VarRef("cond2"),
         Token("THEN", "THEN"),
-        "stmt2",
+        CodeComment("(* stmt2 *)"),
         Token(parser_const.GRAMMAR_VALUE_ELSE, "ELSE"),
-        "stmt3",
+        CodeComment("(* stmt3 *)"),
         Token(parser_const.GRAMMAR_VALUE_ENDIF, "ENDIF"),
     ]
     assert mixin.if_statement(_META, if_items) == IfStmt(
-        branches=(("cond1", ("stmt1",)), ("cond2", ("stmt2",))),
-        else_block=("stmt3",),
+        branches=(
+            (VarRef("cond1"), (CodeComment("(* stmt1 *)"),)),
+            (VarRef("cond2"), (CodeComment("(* stmt2 *)"),)),
+        ),
+        else_block=(CodeComment("(* stmt3 *)"),),
         span=_SPAN,
     )
     assert mixin.if_statement(_META, [Token("IGNORED", "?"), *if_items]) == IfStmt(
-        branches=(("cond1", ("stmt1",)), ("cond2", ("stmt2",))),
-        else_block=("stmt3",),
+        branches=(
+            (VarRef("cond1"), (CodeComment("(* stmt1 *)"),)),
+            (VarRef("cond2"), (CodeComment("(* stmt2 *)"),)),
+        ),
+        else_block=(CodeComment("(* stmt3 *)"),),
         span=_SPAN,
     )
     assert mixin.statement(_META, [Token("IGNORED", "?"), "assignment"]) == "assignment"

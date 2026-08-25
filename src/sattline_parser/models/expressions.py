@@ -36,10 +36,10 @@ SLStmt = Assignment | FuncCallStmt | IfStmt
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any, Literal
+from typing import TYPE_CHECKING, Literal
 
 if TYPE_CHECKING:
-    from .ast_model import SourceSpan
+    from .ast_model import CodeComment, SourceSpan
 
 __all__ = [
     "Assignment",
@@ -194,8 +194,8 @@ class IfStmt:
     ``else_block`` — the ``ELSE`` body, or ``None`` if absent.
     """
 
-    branches: tuple[tuple[SLExpression, tuple[Any, ...]], ...]
-    else_block: tuple[Any, ...] | None
+    branches: tuple[tuple[SLExpression, tuple[Assignment | FuncCallStmt | IfStmt | CodeComment, ...]], ...]
+    else_block: tuple[Assignment | FuncCallStmt | IfStmt | CodeComment, ...] | None
     span: SourceSpan | None = None
 
 

@@ -25,6 +25,8 @@ from sattline_parser.models.ast_model import (
     ModuleHeader,
     ParameterMapping,
     Sequence,
+    SFCCodeBlocks,
+    SFCStep,
     SourceSpan,
 )
 from sattline_parser.models.expressions import IfStmt, VarRef
@@ -231,7 +233,21 @@ def test_text_object_skips_comment_trees_when_linking_text_vars() -> None:
 
 def test_sfc_flatten_code_body_extends_nested_lists() -> None:
     sfc = SFCMixin()
-    assert sfc._flatten_code_body([["stmt1", "stmt2"], Token("ENTERCODE", "ENTERCODE")]) == ["stmt1", "stmt2"]
+    c1 = CodeComment("(* a *)")
+    c2 = CodeComment("(* b *)")
+    assert sfc._flatten_code_body([[c1, c2], Token("ENTERCODE", "ENTERCODE")]) == [c1, c2]
+
+
+def test_sfc_flatten_code_body_rejects_invalid_nested_item() -> None:
+    sfc = SFCMixin()
+    with pytest.raises(ValueError, match="code body unexpected item"):
+        sfc._flatten_code_body([["not a code item"]])
+
+
+def test_sfc_flatten_code_body_rejects_invalid_top_level_item() -> None:
+    sfc = SFCMixin()
+    with pytest.raises(ValueError, match="code body unexpected item"):
+        sfc._flatten_code_body([42])
 
 
 def test_sfc_modulecode_appends_top_level_code_comments() -> None:
@@ -256,16 +272,53 @@ def test_sfc_equationblock_appends_code_comments() -> None:
 
 
 def test_sequence_with_seq_control_tokens() -> None:
+    step = SFCStep(kind="step", name="s", code=SFCCodeBlocks())
     seq = SFCMixin().sequence(
         [
             "myseq",
             (5.0, 6.0),
             (7.0, 8.0),
             Tree(const.KEY_SEQ_CONTROL_OPS, [Token(const.GRAMMAR_VALUE_SEQTIMER, "SEQTIMER"), 44]),
-            Tree(const.KEY_SEQUENCE_BODY, ["stmt"]),
+            Tree(const.KEY_SEQUENCE_BODY, [step]),
         ]
     )
     assert seq.name == "myseq"
+
+
+def test_sequence_rejects_invalid_code_item() -> None:
+    with pytest.raises(ValueError, match="sequence unexpected code item"):
+        SFCMixin().sequence(
+            [
+                "myseq",
+                (5.0, 6.0),
+                (7.0, 8.0),
+                Tree(const.KEY_SEQUENCE_BODY, ["not an SFC item"]),
+            ]
+        )
+
+
+def test_sequence_skips_tokens_inside_body() -> None:
+    step = SFCStep(kind="step", name="s", code=SFCCodeBlocks())
+    seq = SFCMixin().sequence(
+        [
+            "myseq",
+            (5.0, 6.0),
+            (7.0, 8.0),
+            Tree(const.KEY_SEQUENCE_BODY, [Token("STRAY_TOKEN", "x"), step]),
+        ]
+    )
+    assert seq.code == [step]
+
+
+def test_seqtransition_rejects_invalid_expression_type() -> None:
+    with pytest.raises(ValueError, match="seqtransition expected an expression"):
+        SFCMixin().seqtransition(
+            [
+                Token("SEQTRANSITION", "SEQTRANSITION"),
+                Token("WAIT_FOR", "WAIT_FOR"),
+                42j,  # complex number is not a valid SLExpression
+            ]
+        )
 
 
 def test_token_span_none_when_no_position() -> None:

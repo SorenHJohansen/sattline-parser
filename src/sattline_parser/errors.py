@@ -51,7 +51,7 @@ def _unexpected_input_summary(exc: UnexpectedInput) -> str:
     return summary
 
 
-def _mapped_error_position(exc: UnexpectedInput, source_document: SourceDocument | None) -> int | None:
+def _mapped_error_position(exc: UnexpectedInput, source_document: SourceDocument) -> int | None:
     """Map an UnexpectedInput's ``pos_in_stream`` to an original offset.
 
     When a ``source_document`` is supplied and the exception has not already
@@ -59,7 +59,7 @@ def _mapped_error_position(exc: UnexpectedInput, source_document: SourceDocument
     the exception's ``pos_in_stream`` (an offset in the normalized text) is
     translated to an offset in the original source.
     """
-    if source_document is None or getattr(exc, "_sattline_remapped", False):
+    if getattr(exc, "_sattline_remapped", False):
         return None
     pos = getattr(exc, "pos_in_stream", None)
     if not isinstance(pos, int):
@@ -89,9 +89,11 @@ def describe_parse_error(
     line = getattr(exc, "line", None)
     column = getattr(exc, "column", None)
     if isinstance(exc, UnexpectedInput):
-        mapped = _mapped_error_position(exc, source_document)
-        if mapped is not None:
-            line, column = source_document.line_col(mapped)  # type: ignore[union-attr]
+        mapped: int | None = None
+        if source_document is not None:
+            mapped = _mapped_error_position(exc, source_document)
+        if mapped is not None and source_document is not None:
+            line, column = source_document.line_col(mapped)
             context = _context_at(source_text, mapped).rstrip()
         else:
             context = exc.get_context(source_text, span=40).rstrip()
