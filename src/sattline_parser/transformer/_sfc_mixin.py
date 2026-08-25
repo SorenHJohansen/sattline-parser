@@ -29,7 +29,20 @@ from sattline_parser.models.ast_model import (
     SFCTransition,
     SFCTransitionSub,
 )
-from sattline_parser.models.expressions import Assignment, FuncCall, FuncCallStmt, IfStmt, SLExpression
+from sattline_parser.models.expressions import (
+    Assignment,
+    BinOp,
+    BoolOp,
+    Compare,
+    FuncCall,
+    FuncCallStmt,
+    IfStmt,
+    NotOp,
+    SLExpression,
+    TernaryOp,
+    UnaryOp,
+    VarRef,
+)
 
 from ._comments_mixin import is_comment_tree
 from ._module_shared import CodeBlockPayload, TransformerItem, TransformerTree, coord_pair, tree_children
@@ -45,9 +58,18 @@ class SFCMixin:
         flat: list[CodeItem] = []
         for item in items:
             if isinstance(item, list):
-                flat.extend(cast(list[CodeItem], item))
-            elif not isinstance(item, Token):
-                flat.append(cast(CodeItem, item))
+                nested = cast(list[TransformerItem], item)
+                for child in nested:
+                    if isinstance(child, (Assignment, FuncCallStmt, IfStmt, CodeComment)):
+                        flat.append(child)
+                    else:
+                        raise ValueError(f"code body unexpected item: {type(child).__name__}: {child!r}")
+            elif isinstance(item, Token):
+                continue
+            elif isinstance(item, (Assignment, FuncCallStmt, IfStmt, CodeComment)):
+                flat.append(item)
+            else:
+                raise ValueError(f"code body unexpected item: {type(item).__name__}: {item!r}")
         return flat
 
     def entercode(self, items: list[TransformerItem]) -> CodeBlockPayload:
@@ -161,15 +183,19 @@ class SFCMixin:
                 name = item
                 break
 
-        condition: object | None = None
+        condition: SLExpression | None = None
         for item in reversed(items[wait_index + 1 :]):
             if not isinstance(item, Token):
+                if not isinstance(
+                    item, (VarRef, BoolOp, NotOp, Compare, BinOp, UnaryOp, FuncCall, TernaryOp, bool, int, float, str)
+                ):
+                    raise ValueError(f"seqtransition expected an expression; got: {type(item).__name__}: {item!r}")
                 condition = item
                 break
         if condition is None:
             raise ValueError(f"seqtransition expected an expression after WAIT_FOR; got: {items!r}")
 
-        return SFCTransition(name=name, condition=cast(SLExpression, condition))
+        return SFCTransition(name=name, condition=condition)
 
     def seqtransitionsub(self, items: list[TransformerItem]) -> SFCTransitionSub:
         """Grammar seqtransitionsub -> SUBSEQTRANSITION NAME sequence_body ENDSUBSEQTRANSITION."""
@@ -265,7 +291,7 @@ class SFCMixin:
         size: tuple[float, float] | None = None
         seqcontrol = False
         seqtimer = False
-        code: list[object] = []
+        code: list[SFCBodyItem] = []
         seqtype = const.GRAMMAR_VALUE_SEQUENCE
 
         for item in items:
@@ -301,7 +327,26 @@ class SFCMixin:
 
             if isinstance(item, Tree) and item.data == const.KEY_SEQUENCE_BODY:
                 tree = cast(TransformerTree, item)
-                code.extend(tree_children(tree))
+                for child in tree_children(tree):
+                    if isinstance(child, Token):
+                        continue
+                    if isinstance(
+                        child,
+                        (
+                            SFCStep,
+                            SFCTransition,
+                            SFCTransitionSub,
+                            SFCAlternative,
+                            SFCParallel,
+                            SFCSubsequence,
+                            SFCFork,
+                            SFCBreak,
+                            CodeComment,
+                        ),
+                    ):
+                        code.append(child)
+                    else:
+                        raise ValueError(f"sequence unexpected code item: {type(child).__name__}: {child!r}")
 
         if position is None:
             raise ValueError("Position can't be None")
@@ -315,7 +360,7 @@ class SFCMixin:
             size=size,
             seqcontrol=seqcontrol,
             seqtimer=seqtimer,
-            code=cast(list[SFCBodyItem], code),
+            code=code,
         )
 
     def equationblock(self, items: list[TransformerItem]) -> Equation:
@@ -323,7 +368,7 @@ class SFCMixin:
         name: str | None = None
         position: tuple[float, float] | None = None
         size: tuple[float, float] | None = None
-        code: list[object] = []
+        code: list[CodeItem] = []
 
         for item in items:
             if isinstance(item, Token):
@@ -345,10 +390,10 @@ class SFCMixin:
                     size = coord
                 continue
 
-            if isinstance(item, (Assignment, FuncCallStmt, IfStmt, CodeComment, FuncCall)):
+            if isinstance(item, (Assignment, FuncCallStmt, IfStmt, CodeComment)):
                 code.append(item)
             else:
-                raise ValueError(f"equationblock unexpected code item: {type(item).__name__}: {cast(object, item)!r}")
+                raise ValueError(f"equationblock unexpected code item: {type(item).__name__}: {item!r}")
 
         if name is None:
             raise ValueError("Name can't be None")
@@ -357,7 +402,7 @@ class SFCMixin:
         if size is None:
             raise ValueError("Size can't be None")
 
-        return Equation(name=name, position=position, size=size, code=cast(list[CodeItem], code))
+        return Equation(name=name, position=position, size=size, code=code)
 
 
 __all__ = ["SFCMixin"]
