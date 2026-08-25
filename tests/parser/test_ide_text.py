@@ -38,7 +38,7 @@ def test_render_ide_text_reproduces_batchlib_roundtrip_split():
     # Real overlong line from the decoded BatchLib corpus; this exact split
     # was accepted by the IDE.
     raw = (
-        "Value_Changed = True : OutVar_ \"CopyPasteChanged\" Variable = 0 : OutVar_ \"EditCommand\" "
+        'Value_Changed = True : OutVar_ "CopyPasteChanged" Variable = 0 : OutVar_ "EditCommand" '
         "Abs_ TextObject = 0 : InVar_ 1   ComBut_ ( 5.96046E-08 , 0.5 )  ( 0.5 , 1.0 )  Int_Value Layer_ = "
     )
     first, second = render_ide_text(raw).split("\r\n")
