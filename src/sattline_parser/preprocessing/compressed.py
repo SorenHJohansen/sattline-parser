@@ -42,30 +42,21 @@ SEED_MAPPING: dict[str, str] = {
     "#72": "RECORD",
     "#85": "ENDDEF",
     "#7:": "OpSave",
-    "#7:;": "OpSave;",
-    "#7;;": ";",
     "#01": "(",
     "#8?": "=",
     "#8:": "=>",
     "#8;": ":=",
     "#1<": "False",
-    "#1<;": "False;",
     "#1>": "False",
-    "#1>;": "False;",
     "#1=": "True",
-    "#1=;": "True;",
-    "#1;;": "True;",
     "#1;": "True",
     "#79": "SUBMODULES",
     "#73": "MODULEPARAMETERS",
     "#7<": "LOCALVARIABLES",
     "#74": "GLOBAL",
     "#80": "State",
-    "#80;": "State;",
-    "#17": "Old",
-    "#17;": "Old;",
+    "#17": "New",
     "#18": "Old",
-    "#18;": "Old;",
     "#87": "Frame_Module",
     "#6<": "LayerModule",
     "#6>": "ModuleDef",
@@ -104,7 +95,6 @@ SEED_MAPPING: dict[str, str] = {
     "#84": "ModuleCode",
     "#86": "GroupConn",
     "#77": "Secure",
-    "#77;": "Secure;",
     "#20": "EQUATIONBLOCK",
     "#22": "SEQUENCE",
     "#23": "ENDSEQUENCE",
@@ -119,8 +109,16 @@ SEED_MAPPING: dict[str, str] = {
     "#34": "ALTERNATIVESEQ",
     "#35": "ALTERNATIVEBRANCH",
     "#36": "ENDALTERNATIVE",
+    "#24": "OPENSEQUENCE",
+    "#25": "ENDOPENSEQUENCE",
+    "#2=": "PARALLELSEQ",
+    "#2>": "PARALLELBRANCH",
+    "#2?": "ENDPARALLEL",
+    "#32": "SUBSEQTRANSITION",
+    "#33": "ENDSUBSEQTRANSITION",
+    "#99": "SeqControl",
+    "#97": "SeqTimer",
     "#2:": "EXITCODE",
-    "#94;": "Default;",
     "#94": "Default",
     "#7;": "Const",
     "#76": "PRIVATE_",
@@ -140,6 +138,7 @@ SEED_MAPPING: dict[str, str] = {
     "#4;": "SetAction",
     "#4<": "ResetAction",
     "#60": "ValueFraction",
+    "#6;": "SymbolModule",
     "#9>": "Event_Text_",
     "#9?": "Event_Tag_",
     "#9=": "Value_Changed",
@@ -163,13 +162,9 @@ SEED_MAPPING: dict[str, str] = {
     "#:=": "Abs_",
     "#;0": "Digits_",
     "#;1": "NoOf_",
-    "#;3": "SetApp_",
     "#;4": "Two_Layers_",
     "#;8": "Real_Value",
-    "#;2": "TextObject",
-    "#;>": "Zoomable",
     "#;?": "LayerLimit_",
-    "#;:": "Alt_Text",
     "#;9": "String_Value",
     "#;=": "Cancel_Variable",
     "#;;": "Enable_Delay",
@@ -181,7 +176,6 @@ SEED_MAPPING: dict[str, str] = {
     "#10": "THEN",
     "#15": "OR",
     "#12": "ELSE",
-    "#13;": "ENDIF;",
     "#13": "ENDIF",
     "#05": ">",
     "#04": "<",
@@ -192,6 +186,7 @@ SEED_MAPPING: dict[str, str] = {
     "#<0": "SnglSgn",
     "#<1": "SnglSgnEna",
     "#<2": "Purpose_",
+    "#<3": "PurposeChng",
     "#<4": "SgnrCom",
     "#<5": "CommentChng",
     "#<6": "CommentMand",
@@ -205,7 +200,8 @@ SEED_MAPPING: dict[str, str] = {
     "#<>": "Signer2Name_",
 }
 
-_MARKER_RE = re.compile(r"#[0-9A-Za-z;:=><?]+")
+_MARKER_RE = re.compile(r"#[0-9A-Za-z;:=><?]{1,2}")
+_MARKER_PREFIX_RE = re.compile(r"#0[1<][A-Za-z0-9]*")
 _WHITESPACE_RE = re.compile(r"\s+")
 _ENDDEF_TRAILING_SEMI_RE = re.compile(r"\bENDDEF\b\s*;")
 _SEMI_BEFORE_ASSIGN_RE = re.compile(r";\s*:=")
@@ -709,17 +705,20 @@ def _decode_markers(text: str, mapping: dict[str, str]) -> tuple[_OpaqueRegistry
 
     def _subst(m: re.Match[str]) -> str:
         tok = m.group(0)
-        if tok.startswith("#01") and len(tok) > 3:
-            return "(" + tok[3:]
-        if tok == "#0<":
-            return "*"
-        if tok.startswith("#0<") and len(tok) > 3:
-            return "* " + tok[3:]
         value = mapping.get(tok)
         if value is None:
             raise PreprocessError(f"Unknown compressed marker {tok!r} at character offset {m.start()}")
         return value
 
+    def _prefix_subst(m: re.Match[str]) -> str:
+        tok = m.group(0)
+        if tok.startswith("#01"):
+            return "(" + tok[3:]
+        if tok.startswith("#0<"):
+            return "* " + tok[3:] if len(tok) > 3 else "*"
+        return tok
+
+    decoded, char_map = _regex_sub(decoded, char_map, _MARKER_PREFIX_RE, _prefix_subst)
     decoded, char_map = _regex_sub(decoded, char_map, _MARKER_RE, _subst)
     return registry, decoded, char_map
 

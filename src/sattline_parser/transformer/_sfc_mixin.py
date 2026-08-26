@@ -204,11 +204,7 @@ class SFCMixin:
             or not isinstance(items[1], str)
             or not (isinstance(items[2], Tree) and items[2].data == const.KEY_SEQUENCE_BODY)
         ):
-            raise ValueError(
-                "seqtransitionsub expected "
-                "(SUBSEQTRANSITION, NAME, sequence_body, ENDSUBSEQTRANSITION); "
-                f"got: {items!r}"
-            )
+            raise ValueError(f"seqtransitionsub expected (SUBSEQTRANSITION, NAME, sequence_body, ENDSUBSEQTRANSITION); got: {items!r}")
         tree = cast(TransformerTree, items[2])
         return SFCTransitionSub(name=items[1], body=cast(SfcBody, tree_children(tree)))
 
