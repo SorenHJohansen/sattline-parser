@@ -32,7 +32,17 @@ ASAN_OPTIONS=\$ASAN_OPTIONS:symbolize=1:external_symbolizer_path=\$this_dir/llvm
   seed_dir="$OUT/${fuzzer_basename}_seed_corpus"
   mkdir -p "$seed_dir"
   if [ -d "$CORPUS_SRC" ]; then
-    find "$CORPUS_SRC" -name '*.s' -type f -exec cp {} "$seed_dir/" \;
+    while IFS= read -r -d '' src_file; do
+      rel_path="${src_file#"$CORPUS_SRC"/}"
+      seed_name="${rel_path//\//__}"
+      cp "$src_file" "$seed_dir/$seed_name"
+    done < <(find "$CORPUS_SRC" -name '*.s' -type f -print0 | sort -z)
+    seed_count=$(find "$CORPUS_SRC" -name '*.s' -type f | wc -l)
+    actual_count=$(ls -1 "$seed_dir" | wc -l)
+    if [ "$seed_count" -ne "$actual_count" ]; then
+      echo "ERROR: seed corpus mismatch ($seed_count sources vs $actual_count seeds)" >&2
+      exit 1
+    fi
   fi
   zip -j "$OUT/${fuzzer_basename}_seed_corpus.zip" "$seed_dir"/*.s 2>/dev/null || true
   echo "Seeded $fuzzer_basename with $(ls -1 "$seed_dir" | wc -l) corpus files"

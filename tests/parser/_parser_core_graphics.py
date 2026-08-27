@@ -108,6 +108,34 @@ def test_parse_source_text_propagates_graphobjects_section_layer():
     assert [go.properties.get("layer") for go in bp.moduledef.graph_objects] == [2, 2]
 
 
+def test_graph_object_handles_standalone_and_attached_connection_nodes():
+    mixin = _GraphicsHarness(coord_tails=[], extra_tails=[])
+
+    bare_object = mixin.connection_node_bare([])
+    assert bare_object.type == parser_const.GRAMMAR_VALUE_CONNECTIONNODE
+    assert bare_object.properties == {}
+
+    positioned = mixin.graph_object([Tree("connection_node", [(0.25, 0.25)])])
+    assert positioned.type == parser_const.GRAMMAR_VALUE_CONNECTIONNODE
+    assert positioned.properties[parser_const.KEY_COORDS] == (0.25, 0.25)
+
+    unpositioned = mixin.graph_object([Tree("connection_node", [])])
+    assert unpositioned.type == parser_const.GRAMMAR_VALUE_CONNECTIONNODE
+    assert parser_const.KEY_COORDS not in unpositioned.properties
+
+    merged = mixin.common_properties(
+        [
+            3,
+            Tree("connection_node_bare", []),
+            Tree("connection_node", [(1.0, 2.0)]),
+            Tree("outline_colour", [Token("OUTLINECOLOUR", "OutlineColour")]),
+        ]
+    )
+    assert merged["layer"] == 3
+    assert merged["colours"] == [Tree("outline_colour", [Token("OUTLINECOLOUR", "OutlineColour")])]
+    assert parser_const.KEY_COORDS not in merged
+
+
 def test_interact_simple_item_extracts_type_from_grammar_tree():
     # The real grammar yields interact_type_simple as a Tree wrapping the type
     # token; the type must be extracted, never defaulted to "Interact".

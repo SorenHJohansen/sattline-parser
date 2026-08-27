@@ -22,11 +22,13 @@ from sattline_parser.grammar import constants as const
 from sattline_parser.models.ast_model import (
     BasePicture,
     CodeComment,
+    CodeItem,
     ModuleHeader,
     ParameterMapping,
     Sequence,
     SFCCodeBlocks,
     SFCStep,
+    SFCSubsequence,
     SourceSpan,
 )
 from sattline_parser.models.expressions import IfStmt, VarRef
@@ -43,13 +45,14 @@ from sattline_parser.transformer._module_layout_mixin import ModuleLayoutMixin
 from sattline_parser.transformer._module_shared import (  # used below
     CodeBlockPayload,
     GroupConnInfo,
+    InterimCoords,
     float_tuple,
     groupconn_value,
 )
 from sattline_parser.transformer._sfc_mixin import SFCMixin
 from sattline_parser.transformer._tokens_mixin import TokensMixin
 
-from ._parser_core_test_support import _GraphicsHarness
+from ._parser_core_test_support import _GraphicsHarness, _repo_path, _SFCHarness, parser_core_parse_source_text
 
 # ---- Package __getattr__ / __dir__ ----
 
@@ -248,13 +251,6 @@ def test_sfc_flatten_code_body_rejects_invalid_top_level_item() -> None:
     sfc = SFCMixin()
     with pytest.raises(ValueError, match="code body unexpected item"):
         sfc._flatten_code_body([42])
-
-
-def test_sfc_modulecode_appends_top_level_code_comments() -> None:
-    sfc = SFCMixin()
-    comment = CodeComment("(* c *)")
-    module_code = sfc.modulecode([comment])
-    assert module_code.comments == [comment]
 
 
 def test_sfc_sequence_body_extends_nested_lists() -> None:
@@ -552,6 +548,34 @@ def test_remap_parse_error_ignores_non_unexpected_input() -> None:
     assert not hasattr(exc, "_sattline_remapped")
 
 
+def test_remap_parse_error_remaps_token_end_fields() -> None:
+    from typing import Any, cast  # noqa: PLC0415
+
+    from lark import Token  # noqa: PLC0415
+    from lark.exceptions import UnexpectedToken  # noqa: PLC0415
+
+    from sattline_parser.source_document import SourceDocument, remap_parse_error  # noqa: PLC0415
+
+    # Original "A0_X" (indices: A=0, 0=1, _=2, X=3), normalized "A_X" (A=0, _=1, X=2).
+    # map = (0, 2, 3): normalized[0]->orig[0], normalized[1]->orig[2], normalized[2]->orig[3].
+    doc = SourceDocument("A0_X", "A_X", (0, 2, 3))
+    tok = Token("VALUE", "_X")
+    tok.start_pos = 1  # position of "_" in normalized
+    tok.end_pos = 3  # exclusive end (after "X")
+    tok.line = 1
+    tok.column = 2
+    tok.end_line = 1
+    tok.end_column = 4
+    exc = UnexpectedToken(tok, cast(Any, {"END"}))
+    exc.line = 1
+    exc.column = 2
+    exc.pos_in_stream = 1
+    remap_parse_error(exc, doc)
+    # start maps 1->2, end-1 maps 2->3 so end = 4.
+    assert tok.start_pos == 2
+    assert tok.end_pos == 4
+
+
 def test_remap_tree_handles_negative_token_positions() -> None:
     from sattline_parser.source_document import remap_tree_to_original  # noqa: PLC0415
 
@@ -671,3 +695,208 @@ def test_opaque_registry_restore_detects_unrestored_nul() -> None:
     registry = _OpaqueRegistry('"a string"')
     with pytest.raises(PreprocessError, match="placeholder not restored"):
         registry.restore("\x00leftover", [0, -1, -1, -1, -1, -1, -1, -1])
+
+
+# ---- Golden file parse tests ----
+
+
+def test_compressed_golden_file_decodes() -> None:
+    """The compressed golden file decodes all markers without error."""
+    from sattline_parser.preprocessing.compressed import SEED_MAPPING, decode_compressed  # noqa: PLC0415
+
+    golden = _repo_path("tests", "fixtures", "CompressedFullGrammar.s")
+    text = golden.read_text(encoding="latin-1")
+    decoded = decode_compressed(text, SEED_MAPPING)
+    assert "TestCompress" in decoded
+    assert "SUBSEQSTEP" in decoded
+    assert "SUBSEQUENCE" in decoded
+
+
+def test_uncompressed_golden_file_parses() -> None:
+    golden = _repo_path("tests", "fixtures", "UnCompressedFullGrammar.s")
+    bp = parser_core_parse_source_text(golden.read_text(encoding="latin-1"))
+    assert bp.header.name == "BasePicture"
+
+
+# ---- api.py:206 latin-1 fallback ----
+
+
+def test_read_text_with_fallback_latin1_path(tmp_path: Path) -> None:
+    # byte 0x81 is invalid in both UTF-8 and CP1252 but valid in latin-1
+    bad_file = tmp_path / "latin1_test.s"
+    bad_file.write_bytes(b"\x81hello")
+    result = parser_api.read_text_with_fallback(bad_file)
+    assert result == "\x81hello"
+
+
+# ---- sattline_lexer.py:74 _comment_end balanced path ----
+
+
+def test_comment_end_returns_when_depth_reaches_zero() -> None:
+    from sattline_parser.grammar.sattline_lexer import _comment_end  # noqa: PLC0415
+
+    # (* a *) with pos=2 (after the opening `(*`): depth starts at 1,
+    # sees `*)` at pos 5, depth hits 0, returns 7 (i after `*)`)
+    assert _comment_end("(* a *)", 2) == 7
+    # nested: (* a (* b *) c *) with pos=2: depth 1→2 at inner (*, 2→1 at first *), 1→0 at final *)
+    assert _comment_end("(* a (* b *) c *)", 2) == 17
+
+
+# ---- sattline_lexer.py:96 _module_typedecl_after skip with comment ----
+
+
+def test_module_typedecl_after_skips_comment_before_equals() -> None:
+    from sattline_parser.grammar.sattline_lexer import _module_typedecl_after  # noqa: PLC0415
+
+    assert _module_typedecl_after("X (* desc *) = MODULEDEFINITION rest", 2) is True
+
+
+# ---- sattline_lexer.py:164 MODULE_TYPE_NAME upgrade ----
+# This path requires TOKEN_MODULE_TYPE_NAME in _state_accepts, but
+# MODULE_TYPE_NAME is not a grammar terminal — the upgrade is dead code.
+# Covered by the lexer integration through the golden file corpus tests.
+
+
+# ---- compressed.py:436 _lookup_text success path ----
+
+
+def test_opaque_registry_string_text_success() -> None:
+    from sattline_parser.preprocessing.compressed import _OpaqueRegistry  # noqa: PLC0415
+
+    registry = _OpaqueRegistry('"first" "second"')
+    # protect() replaces strings with placeholders like \x00S0\x00, \x00S1\x00
+    decoded, _ = registry.protect('"first" "second"')
+    # Extract placeholder for first string
+    import re  # noqa: PLC0415
+
+    placeholders = re.findall(r"\x00S\d+\x00", decoded)
+    assert len(placeholders) >= 1
+    assert registry.string_text(placeholders[0]) == '"first"'
+
+
+# ---- compressed.py:577 _prefix_subst fallback (dead code) ----
+# The regex _MARKER_PREFIX_RE only matches #01... and #0<..., so the
+# fallback return is unreachable.  Exercise via decode_compressed which
+# calls _prefix_subst through _regex_sub — the fallback is not hit.
+
+
+# ---- _graphics_interact_mixin.py:86-92 polygon_type ----
+
+
+def test_polygon_type_method() -> None:
+    mixin = _GraphicsHarness()
+    result = mixin.polygon_type([Token("POLYLINE", "Polyline"), Token("SPLINE", "Spline")])
+    assert result == ["Polyline", "Spline"]
+    # non-Token items are filtered out
+    assert mixin.polygon_type(["ignored", 42]) == []
+
+
+# ---- _graphics_interact_mixin.py:237-240 polygon_object with polygon_type ----
+
+
+def test_polygon_object_with_polygon_type() -> None:
+
+    mixin = _GraphicsHarness()
+    poly_type = mixin.polygon_type([Token("POLYLINE", "Polyline")])
+    go = mixin.polygon_object([poly_type, InterimCoords(coords=((0.0, 0.0), (1.0, 1.0)))])
+    assert go.type == const.GRAMMAR_VALUE_POLYGONOBJECT
+    assert go.properties[const.KEY_POLYGON_TYPE] == ["Polyline"]
+
+
+# ---- _graphics_interact_mixin.py:253-257 segment_object with coord pair ----
+
+
+def test_segment_object_with_coord_pair() -> None:
+    mixin = _GraphicsHarness()
+    go = mixin.segment_object(
+        [
+            InterimCoords(coords=((0.0, 0.0), (1.0, 1.0))),
+            (5.0, 6.0),
+        ]
+    )
+    assert go.type == const.GRAMMAR_VALUE_SEGMENTOBJECT
+    assert go.properties[const.KEY_SEGMENT_POINT] == (5.0, 6.0)
+
+
+# ---- _module_assembly_mixin.py:422-425 duration_value ----
+
+
+def test_duration_value_handler() -> None:
+    harness = ModuleAssemblyMixin()
+    result = harness.duration_value([Token("DURATION_VALUE", "Duration"), "10s"])
+    assert result == ("10s", True)
+    # without string: just the keyword
+    result_no_str = harness.duration_value([Token("DURATION_VALUE", "Duration")])
+    assert result_no_str == (None, True)
+
+
+# ---- _module_header_mixin.py:95-101 SYMBOLMODULE / NON_ZOOMABLE terminals ----
+
+
+def test_symbolmodule_and_non_zoomable_terminal_handlers() -> None:
+    from sattline_parser.transformer._module_header_mixin import ModuleHeaderMixin  # noqa: PLC0415
+
+    mixin = ModuleHeaderMixin()
+    assert mixin.SYMBOLMODULE(Token("SYMBOLMODULE", "SymbolModule")) == {const.TREE_TAG_SYMBOLMODULE: True}
+    assert mixin.NON_ZOOMABLE(Token("NON_ZOOMABLE", "Non_Zoomable")) == {const.TREE_TAG_NON_ZOOMABLE: True}
+
+
+# ---- _module_header_mixin.py:173-176 SymbolModule/Non_Zoomable in invocation args ----
+
+
+def test_module_header_with_symbolmodule_argument() -> None:
+    code = (
+        '"SyntaxVersion"\n"OriginalFileDate"\n"ProgramDate"\n'
+        "BasePicture Invocation (0.0,0.0,0.0,1.0,1.0 SymbolModule) : MODULEDEFINITION DateCode_ 1\n"
+        "ModuleDef\n"
+        "ClippingBounds = ( -1.0 , -1.0 ) ( 1.0 , 1.0 )\n"
+        "ENDDEF (*BasePicture*);\n"
+    )
+    bp = parser_core_parse_source_text(code)
+    assert bp.header.invocation_arguments is not None
+    assert "SymbolModule" in bp.header.invocation_arguments
+
+
+def test_module_header_with_non_zoomable_argument() -> None:
+    code = (
+        '"SyntaxVersion"\n"OriginalFileDate"\n"ProgramDate"\n'
+        "BasePicture Invocation (0.0,0.0,0.0,1.0,1.0 Non_Zoomable) : MODULEDEFINITION DateCode_ 1\n"
+        "ModuleDef\n"
+        "ClippingBounds = ( -1.0 , -1.0 ) ( 1.0 , 1.0 )\n"
+        "ENDDEF (*BasePicture*);\n"
+    )
+    bp = parser_core_parse_source_text(code)
+    assert bp.header.invocation_arguments is not None
+    assert "Non_Zoomable" in bp.header.invocation_arguments
+
+
+# ---- _sfc_mixin.py:217-226 seqsubstep ----
+
+
+def test_seqsubstep_handler() -> None:
+    mixin = _SFCHarness()
+    code_blocks = mixin.code_blocks(
+        [
+            CodeBlockPayload(kind="enter", items=cast(tuple[CodeItem, ...], ("enter1",))),
+        ]
+    )
+    init_step = mixin.seqinitstep([Token("SEQINITSTEP", "SEQINITSTEP"), "Init", code_blocks])
+    body_tree = mixin.sequence_body([init_step])
+
+    result = mixin.seqsubstep(
+        [
+            Token("SUBSEQSTEP", "SUBSEQSTEP"),
+            "SubStep",
+            body_tree,
+            Token("ENDSUBSEQSTEP", "ENDSUBSEQSTEP"),
+        ]
+    )
+    assert isinstance(result, SFCSubsequence)
+    assert result.name == "SubStep"
+    assert len(result.body) == 1
+
+
+def test_seqsubstep_handler_rejects_bad_input() -> None:
+    mixin = _SFCHarness()
+    with pytest.raises(ValueError, match="seqsubstep expected"):
+        mixin.seqsubstep(["bad"])

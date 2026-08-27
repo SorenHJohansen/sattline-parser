@@ -95,16 +95,16 @@ class _ExpressionsMixin:
 
     @v_args(meta=True)
     def compare(self, meta: Any, items: list[Any]) -> SLExpression | None:
-        """Grammar compare -> Compare(left, op, right) | single expression."""
+        """Grammar compare -> Compare(left, op, right) | single expression.
+
+        The grammar allows at most one comparison operator per expression,
+        so items is always 0-2 values + 0-1 operator token.
+        """
         values = [it for it in items if it is not None and not isinstance(it, Token)]
         operators = [str(it) for it in items if isinstance(it, Token)]
         if len(values) <= 1:
             return values[0] if values else None
-        # Left-fold: build chained comparisons as nested Compare nodes
-        result = values[0]
-        for op, rhs in zip(operators, values[1:], strict=False):
-            result = Compare(left=result, op=op, right=rhs, span=meta_span(meta))
-        return result
+        return Compare(left=values[0], op=operators[0], right=values[1], span=meta_span(meta))
 
     @v_args(meta=True)
     def additive_expression(self, meta: Any, items: list[Any]) -> SLExpression | None:

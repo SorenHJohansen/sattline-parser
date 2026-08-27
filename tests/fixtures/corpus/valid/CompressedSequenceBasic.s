@@ -1,4 +1,4 @@
-"Syntax version 2.23, date: 2026-04-23-12:00:00.000 N"
+"Syntax version 2.23, date: 2026-04-23-12:00:00.000 C"
 "Original file date: ---"
 "Program date: 2026-04-23-12:00:00.000, name: SequenceBasic"
 (* Covers the core SEQUENCE constructs:
@@ -15,7 +15,7 @@ BasePicture #6?
 #7<
    StartCmd#8= boolean  #8; #1<;
    StopCmd#8= boolean  #8; #1<;
-   Output#8= integer  #8; 0#7;;
+   Output#8= integer  #8; 0;
 
 #6>
 #65 #8? #01 -1.0 , -1.0 ) #01 1.0 , 1.0 )
@@ -23,24 +23,24 @@ BasePicture #6?
    #22 MainSeq #01SeqControl, SeqTimer) #88 0.0, 0.0 #89 1.0, 1.0
       #26 Idle
          #28
-            Output #8? 0#7;;
+            Output #8? 0;
          #2:
             StartCmd #8? #1<;
       #30 TrStart #31 StartCmd
       #27 Running
          #28
-            Output #8? 1#7;;
+            Output #8? 1;
          #29
-            Output #8? Output + 1#7;;
+            Output #8? Output + 1;
          #2:
-            Output #8? 0#7;;
+            Output #8? 0;
       #30 TrStop #31 StopCmd #15 Output #05 100
       #27 Stopping
          #28
-            Output #8? -1#7;;
+            Output #8? -1;
          #2:
             StopCmd #8? #1<;
       #30 TrDone #31 #16 StopCmd
    #23
 
-#85 (*BasePicture*)#7;;
+#85 (*BasePicture*);
