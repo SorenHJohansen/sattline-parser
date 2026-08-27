@@ -1238,4 +1238,3 @@ EQUATIONBLOCK EQ_1 COORD 0.4, 0.6 OBJSIZE 0.3, 0.3 :
       1000;
 
 ENDDEF (*BasePicture*);
-
