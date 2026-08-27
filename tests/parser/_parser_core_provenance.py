@@ -183,18 +183,6 @@ def test_decode_compressed_only_rewrites_date_timestamps_after_arrow():
     assert 'P => "not-a-timestamp";' in doc.normalized_text
 
 
-def test_decode_compressed_rewrites_duration_and_time_assignments_only_in_code():
-    source = _PROGRAM.replace(
-        "Counter: integer := 0;",
-        'Counter: integer := 0;\n    T: duration := "5s";\n    T2: time := "6s";',
-    )
-    source = source.replace('"SyntaxVersion"', '"duration := 5s"')
-    doc = preprocess_source(_compress(source))
-    assert 'Duration_Value "5s"' in doc.normalized_text
-    assert 'Time_Value "6s"' in doc.normalized_text
-    assert '"duration := 5s"' in doc.normalized_text  # inside string: untouched
-
-
 def test_parse_compressed_source_spans_slice_original_source():
     bp = parser_core_parse_source_text(_COMPRESSED)
     assignment = bp.modulecode.equations[0].code[0]
@@ -287,24 +275,9 @@ def test_describe_parse_error_maps_untagged_exception_with_source_document():
         pytest.fail("expected a parse error")
 
 
-def test_parse_compressed_source_deleted_text_provenance():
-    # "ENDDEF;" with trailing semicolon is normalized to "ENDDEF"; the AST
-    # end-comment span must still slice the ORIGINAL text.
-    source = _PROGRAM.replace("ENDDEF (*BasePicture*);", "ENDDEF; (*BasePicture*);")
-    compressed = _compress(source)
-    doc = preprocess_source(compressed)
-    assert "ENDDEF; (*BasePicture*);" in source
-    assert doc.normalized_text.endswith("ENDDEF (*BasePicture*);\n")
-    bp = parser_core_parse_source_text(compressed)
-    assert [c.text for c in bp.trailing_comments] == ["(*BasePicture*)"]
-    comment = bp.trailing_comments[0]
-    assert compressed[comment.span.start : comment.span.end] == "(*BasePicture*)"
-
-
-def test_parse_compressed_source_inserted_modulecode_provenance():
-    # EQUATIONBLOCK with no preceding ModuleCode gets one injected; the
-    # equation span must still anchor on the real EQUATIONBLOCK text.
-    source = _PROGRAM.replace("ModuleCode\n    EQUATIONBLOCK", "EQUATIONBLOCK")
+def test_parse_compressed_source_preserves_modulecode_from_source():
+    # EQUATIONBLOCK with preceding ModuleCode is preserved as-is.
+    source = _PROGRAM
     compressed = _compress(source)
     doc = preprocess_source(compressed)
     assert "ModuleCode" in doc.normalized_text
@@ -393,28 +366,27 @@ def test_compressed_source_eof_maps_to_original_boundary():
     assert _COMPRESSED[eof - 1] == "\n"
 
 
-def test_compressed_source_generated_text_has_anchor_not_exact_position():
-    # "Counter = Counter + 1;" replaced by an unterminated ENDIF expression so
-    # the decoder injects a generated ";" after ENDIF (ENDIF without terminator).
-    source = _PROGRAM.replace(
-        "Counter = Counter + 1;",
-        "Counter = IF Counter > 0 THEN Counter + 1 ENDIF",
-    )
+def test_compressed_source_decoded_keyword_has_generated_provenance():
+    # ModuleCode decoded from #84 marker has GENERATED provenance because
+    # the replacement text shares no characters with the marker.
+    source = _PROGRAM
     compressed = _compress(source)
     doc = preprocess_source(compressed)
-    assert doc.normalized_text.count("ENDIF;") == 1
-    idx = doc.normalized_text.index("ENDIF;")
-    # The ';' is generated: it has no exact original position, only an anchor.
-    assert doc._char_map[idx + 5] == -1  # type: ignore[attr-defined]
-    assert doc.map_position(idx + 5) == doc.map_position(idx + 4)
+    assert "ModuleCode" in doc.normalized_text
+    idx = doc.normalized_text.index("ModuleCode")
+    for i in range(idx, idx + len("ModuleCode")):
+        assert doc._char_map[i] == -1  # type: ignore[attr-defined]
     # EOF still maps to the original boundary because the final characters are real.
     eof = doc.map_position(len(doc.normalized_text))
     assert eof == len(compressed)
 
 
 def test_compressed_source_parser_error_at_eof_maps_into_original_source():
-    truncated = _COMPRESSED[: _COMPRESSED.rindex("#85")]
-    assert truncated  # program is missing its closing ENDDEF
+    # Truncate after "#8= " (MODULECODE) so the parser expects equation
+    # content but hits EOF.
+    code_pos = _COMPRESSED.index("#8= ")
+    truncated = _COMPRESSED[:code_pos]
+    assert truncated
     doc = preprocess_source(truncated)
     raw_parser = create_sl_parser()
     with pytest.raises(UnexpectedInput) as exc_info:

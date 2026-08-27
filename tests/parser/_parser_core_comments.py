@@ -42,7 +42,6 @@ def test_base_picture_and_modules_capture_end_comments():
         ModuleDef
         ClippingBounds = ( -1.0 , -1.0 ) ( 1.0 , 1.0 )
         ENDDEF (*child end*);
-        ENDDEF (*child module end*);
     ModuleDef
     ClippingBounds = ( -1.0 , -1.0 ) ( 1.0 , 1.0 )
     ENDDEF (*root end*);
@@ -52,7 +51,7 @@ def test_base_picture_and_modules_capture_end_comments():
     assert [c.text for c in bp.trailing_comments] == ["(*root end*)"]
     child = bp.submodules[0]
     assert isinstance(child, SingleModule)
-    assert [c.text for c in child.trailing_comments] == ["(*child end*)", "(*child module end*)"]
+    assert [c.text for c in child.trailing_comments] == ["(*child end*)"]
 
 
 def test_record_and_moduletype_definition_capture_role_comments():
@@ -71,7 +70,6 @@ TYPEDEFINITIONS
         ModuleDef
         ClippingBounds = ( -1.0 , -1.0 ) ( 1.0 , 1.0 )
         ENDDEF (*type end*);
-    ENDDEF (*type module end*);
 ModuleDef
 ClippingBounds = ( -1.0 , -1.0 ) ( 1.0 , 1.0 )
 ENDDEF (*BasePicture*);
@@ -83,10 +81,10 @@ ENDDEF (*BasePicture*);
 
     moduletype = bp.moduletype_defs[0]
     assert [c.text for c in moduletype.description_comments] == ["(* type desc *)"]
-    assert [c.text for c in moduletype.trailing_comments] == ["(*type end*)", "(*type module end*)"]
+    assert [c.text for c in moduletype.trailing_comments] == ["(*type end*)"]
 
 
-def test_modulecode_keeps_top_level_code_comments_and_inline_equation_comments():
+def test_modulecode_equation_block_preserves_code_comments():
     code = """
 "SyntaxVersion"
 "OriginalFileDate"
@@ -95,8 +93,8 @@ BasePicture Invocation (0.0,0.0,0.0,1.0,1.0) : MODULEDEFINITION DateCode_ 1
 ModuleDef
 ClippingBounds = ( -1.0 , -1.0 ) ( 1.0 , 1.0 )
     ModuleCode
-    (* top comment *)
     EQUATIONBLOCK Main COORD 0.0, 0.0 OBJSIZE 1.0, 1.0 :
+        (* top comment *)
         A = 1;
         (* inline equation comment *)
 ENDDEF (*BasePicture*);
@@ -104,12 +102,11 @@ ENDDEF (*BasePicture*);
     bp = parser_core_parse_source_text(code)
 
     assert bp.modulecode is not None
-    assert [c.text for c in bp.modulecode.comments] == ["(* top comment *)"]
 
     equation = bp.modulecode.equations[0] if bp.modulecode.equations else None
     assert equation is not None
     comment_items = [x for x in equation.code if isinstance(x, CodeComment)]
-    assert [c.text for c in comment_items] == ["(* inline equation comment *)"]
+    assert [c.text for c in comment_items] == ["(* top comment *)", "(* inline equation comment *)"]
 
 
 def test_comments_at_discard_sites_do_not_corrupt_ast():
@@ -141,16 +138,19 @@ BasePicture Invocation (0.0,0.0,0.0,1.0,1.0) : MODULEDEFINITION DateCode_ 1
 ModuleDef
 ClippingBounds = ( -1.0 , -1.0 ) ( 1.0 , 1.0 )
 ModuleCode
-    (* outer (* nested *) comment *)
     EQUATIONBLOCK Main COORD 0.0, 0.0 OBJSIZE 1.0, 1.0 :
+        (* outer (* nested *) comment *)
         A = 1;
 ENDDEF (*BasePicture*);
 """
     bp = parser_core_parse_source_text(code)
 
     assert bp.modulecode is not None
-    assert [c.text for c in bp.modulecode.comments] == ["(* outer (* nested *) comment *)"]
-    assert bp.modulecode.comments[0].content == " outer (* nested *) comment "
+    assert bp.modulecode.equations is not None
+    equation = bp.modulecode.equations[0]
+    comment_items = [x for x in equation.code if isinstance(x, CodeComment)]
+    assert [c.text for c in comment_items] == ["(* outer (* nested *) comment *)"]
+    assert comment_items[0].content == " outer (* nested *) comment "
 
 
 def test_comment_stmt_in_equation_block_is_treated_as_null_statement():

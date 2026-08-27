@@ -191,7 +191,7 @@ def render_moduletype_def(moduletype: ModuleTypeDef) -> str:
         f"ModuleCodeBlocks: {len(moduletype.modulecodes)}",
         f"ParameterMappings: {format_list(moduletype.parametermappings)}",
     ]
-    return "ModulType{\n" + textwrap.indent("\n".join(lines), "    ") + "}"
+    return "ModuleType{\n" + textwrap.indent("\n".join(lines), "    ") + "}"
 
 
 def render_base_picture(base_picture: BasePicture) -> str:

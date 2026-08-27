@@ -16,7 +16,7 @@ def test_tokens_mixin_coerces_supported_terminals_and_keywords():
     assert mixin.NAME(Token("NAME", "Valve")) == "Valve"
     assert mixin.STRING(Token("STRING", '"He said ""Hi""\n"')) == 'He said "Hi"'
     assert mixin.STRING(Token("STRING", "bare-text")) == "bare-text"
-    assert mixin.STRING_CRLF(Token("STRING_CRLF", '"Line"\n')) == '"Line"'
+    assert mixin.STRING_CRLF(Token("STRING_CRLF", "Description of variable\r\n")) == "Description of variable"
     assert mixin.STRING_NOTAIL(Token("STRING_NOTAIL", '"Tail"')) == "Tail"
 
     assert mixin.SIGNED_INT(signed_int) == IntLiteral(-7, SourceSpan(start=10, end=12, line=4, column=2))
@@ -85,14 +85,12 @@ def test_expressions_mixin_coerces_values_and_builds_expression_tuples():
 
     assert mixin.compare(_META, ["lhs"]) == "lhs"
     assert mixin.compare(_META, []) is None
-    assert mixin.compare(_META, ["lhs", Token("EQ", "="), "rhs", Token("NE", "<>"), "other"]) == (
-        Compare(Compare("lhs", "=", "rhs", span=_SPAN), "<>", "other", span=_SPAN)
-    )
+    assert mixin.compare(_META, ["lhs", Token("EQ", "="), "rhs"]) == Compare("lhs", "=", "rhs", span=_SPAN)
+    assert mixin.compare(_META, ["lhs", Token("EQ", "=")]) == "lhs"
     assert mixin.additive_expression(_META, ["lhs", Token("PLUS", "+"), "rhs"]) == BinOp("lhs", "+", "rhs", span=_SPAN)
     assert mixin.multiplicative_expression(_META, ["lhs", Token("STAR", "*"), "rhs"]) == BinOp(
         "lhs", "*", "rhs", span=_SPAN
     )
-    assert mixin.compare(_META, ["lhs", Token("EQ", "=")]) == "lhs"
 
 
 def test_expressions_mixin_builds_statements_calls_and_conditionals():

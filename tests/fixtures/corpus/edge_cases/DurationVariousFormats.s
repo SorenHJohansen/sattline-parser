@@ -2,8 +2,7 @@
 "Original file date: ---"
 "Program date: 2026-04-23-12:00:00.000, name: DurationFormats"
 (* EDGE CASE: All documented valid duration literal forms in one file.
-   Covers bare quoted duration strings in every supported format variation
-   plus the Duration_Value wrapper form and negative duration.
+   Covers Duration_Value wrapper form in every supported format variation.
    All forms must pass strict validation without error.
    Expected: strict syntax-check passes. *)
 
@@ -17,21 +16,21 @@ LOCALVARIABLES
    D02: duration  := Duration_Value "1d2h3m4s500ms";
    D03: duration  := Duration_Value "-0d0h5m0s0ms";
 
-   (* Bare short forms: hours, minutes *)
-   D04: duration  := "1h";
-   D05: duration  := "4m";
-   D06: duration  := "30s";
+   (* Short forms: hours, minutes *)
+   D04: duration  := Duration_Value "1h";
+   D05: duration  := Duration_Value "4m";
+   D06: duration  := Duration_Value "30s";
 
-   (* Bare combined forms *)
-   D07: duration  := "7m6s123ms";
-   D08: duration  := "5d5h3m6.5s";
-   D09: duration  := "1h30m";
-   D10: duration  := "2h15m30s";
+   (* Combined forms *)
+   D07: duration  := Duration_Value "7m6s123ms";
+   D08: duration  := Duration_Value "5d5h3m6.5s";
+   D09: duration  := Duration_Value "1h30m";
+   D10: duration  := Duration_Value "2h15m30s";
 
    (* Plain-second forms (decimal seconds) *)
-   D11: duration  := "12.345";
-   D12: duration  := "0";
-   D13: duration  := "3600";
+   D11: duration  := Duration_Value "12.345";
+   D12: duration  := Duration_Value "0";
+   D13: duration  := Duration_Value "3600";
 
    Sink: boolean  := False;
 

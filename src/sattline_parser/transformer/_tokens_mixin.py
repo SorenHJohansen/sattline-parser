@@ -41,8 +41,11 @@ class TokensMixin:
         return inner.replace('""', '"').rstrip("\n")
 
     def STRING_CRLF(self, tok: Token) -> str:
-        """Grammar STRING_CRLF terminal -> string (treat like STRING but drop trailing newline)."""
-        return self.STRING(tok)
+        """Grammar STRING_CRLF terminal -> string (strip opening quote, drop trailing CR/LF)."""
+        s = str(tok)
+        # Token is "content\r\n — no closing quote, so strip leading " and trailing newlines
+        inner = s[1:] if s.startswith('"') else s
+        return inner.replace('""', '"').rstrip("\r\n")
 
     def _token_span(self, tok: Token) -> SourceSpan | None:
         line = getattr(tok, "line", None)
@@ -61,16 +64,26 @@ class TokensMixin:
         return None
 
     def SIGNED_INT(self, tok: Token) -> IntLiteral:
-        """Grammar SIGNED_INT terminal -> IntLiteral with source span."""
-        return IntLiteral(int(str(tok)), self._token_span(tok))
+        """Grammar SIGNED_INT terminal -> IntLiteral with source span.
+
+        Clamps to ABB 32-bit signed range [INT_MIN, INT_MAX].
+        """
+        raw = int(str(tok))
+        clamped = max(const.INT_MIN, min(const.INT_MAX, raw))
+        return IntLiteral(clamped, self._token_span(tok))
 
     def SIGNED_INT_NOTAIL(self, tok: Token) -> IntLiteral:
         """Grammar SIGNED_INT_NOTAIL terminal -> IntLiteral (no trailing coordinates)."""
         return self.SIGNED_INT(tok)
 
     def REAL(self, tok: Token) -> FloatLiteral:
-        """Grammar REAL terminal -> FloatLiteral with source span."""
-        return FloatLiteral(float(str(tok)), self._token_span(tok))
+        """Grammar REAL terminal -> FloatLiteral with source span.
+
+        Clamps magnitude to ABB REAL_MAX.
+        """
+        raw = float(str(tok))
+        clamped = max(-const.REAL_MAX, min(const.REAL_MAX, raw)) if raw != 0.0 else raw
+        return FloatLiteral(clamped, self._token_span(tok))
 
     def REAL_NOTAIL(self, tok: Token) -> FloatLiteral:
         """Grammar REAL_NOTAIL terminal -> FloatLiteral (no trailing coordinates)."""
@@ -99,21 +112,21 @@ class TokensMixin:
         """Grammar GLOBAL_KW keyword -> True."""
         return True
 
-    def CONST_KW(self, _tok: object) -> Literal["Const"]:
-        """Grammar CONST_KW keyword -> "Const"."""
-        return "Const"
+    def CONST_KW(self, _tok: object) -> str:
+        """Grammar CONST_KW keyword -> modifier string."""
+        return const.GRAMMAR_VALUE_CONST_KW
 
-    def STATE_KW(self, _tok: object) -> Literal["State"]:
-        """Grammar STATE_KW keyword -> "State"."""
-        return "State"
+    def STATE_KW(self, _tok: object) -> str:
+        """Grammar STATE_KW keyword -> modifier string."""
+        return const.GRAMMAR_VALUE_STATE_KW
 
-    def OPSAVE_KW(self, _tok: object) -> Literal["OpSave"]:
-        """Grammar OPSAVE_KW keyword -> "OpSave"."""
-        return "OpSave"
+    def OPSAVE_KW(self, _tok: object) -> str:
+        """Grammar OPSAVE_KW keyword -> modifier string."""
+        return const.GRAMMAR_VALUE_OPSAVE_KW
 
-    def SECURE_KW(self, _tok: object) -> Literal["Secure"]:
-        """Grammar SECURE_KW keyword -> "Secure"."""
-        return "Secure"
+    def SECURE_KW(self, _tok: object) -> str:
+        """Grammar SECURE_KW keyword -> modifier string."""
+        return const.GRAMMAR_VALUE_SECURE_KW
 
     # DEFAULT in init
 

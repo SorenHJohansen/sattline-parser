@@ -16,7 +16,6 @@ import re
 from collections.abc import Callable
 from dataclasses import dataclass
 from enum import StrEnum
-from functools import partial
 
 from sattline_parser.source_document import GENERATED, SourceDocument
 
@@ -114,17 +113,18 @@ SEED_MAPPING: dict[str, str] = {
     "#2=": "PARALLELSEQ",
     "#2>": "PARALLELBRANCH",
     "#2?": "ENDPARALLEL",
+    "#2;": "SUBSEQSTEP",
+    "#2<": "ENDSUBSEQSTEP",
     "#32": "SUBSEQTRANSITION",
     "#33": "ENDSUBSEQTRANSITION",
+    "#3:": "SUBSEQUENCE",
+    "#3;": "ENDSUBSEQUENCE",
     "#99": "SeqControl",
     "#97": "SeqTimer",
     "#2:": "EXITCODE",
     "#94": "Default",
     "#7;": "Const",
     "#76": "PRIVATE_",
-    "#;5": "Layer_",
-    "#;7": "Int_Value",
-    "#;6": "Bool_Value",
     "#64": "Enable_",
     "#3>": "InVar_",
     "#3?": "OutVar_",
@@ -162,10 +162,16 @@ SEED_MAPPING: dict[str, str] = {
     "#:=": "Abs_",
     "#;0": "Digits_",
     "#;1": "NoOf_",
+    "#;2": "SetVal_",
+    "#;3": "SetApp_",
     "#;4": "Two_Layers_",
+    "#;5": "Layer_",
+    "#;6": "Bool_Value",
+    "#;7": "Int_Value",
     "#;8": "Real_Value",
-    "#;?": "LayerLimit_",
     "#;9": "String_Value",
+    "#;:": "Alt_Text",
+    "#;?": "LayerLimit_",
     "#;=": "Cancel_Variable",
     "#;;": "Enable_Delay",
     "#;<": "OK_Variable",
@@ -203,28 +209,27 @@ SEED_MAPPING: dict[str, str] = {
 _MARKER_RE = re.compile(r"#[0-9A-Za-z;:=><?]{1,2}")
 _MARKER_PREFIX_RE = re.compile(r"#0[1<][A-Za-z0-9]*")
 _WHITESPACE_RE = re.compile(r"\s+")
-_ENDDEF_TRAILING_SEMI_RE = re.compile(r"\bENDDEF\b\s*;")
-_SEMI_BEFORE_ASSIGN_RE = re.compile(r";\s*:=")
-_ENDIF_SEMI_COMMA_RE = re.compile(r"ENDIF;\s*,")
-_ENDIF_SEMI_PAREN_RE = re.compile(r"ENDIF;\s*\)")
-_EMPTY_ASSIGN_RE = re.compile(r":=\s*;")
-_GRAPHOBJECTS_INTERACT_RE = re.compile(r"\bGraphObjects\b\s*:\s*InteractObjects\b")
-# String literals are protected placeholders by the time these run.
-_STRING_PLACEHOLDER = r"(\x00S\d+\x00)"
-_DURATION_STR_RE = re.compile(r"(\bduration\b(?:\s+OpSave)?\s*:=\s*)" + _STRING_PLACEHOLDER, re.IGNORECASE)
-_TIME_STR_RE = re.compile(r"(\btime\b(?:\s+OpSave)?\s*:=\s*)" + _STRING_PLACEHOLDER, re.IGNORECASE)
-_DATE_TIMESTAMP_RE = re.compile(r"(=>\s*)" + _STRING_PLACEHOLDER)
-_DATE_TIMESTAMP_PATTERN = re.compile(r'"\d{4}-\d{2}-\d{2}-\d{2}:\d{2}:\d{2}\.\d{3}"')
-_EXECUTE_LOCAL_ENDDEF_RE = re.compile(r"(ExecuteLocalOld\s*=\s*ExecuteLocal:Old)\s+ENDDEF")
-_EXECUTE_STATE_IF_RE = re.compile(r"(ExecuteState:Old)\s+IF\b")
-_ENDIF_NO_TERM_RE = re.compile(r"\bENDIF\b(?!\s*[;,\)])")
-_GRAPHOBJECTS_ENDDEF_RE = re.compile(r"\bGraphObjects\b\s*:\s*ENDDEF\b")
-_ABS_TEXTOBJECT_VALUE_RE = re.compile(r"\bAbs_\s+TextObject\s+Value_\s*=")
-_TYPE_ENDDEF_RE = re.compile(r"\b(integer|real|boolean|string)\b\s+ENDDEF\b", re.IGNORECASE)
-_ENABLE_OUTVAR_RE = re.compile(r"(Enable_\s*=\s*\w+\s*:)\s*OutVar_")
-_TRUEVAR_RE = re.compile(r"\bTrueVar\b")
-_EQUATIONBLOCK_RE = re.compile(r"\bEQUATIONBLOCK\b")
-_EMPTY_TRAILING_ARG_RE = re.compile(r"\b([A-Za-z_][A-Za-z0-9_]*)\(([^)]*?),\s*\)")
+
+
+def _header_compression_flag(text: str) -> str | None:
+    """Return the ``C``/``N`` compression flag from the first-line header, or ``None``.
+
+    SattLine files begin with a quoted header line like::
+
+        "Syntax version 2.23, date: 2026-08-26-11:48:22.200 C"
+
+    where the final character before the closing quote is ``C`` (compressed)
+    or ``N`` (normal).
+    """
+    nl = text.find("\n")
+    first_line = text[:nl].strip() if nl >= 0 else text.strip()
+    if first_line.startswith('"') and first_line.endswith('"'):
+        body = first_line[1:-1].rstrip()
+        if body and body[-1] in ("C", "N"):
+            return body[-1]
+    return None
+
+
 _PLACEHOLDER_RE = re.compile(r"\x00[SC]\d+\x00")
 
 
@@ -247,7 +252,6 @@ class NormalizationKind(StrEnum):
 
     SYNTAX_REPAIR = "syntax_repair"
     SEMANTIC_REPAIR = "semantic_repair"
-    GRAMMAR_COMPAT = "grammar_compat"
 
 
 type CompatReplacer = Callable[[_OpaqueRegistry, str, re.Match[str]], str]
@@ -266,14 +270,6 @@ class CompatTransform:
     * ``SEMANTIC_REPAIR`` -- injects or replaces actual syntax/values (default
       values, missing keywords, value wrappers), changing the represented
       program.
-    * ``GRAMMAR_COMPAT`` -- renames tokens to grammar-accepted spellings to
-      avoid tokenizer/grammar conflicts.
-
-    ``replacement=None`` marks a *dedicated single pass* (dispatched through
-    ``_DEDICATED_PASSES`` by ``name``) instead of a generic ``_regex_sub``
-    step. Dedicated passes are used when a repair needs cross-match state or
-    a structurally known mapping that the generic LCS alignment cannot
-    provide.
     """
 
     name: str
@@ -284,145 +280,8 @@ class CompatTransform:
 
 
 #: Ordered compatibility-normalization steps applied by :func:`_normalize_compat`.
-#: Order matters: earlier steps must run before later ones observe the text.
-#: Each step is explicitly categorized and documented so semantic repairs are
-#: never confused with cosmetic cleanup.
-_COMPAT_TRANSFORMS: tuple[CompatTransform, ...] = (
-    CompatTransform(
-        name="enddef_trailing_semi",
-        kind=NormalizationKind.SYNTAX_REPAIR,
-        pattern=_ENDDEF_TRAILING_SEMI_RE,
-        replacement="ENDDEF",
-        description="Drop a stray ';' after ENDDEF.",
-    ),
-    CompatTransform(
-        name="semi_before_assign",
-        kind=NormalizationKind.SYNTAX_REPAIR,
-        pattern=_SEMI_BEFORE_ASSIGN_RE,
-        replacement=" :=",
-        description="Remove a spurious ';' immediately before ':='.",
-    ),
-    CompatTransform(
-        name="endif_semi_comma",
-        kind=NormalizationKind.SYNTAX_REPAIR,
-        pattern=_ENDIF_SEMI_COMMA_RE,
-        replacement="ENDIF,",
-        description="Remove the ';' between ENDIF and a following ','.",
-    ),
-    CompatTransform(
-        name="endif_semi_paren",
-        kind=NormalizationKind.SYNTAX_REPAIR,
-        pattern=_ENDIF_SEMI_PAREN_RE,
-        replacement="ENDIF)",
-        description="Remove the ';' between ENDIF and a following ')'.",
-    ),
-    CompatTransform(
-        name="empty_assign_default",
-        kind=NormalizationKind.SEMANTIC_REPAIR,
-        pattern=_EMPTY_ASSIGN_RE,
-        replacement=":= Default;",
-        description="Inject 'Default' as the value of an empty assignment (':= ;').",
-    ),
-    CompatTransform(
-        name="graphobjects_interact_prefix",
-        kind=NormalizationKind.SYNTAX_REPAIR,
-        pattern=_GRAPHOBJECTS_INTERACT_RE,
-        replacement="InteractObjects",
-        description="Drop the invalid 'GraphObjects :' prefix before InteractObjects.",
-    ),
-    CompatTransform(
-        name="duration_str_value",
-        kind=NormalizationKind.SEMANTIC_REPAIR,
-        pattern=_DURATION_STR_RE,
-        replacement=r"\1Duration_Value \2",
-        description="Wrap duration string assignments in the Duration_Value keyword.",
-    ),
-    CompatTransform(
-        name="time_str_value",
-        kind=NormalizationKind.SEMANTIC_REPAIR,
-        pattern=_TIME_STR_RE,
-        replacement=r"\1Time_Value \2",
-        description="Wrap time string assignments in the Time_Value keyword.",
-    ),
-    CompatTransform(
-        name="date_timestamp_value",
-        kind=NormalizationKind.SEMANTIC_REPAIR,
-        pattern=_DATE_TIMESTAMP_RE,
-        replacement=lambda registry, decoded, m: _date_timestamp_sub(registry, decoded, m),
-        description="Wrap date-timestamp strings after '=>' in Time_Value.",
-    ),
-    CompatTransform(
-        name="execute_local_enddef",
-        kind=NormalizationKind.SYNTAX_REPAIR,
-        pattern=_EXECUTE_LOCAL_ENDDEF_RE,
-        replacement=r"\1; ENDDEF",
-        description="Terminate ExecuteLocalOld assignments with ';' before ENDDEF.",
-    ),
-    CompatTransform(
-        name="execute_state_if",
-        kind=NormalizationKind.SYNTAX_REPAIR,
-        pattern=_EXECUTE_STATE_IF_RE,
-        replacement=r"\1; IF",
-        description="Terminate ExecuteState assignments with ';' before IF.",
-    ),
-    CompatTransform(
-        name="endif_no_terminator",
-        kind=NormalizationKind.SYNTAX_REPAIR,
-        pattern=_ENDIF_NO_TERM_RE,
-        replacement="ENDIF;",
-        description="Append ';' to an unterminated ENDIF outside expressions.",
-    ),
-    CompatTransform(
-        name="graphobjects_enddef_empty",
-        kind=NormalizationKind.SYNTAX_REPAIR,
-        pattern=_GRAPHOBJECTS_ENDDEF_RE,
-        replacement="ENDDEF",
-        description="Drop an empty GraphObjects section before ENDDEF.",
-    ),
-    CompatTransform(
-        name="abs_textobject_value",
-        kind=NormalizationKind.SYNTAX_REPAIR,
-        pattern=_ABS_TEXTOBJECT_VALUE_RE,
-        replacement="Abs_ TextObject =",
-        description="Drop the spurious 'Value_' between 'Abs_ TextObject' and '=' "
-        "(the IDE never writes this spelling and rejects it).",
-    ),
-    CompatTransform(
-        name="type_enddef_terminator",
-        kind=NormalizationKind.SYNTAX_REPAIR,
-        pattern=_TYPE_ENDDEF_RE,
-        replacement=r"\1 ; ENDDEF",
-        description="Insert ';' between a datatype keyword and ENDDEF.",
-    ),
-    CompatTransform(
-        name="enable_outvar_invar",
-        kind=NormalizationKind.GRAMMAR_COMPAT,
-        pattern=_ENABLE_OUTVAR_RE,
-        replacement=r"\1 InVar_",
-        description="Rewrite Enable_ OutVar_ tails to the grammar-accepted InVar_ spelling.",
-    ),
-    CompatTransform(
-        name="truevar_prefix",
-        kind=NormalizationKind.GRAMMAR_COMPAT,
-        pattern=_TRUEVAR_RE,
-        replacement="TTrueVar",
-        description="Prefix TrueVar identifiers with 'T' so BOOL tokenization cannot shadow them.",
-    ),
-    CompatTransform(
-        name="equationblock_modulecode",
-        kind=NormalizationKind.SEMANTIC_REPAIR,
-        pattern=_EQUATIONBLOCK_RE,
-        replacement=None,
-        description="Inject a missing ModuleCode keyword before EQUATIONBLOCK.",
-    ),
-    CompatTransform(
-        name="empty_trailing_arg",
-        kind=NormalizationKind.SEMANTIC_REPAIR,
-        pattern=_EMPTY_TRAILING_ARG_RE,
-        replacement=r"\1(\2, 0)",
-        description="Fill an empty trailing function argument with 0 (e.g. 'Func(a, )' -> 'Func(a, 0)').",
-    ),
-)
+#: All transforms have been removed — the grammar is now the source of truth.
+_COMPAT_TRANSFORMS: tuple[CompatTransform, ...] = ()
 
 
 def _markers_outside_opaque_regions(text: str) -> list[str]:
@@ -450,13 +309,18 @@ def _markers_outside_opaque_regions(text: str) -> list[str]:
 
 
 def is_compressed(text: str) -> bool:
-    """Heuristic detector for compressed SattLine format.
+    """Detect compressed SattLine format.
 
-    Only markers outside string literals and ``(* ... *)`` comments are
-    counted, mirroring the decoder's opaque-region protection so plain source
-    containing ``#...``-looking text inside strings or comments is never
-    misclassified as compressed.
+    The **header flag** is authoritative: if the first line ends with ``C``
+    the source is compressed; if it ends with ``N`` it is plain.  The flag
+    is absent only when the file was not produced by a standard SattLine
+    export, in which case the marker-based heuristic is used.
     """
+    flag = _header_compression_flag(text)
+    if flag == "C":
+        return True
+    if flag == "N":
+        return False
     markers = _markers_outside_opaque_regions(text)
     if not markers:
         return False
@@ -716,91 +580,19 @@ def _decode_markers(text: str, mapping: dict[str, str]) -> tuple[_OpaqueRegistry
             return "(" + tok[3:]
         if tok.startswith("#0<"):
             return "* " + tok[3:] if len(tok) > 3 else "*"
-        return tok
+        return tok  # pragma: no cover — regex only matches #01 and #0< prefixes
 
     decoded, char_map = _regex_sub(decoded, char_map, _MARKER_PREFIX_RE, _prefix_subst)
     decoded, char_map = _regex_sub(decoded, char_map, _MARKER_RE, _subst)
     return registry, decoded, char_map
 
 
-def _date_timestamp_sub(registry: _OpaqueRegistry, _decoded: str, m: re.Match[str]) -> str:
-    placeholder = m.group(2)
-    original = registry.string_text(placeholder)
-    if original is not None and _DATE_TIMESTAMP_PATTERN.match(original):
-        return f"{m.group(1)}Time_Value {placeholder}"
-    return m.group(0)
-
-
-def _apply_modulecode_repair(decoded: str, char_map: list[int]) -> tuple[str, list[int]]:
-    """Inject missing ``ModuleCode`` markers section-aware in a single pass.
-
-    Generic ``_regex_sub`` callbacks all observe the pre-substitution text,
-    so a per-match ``rfind`` would inject one ``ModuleCode`` before *every*
-    EQUATIONBLOCK of the same code section. This pass instead walks the
-    matches left to right and remembers where it last inserted: an insertion
-    covers all later EQUATIONBLOCKs until an ENDDEF opens a new section.
-    The inserted keyword is entirely generated; the matched text keeps its
-    source mapping, so no alignment is needed.
-    """
-    parts: list[str] = []
-    map_parts: list[list[int]] = []
-    last = 0
-    inserted_at: int | None = None
-    for match in _EQUATIONBLOCK_RE.finditer(decoded):
-        start = match.start()
-        last_enddef = decoded.rfind("ENDDEF", 0, start)
-        has_modulecode = decoded.rfind("ModuleCode", 0, start)
-        covered = has_modulecode > last_enddef or (
-            inserted_at is not None and decoded.find("ENDDEF", inserted_at, start) == -1
-        )
-        if covered:
-            continue
-        if start > last:
-            parts.append(decoded[last:start])
-            map_parts.append(char_map[last:start])
-        parts.append("ModuleCode ")
-        map_parts.append([GENERATED] * len("ModuleCode "))
-        inserted_at = start
-        last = start
-    if last < len(decoded):
-        parts.append(decoded[last:])
-        map_parts.append(char_map[last:])
-    new_decoded = "".join(parts)
-    new_map: list[int] = []
-    for part in map_parts:
-        new_map.extend(part)
-    return new_decoded, new_map
-
-
-#: Dedicated single passes for catalog entries whose ``replacement`` is None,
-#: keyed by the entry's ``name``.
-_DEDICATED_PASSES: dict[str, Callable[[str, list[int]], tuple[str, list[int]]]] = {
-    "equationblock_modulecode": _apply_modulecode_repair,
-}
-
-
-def _normalize_compat(registry: _OpaqueRegistry, decoded: str, char_map: list[int]) -> tuple[str, list[int]]:
+def _normalize_compat(_registry: _OpaqueRegistry, decoded: str, char_map: list[int]) -> tuple[str, list[int]]:
     """Apply the categorized SattLine syntax-variant repairs to decoded text.
 
-    The rewrites are the explicitly categorized and documented steps in
-    :data:`_COMPAT_TRANSFORMS`; each fixes a common ABB formatting quirk or
-    grammar-incompatible spelling in decoded source (missing terminators,
-    spacing, incompatible spellings, or injected default syntax). They are
-    compatibility normalizations, not compressed decoding: markers are already
-    substituted by :func:`_decode_markers` before this stage runs. Strings and
-    comments are still protected placeholders here and are restored afterwards,
-    so no repair can touch text inside them.
+    All transforms have been removed — the grammar is now the source of truth.
+    This function is kept for API compatibility but is now a no-op.
     """
-    for transform in _COMPAT_TRANSFORMS:
-        replacement = transform.replacement
-        if replacement is None:
-            decoded, char_map = _DEDICATED_PASSES[transform.name](decoded, char_map)
-            continue
-        if callable(replacement):
-            repl: str | Callable[[re.Match[str]], str] = partial(replacement, registry, decoded)
-        else:
-            repl = replacement
-        decoded, char_map = _regex_sub(decoded, char_map, transform.pattern, repl)
     return decoded, char_map
 
 

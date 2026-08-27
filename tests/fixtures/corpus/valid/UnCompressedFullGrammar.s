@@ -1,11 +1,13 @@
-"Syntax version 2.23, date: 2026-08-26-11:48:22.200 N"
+"Syntax version 2.23, date: 2026-08-27-18:41:22.140 N"
 "Original file date: ---"
-"Program date: 2026-08-26-11:48:22.200, name: TestCompress"
+"Program date: 2026-08-27-18:41:22.140, name: TestCompress"
 (* Denne programenhed er oprettet 2026-08-25 11:12 af sqhj. *)
 
-BasePicture Invocation
+BasePicture
+(* ModuleTypeDescription *)
+ Invocation
    ( 0.0 , 0.0 , 0.0 , 1.0 , 1.0 
-    ) : MODULEDEFINITION DateCode_ 174250082
+    ) : MODULEDEFINITION DateCode_ 280432068
 TYPEDEFINITIONS
    TestRecord """Description of TestRecord""" = RECORD DateCode_ 136786209
       FieldBool """Description""": boolean Secure := False;
@@ -23,8 +25,9 @@ TYPEDEFINITIONS
     (*TestRecord2*);
    
 TYPEDEFINITIONS
-   TestModuleType = MODULEDEFINITION DateCode_ 189212200 ( GroupConn = 
-   ScanGroupVar ) 
+   TestModuleType
+   (* ModuleTypeDescription *)
+    = MODULEDEFINITION DateCode_ 189212200 ( GroupConn = ScanGroupVar ) 
    LOCALVARIABLES
       ScanGroupVar: GroupData ;
    
@@ -56,7 +59,18 @@ TYPEDEFINITIONS
    
 LOCALVARIABLES
    StateVar "Test": boolean State := False;
-   nooforws: integer ;
+   abstrinreal, maxreal, minreal, var3: real ;
+   abstrin, var2: integer ;
+   alttekst: string ;
+   var1: boolean ;
+   fuldnavn2, brugerident2: string ;
+   signafbrudt, aktiver2: boolean ;
+   afbrydkommentar: string ;
+   aktiverdobbelt: boolean ;
+   fuldnavn1, brugerident1, kommentar, formål: string ;
+   aktiverenkelt: boolean ;
+   realVar2, RealVar1: real ;
+   IntVar2, IntVar, nooforws: integer ;
    readolny, wdisplayed: boolean ;
    wtitle, Mpath: string ;
    RelPos, markeret, Tag_Global: boolean ;
@@ -64,7 +78,8 @@ LOCALVARIABLES
    Fortryd, OK: boolean ;
    klasse, vigtighedsgrad: integer ;
    beskrivelse: string ;
-   ændret, hroot, synlig: boolean ;
+   ændret, hroot: boolean ;
+   synlig: boolean  := True;
    tekst: string ;
    windowdisplayed: boolean ;
    timeout: integer ;
@@ -99,7 +114,8 @@ LOCALVARIABLES
    LowScale, HighScale: real ;
    Button_Global: boolean ;
    Button: string ;
-   Enable, Value, InteractVar: boolean ;
+   Enable: boolean  := True;
+   Value, InteractVar: boolean ;
    Class, Importance: integer ;
    Tag, Description: string ;
    ColorChoice: boolean ;
@@ -121,7 +137,8 @@ LOCALVARIABLES
    UserName, Useridentity, Comment, Purpose: string ;
    Aktivate_Single, Change, Marked, Tast_global: boolean ;
    Tast: string ;
-   Aktiver, Interaction: boolean ;
+   Aktiver: boolean  := True;
+   Interaction: boolean ;
    IndexVar: integer ;
    DefaultPath: string ;
    ResetVar: integer ;
@@ -164,7 +181,7 @@ SUBMODULES
    
    SM2 Invocation
       ( 1.04 , 0.74 , 0.0 , 0.16 , 0.16 
-       SymbolModule ) : MODULEDEFINITION DateCode_ 122692828
+       SymbolModule ) : MODULEDEFINITION DateCode_ 282543324
    MODULEPARAMETERS
       TestGlobarlVar: boolean ;
    LOCALVARIABLES
@@ -178,11 +195,11 @@ SUBMODULES
    
    ModuleCode
    
-   OPENSEQUENCE SQ_2  COORD -1.0,-1.0 OBJSIZE 2.0,2.0
+   OPENSEQUENCE   COORD -1.0,-1.0 OBJSIZE 2.0,2.0
       SEQINITSTEP ST_Initstep 
       SEQTRANSITION Tr1 WAIT_FOR 200 > 100
       SEQSTEP S1 
-      SEQTRANSITION Tr2 WAIT_FOR S1.X
+      SEQTRANSITION  WAIT_FOR S1.X
       SEQSTEP S2 
          ENTERCODE
             StateVar:New = StateVar:Old;
@@ -196,34 +213,44 @@ SUBMODULES
             EXITCODE
                ExitcodeTest = On;
       PARALLELBRANCH
-         SEQSTEP S4 
+         SEQSTEP  
       PARALLELBRANCH
          SEQSTEP S6 
       ENDPARALLEL
       ALTERNATIVESEQ
          SEQTRANSITION Tr11 WAIT_FOR On
-         PARALLELSEQ
-            SEQSTEP S12 
-         PARALLELBRANCH
-            SEQINITSTEP S13 
-         ENDPARALLEL
-         ALTERNATIVESEQ
-            SEQTRANSITION Tr15 WAIT_FOR On
-         ALTERNATIVEBRANCH
-            SEQTRANSITION Tr16 WAIT_FOR On
-         ENDALTERNATIVE
-         SEQSTEP S14 
-         SEQTRANSITION Tr14 WAIT_FOR On
+         SUBSEQSTEP Test 
+            PARALLELSEQ
+               SEQSTEP S12 
+            PARALLELBRANCH
+               SEQINITSTEP S13 
+            ENDPARALLEL
+         ENDSUBSEQSTEP
+         SUBSEQTRANSITION  
+            SUBSEQTRANSITION  
+               SUBSEQTRANSITION  
+                  ALTERNATIVESEQ
+                     SEQTRANSITION Tr15 WAIT_FOR On
+                  ALTERNATIVEBRANCH
+                     SEQTRANSITION Tr16 WAIT_FOR On
+                  ENDALTERNATIVE
+                  SEQSTEP S14 
+                  SEQTRANSITION Tr14 WAIT_FOR On
+               ENDSUBSEQTRANSITION
+            ENDSUBSEQTRANSITION
+         ENDSUBSEQTRANSITION
       ALTERNATIVEBRANCH
          SEQTRANSITION Tr12 WAIT_FOR On
-         PARALLELSEQ
-            SEQSTEP S10 
-               SEQFORK Tr12 SEQBREAK
-         PARALLELBRANCH
-            SEQSTEP S11 
-               SEQFORK Tr11
-         ENDPARALLEL
-         SEQTRANSITION Tr13 WAIT_FOR On
+         SUBSEQUENCE test4 
+            PARALLELSEQ
+               SEQSTEP S10 
+                  SEQFORK Tr12 SEQBREAK
+            PARALLELBRANCH
+               SEQSTEP S11 
+                  SEQFORK Tr11
+            ENDPARALLEL
+            SEQTRANSITION Tr13 WAIT_FOR On
+         ENDSUBSEQUENCE
       ENDALTERNATIVE
       SEQSTEP S9 
       SEQTRANSITION Tr10 WAIT_FOR On
@@ -233,7 +260,9 @@ SUBMODULES
          SEQSTEP S8 
       ENDPARALLEL
       ALTERNATIVESEQ
-         SEQTRANSITION Tr3 WAIT_FOR On
+         SUBSEQTRANSITION test3 
+            SEQTRANSITION Tr3 WAIT_FOR On
+         ENDSUBSEQTRANSITION
       ALTERNATIVEBRANCH
          SEQTRANSITION Tr8 WAIT_FOR True
             SEQFORK S2 SEQBREAK
@@ -259,7 +288,9 @@ SUBMODULES
    ENDDEF (*SM2*) (
    TestGlobarlVar => GLOBAL BoolVar);
    
-   SM3 Invocation
+   SM3
+   (* ModuleDescription *)
+    Invocation
       ( -0.1 , -0.74 , 0.0 , 0.3 , 0.3 
        IgnoreMaxModule ) : MODULEDEFINITION DateCode_ 190137640
    MODULEPARAMETERS
@@ -318,7 +349,9 @@ SUBMODULES
    ENDDEF (*SM3*) (
    IntVari => IntVari);
    
-   TestModuleType1 Invocation
+   TestModuleType1
+   (* ModuleDescription *)
+    Invocation
       ( 0.3 , -1.38 , 0.0 , 0.84 , 0.84 
        ) : TestModuleType;
    
@@ -394,7 +427,7 @@ GraphObjects :
       FillColour : Colour0 = -1 : InVar_ "AreaColorVar" Colour1 = 9 : InVar_ 
       "AltAreaColorVar" ColourStyle = 0.0 : InVar_ "AreaColorMixVar" 
    OvalObject ( 2.32 , 1.02 ) ( 2.7 , 0.7 ) 
-      Enable_ = True : InVar_ "EnableVar" 
+      Enable_ = True : ( NOT EnableVar) 
       OutlineColour : Colour0 = -3 : InVar_ "LineColorVar" Colour1 = -1 : 
       InVar_ "AltLineColorVar" ColourStyle = 0.0 : InVar_ "ColorMixVar" 
       FillColour : Colour0 = -1 : InVar_ "AreaColorVar" Colour1 = 9 : InVar_ 
@@ -458,9 +491,9 @@ GraphObjects :
 InteractObjects :
    ComBut_ ( 0.24 , 1.58 ) ( 0.56 , 1.46 ) 
       Bool_Value
-      Variable = False Event_Text_ = "" : InVar_ "beskrivelse" Event_Tag_ = "" 
-      : InVar_ "tag" Event_Severity_ = 0 : InVar_ "vigtighedsgrad" Event_Class_ 
-      = 0 : InVar_ "klasse" ToggleAction
+      Variable = True Event_Text_ = "" : InVar_ "beskrivelse" Event_Tag_ = "" : 
+      InVar_ "tag" Event_Severity_ = 0 : InVar_ "vigtighedsgrad" Event_Class_ = 
+      0 : InVar_ "klasse" ToggleAction
       Abs_ 
    OptBut_ ( 0.32 , 1.34 ) ( 0.54 , 1.24 ) 
       Bool_Value
@@ -498,12 +531,12 @@ InteractObjects :
    TextBox_ ( 1.7 , 1.34 ) ( 2.26 , 1.2 ) 
       Int_Value
       Enable_ = True : InVar_ "Aktiver" Value_Changed = False : OutVar_ 
-      "Ændret" Variable = 0 : OutVar_ "timeout" OpMin = -2147483648 : InVar_ 
-      "min" OpMax = 2147483647 : InVar_ "max" OpStep = 1 : InVar_ "absoluttrin" 
-      Key_ = "" : InVar_ "Tast" GLOBAL = False : InVar_ "Tag_Global" 
-      Event_Text_ = "" : InVar_ "beskrivelse" Event_Tag_ = "" : InVar_ "tag" 
-      Event_Severity_ = 0 : InVar_ "vigtighedsgrad" Event_Class_ = 0 : InVar_ 
-      "klasse" Visible_ = True : InVar_ "Synlig" LeftAligned Abs_ Digits_
+      "Ændret" Variable = 0 : OutVar_ "timeout" OpMin = 0 : InVar_ "min" OpMax 
+      = 2147483647 : InVar_ "max" OpStep = 1 : InVar_ "absoluttrin" Key_ = "" : 
+      InVar_ "Tast" GLOBAL = False : InVar_ "Tag_Global" Event_Text_ = "" : 
+      InVar_ "beskrivelse" Event_Tag_ = "" : InVar_ "tag" Event_Severity_ = 0 : 
+      InVar_ "vigtighedsgrad" Event_Class_ = 0 : InVar_ "klasse" Visible_ = 
+      True : InVar_ "Synlig" LeftAligned Abs_ Digits_
       Enable_Delay = True : InVar_ True 
       OK_Variable = False : InVar_ "OK" 
       Cancel_Variable = False : InVar_ "Fortryd" 
@@ -611,11 +644,11 @@ InteractObjects :
       Int_Value
       Enable_ = True : InVar_ "Aktiver" SelectVariable = False : OutVar_ 
       "Markeret" Value_Changed = False : OutVar_ "Ændret" Variable = 0 : 
-      OutVar_ "absoluttrin" OpMin = -2147483648 : InVar_ "min" OpMax = 
-      2147483647 : InVar_ "max" OpStep = 1 : InVar_ "vigtighedsgrad" Key_ = "" 
-      : InVar_ "Tast" GLOBAL = False : InVar_ "Tast_Global" Event_Text_ = "" : 
-      InVar_ "Beskrivelse" Event_Tag_ = "" : InVar_ "Tag" Event_Severity_ = 0 : 
-      InVar_ "Vigtighedsgrad" Event_Class_ = 0 : InVar_ "Klasse" 
+      OutVar_ "absoluttrin" OpMin = 0 : InVar_ "min" OpMax = 2147483647 : 
+      InVar_ "max" OpStep = 1 : InVar_ "vigtighedsgrad" Key_ = "" : InVar_ 
+      "Tast" GLOBAL = False : InVar_ "Tast_Global" Event_Text_ = "" : InVar_ 
+      "Beskrivelse" Event_Tag_ = "" : InVar_ "Tag" Event_Severity_ = 0 : InVar_ 
+      "Vigtighedsgrad" Event_Class_ = 0 : InVar_ "Klasse" 
       
    MenuInteract ( 0.7 , 0.46 ) ( 1.06 , 0.34 ) 
       Real_Value
@@ -697,11 +730,11 @@ InteractObjects :
       Int_Value
       Enable_ = True : InVar_ "Aktiver" SelectVariable = False : OutVar_ 
       "Markeret" Value_Changed = False : OutVar_ "Ændret" Variable = 0 : 
-      OutVar_ "absoluttrin" OpMin = -2147483648 : InVar_ "min" OpMax = 
-      2147483647 : InVar_ "max" OpStep = 1 : InVar_ "vigtighedsgrad" Key_ = "" 
-      : InVar_ "Tast" GLOBAL = False : InVar_ "Tast_Global" Event_Text_ = "" : 
-      InVar_ "Beskrivelse" Event_Tag_ = "" : InVar_ "Tag" Event_Severity_ = 0 : 
-      InVar_ "Vigtighedsgrad" Event_Class_ = 0 : InVar_ "Klasse" 
+      OutVar_ "absoluttrin" OpMin = 0 : InVar_ "min" OpMax = 2147483647 : 
+      InVar_ "max" OpStep = 1 : InVar_ "vigtighedsgrad" Key_ = "" : InVar_ 
+      "Tast" GLOBAL = False : InVar_ "Tast_Global" Event_Text_ = "" : InVar_ 
+      "Beskrivelse" Event_Tag_ = "" : InVar_ "Tag" Event_Severity_ = 0 : InVar_ 
+      "Vigtighedsgrad" Event_Class_ = 0 : InVar_ "Klasse" 
       
    SimpleInteract ( -0.26 , -0.22 ) ( 0.1 , -0.34 ) 
       Bool_Value
@@ -753,7 +786,7 @@ InteractObjects :
       Signer2_ = "" : OutVar_ "UserIdentity2" 
       Signer2Name_ = "" : OutVar_ "UserName2" 
       
-   MenuInteract ( -0.34 , -0.62 ) ( 0.0199999 , -0.74 ) 
+   MenuInteract ( -0.66 , -0.22 ) ( -0.3 , -0.34 ) 
       Bool_Value
       Enable_ = True : InVar_ "Aktiver" SelectVariable = False : OutVar_ 
       "Marked" Value_Changed = False : OutVar_ "Change" Variable = False : 
@@ -829,12 +862,12 @@ InteractObjects :
    TextBox_ ( 1.92 , -1.0 ) ( 2.64 , -1.24 ) 
       Int_Value
       Enable_ = True : InVar_ "Aktiver" Value_Changed = False : OutVar_ 
-      "Ændret" Variable = 0 : OutVar_ "max" OpMin = -2147483648 : InVar_ "min" 
-      OpMax = 2147483647 : InVar_ "max" OpStep = 1 : InVar_ "vigtighedsgrad" 
-      Key_ = "" : InVar_ "Tast" GLOBAL = False : InVar_ "Tast_Global" 
-      Event_Text_ = "" : InVar_ "Beskrivelse" Event_Tag_ = "" : InVar_ "Tag" 
-      Event_Severity_ = 0 : InVar_ "Vigtighedsgrad" Event_Class_ = 0 : InVar_ 
-      "Klasse" Visible_ = True : InVar_ "Synlig" LeftAligned Abs_ Digits_
+      "Ændret" Variable = 0 : OutVar_ "max" OpMin = 0 : InVar_ "min" OpMax = 
+      2147483647 : InVar_ "max" OpStep = 1 : InVar_ "vigtighedsgrad" Key_ = "" 
+      : InVar_ "Tast" GLOBAL = False : InVar_ "Tast_Global" Event_Text_ = "" : 
+      InVar_ "Beskrivelse" Event_Tag_ = "" : InVar_ "Tag" Event_Severity_ = 0 : 
+      InVar_ "Vigtighedsgrad" Event_Class_ = 0 : InVar_ "Klasse" Visible_ = 
+      True : InVar_ "Synlig" LeftAligned Abs_ Digits_
       Enable_Delay = True : InVar_ True 
       OK_Variable = False : InVar_ "OK" 
       Cancel_Variable = False : InVar_ "Fortryd" 
@@ -843,12 +876,12 @@ InteractObjects :
    TextBox_ ( 3.64 , -0.96 ) ( 4.36 , -1.2 ) 
       Int_Value
       Enable_ = True : InVar_ "Aktiver" Value_Changed = False : OutVar_ 
-      "Ændret" Variable = 0 : OutVar_ "max" OpMin = -2147483648 : InVar_ "min" 
-      OpMax = 2147483647 : InVar_ "max" OpStep = 1 : InVar_ "vigtighedsgrad" 
-      Key_ = "" : InVar_ "Tast" GLOBAL = False : InVar_ "Tast_Global" 
-      Event_Text_ = "" : InVar_ "Beskrivelse" Event_Tag_ = "" : InVar_ "Tag" 
-      Event_Severity_ = 0 : InVar_ "Vigtighedsgrad" Event_Class_ = 0 : InVar_ 
-      "Klasse" Visible_ = True : InVar_ "Synlig" RightAligned Abs_ Digits_
+      "Ændret" Variable = 0 : OutVar_ "max" OpMin = 0 : InVar_ "min" OpMax = 
+      2147483647 : InVar_ "max" OpStep = 1 : InVar_ "vigtighedsgrad" Key_ = "" 
+      : InVar_ "Tast" GLOBAL = False : InVar_ "Tast_Global" Event_Text_ = "" : 
+      InVar_ "Beskrivelse" Event_Tag_ = "" : InVar_ "Tag" Event_Severity_ = 0 : 
+      InVar_ "Vigtighedsgrad" Event_Class_ = 0 : InVar_ "Klasse" Visible_ = 
+      True : InVar_ "Synlig" RightAligned Abs_ Digits_
       Enable_Delay = True : InVar_ True 
       OK_Variable = False : InVar_ "OK" 
       Cancel_Variable = False : InVar_ "Fortryd" 
@@ -857,12 +890,12 @@ InteractObjects :
    TextBox_ ( 2.88 , -1.04 ) ( 3.6 , -1.28 ) 
       Int_Value
       Enable_ = True : InVar_ "Aktiver" Value_Changed = False : OutVar_ 
-      "Ændret" Variable = 0 : OutVar_ "max" OpMin = -2147483648 : InVar_ "min" 
-      OpMax = 2147483647 : InVar_ "max" OpStep = 1 : InVar_ "vigtighedsgrad" 
-      Key_ = "" : InVar_ "Tast" GLOBAL = False : InVar_ "Tast_Global" 
-      Event_Text_ = "" : InVar_ "Beskrivelse" Event_Tag_ = "" : InVar_ "Tag" 
-      Event_Severity_ = 0 : InVar_ "Vigtighedsgrad" Event_Class_ = 0 : InVar_ 
-      "Klasse" Visible_ = True : InVar_ "Synlig" CenterAligned Abs_ Digits_
+      "Ændret" Variable = 0 : OutVar_ "max" OpMin = 0 : InVar_ "min" OpMax = 
+      2147483647 : InVar_ "max" OpStep = 1 : InVar_ "vigtighedsgrad" Key_ = "" 
+      : InVar_ "Tast" GLOBAL = False : InVar_ "Tast_Global" Event_Text_ = "" : 
+      InVar_ "Beskrivelse" Event_Tag_ = "" : InVar_ "Tag" Event_Severity_ = 0 : 
+      InVar_ "Vigtighedsgrad" Event_Class_ = 0 : InVar_ "Klasse" Visible_ = 
+      True : InVar_ "Synlig" CenterAligned Abs_ Digits_
       Enable_Delay = True : InVar_ True 
       OK_Variable = False : InVar_ "OK" 
       Cancel_Variable = False : InVar_ "Fortryd" 
@@ -900,10 +933,260 @@ InteractObjects :
       Cancel_Variable = False : InVar_ "Fortryd" 
       
       FillColour : Colour0 = 9 Colour1 = -1 
+   ComBut_ ( -1.4 , 1.28 ) ( -1.04 , 1.16 ) 
+      Bool_Value
+      Enable_ = True : InVar_ "aktiver" Value_Changed = False : OutVar_ 
+      "ændret" Variable = False : OutVar_ "var1" Key_ = "" : InVar_ "tast" 
+      GLOBAL = False : InVar_ "tast_global" Event_Text_ = "" : InVar_ 
+      "beskrivelse" Event_Tag_ = "" : InVar_ "tag" Event_Severity_ = 0 : InVar_ 
+      "vigtighedsgrad" Event_Class_ = 0 : InVar_ "klasse" Visible_ = True : 
+      InVar_ "synlig" SetAction
+      Abs_ TextObject = "" : InVar_ "tekst" 
+      Alt_Text = "" : InVar_ "alttekst" 
+      SetApp_
+      SnglSgn
+      SnglSgnEna = False : InVar_ "aktiverenkelt" 
+      Purpose_ = "" : OutVar_ "formål" 
+      PurposeChng
+      SgnrCom = "" : OutVar_ "kommentar" 
+      CommentChng
+      CommentMand
+      Signer1_ = "" : OutVar_ "brugerident1" 
+      Signer1Name_ = "" : OutVar_ "fuldnavn1" 
+      DblSgn
+      DblSgnEna = False : InVar_ "aktiverdobbelt" 
+      Enable_ = False : InVar_ "aktiver2" 
+      CansCom = "" : OutVar_ "afbrydkommentar" 
+      SgnCans = False : OutVar_ "signafbrudt" 
+      Signer2_ = "" : OutVar_ "brugerident2" 
+      Signer2Name_ = "" : OutVar_ "fuldnavn2" 
+      
+   ComBut_ ( -1.4 , 0.96 ) ( -1.04 , 0.84 ) 
+      Int_Value
+      Enable_ = True : InVar_ "aktiver" Value_Changed = False : OutVar_ 
+      "ændret" Variable = 0 : OutVar_ "var2" OpMin = 0 : InVar_ "min" OpMax = 0 
+      : InVar_ "max" OpStep = 1 : InVar_ "abstrin" Key_ = "" : InVar_ "tast" 
+      GLOBAL = False : InVar_ "tast_global" Event_Text_ = "" : InVar_ 
+      "beskrivelse" Event_Tag_ = "" : InVar_ "tag" Event_Severity_ = 0 : InVar_ 
+      "vigtighedsgrad" Event_Class_ = 0 : InVar_ "klasse" Visible_ = True : 
+      InVar_ "synlig" Abs_ TextObject = "" : InVar_ "tekst" 
+      Alt_Text = "" : InVar_ "alttekst" 
+      SnglSgn
+      SnglSgnEna = False : InVar_ "aktiverenkelt" 
+      Purpose_ = "" : OutVar_ "formål" 
+      PurposeChng
+      SgnrCom = "" : OutVar_ "kommentar" 
+      CommentChng
+      CommentMand
+      Signer1_ = "" : OutVar_ "brugerident1" 
+      Signer1Name_ = "" : OutVar_ "fuldnavn1" 
+      DblSgn
+      DblSgnEna = False : InVar_ "aktiverdobbelt" 
+      Enable_ = False : InVar_ "aktiver2" 
+      CansCom = "" : OutVar_ "afbrydkommentar" 
+      SgnCans = False : OutVar_ "signafbrudt" 
+      Signer2_ = "" : OutVar_ "brugerident2" 
+      Signer2Name_ = "" : OutVar_ "fuldnavn2" 
+      
+   ComBut_ ( -1.0 , 0.96 ) ( -0.64 , 0.84 ) 
+      Int_Value
+      Enable_ = True : InVar_ "aktiver" Value_Changed = False : OutVar_ 
+      "ændret" Variable = 0 : OutVar_ "var2" Key_ = "" : InVar_ "tast" GLOBAL = 
+      False : InVar_ "tast_global" Event_Text_ = "" : InVar_ "beskrivelse" 
+      Event_Tag_ = "" : InVar_ "tag" Event_Severity_ = 0 : InVar_ 
+      "vigtighedsgrad" Event_Class_ = 0 : InVar_ "klasse" Visible_ = True : 
+      InVar_ "synlig" Abs_ TextObject = "" : InVar_ "tekst" 
+      Alt_Text = "" : InVar_ "alttekst" 
+      SetVal_
+      SetApp_
+      Value_ = 0 : InVar_ "intvar" 
+      SnglSgn
+      SnglSgnEna = False : InVar_ "aktiverenkelt" 
+      Purpose_ = "" : OutVar_ "formål" 
+      PurposeChng
+      SgnrCom = "" : OutVar_ "kommentar" 
+      CommentChng
+      CommentMand
+      Signer1_ = "" : OutVar_ "brugerident1" 
+      Signer1Name_ = "" : OutVar_ "fuldnavn1" 
+      DblSgn
+      DblSgnEna = False : InVar_ "aktiverdobbelt" 
+      Enable_ = False : InVar_ "aktiver2" 
+      CansCom = "" : OutVar_ "afbrydkommentar" 
+      SgnCans = False : OutVar_ "signafbrudt" 
+      Signer2_ = "" : OutVar_ "brugerident2" 
+      Signer2Name_ = "" : OutVar_ "fuldnavn2" 
+      
+   ComBut_ ( -1.0 , 1.28 ) ( -0.64 , 1.16 ) 
+      Bool_Value
+      Enable_ = True : InVar_ "aktiver" Value_Changed = False : OutVar_ 
+      "ændret" Variable = False : OutVar_ "var1" Key_ = "" : InVar_ "tast" 
+      GLOBAL = False : InVar_ "tast_global" Event_Text_ = "" : InVar_ 
+      "beskrivelse" Event_Tag_ = "" : InVar_ "tag" Event_Severity_ = 0 : InVar_ 
+      "vigtighedsgrad" Event_Class_ = 0 : InVar_ "klasse" Visible_ = True : 
+      InVar_ "synlig" ResetAction
+      Abs_ TextObject = "" : InVar_ "tekst" 
+      Alt_Text = "" : InVar_ "alttekst" 
+      SetApp_
+      SnglSgn
+      SnglSgnEna = False : InVar_ "aktiverenkelt" 
+      Purpose_ = "" : OutVar_ "formål" 
+      PurposeChng
+      SgnrCom = "" : OutVar_ "kommentar" 
+      CommentChng
+      CommentMand
+      Signer1_ = "" : OutVar_ "brugerident1" 
+      Signer1Name_ = "" : OutVar_ "fuldnavn1" 
+      DblSgn
+      DblSgnEna = False : InVar_ "aktiverdobbelt" 
+      Enable_ = False : InVar_ "aktiver2" 
+      CansCom = "" : OutVar_ "afbrydkommentar" 
+      SgnCans = False : OutVar_ "signafbrudt" 
+      Signer2_ = "" : OutVar_ "brugerident2" 
+      Signer2Name_ = "" : OutVar_ "fuldnavn2" 
+      
+   ComBut_ ( -0.76 , 1.28 ) ( -0.4 , 1.16 ) 
+      Bool_Value
+      Enable_ = True : InVar_ "aktiver" Value_Changed = False : OutVar_ 
+      "ændret" Variable = False : OutVar_ "var1" Key_ = "" : InVar_ "tast" 
+      GLOBAL = False : InVar_ "tast_global" Event_Text_ = "" : InVar_ 
+      "beskrivelse" Event_Tag_ = "" : InVar_ "tag" Event_Severity_ = 0 : InVar_ 
+      "vigtighedsgrad" Event_Class_ = 0 : InVar_ "klasse" Visible_ = True : 
+      InVar_ "synlig" ToggleAction
+      Abs_ TextObject = "" : InVar_ "tekst" 
+      Alt_Text = "" : InVar_ "alttekst" 
+      SetApp_
+      SnglSgn
+      SnglSgnEna = False : InVar_ "aktiverenkelt" 
+      Purpose_ = "" : OutVar_ "formål" 
+      PurposeChng
+      SgnrCom = "" : OutVar_ "kommentar" 
+      CommentChng
+      CommentMand
+      Signer1_ = "" : OutVar_ "brugerident1" 
+      Signer1Name_ = "" : OutVar_ "fuldnavn1" 
+      DblSgn
+      DblSgnEna = False : InVar_ "aktiverdobbelt" 
+      Enable_ = False : InVar_ "aktiver2" 
+      CansCom = "" : OutVar_ "afbrydkommentar" 
+      SgnCans = False : OutVar_ "signafbrudt" 
+      Signer2_ = "" : OutVar_ "brugerident2" 
+      Signer2Name_ = "" : OutVar_ "fuldnavn2" 
+      
+   ComBut_ ( -1.4 , 0.68 ) ( -1.04 , 0.56 ) 
+      Real_Value
+      Enable_ = True : InVar_ "aktiver" Value_Changed = False : OutVar_ 
+      "ændret" Variable = 0.0 : OutVar_ "var3" OpMin = 0.0 : InVar_ "minreal" 
+      OpMax = 0.0 : InVar_ "maxreal" OpStep = 0.0 : InVar_ "abstrinreal" Key_ = 
+      "" : InVar_ "tast" GLOBAL = False : InVar_ "tast_global" Event_Text_ = "" 
+      : InVar_ "beskrivelse" Event_Tag_ = "" : InVar_ "tag" Event_Severity_ = 0 
+      : InVar_ "vigtighedsgrad" Event_Class_ = 0 : InVar_ "klasse" Visible_ = 
+      True : InVar_ "synlig" Abs_ TextObject = "" : InVar_ "tekst" 
+      Alt_Text = "" : InVar_ "alttekst" 
+      SnglSgn
+      SnglSgnEna = False : InVar_ "aktiverenkelt" 
+      Purpose_ = "" : OutVar_ "formål" 
+      PurposeChng
+      SgnrCom = "" : OutVar_ "kommentar" 
+      CommentChng
+      CommentMand
+      Signer1_ = "" : OutVar_ "brugerident1" 
+      Signer1Name_ = "" : OutVar_ "fuldnavn1" 
+      DblSgn
+      DblSgnEna = False : InVar_ "aktiverdobbelt" 
+      Enable_ = False : InVar_ "aktiver2" 
+      CansCom = "" : OutVar_ "afbrydkommentar" 
+      SgnCans = False : OutVar_ "signafbrudt" 
+      Signer2_ = "" : OutVar_ "brugerident2" 
+      Signer2Name_ = "" : OutVar_ "fuldnavn2" 
+      
+   ComBut_ ( -0.96 , 0.68 ) ( -0.6 , 0.56 ) 
+      Real_Value
+      Enable_ = True : InVar_ "aktiver" Value_Changed = False : OutVar_ 
+      "ændret" Variable = 0.0 : OutVar_ "var3" OpMin = 0.0 : InVar_ "minreal" 
+      OpMax = 0.0 : InVar_ "maxreal" Key_ = "" : InVar_ "tast" GLOBAL = False : 
+      InVar_ "tast_global" Event_Text_ = "" : InVar_ "beskrivelse" Event_Tag_ = 
+      "" : InVar_ "tag" Event_Severity_ = 0 : InVar_ "vigtighedsgrad" 
+      Event_Class_ = 0 : InVar_ "klasse" Visible_ = True : InVar_ "synlig" 
+      Relative_ TextObject = "" : InVar_ "tekst" 
+      Alt_Text = "" : InVar_ "alttekst" 
+      SnglSgn
+      SnglSgnEna = False : InVar_ "aktiverenkelt" 
+      Purpose_ = "" : OutVar_ "formål" 
+      PurposeChng
+      SgnrCom = "" : OutVar_ "kommentar" 
+      CommentChng
+      CommentMand
+      Signer1_ = "" : OutVar_ "brugerident1" 
+      Signer1Name_ = "" : OutVar_ "fuldnavn1" 
+      DblSgn
+      DblSgnEna = False : InVar_ "aktiverdobbelt" 
+      Enable_ = False : InVar_ "aktiver2" 
+      CansCom = "" : OutVar_ "afbrydkommentar" 
+      SgnCans = False : OutVar_ "signafbrudt" 
+      Signer2_ = "" : OutVar_ "brugerident2" 
+      Signer2Name_ = "" : OutVar_ "fuldnavn2" 
+      
+   ComBut_ ( -0.76 , 1.44 ) ( -0.4 , 1.32 ) 
+      Bool_Value
+      Enable_ = True : InVar_ "aktiver" Value_Changed = False : OutVar_ 
+      "ændret" Variable = False : OutVar_ "var1" Key_ = "" : InVar_ "tast" 
+      GLOBAL = False : InVar_ "tast_global" Event_Text_ = "" : InVar_ 
+      "beskrivelse" Event_Tag_ = "" : InVar_ "tag" Event_Severity_ = 0 : InVar_ 
+      "vigtighedsgrad" Event_Class_ = 0 : InVar_ "klasse" Visible_ = True : 
+      InVar_ "synlig" ToggleAction
+      Abs_ TextObject = "" : InVar_ LitString "tekst" 
+      Alt_Text = "" : InVar_ LitString "alttekst" 
+      SetApp_
+      SnglSgn
+      SnglSgnEna = False : InVar_ "aktiverenkelt" 
+      Purpose_ = "" : OutVar_ "formål" 
+      PurposeChng
+      SgnrCom = "" : OutVar_ "kommentar" 
+      CommentChng
+      CommentMand
+      Signer1_ = "" : OutVar_ "brugerident1" 
+      Signer1Name_ = "" : OutVar_ "fuldnavn1" 
+      DblSgn
+      DblSgnEna = False : InVar_ "aktiverdobbelt" 
+      Enable_ = False : InVar_ "aktiver2" 
+      CansCom = "" : OutVar_ "afbrydkommentar" 
+      SgnCans = False : OutVar_ "signafbrudt" 
+      Signer2_ = "" : OutVar_ "brugerident2" 
+      Signer2Name_ = "" : OutVar_ "fuldnavn2" 
+      
+   ComBut_ ( -1.0 , 1.44 ) ( -0.64 , 1.32 ) 
+      Bool_Value
+      Enable_ = True : InVar_ "aktiver" Value_Changed = False : OutVar_ 
+      "ændret" Variable = False : OutVar_ "var1" Key_ = "" : InVar_ "tast" 
+      GLOBAL = False : InVar_ "tast_global" Event_Text_ = "" : InVar_ 
+      "beskrivelse" Event_Tag_ = "" : InVar_ "tag" Event_Severity_ = 0 : InVar_ 
+      "vigtighedsgrad" Event_Class_ = 0 : InVar_ "klasse" Visible_ = True : 
+      InVar_ "synlig" ResetAction
+      Abs_ TextObject = "" : InVar_ "tekst" 
+      Alt_Text = "" : InVar_ "alttekst" 
+      SetApp_
+      SnglSgn
+      SnglSgnEna = False : InVar_ "aktiverenkelt" 
+      Purpose_ = "" : OutVar_ "formål" 
+      PurposeChng
+      SgnrCom = "" : OutVar_ "kommentar" 
+      CommentChng
+      CommentMand
+      Signer1_ = "" : OutVar_ "brugerident1" 
+      Signer1Name_ = "" : OutVar_ "fuldnavn1" 
+      DblSgn
+      DblSgnEna = False : InVar_ "aktiverdobbelt" 
+      Enable_ = False : InVar_ "aktiver2" 
+      CansCom = "" : OutVar_ "afbrydkommentar" 
+      SgnCans = False : OutVar_ "signafbrudt" 
+      Signer2_ = "" : OutVar_ "brugerident2" 
+      Signer2Name_ = "" : OutVar_ "fuldnavn2" 
+      
 
 ModuleCode
 
-SEQUENCE SQ_1  (SeqControl,SeqTimer) COORD 0.0, 0.6 OBJSIZE 0.3, 0.3
+SEQUENCE SQ_1  (SeqControl,SeqTimer) COORD 0.0, 0.56 OBJSIZE 0.3, 0.3
    SEQINITSTEP ST_Initstep 
    SEQTRANSITION Tr1 WAIT_FOR ST_InitStep.t > 100
    SEQSTEP S1 
@@ -948,6 +1231,11 @@ EQUATIONBLOCK EQ_1 COORD 0.4, 0.6 OBJSIZE 0.3, 0.3 :
    ELSE
       Test = On;
    ENDIF;
+   IntVar = 1/0;
+   IntVar2 = 1000*1000*1000*1000*1000*1000*1000*1000*1000*1000*1000*1000*1000;
+   RealVar1 = 1.0/0.0;
+   realVar2 = 1000.0*1000*1000*1000*1000*1000*1000*1000*1000*1000*1000*1000*
+      1000;
 
 ENDDEF (*BasePicture*);
 

@@ -15,9 +15,8 @@ LOCALVARIABLES
 ModuleDef
 ClippingBounds = ( -1.0 , -1.0 ) ( 1.0 , 1.0 )
 ModuleCode
-   (* level1 (* level2 (* level3 (* level4 (* level5 *) level4 *) level3 *) level2 *) level1 *)
    EQUATIONBLOCK Main COORD 0.0, 0.0 OBJSIZE 1.0, 1.0 :
-      (* a (* b (* c *) b *) a *)
+      (* level1 (* level2 (* level3 (* level4 (* level5 *) level4 *) level3 *) level2 *) level1 *)
       Value = Value + 1;
 
 ENDDEF (*BasePicture*);

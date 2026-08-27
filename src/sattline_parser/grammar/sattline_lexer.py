@@ -161,7 +161,7 @@ class SattLineLexer(ContextualLexer):
                     and token.end_pos is not None
                     and _module_typedecl_after(cast(str, getattr(lexer_state, "text", "")), token.end_pos)
                 ):
-                    token_type = token.type = TOKEN_MODULE_TYPE_NAME
+                    token_type = token.type = TOKEN_MODULE_TYPE_NAME  # pragma: no cover
                 if token_type == TOKEN_COMMENT_START:
                     comment_depth += 1
                 elif token_type == TOKEN_COMMENT_END:

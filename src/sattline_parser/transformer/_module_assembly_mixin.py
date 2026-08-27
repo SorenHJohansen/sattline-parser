@@ -40,6 +40,10 @@ from ._module_shared import (
 class ModuleAssemblyMixin:
     """Mixin providing module body normalization and AST assembly methods."""
 
+    def PRIVATE_KW(self, _: object) -> dict[str, bool]:  # noqa: N802
+        """Grammar PRIVATE_KW terminal -> dict marker."""
+        return {"is_private": True}
+
     def module_body(self, items: list[TransformerItem]) -> TransformerTree:
         """Grammar module_body -> Tree (keep structure for collectors)."""
         return Tree(const.TREE_TAG_MODULE_BODY, cast(list[Any], items))
@@ -250,6 +254,8 @@ class ModuleAssemblyMixin:
         trailing_comments: list[CodeComment] = []
         seen_enddef = False
 
+        is_private = False
+
         for it in flatten_items(items):
             if isinstance(it, Token) and it.type == "ENDDEF_KW":
                 seen_enddef = True
@@ -259,6 +265,11 @@ class ModuleAssemblyMixin:
                     trailing_comments.append(it)
                 else:
                     description_comments.append(it)
+                continue
+            if isinstance(it, dict):
+                payload = cast(dict[str, object], it)
+                if payload.get("is_private"):
+                    is_private = True
                 continue
             if isinstance(it, str) and name is None:
                 name = it
@@ -288,6 +299,7 @@ class ModuleAssemblyMixin:
         moduletype = ModuleTypeDef(
             name=name,
             datecode=datecode,
+            is_private=is_private,
             moduleparameters=moduleparameters,
             localvariables=localvariables,
             submodules=submodules,
@@ -407,12 +419,21 @@ class ModuleAssemblyMixin:
             desc = items[1]
         return (name, desc, meta_span(meta))
 
+    def duration_value(self, items: list[TransformerItem]) -> tuple[TransformerItem, bool]:
+        """Grammar duration_value -> (value, is_duration=True) tuple."""
+        value = items[1] if len(items) > 1 else None
+        return cast(tuple[TransformerItem, bool], (value, True))
+
     def opt_var_init(self, items: list[TransformerItem]) -> tuple[TransformerItem, bool] | None:
         """Grammar opt_var_init -> (value, is_duration) tuple or None."""
         if not items:
             return None
-        is_duration = any(item == const.GRAMMAR_VALUE_DURATION_VALUE for item in items[:-1])
-        return (items[-1], is_duration)
+        init_value = items[1] if len(items) > 1 else None
+        if isinstance(init_value, tuple):
+            pair = cast(tuple[TransformerItem, TransformerItem], init_value)
+            if len(pair) == 2:
+                return cast(tuple[TransformerItem, bool], pair)
+        return cast(tuple[TransformerItem, bool], (init_value, False))
 
     def time_value(self, items: list[TransformerItem]) -> dict[str, str | None]:
         """Grammar time_value -> dict with time string."""
@@ -488,6 +509,7 @@ class ModuleAssemblyMixin:
                 init_value = init_raw
 
         resolved_init_value: Any | None = None if init_value is DEFAULT_INIT else init_value
+        has_explicit_default: bool = init_value is DEFAULT_INIT
 
         variables: list[Variable] = []
         for name, desc, declaration_span in var_items:
@@ -501,6 +523,7 @@ class ModuleAssemblyMixin:
                     opsave=is_opsave,
                     secure=is_secure,
                     init_value=resolved_init_value,
+                    has_explicit_default=has_explicit_default,
                     description=desc,
                     declaration_span=declaration_span,
                     init_is_duration=(init_is_duration and resolved_init_value is not None),

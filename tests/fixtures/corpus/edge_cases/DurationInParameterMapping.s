@@ -15,10 +15,10 @@ BasePicture Invocation
 TYPEDEFINITIONS
    TimerType = MODULEDEFINITION DateCode_ 1
    MODULEPARAMETERS
-      Timeout: duration  := "0";
-      Delay: duration  := "0";
+      Timeout: duration  := Duration_Value "0";
+      Delay: duration  := Duration_Value "0";
    LOCALVARIABLES
-      Elapsed: duration  := "0";
+      Elapsed: duration  := Duration_Value "0";
       Expired: boolean  := False;
 
    ModuleDef

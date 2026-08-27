@@ -55,6 +55,9 @@ TYPEDEFINITIONS
     ModuleDef
     ClippingBounds = ( -1.0 , -1.0 ) ( 1.0 , 1.0 )
     ENDDEF (*type two end*);
+ModuleDef
+ClippingBounds = ( -1.0 , -1.0 ) ( 1.0 , 1.0 )
+ENDDEF (*base*);
 """
     bp = parser_core_parse_source_text(code)
 
@@ -80,7 +83,6 @@ TYPEDEFINITIONS
         ModuleDef
         ClippingBounds = ( -1.0 , -1.0 ) ( 1.0 , 1.0 )
         ENDDEF (*child end*);
-        ENDDEF (*child module end*);
     ModuleDef
     ClippingBounds = ( -1.0 , -1.0 ) ( 1.0 , 1.0 )
     ENDDEF (*third end*);
@@ -88,6 +90,9 @@ TYPEDEFINITIONS
     ModuleDef
     ClippingBounds = ( -1.0 , -1.0 ) ( 1.0 , 1.0 )
     ENDDEF (*fourth end*);
+ModuleDef
+ClippingBounds = ( -1.0 , -1.0 ) ( 1.0 , 1.0 )
+ENDDEF (*base*);
 """
     bp = parser_core_parse_source_text(code)
 
@@ -115,6 +120,9 @@ TYPEDEFINITIONS
        C = 5;
        A = B;
     ENDDEF (*type end*);
+ModuleDef
+ClippingBounds = ( -1.0 , -1.0 ) ( 1.0 , 1.0 )
+ENDDEF (*base*);
 """
     bp = parser_core_parse_source_text(code)
 
