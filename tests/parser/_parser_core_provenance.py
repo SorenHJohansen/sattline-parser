@@ -249,12 +249,12 @@ def test_parse_compressed_source_unknown_marker_raises_clear_error():
 
 def test_parse_source_file_and_parse_source_text_have_consistent_provenance(tmp_path: Path):
     file_path = tmp_path / "Compressed.s"
-    file_path.write_text(_COMPRESSED, encoding="utf-8")
+    file_path.write_bytes(_COMPRESSED.encode("utf-8"))
     from_file = parse_source_file(file_path)
     from_text = parser_core_parse_source_text(_COMPRESSED)
     assert from_file.modulecode.equations[0].code[0].span == from_text.modulecode.equations[0].code[0].span
     # No double-decode: spans still point into the original compressed file text.
-    raw = file_path.read_text(encoding="utf-8")
+    raw = file_path.read_bytes().decode("utf-8")
     assignment = from_file.modulecode.equations[0].code[0]
     assert raw[assignment.span.start : assignment.span.end].replace("#8?", "=") == "Counter = Counter + 1"
 
