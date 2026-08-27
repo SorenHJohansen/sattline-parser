@@ -2,8 +2,7 @@
 "Original file date: ---"
 "Program date: 2026-04-23-12:00:00.000, name: DurationAndTime"
 (* Covers duration and time variable declarations and usage.
-   Both the Duration_Value form and bare quoted duration strings are valid.
-   Both the Time_Value form and bare ISO timestamp strings are valid.
+   Duration and time variables require Duration_Value and Time_Value keywords.
    Expected: strict syntax-check passes. *)
 
 BasePicture Invocation
@@ -12,16 +11,16 @@ BasePicture Invocation
 
 LOCALVARIABLES
    DurFull: duration  := Duration_Value "0d0h5m0s0ms";
-   DurBare: duration  := "7m6s123ms";
-   DurHours: duration  := "1h";
-   DurMinutes: duration  := "4m";
-   DurComplex: duration  := "5d5h3m6.5s";
-   DurSeconds: duration  := "12.345";
-   DurZero: duration  := "0";
+   DurBare: duration  := Duration_Value "7m6s123ms";
+   DurHours: duration  := Duration_Value "1h";
+   DurMinutes: duration  := Duration_Value "4m";
+   DurComplex: duration  := Duration_Value "5d5h3m6.5s";
+   DurSeconds: duration  := Duration_Value "12.345";
+   DurZero: duration  := Duration_Value "0";
    DurNegative: duration  := Duration_Value "-0d0h5m0s0ms";
    TimeFull: time  := Time_Value "1984-01-01-00:00:00.000";
-   TimeBare: time  := "2026-04-23-12:00:00.000";
-   TimeMidnight: time  := "2000-12-31-23:59:59.999";
+   TimeBare: time  := Time_Value "2026-04-23-12:00:00.000";
+   TimeMidnight: time  := Time_Value "2000-12-31-23:59:59.999";
    Sink: boolean  := False;
 
 ModuleDef

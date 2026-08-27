@@ -83,6 +83,14 @@ class _GraphicsInteractMixin:
     #: Keys merged from the ``common_properties`` rule into GraphObject properties.
     _COMMON_PROPERTY_KEYS = ("layer", "colours", const.TREE_TAG_ENABLE)
 
+    def polygon_type(self, items: list[TransformerItem]) -> list[str]:
+        """Grammar polygon_type -> list of polygon type strings (Polyline, Spline, Connection)."""
+        result: list[str] = []
+        for it in items:
+            if isinstance(it, Token):
+                result.append(str(it))
+        return result
+
     def common_properties(self, items: list[TransformerItem]) -> dict[str, object]:
         """Grammar common_properties -> merged dict of layer/enable/colour content.
 
@@ -99,7 +107,7 @@ class _GraphicsInteractMixin:
                 merged["layer"] = it
             elif isinstance(it, dict):
                 merged.update(cast(dict[str, object], it))
-            elif isinstance(it, Tree) and getattr(it, "data", "") in (
+            elif isinstance(it, Tree) and it.data in (
                 "connection_node",
                 "connection_node_bare",
             ):
@@ -226,6 +234,10 @@ class _GraphicsInteractMixin:
         """Grammar polygon_object -> GraphObject (POLYGONOBJECT)."""
         go = GraphObject(const.GRAMMAR_VALUE_POLYGONOBJECT)
         properties = _graph_properties(go)
+        for it in items:
+            if isinstance(it, list) and all(isinstance(x, str) for x in cast(list[object], it)):
+                properties[const.KEY_POLYGON_TYPE] = it
+                break
         _coord_payloads, coord_tails = _coord_parts(self, items)
         tails = _merged_tails(self, items, coord_tails)
         if tails:
@@ -241,7 +253,8 @@ class _GraphicsInteractMixin:
         for it in coord_payloads:
             if _is_coord_box(it):
                 properties[const.KEY_COORDS] = it
-                break
+            elif _is_coord_pair(it) and const.KEY_SEGMENT_POINT not in properties:
+                properties[const.KEY_SEGMENT_POINT] = it
         tails = _merged_tails(self, items, coord_tails)
         if tails:
             properties[const.KEY_TAILS] = tails
@@ -272,11 +285,12 @@ class _GraphicsInteractMixin:
                 obj = it
             elif isinstance(it, int):
                 layer = it
-            elif isinstance(it, Tree) and getattr(it, "data", "") == "connection_node":
+            elif isinstance(it, Tree) and it.data == "connection_node":
                 obj = GraphObject(const.GRAMMAR_VALUE_CONNECTIONNODE)
-                coords = [child for child in it.children if _is_coord_pair(child)]
-                if coords:
-                    _graph_properties(obj)[const.KEY_COORDS] = cast(CoordPair, coords[0])
+                for child in _tree_children(cast(Tree[object], it)):
+                    if _is_coord_pair(child):
+                        _graph_properties(obj)[const.KEY_COORDS] = child
+                        break
 
         if obj is None:
             types = ", ".join(type(x).__name__ for x in items)

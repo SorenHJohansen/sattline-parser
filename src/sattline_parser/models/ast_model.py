@@ -219,6 +219,7 @@ class Variable:
     opsave: bool | None = False
     secure: bool | None = False
     init_value: InitValue | None = None
+    has_explicit_default: bool = False
     description: str | None = None
     declaration_span: SourceSpan | None = None
     init_is_duration: bool = False
@@ -242,7 +243,7 @@ class Variable:
         return (
             f"Name: {self.name!r}, Datatype: {self.datatype!r}, Global: {self.global_var}, "
             f"Const: {self.const}, State: {self.state}, Init_value : {self.init_value!r}, "
-            f"Description: {self.description!r}"
+            f"ExplicitDefault: {self.has_explicit_default}, Description: {self.description!r}"
         )
 
 
@@ -377,6 +378,7 @@ class Equation:
     position: tuple[float, float]
     size: tuple[float, float]
     code: list[CodeItem] = field(default_factory=code_item_list)
+    layer_info: int | None = None
 
     def __str__(self) -> str:
         return f"Equation(name={self.name}, pos={self.position},\n    code={format_list(self.code)})"
@@ -386,7 +388,6 @@ class Equation:
 class ModuleCode:
     sequences: list[Sequence] | None = None
     equations: list[Equation] | None = None
-    comments: list[CodeComment] = field(default_factory=code_comment_list)
 
     def __str__(self) -> str:
         return render_module_code(self)
@@ -398,8 +399,8 @@ class ModuleHeader:
     invoke_coord: tuple[float, float, float, float, float]
     declaration_span: SourceSpan | None = None
     invocation_arguments: tuple[str, ...] = ()
-    layer_info: str | None = None
-    enable: bool = True
+    layer_info: int | None = None
+    enable: bool | None = None
     zoom_limits: tuple[float, float] | None = None
     zoomable: bool = False
     enable_tail: object | None = None
@@ -463,6 +464,7 @@ class ModuleTypeInstance:
 class ModuleTypeDef:
     name: str
     datecode: int | None = None
+    is_private: bool = False
     moduleparameters: list[Variable] = field(default_factory=variable_list)
     localvariables: list[Variable] = field(default_factory=variable_list)
     submodules: list[SingleModule | FrameModule | ModuleTypeInstance] = field(default_factory=submodule_list)
@@ -577,7 +579,7 @@ class SFCSubsequence:
 
 @dataclass
 class SFCTransitionSub:
-    name: str
+    name: str | None
     body: list[SFCBodyItem]
 
 

@@ -190,16 +190,20 @@ def _decode_coded_file_bytes(
 
 
 def read_text_with_fallback(path: Path) -> str:
-    """Read a text file trying utf-8, then cp1252, then latin-1."""
+    """Read a text file trying utf-8, then cp1252, then latin-1.
+
+    Reads in binary mode and decodes manually to preserve original line
+    endings (CRLF). Python's ``path.read_text()`` performs universal newline
+    translation which would silently convert CRLF to LF.
+    """
+    raw = path.read_bytes()
     for encoding in ("utf-8", "cp1252", "latin-1"):
         try:
-            return path.read_text(encoding=encoding)
+            return raw.decode(encoding)
         except UnicodeDecodeError:
             continue
-        except OSError as exc:
-            _log_parser_failure(stage="read", exc=exc, source_path=path)
-            raise
-    return path.read_text(encoding="latin-1")
+    # latin-1 never fails — it maps all 256 byte values
+    return raw.decode("latin-1")  # pragma: no cover — loop always returns on 3rd iteration
 
 
 # Internal alias kept for callers that import the private name.

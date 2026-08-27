@@ -1,4 +1,4 @@
-"Syntax version 2.23, date: 2026-04-23-12:00:00.000 N"
+"Syntax version 2.23, date: 2026-04-23-12:00:00.000 C"
 "Original file date: ---"
 "Program date: 2026-04-23-12:00:00.000, name: SequenceBasic"
 (* Covers the core SEQUENCE constructs:

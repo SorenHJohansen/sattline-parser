@@ -34,7 +34,6 @@ TYPEDEFINITIONS
          Tick = NOT Tick;
 
       ENDDEF (*Inner*);
-      ENDDEF (*Inner module end*);
 
    ModuleDef
    ClippingBounds = ( -1.0 , -1.0 ) ( 1.0 , 1.0 )
@@ -43,7 +42,6 @@ TYPEDEFINITIONS
       MiddleVal = MiddleVal + 1;
 
    ENDDEF (*MiddleType*);
-   ENDDEF (*MiddleType module end*);
 
 SUBMODULES
    Middle Invocation

@@ -98,11 +98,10 @@ class SFCMixin:
         )
 
     def modulecode(self, items: list[TransformerItem]) -> ModuleCode:
-        """Grammar modulecode -> ModuleCode with sequences, equations, and top-level code comments."""
+        """Grammar modulecode -> ModuleCode with sequences and equations."""
         module_code = ModuleCode()
         sequences: list[Sequence] = []
         equations: list[Equation] = []
-        comments: list[CodeComment] = []
 
         for item in items:
             if isinstance(item, Token):
@@ -111,19 +110,13 @@ class SFCMixin:
                 sequences.append(item)
             elif isinstance(item, Equation):
                 equations.append(item)
-            elif isinstance(item, CodeComment):
-                comments.append(item)
             else:
-                raise ValueError(
-                    f"modulecode expected Sequence/Equation/CodeComment; got: {type(item).__name__}: {item!r}"
-                )
+                raise ValueError(f"modulecode expected Sequence/Equation; got: {type(item).__name__}: {item!r}")
 
         if sequences:
             module_code.sequences = sequences
         if equations:
             module_code.equations = equations
-        if comments:
-            module_code.comments = comments
 
         return module_code
 
@@ -198,15 +191,26 @@ class SFCMixin:
         return SFCTransition(name=name, condition=condition)
 
     def seqtransitionsub(self, items: list[TransformerItem]) -> SFCTransitionSub:
-        """Grammar seqtransitionsub -> SUBSEQTRANSITION NAME sequence_body ENDSUBSEQTRANSITION."""
-        if (
-            len(items) != 4
-            or not isinstance(items[1], str)
-            or not (isinstance(items[2], Tree) and items[2].data == const.KEY_SEQUENCE_BODY)
-        ):
-            raise ValueError(f"seqtransitionsub expected (SUBSEQTRANSITION, NAME, sequence_body, ENDSUBSEQTRANSITION); got: {items!r}")
-        tree = cast(TransformerTree, items[2])
-        return SFCTransitionSub(name=items[1], body=cast(SfcBody, tree_children(tree)))
+        """Grammar seqtransitionsub -> SUBSEQTRANSITION NAME? sequence_body ENDSUBSEQTRANSITION."""
+        if len(items) == 3:
+            name: str | None = None
+            if not (isinstance(items[1], Tree) and items[1].data == const.KEY_SEQUENCE_BODY):
+                raise ValueError(
+                    f"seqtransitionsub expected (SUBSEQTRANSITION, sequence_body, ENDSUBSEQTRANSITION); got: {items!r}"
+                )  # pragma: no cover
+            tree = cast(TransformerTree, items[1])
+        elif len(items) == 4 and isinstance(items[1], str):
+            name = items[1]
+            if not (isinstance(items[2], Tree) and items[2].data == const.KEY_SEQUENCE_BODY):
+                raise ValueError(
+                    f"seqtransitionsub expected (SUBSEQTRANSITION, NAME, sequence_body, ENDSUBSEQTRANSITION); got: {items!r}"
+                )
+            tree = cast(TransformerTree, items[2])
+        else:
+            raise ValueError(
+                f"seqtransitionsub expected (SUBSEQTRANSITION, [NAME], sequence_body, ENDSUBSEQTRANSITION); got: {items!r}"
+            )  # pragma: no cover
+        return SFCTransitionSub(name=name, body=cast(SfcBody, tree_children(tree)))
 
     def seqsub(self, items: list[TransformerItem]) -> SFCSubsequence:
         """Grammar seqsub -> SUBSEQUENCE NAME sequence_body ENDSUBSEQUENCE."""
@@ -216,6 +220,17 @@ class SFCMixin:
             or not (isinstance(items[2], Tree) and items[2].data == const.KEY_SEQUENCE_BODY)
         ):
             raise ValueError(f"seqsub expected (SUBSEQUENCE, NAME, sequence_body, ENDSUBSEQUENCE); got: {items!r}")
+        tree = cast(TransformerTree, items[2])
+        return SFCSubsequence(name=items[1], body=cast(SfcBody, tree_children(tree)))
+
+    def seqsubstep(self, items: list[TransformerItem]) -> SFCSubsequence:
+        """Grammar seqsubstep -> SUBSEQSTEP NAME sequence_body ENDSUBSEQSTEP."""
+        if (
+            len(items) != 4
+            or not isinstance(items[1], str)
+            or not (isinstance(items[2], Tree) and items[2].data == const.KEY_SEQUENCE_BODY)
+        ):
+            raise ValueError(f"seqsubstep expected (SUBSEQSTEP, NAME, sequence_body, ENDSUBSEQSTEP); got: {items!r}")
         tree = cast(TransformerTree, items[2])
         return SFCSubsequence(name=items[1], body=cast(SfcBody, tree_children(tree)))
 
@@ -360,18 +375,20 @@ class SFCMixin:
         )
 
     def equationblock(self, items: list[TransformerItem]) -> Equation:
-        """Grammar equationblock -> Equation with name, position, size, code."""
+        """Grammar equationblock -> Equation with name, position, size, code, layer_info."""
         name: str | None = None
         position: tuple[float, float] | None = None
         size: tuple[float, float] | None = None
         code: list[CodeItem] = []
+        layer_info: int | None = None
 
         for item in items:
             if isinstance(item, Token):
                 continue
 
             if isinstance(item, int):
-                # layer_info: currently not modeled on Equation; explicitly ignored.
+                if layer_info is None:
+                    layer_info = item
                 continue
 
             if isinstance(item, str) and name is None:
@@ -398,7 +415,7 @@ class SFCMixin:
         if size is None:
             raise ValueError("Size can't be None")
 
-        return Equation(name=name, position=position, size=size, code=code)
+        return Equation(name=name, position=position, size=size, code=code, layer_info=layer_info)
 
 
 __all__ = ["SFCMixin"]
