@@ -63,6 +63,18 @@ def test_ast_model_helpers_cover_reduce_usage_and_string_formats(monkeypatch: py
                 target=VarRef("Target"),
                 source_type=parser_const.TREE_TAG_VARIABLE_NAME,
                 is_duration=False,
+                is_source_global=True,
+                source=VarRef("GlobalSrc"),
+            )
+        )
+        == "Target => GLOBAL GlobalSrc"
+    )
+    assert (
+        str(
+            ParameterMapping(
+                target=VarRef("Target"),
+                source_type=parser_const.TREE_TAG_VARIABLE_NAME,
+                is_duration=False,
                 source=VarRef("Source"),
                 is_source_global=False,
             )
@@ -143,5 +155,5 @@ def test_ast_model_helpers_cover_reduce_usage_and_string_formats(monkeypatch: py
     assert "SingleModule{" in str(SingleModule(header=header, moduledef=module_def, modulecode=module_code))
     assert "FrameModule{" in str(FrameModule(header=header, moduledef=module_def, modulecode=module_code))
     assert "ModuleTypeInstance{" in str(child)
-    assert "ModulType{" in str(ModuleTypeDef(name="ChildType", modulecode=module_code, submodules=[child]))
+    assert "ModuleType{" in str(ModuleTypeDef(name="ChildType", modulecode=module_code, submodules=[child]))
     assert "BasePicture{" in str(BasePicture(header=header, moduledef=module_def, modulecode=module_code))

@@ -55,7 +55,7 @@ def test_modules_mixin_module_header_collects_argument_metadata():
     assert header.declaration_span == SourceSpan(start=20, end=30, line=5, column=2)
     assert header.invoke_coord == (1.0, 2.0, 3.0, 4.0, 5.0)
     assert header.invoke_coord_tails == ["PosX", "Allow.RecpSupParameters"]
-    assert header.layer_info == "7"
+    assert header.layer_info == 7
     assert header.enable is False
     assert header.enable_tail == "EnableVar"
     assert header.zoom_limits == (0.5, 2.0)

@@ -297,12 +297,20 @@ def remap_parse_error(exc: Exception, doc: SourceDocument) -> None:
         exc._context = exc.get_context(doc.original_text)  # pyright: ignore[reportPrivateUsage]
     token = getattr(exc, "token", None)
     if isinstance(token, Token):
-        token_pos = getattr(token, "start_pos", None)
-        if isinstance(token_pos, int):
-            mapped_token = doc.map_position(token_pos)
-            if mapped_token is not None:
-                token.start_pos = mapped_token
-                line, column = doc.line_col(mapped_token)
-                token.line = line
-                token.column = column
+        token_start = getattr(token, "start_pos", None)
+        token_end = getattr(token, "end_pos", None)
+        if (
+            isinstance(token_start, int)
+            and isinstance(token_end, int)
+            and (mapped_start := doc.map_position(token_start)) is not None
+            and (mapped_end := doc.map_position(token_end - 1)) is not None
+        ):
+            token.start_pos = mapped_start
+            token.end_pos = mapped_end + 1
+            line, column = doc.line_col(mapped_start)
+            token.line = line
+            token.column = column
+            end_line, end_column = doc.line_col(token.end_pos)
+            token.end_line = end_line
+            token.end_column = end_column
     exc._sattline_remapped = True  # type: ignore[attr-defined]  # runtime tag consumed by diagnostics

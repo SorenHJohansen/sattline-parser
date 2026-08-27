@@ -3,28 +3,18 @@
 from sattline_parser.preprocessing import is_compressed
 from sattline_parser.preprocessing.compressed import (
     _COMPAT_TRANSFORMS,
-    _GRAPHOBJECTS_ENDDEF_RE,
     _MARKER_RE,
-    _SEMI_BEFORE_ASSIGN_RE,
     SEED_MAPPING,
-    CompatTransform,
-    NormalizationKind,
     _align_replacement,
     _decode_markers,
     _decode_with_map,
+    _header_compression_flag,
     _normalize_compat,
     _regex_sub,
 )
 from sattline_parser.source_document import GENERATED, Generated
 
 from ._parser_core_test_support import *
-
-
-def test_preprocess_sl_text_injects_modulecode_before_equationblock_when_missing():
-    decoded, mapping = preprocess_sl_text("MODULEDEFINITION Demo EQUATIONBLOCK Main COORD 0.0, 0.0 OBJSIZE 1.0, 1.0 :")
-
-    assert "MODULEDEFINITION Demo ModuleCode EQUATIONBLOCK Main" in decoded
-    assert mapping["#84"] == "ModuleCode"
 
 
 def test_is_compressed_ignores_markers_inside_comments():
@@ -65,7 +55,6 @@ def test_plain_source_with_marker_like_strings_is_not_preprocessed():
 def test_decode_stages_compose_identically_to_decode_with_map():
     text = (
         "#71 Demo #84 #01Tail ENDIF; #8? 5; "
-        'duration := "5s"; => "2024-01-02-03:04:05.678" '
         "TrueVar integer ENDDEF "
         '"string with #71 and #8? inside" (* comment with #84 *)'
     )
@@ -90,107 +79,17 @@ def test_decode_markers_stage_protects_strings_from_unknown_markers():
     assert '"text #99 unknown"' in restored
 
 
-def test_normalize_compat_stage_repairs_only_decoded_text_not_string_content():
-    text = 'ENDIF GraphObjects : InteractObjects "ENDIF GraphObjects : InteractObjects"'
-
-    registry, decoded, char_map = _decode_markers(text, dict(SEED_MAPPING))
-    normalized, _norm_map = _normalize_compat(registry, decoded, char_map)
-    restored, _restored_map = registry.restore(normalized, _norm_map)
-
-    assert restored == 'ENDIF; InteractObjects "ENDIF GraphObjects : InteractObjects"'
-
-
 # ---------------------------------------------------------------------------
 # Compatibility transform catalog
 # ---------------------------------------------------------------------------
 
 
-def test_compat_transform_catalog_entries_are_documented_and_categorized():
-    names = [transform.name for transform in _COMPAT_TRANSFORMS]
-    assert len(names) == len(set(names))
-    for transform in _COMPAT_TRANSFORMS:
-        assert isinstance(transform, CompatTransform)
-        assert transform.name
-        assert transform.description
-        assert transform.kind in (
-            NormalizationKind.SYNTAX_REPAIR,
-            NormalizationKind.SEMANTIC_REPAIR,
-            NormalizationKind.GRAMMAR_COMPAT,
-        )
-        assert transform.pattern.pattern
+def test_compat_transform_catalog_is_empty():
+    assert len(_COMPAT_TRANSFORMS) == 0
 
 
-def test_compat_transform_catalog_marks_all_semantic_repairs():
-    semantic = {
-        transform.name for transform in _COMPAT_TRANSFORMS if transform.kind is NormalizationKind.SEMANTIC_REPAIR
-    }
-    assert semantic == {
-        "empty_assign_default",
-        "duration_str_value",
-        "time_str_value",
-        "date_timestamp_value",
-        "equationblock_modulecode",
-        "empty_trailing_arg",
-    }
-
-
-def test_compat_transform_catalog_documents_empty_trailing_arg_semantics():
-    transform = _COMPAT_TRANSFORMS[-1]
-    assert transform.name == "empty_trailing_arg"
-    assert transform.kind is NormalizationKind.SEMANTIC_REPAIR
-    assert "Func(a, )" in transform.description
-    assert "Func(a, 0)" in transform.description
-
-
-# ---------------------------------------------------------------------------
-# Golden normalization outputs
-# ---------------------------------------------------------------------------
-
-
-def test_normalize_compat_golden_semantic_repairs():
-    golden = [
-        ("X := ;", "X := Default;"),
-        ("X := Func(a, )", "X := Func(a, 0)"),
-        (
-            "EQUATIONBLOCK Main COORD 0.0, 0.0 OBJSIZE 1.0, 1.0 :",
-            "ModuleCode EQUATIONBLOCK Main COORD 0.0, 0.0 OBJSIZE 1.0, 1.0 :",
-        ),
-        ('duration := "5s";', 'duration := Duration_Value "5s";'),
-        ('time := "6s";', 'time := Time_Value "6s";'),
-        ('=> "2024-01-02-03:04:05.678"', '=> Time_Value "2024-01-02-03:04:05.678"'),
-    ]
-    for raw, expected in golden:
-        decoded, _char_map = _decode_with_map(raw, dict(SEED_MAPPING))
-        assert decoded == expected
-
-
-def test_normalize_compat_golden_syntax_repairs():
-    golden = [
-        ("X := 1; ENDDEF;", "X := 1; ENDDEF"),
-        ("X; := 1", "X := 1"),
-        ("IF x THEN y ENDIF; ,", "IF x THEN y ENDIF,"),
-        ("IF x THEN y ENDIF; )", "IF x THEN y ENDIF)"),
-        ("IF x THEN y ENDIF", "IF x THEN y ENDIF;"),
-        ("ExecuteLocalOld = ExecuteLocal:Old ENDDEF", "ExecuteLocalOld = ExecuteLocal:Old; ENDDEF"),
-        ("ExecuteState:Old IF x THEN y ENDIF", "ExecuteState:Old; IF x THEN y ENDIF;"),
-        ("GraphObjects : ENDDEF", "ENDDEF"),
-        ("integer ENDDEF", "integer ; ENDDEF"),
-        ("GraphObjects : InteractObjects", "InteractObjects"),
-    ]
-    for raw, expected in golden:
-        decoded, _char_map = _decode_with_map(raw, dict(SEED_MAPPING))
-        assert decoded == expected
-
-
-def test_normalize_compat_golden_grammar_compat_spellings():
-    golden = [
-        ("Enable_ = Flag : OutVar_", "Enable_ = Flag : InVar_"),
-        ("SomeVar := TrueVar", "SomeVar := TTrueVar"),
-        ("TrueVar", "TTrueVar"),
-    ]
-    for raw, expected in golden:
-        decoded, _char_map = _decode_with_map(raw, dict(SEED_MAPPING))
-        assert decoded == expected
+def test_seed_mapping_expands_marker_70_to_composite_object():
+    assert SEED_MAPPING["#70"] == "CompositeObject"
 
 
 # ---------------------------------------------------------------------------
@@ -206,46 +105,10 @@ def test_generated_provenance_is_a_first_class_int_like_sentinel():
     assert repr(GENERATED) == "GENERATED"
 
 
-def test_regex_sub_generated_char_never_claims_a_real_source_position():
-    decoded, char_map = _regex_sub(
-        "A GraphObjects : ENDDEF B",
-        list(range(25)),
-        _GRAPHOBJECTS_ENDDEF_RE,
-        "ENDDEF",
-    )
-    assert decoded == "A ENDDEF B"
-    start = decoded.index("ENDDEF")
-    assert char_map[start : start + 6] == [17, 18, 19, 20, 21, 22]
-
-
-def test_regex_sub_aligns_rewritten_text_to_surviving_source_chars():
-    decoded, char_map = _regex_sub("X; :=Y", list(range(6)), _SEMI_BEFORE_ASSIGN_RE, " :=")
-    assert decoded == "X :=Y"
-    assert char_map == [0, 2, 3, 4, 5]
-
-
 def test_regex_sub_marker_expansion_keeps_real_suffix_aligned():
     decoded, char_map = _regex_sub("#0<Remark", list(range(9)), _MARKER_RE, lambda m: "* " + m.group(0)[3:])
     assert decoded == "* Remark"
     assert char_map == [GENERATED, GENERATED, 3, 4, 5, 6, 7, 8]
-
-
-def test_decode_injected_semantic_text_is_first_class_generated():
-    decoded, char_map = _decode_with_map("X := Func(a, )", dict(SEED_MAPPING))
-    assert decoded == "X := Func(a, 0)"
-    zero_idx = decoded.index("0")
-    assert type(char_map[zero_idx]) is Generated
-    assert char_map[zero_idx] == GENERATED
-    assert char_map[decoded.index(")")] == 13
-
-
-def test_decode_injected_default_value_is_first_class_generated():
-    decoded, char_map = _decode_with_map("X := ;", dict(SEED_MAPPING))
-    assert decoded == "X := Default;"
-    default_idx = decoded.index("Default")
-    for i in range(default_idx, default_idx + len("Default")):
-        assert isinstance(char_map[i], Generated)
-    assert char_map[decoded.index(";")] == 5
 
 
 def test_align_replacement_edge_cases():
@@ -256,41 +119,48 @@ def test_align_replacement_edge_cases():
 
 
 # ---------------------------------------------------------------------------
-# End-to-end semantic verification
+# Header-flag compression detection
 # ---------------------------------------------------------------------------
 
 
-def test_empty_trailing_arg_injection_is_visible_in_the_ast():
-    from sattline_parser.models.expressions import Assignment, FuncCall, VarRef  # noqa: PLC0415
+def test_header_compression_flag_c():
+    assert _header_compression_flag('"Syntax version 2.23, date: 2026-08-26-11:48:22.200 C"\n') == "C"
 
-    src = (
-        '"SyntaxVersion"\n'
-        '"OriginalFileDate"\n'
-        '"ProgramDate"\n'
-        "BasePicture Invocation (0.0,0.0,0.0,1.0,1.0) : MODULEDEFINITION DateCode_ 1\n"
-        "LOCALVARIABLES\n"
-        "    Y: integer := 0;\n"
-        "ModuleDef\n"
-        "ClippingBounds = ( -1.0 , -1.0 ) ( 1.0 , 1.0 )\n"
-        "ModuleCode\n"
-        "    EQUATIONBLOCK Main COORD 0.0, 0.0 OBJSIZE 1.0, 1.0 :\n"
-        "        Y = Func(a, );\n"
-        "ENDDEF (*BasePicture*);\n"
+
+def test_header_compression_flag_n():
+    assert _header_compression_flag('"Syntax version 2.23, date: 2026-08-26-11:48:22.200 N"\n') == "N"
+
+
+def test_header_compression_flag_missing():
+    assert _header_compression_flag("No header line here\n") is None
+
+
+def test_header_compression_flag_empty():
+    assert _header_compression_flag("") is None
+
+
+def test_is_compressed_header_c_overrides_heuristics():
+    # Header says C → is_compressed must return True regardless of content
+    src = '"Syntax version 2.23, date: 2026-08-26-11:48:22.200 C"\nPlain text with no markers\n'
+    assert is_compressed(src) is True
+
+
+def test_is_compressed_header_n_overrides_heuristics():
+    # Header says N → is_compressed must return False even with many markers
+    markers = " ".join(["#01X"] * 60)
+    src = '"Syntax version 2.23, date: 2026-08-26-11:48:22.200 N"\n' + markers + "\n"
+    assert is_compressed(src) is False
+
+
+def test_is_compressed_no_header_falls_back_to_heuristics():
+    # No header → heuristic applies
+    assert is_compressed("MODULEDEFINITION Demo EQUATIONBLOCK Main") is False
+    assert is_compressed(" ".join(["#01X"] * 10)) is True
+
+
+def test_is_compressed_header_n_with_compressed_markers_in_text():
+    # Regression: CompressedSequenceBasic.s has header=N but contains #6? #01 etc.
+    header_n_with_markers = (
+        '"Syntax version 2.23, date: 2026-04-23-12:00:00.000 N"\nBasePicture #6? #01 0.0 , 0.0 ) #8= #71 #81 1\n'
     )
-    decoded, _mapping = preprocess_sl_text(src)
-    assert "Y = Func(a, 0);" in decoded
-
-    bp = parser_core_parse_source_text(decoded)
-    modulecode = bp.modulecode
-    assert modulecode is not None
-    equations = modulecode.equations
-    assert equations is not None
-    statement = equations[0].code[0]
-    assert isinstance(statement, Assignment)
-    value = statement.value
-    assert isinstance(value, FuncCall)
-    assert value.name == "Func"
-    arg_a, arg_zero = value.args
-    assert isinstance(arg_a, VarRef)
-    assert arg_a.name == "a"
-    assert arg_zero == 0
+    assert is_compressed(header_n_with_markers) is False

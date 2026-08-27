@@ -6,6 +6,7 @@
    CopyTime requires both arguments to be variable references because arg 2
    has direction 'out'. Passing a ternary IF expression for an out argument
    is rejected because the runtime cannot write back to an expression.
+   Note: time variables now require Time_Value keyword.
    Expected: strict syntax-check fails at stage "validation". *)
 
 BasePicture Invocation

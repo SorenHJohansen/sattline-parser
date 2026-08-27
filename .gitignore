@@ -12,6 +12,7 @@ dist/
 # Test / coverage
 .coverage
 coverage.xml
+coverage.json
 coverage-branch.json
 htmlcov/
 .benchmarks/
@@ -25,3 +26,6 @@ venv/
 
 # Tooling
 .mise.toml
+
+# Windows NTFS alternate data streams
+*:Zone.Identifier

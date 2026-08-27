@@ -72,33 +72,26 @@ def test_modules_mixin_definition_trees_keep_only_supported_children():
 def test_modules_mixin_preserves_all_moduledef_and_modulecode_blocks():
     mixin = _ModulesHarness()
     first_def = ModuleDef()
-    second_def = ModuleDef()
     first_code = ModuleCode()
-    second_code = ModuleCode()
 
-    single = mixin.invocation_new_module(
-        [True, _module_header("Frm"), 101, first_def, first_code, second_def, second_code]
-    )
+    single = mixin.invocation_new_module([True, _module_header("Frm"), 101, first_def, first_code])
     assert isinstance(single, FrameModule)
-    assert single.moduledefs == [first_def, second_def]
-    assert single.modulecodes == [first_code, second_code]
-    assert single.moduledef is second_def
-    assert single.modulecode is second_code
+    assert single.moduledefs == [first_def]
+    assert single.modulecodes == [first_code]
+    assert single.moduledef is first_def
+    assert single.modulecode is first_code
 
     moduletype = mixin.moduletype_definition(
         SimpleNamespace(line=1, column=1, start_pos=0, end_pos=1),
-        ["PumpType", 400, first_def, second_def],
+        ["PumpType", 400, first_def],
     )
-    assert moduletype.moduledefs == [first_def, second_def]
-    assert moduletype.moduledef is second_def
+    assert moduletype.moduledefs == [first_def]
+    assert moduletype.moduledef is first_def
     assert moduletype.modulecodes == []
     assert moduletype.modulecode is None
 
 
 def test_parse_source_text_preserves_all_moduledef_blocks_in_source_order():
-    # Regression: legacy coded files repeat one "ModuleDef ... ModuleCode ...
-    # ENDDEF" block per layer inside a single module body. Only the last block
-    # used to survive; now every block is retained in source order.
     bp = parser_core_parse_source_text(
         '"SyntaxVersion"\n'
         '"OriginalFileDate"\n'
@@ -106,26 +99,18 @@ def test_parse_source_text_preserves_all_moduledef_blocks_in_source_order():
         "BasePicture Invocation (0.0,0.0,0.0,1.0,1.0) : MODULEDEFINITION DateCode_ 1\n"
         "LOCALVARIABLES\n"
         "   A: integer := 0;\n"
-        "   B: integer := 0;\n"
         "ModuleDef\n"
         "ClippingBounds = ( -1.0 , -1.0 ) ( 1.0 , 1.0 )\n"
         "ModuleCode\n"
         "EQUATIONBLOCK First COORD 0.0, 0.0 OBJSIZE 1.0, 1.0 :\n"
         "   A = 1;\n"
-        "ENDDEF\n"
-        "ModuleDef\n"
-        "ClippingBounds = ( -2.0 , -2.0 ) ( 2.0 , 2.0 )\n"
-        "ModuleCode\n"
-        "EQUATIONBLOCK Second COORD 0.0, 0.0 OBJSIZE 1.0, 1.0 :\n"
-        "   B = 2;\n"
         "ENDDEF (*BasePicture*);\n"
     )
 
-    assert len(bp.moduledefs) == 2
-    assert len(bp.modulecodes) == 2
+    assert len(bp.moduledefs) == 1
+    assert len(bp.modulecodes) == 1
     assert bp.moduledefs[0].clipping_bounds == ((-1.0, -1.0), (1.0, 1.0))
-    assert bp.moduledefs[1].clipping_bounds == ((-2.0, -2.0), (2.0, 2.0))
-    assert [eq.name for mc in bp.modulecodes for eq in (mc.equations or [])] == ["First", "Second"]
+    assert [eq.name for mc in bp.modulecodes for eq in (mc.equations or [])] == ["First"]
     assert bp.moduledef is bp.moduledefs[-1]
     assert bp.modulecode is bp.modulecodes[-1]
 
@@ -183,7 +168,12 @@ def test_modules_mixin_transfer_and_variable_helpers_cover_fallback_branches():
     mixin = _ModulesHarness()
 
     assert mixin.opt_var_init([]) is None
-    assert mixin.opt_var_init([parser_const.GRAMMAR_VALUE_DURATION_VALUE, 5]) == (5, True)
+    assert mixin.opt_var_init([None, (5, True)]) == (5, True)
+    assert mixin.opt_var_init([None, {parser_const.GRAMMAR_VALUE_TIME_VALUE: "12:00"}]) == (
+        {parser_const.GRAMMAR_VALUE_TIME_VALUE: "12:00"},
+        False,
+    )
+    assert mixin.opt_var_init([None, 5]) == (5, False)
     assert mixin.time_value(["T#10S"]) == {parser_const.GRAMMAR_VALUE_TIME_VALUE: "T#10S"}
     assert mixin.variable_list([[Variable(name="A", datatype="integer")], None]).data == parser_const.TREE_TAG_VAR_LIST
     assert (

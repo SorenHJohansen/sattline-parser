@@ -3,10 +3,9 @@
 "Program date: 2026-04-23-12:00:00.000, name: FreestandingCommentInModuleCode"
 (* INVALID: A comment appearing directly inside ModuleCode before the
    first EQUATIONBLOCK or SEQUENCE block.
-   Single-file strict validation rejects freestanding comments directly
-   inside ModuleCode at the top level (before any code block).
-   Comments ARE allowed inside EQUATIONBLOCK or SEQUENCE bodies.
-   Expected: strict syntax-check fails at stage "validation". *)
+   The grammar only allows code_comment inside equationblock or SFC code
+   blocks (entercode/activecode/exitcode), not at the ModuleCode top level.
+   Expected: syntax-check fails at parse time. *)
 
 BasePicture Invocation
    ( 0.0 , 0.0 , 0.0 , 1.0 , 1.0

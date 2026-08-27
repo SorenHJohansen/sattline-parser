@@ -318,7 +318,7 @@ def test_sfc_mixin_rejects_malformed_shapes_and_missing_required_fields():
 def test_sfc_mixin_fails_loudly_on_unexpected_modulecode_and_branch_structures():
     mixin = _SFCHarness()
 
-    with pytest.raises(ValueError, match="modulecode expected Sequence/Equation/CodeComment"):
+    with pytest.raises(ValueError, match="modulecode expected Sequence/Equation"):
         mixin.modulecode([object()])
 
     with pytest.raises(ValueError, match="seqalternative expected sequence_body Trees; got Tree"):

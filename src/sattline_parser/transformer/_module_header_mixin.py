@@ -92,6 +92,14 @@ class ModuleHeaderMixin:
         """Grammar LAYERMODULE terminal -> string marker."""
         return const.GRAMMAR_VALUE_LAYERMODULE
 
+    def SYMBOLMODULE(self, _: object) -> dict[str, bool]:
+        """Grammar SYMBOLMODULE terminal -> dict marker."""
+        return {const.TREE_TAG_SYMBOLMODULE: True}
+
+    def NON_ZOOMABLE(self, _: object) -> dict[str, bool]:
+        """Grammar NON_ZOOMABLE terminal -> dict marker."""
+        return {const.TREE_TAG_NON_ZOOMABLE: True}
+
     def argument(self, items: list[TransformerItem]) -> TransformerItem | None:
         """Grammar argument rule -> pass through single non-Token child."""
         for it in items:
@@ -115,7 +123,7 @@ class ModuleHeaderMixin:
         args_trees: list[TransformerTree] = []
         invocation_arguments: list[str] = []
         layer = None
-        enable_val = True
+        enable_val: bool | None = None
         zoom_limits = None
         zoomable = False
         enable_tail: object | None = None
@@ -162,6 +170,10 @@ class ModuleHeaderMixin:
                             zoom_limits = cast(tuple[float, float], zoom_limits_pair)
                     elif const.GRAMMAR_VALUE_ZOOMABLE in payload:
                         zoomable = True
+                    elif const.TREE_TAG_SYMBOLMODULE in payload:
+                        invocation_arguments.append(const.GRAMMAR_VALUE_SYMBOLMODULE)
+                    elif const.TREE_TAG_NON_ZOOMABLE in payload:
+                        invocation_arguments.append(const.GRAMMAR_VALUE_NON_ZOOMABLE)
                     else:
                         coord_tails.extend(_collect_module_header_argument_tails(payload))
                 elif isinstance(child, str):
@@ -173,7 +185,7 @@ class ModuleHeaderMixin:
             declaration_span=meta_span(meta),
             invocation_arguments=tuple(invocation_arguments),
             zoomable=zoomable,
-            layer_info=(str(layer) if layer is not None else None),
+            layer_info=layer,
             enable=enable_val,
             zoom_limits=zoom_limits,
             enable_tail=enable_tail,

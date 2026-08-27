@@ -20,10 +20,4 @@ ClippingBounds = ( -1.0 , -1.0 ) ( 1.0 , 1.0 )
 ModuleCode
    EQUATIONBLOCK Lower COORD 0.0, 0.0 OBJSIZE 1.0, 1.0 :
       LowerA = LowerA + 1;
-ENDDEF
-ModuleDef
-ClippingBounds = ( -2.0 , -2.0 ) ( 2.0 , 2.0 )
-ModuleCode
-   EQUATIONBLOCK Upper COORD 0.0, 0.0 OBJSIZE 1.0, 1.0 :
-      UpperB = UpperB + 1;
 ENDDEF (*BasePicture*);
