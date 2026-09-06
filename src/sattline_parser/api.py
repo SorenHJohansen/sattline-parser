@@ -234,6 +234,7 @@ def parse_source_text(
     debug: Callable[[str], None] | None = None,
     source_path: Path | None = None,
     log_failures: bool = True,
+    retain_parse_tree: bool = False,
 ) -> BasePicture:
     try:
         source_doc = preprocess_source(src)
@@ -277,11 +278,12 @@ def parse_source_text(
         raise
 
     basepic = transformed
-    try:
-        basepic.parse_tree = tree
-    except AttributeError:
-        if debug is not None:
-            debug("BasePicture does not allow dynamic attributes; parse tree not attached")
+    if retain_parse_tree:
+        try:
+            basepic.parse_tree = tree
+        except AttributeError:
+            if debug is not None:
+                debug("BasePicture does not allow dynamic attributes; parse tree not attached")
 
     if debug is not None:
         debug(f"Transform result type: {type(basepic).__name__}")
@@ -296,6 +298,7 @@ def parse_source_file(
     transformer: SLTransformer | None = None,
     debug: Callable[[str], None] | None = None,
     log_failures: bool = True,
+    retain_parse_tree: bool = False,
 ) -> BasePicture:
     source_path = Path(code_path)
     if debug is not None:
@@ -320,4 +323,5 @@ def parse_source_file(
         debug=debug,
         source_path=source_path,
         log_failures=log_failures,
+        retain_parse_tree=retain_parse_tree,
     )

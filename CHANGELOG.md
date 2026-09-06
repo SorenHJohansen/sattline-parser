@@ -5,7 +5,24 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [2026.9.1] - 2026-09-06
+
+### Changed
+
+- `parse_source_text` / `parse_source_file` no longer attach the Lark parse tree
+  to the returned `BasePicture` by default. Pass `retain_parse_tree=True` to
+  keep the tree; the default now avoids retaining hundreds of MB of parse-tree
+  nodes for large programs.
+- Identity `SourceDocument`s (plain, un-preprocessed text) no longer
+  materialize the per-character `char_map`; positions map directly, saving a
+  `tuple(range(len(text)))` allocation that could reach hundreds of MB.
+
+### Performance
+
+- `SourceDocument._line_starts` now locates line breaks with `str.find` instead
+  of a per-character loop (~20x faster on large sources).
+- `_token_span` reads token positions via direct attribute access instead of
+  `getattr` (slightly cheaper per numeric/boolean literal).
 
 ## [2026.8.4] - 2026-08-27
 

@@ -510,7 +510,8 @@ class BasePicture:
     graphics_picture_display_occurrences: list[Any] = field(default_factory=any_list)
     library_dependencies: dict[str, list[str]] = field(default_factory=library_dependency_map)
     trailing_comments: list[CodeComment] = field(default_factory=code_comment_list)
-    #: The original Lark parse tree, attached by ``parse_source_text`` as a
+    #: The original Lark parse tree, attached by ``parse_source_text`` /
+    #: ``parse_source_file`` only when ``retain_parse_tree=True`` is passed, as a
     #: debugging/tooling convenience. It is deliberately *not* part of the
     #: persistent semantic AST: pickling strips it (see ``__getstate__``) so
     #: cached/serialized payloads stay small and self-contained. Code should not

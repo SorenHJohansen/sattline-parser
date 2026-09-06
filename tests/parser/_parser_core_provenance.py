@@ -67,6 +67,7 @@ def test_source_document_identity_maps_positions_exactly():
     assert doc.map_position(0) == 0
     assert doc.map_position(6) == 6
     assert doc.map_range(1, 5) == (1, 5)
+    assert doc.map_range(5, 5) == (5, 5)
     assert doc.line_col(0) == (1, 1)
     assert doc.line_col(6) == (2, 1)
     span = doc.span_from_normalized(0, 5)
@@ -403,7 +404,7 @@ def test_compressed_source_parser_error_at_eof_maps_into_original_source():
 def test_remap_tree_to_original_is_noop_for_identity_documents():
     from sattline_parser.source_document import remap_tree_to_original  # noqa: PLC0415
 
-    tree = parser_core_parse_source_text(_PROGRAM).parse_tree
+    tree = parser_core_parse_source_text(_PROGRAM, retain_parse_tree=True).parse_tree
     assert tree is not None
     first = tree.children[0]
     before = first.meta.start_pos
