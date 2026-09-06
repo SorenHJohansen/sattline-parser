@@ -34,8 +34,11 @@ def main() -> None:
     bp = parse_source_text(_PROGRAM, parser=parser)
     if bp.moduledef is None or bp.moduledef.clipping_bounds != ((-1.0, -1.0), (1.0, 1.0)):
         raise RuntimeError("ModuleDef was not transformed correctly")
-    if bp.parse_tree is None:
-        raise RuntimeError("parse tree was not attached")
+    if bp.parse_tree is not None:
+        raise RuntimeError("parse tree should not be attached by default")
+    retained = parse_source_text(_PROGRAM, parser=parser, retain_parse_tree=True)
+    if retained.parse_tree is None:
+        raise RuntimeError("parse tree was not attached when requested")
 
     for api in (create_parser, parse_source_text, describe_parse_error, preprocess_source):
         if not callable(api):

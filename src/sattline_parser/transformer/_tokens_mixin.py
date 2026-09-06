@@ -48,10 +48,12 @@ class TokensMixin:
         return inner.replace('""', '"').rstrip("\r\n")
 
     def _token_span(self, tok: Token) -> SourceSpan | None:
-        line = getattr(tok, "line", None)
-        column = getattr(tok, "column", None)
-        start_pos = getattr(tok, "start_pos", None)
-        end_pos = getattr(tok, "end_pos", None)
+        # Token.__slots__ always define these (None when unset), so direct
+        # attribute access is cheaper than getattr and equally safe.
+        line = tok.line
+        column = tok.column
+        start_pos = tok.start_pos
+        end_pos = tok.end_pos
         if (
             isinstance(line, int)
             and isinstance(column, int)

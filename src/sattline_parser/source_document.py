@@ -85,9 +85,10 @@ GENERATED = Generated()
 
 def _line_starts(text: str) -> tuple[int, ...]:
     starts = [0]
-    for index, char in enumerate(text):
-        if char == "\n":
-            starts.append(index + 1)
+    idx = text.find("\n")
+    while idx != -1:
+        starts.append(idx + 1)
+        idx = text.find("\n", idx + 1)
     return tuple(starts)
 
 
@@ -101,8 +102,13 @@ class SourceDocument:
 
     __slots__ = ("_char_map", "_is_identity", "_line_starts", "normalized_text", "original_text")
 
-    def __init__(self, original_text: str, normalized_text: str, char_map: tuple[int, ...]) -> None:
-        if len(char_map) != len(normalized_text):
+    def __init__(
+        self,
+        original_text: str,
+        normalized_text: str,
+        char_map: tuple[int, ...] | None,
+    ) -> None:
+        if char_map is not None and len(char_map) != len(normalized_text):
             raise ValueError("char_map length must match normalized_text length")
         self.original_text = original_text
         self.normalized_text = normalized_text
@@ -112,8 +118,17 @@ class SourceDocument:
 
     @classmethod
     def identity(cls, text: str) -> SourceDocument:
-        """A source document where normalized text equals the original text."""
-        return cls(text, text, tuple(range(len(text))))
+        """A source document where normalized text equals the original text.
+
+        The per-character map is the identity function, so it is never
+        materialized: for identity documents ``normalized == original`` and
+        positions map to themselves, so :meth:`map_position` / :meth:`map_range`
+        short-circuit without allocating a ``tuple(range(len(text)))``. This
+        avoids a multi-hundred-megabyte disposable tuple for large plain-text
+        sources (which are never remapped, since :func:`remap_tree_to_original`
+        is a no-op for identity documents).
+        """
+        return cls(text, text, None)
 
     def is_identity(self) -> bool:
         """True when no preprocessing took place (original == normalized)."""
@@ -132,6 +147,8 @@ class SourceDocument:
         """
         if norm_offset < 0:
             return None
+        if self._char_map is None:
+            return min(norm_offset, len(self.original_text))
         if norm_offset >= len(self._char_map):
             cursor = len(self._char_map) - 1
             while cursor >= 0:
@@ -166,6 +183,12 @@ class SourceDocument:
         at the mapped boundary position. A range ending at the end of the
         normalized text maps to the corresponding original end boundary.
         """
+        if self._char_map is None:
+            if norm_start >= norm_end:
+                boundary = self.map_position(norm_start)
+                pos = 0 if boundary is None else boundary
+                return pos, pos
+            return norm_start, norm_end
         if norm_start >= norm_end:
             boundary = self.map_position(norm_start)
             pos = 0 if boundary is None else boundary
