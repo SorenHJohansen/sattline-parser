@@ -68,6 +68,18 @@ def _matches_stat_snapshot(path: Path, *, mtime_ns: object, size: object) -> boo
     return stat_result.st_mtime_ns == mtime_ns and stat_result.st_size == size
 
 
+def _code_path_key(code_path: Path) -> str:
+    """A stable cache identity for a code path.
+
+    Resolves the path so the same file reached via a symlink, relative path, or
+    alternate spelling shares one cache entry and one meta validation.
+    """
+    try:
+        return str(code_path.resolve())
+    except OSError:
+        return str(code_path)
+
+
 def _pickle_hmac_key_path(directory: Path) -> Path:
     return directory / _PICKLE_HMAC_KEY_NAME
 
@@ -179,7 +191,7 @@ class FileASTCache:
     @staticmethod
     def _key(code_path: Path, mode: str) -> str:
         digest = hashlib.sha256()
-        digest.update(str(code_path).encode("utf-8", errors="ignore"))
+        digest.update(_code_path_key(code_path).encode("utf-8", errors="ignore"))
         digest.update(mode.encode("utf-8", errors="ignore"))
         return digest.hexdigest()
 
@@ -202,7 +214,7 @@ class FileASTCache:
         meta = _as_data_dict(payload_map.get("meta"))
         if meta is None:
             return None
-        if meta.get("path") != str(code_path):
+        if meta.get("path") != _code_path_key(code_path):
             return None
         if meta.get("mode") != mode:
             return None
@@ -220,7 +232,7 @@ class FileASTCache:
         payload: dict[str, object] = {
             "version": FILE_AST_CACHE_VERSION,
             "meta": {
-                "path": str(code_path),
+                "path": _code_path_key(code_path),
                 "mode": mode,
                 "mtime_ns": stat_result.st_mtime_ns,
                 "size": stat_result.st_size,

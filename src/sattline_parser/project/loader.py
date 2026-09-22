@@ -86,11 +86,13 @@ class ProjectLoader:
             self._debug(message)
 
     def resolve(self, targets: Sequence[str]) -> dict[str, SattLineProgram]:
-        for target in targets:
-            self._visit(target, requester_dir=None, declared_by=None)
-        if self._lookup_cache is not None:
-            self._lookup_cache.flush()
-        return self._registry
+        try:
+            for target in targets:
+                self._visit(target, requester_dir=None, declared_by=None)
+            return self._registry
+        finally:
+            if self._lookup_cache is not None:
+                self._lookup_cache.flush()
 
     def _visit(self, name: str, *, requester_dir: Path | None, declared_by: str | None) -> None:
         key = name.casefold()

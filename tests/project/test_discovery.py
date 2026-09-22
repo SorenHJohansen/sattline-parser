@@ -282,120 +282,154 @@ def test_find_in_cached_base_direct(tmp_path: Path) -> None:
     cache_dir = tmp_path / "cache"
     cache = FileLookupCache(cache_dir, write_through=True)
     lookup = ProjectLookup([root], LoadMode.OFFICIAL, cache=cache)
+    ordered = ordered_lookup_bases([root], None)
 
     plain = ProjectLookup([root], LoadMode.OFFICIAL)
-    assert plain._find_in_cached_base("code", "Cached", (".x",), base_allowed=lambda base: True) is None
+    assert plain._find_in_cached_base("code", "Cached", (".x",), ordered=ordered) is None
 
     cache.set("code", "Cached", LoadMode.OFFICIAL.value, root, ".x")
-    hit = lookup._find_in_cached_base("code", "Cached", (".x",), base_allowed=lambda base: True)
-    assert hit == root / "Cached.x"
+    assert lookup._find_in_cached_base("code", "Cached", (".x",), ordered=ordered) == root / "Cached.x"
 
     cache.set("code", "Cached", LoadMode.OFFICIAL.value, root, ".y")
-    hit_stale = lookup._find_in_cached_base("code", "Cached", (".x",), base_allowed=lambda base: True)
+    hit_stale = lookup._find_in_cached_base("code", "Cached", (".x",), ordered=ordered)
     assert hit_stale == root / "Cached.x"
 
     cache.set("code", "Other", LoadMode.OFFICIAL.value, root, ".z")
     assert cache.get("code", "Other", LoadMode.OFFICIAL.value) is not None
-    assert lookup._find_in_cached_base("code", "Other", (".x",), base_allowed=lambda base: True) is None
+    assert lookup._find_in_cached_base("code", "Other", (".x",), ordered=ordered) is None
     assert cache.get("code", "Other", LoadMode.OFFICIAL.value) is None
 
     cache.set("code", "Gone", LoadMode.OFFICIAL.value, root, ".s")
-    assert lookup._find_in_cached_base("code", "Gone", (".s",), base_allowed=lambda base: True) is None
+    assert lookup._find_in_cached_base("code", "Gone", (".s",), ordered=ordered) is None
 
-    cache.set("code", "Fake", LoadMode.OFFICIAL.value, root, ".x")
-    assert lookup._find_in_cached_base("code", "Fake", (".x",), base_allowed=lambda base: False) is None
+    outside = tmp_path / "outside"
+    cache.set("code", "Fake", LoadMode.OFFICIAL.value, outside, ".x")
+    assert lookup._find_in_cached_base("code", "Fake", (".x",), ordered=ordered) is None
     assert cache.get("code", "Fake", LoadMode.OFFICIAL.value) is None
 
     cache.set("code", "Empty", LoadMode.OFFICIAL.value, Path(""), ".x")
-    assert lookup._find_in_cached_base("code", "Empty", (".x",), base_allowed=lambda base: True) is None
+    assert lookup._find_in_cached_base("code", "Empty", (".x",), ordered=ordered) is None
 
 
-def _no_ordered_match(
-    self: ProjectLookup,
-    name: str,
-    extensions: Sequence[str],
-    *,
-    requester_dir: Path | None,
-    kind: str,
-) -> Path | None:
-    return None
-
-
-def _no_cached_match(
-    self: ProjectLookup,
-    kind: str,
-    name: str,
-    extensions: Sequence[str],
-    *,
-    base_allowed: object,
-) -> Path | None:
-    return None
-
-
-def _cached_hit(
-    self: ProjectLookup,
-    kind: str,
-    name: str,
-    extensions: Sequence[str],
-    *,
-    base_allowed: object,
-) -> Path | None:
-    return Path("/cached/resolved.s")
-
-
-def test_find_returns_cached_result_from_cache_fallback(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_find_in_cached_base_rejects_base_outside_ordering(tmp_path: Path) -> None:
     root = tmp_path / "p"
-    root.mkdir()
-    monkeypatch.setattr(ProjectLookup, "_find_in_ordered_bases_without_cache", _no_ordered_match)
-    monkeypatch.setattr(ProjectLookup, "_find_in_cached_base", _cached_hit)
-    lookup = ProjectLookup([root], LoadMode.OFFICIAL)
-    assert lookup.find("Cached", ArtifactKind.CODE) == Path("/cached/resolved.s")
+    _write(root, "X.x")
+    cache_dir = tmp_path / "cache"
+    cache = FileLookupCache(cache_dir, write_through=True)
+    lookup = ProjectLookup([root], LoadMode.OFFICIAL, cache=cache)
+    cache.set("code", "X", LoadMode.OFFICIAL.value, root, ".x")
+    assert lookup._find_in_cached_base("code", "X", (".x",), ordered=()) is None
+    assert cache.get("code", "X", LoadMode.OFFICIAL.value) is None
 
 
-def test_find_plain_scan_and_cached_fallbacks(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_find_in_cached_base_prefers_outranking_base(tmp_path: Path) -> None:
+    requester = tmp_path / "cluster" / "programs"
+    requester.mkdir(parents=True)
+    dep_root = tmp_path / "cluster" / "libs"
+    dep_root.mkdir(parents=True)
+    _write(requester, "A.x")
+    _write(dep_root, "A.x")
+    cache_dir = tmp_path / "cache"
+    cache = FileLookupCache(cache_dir, write_through=True)
+    lookup = ProjectLookup([requester, dep_root], LoadMode.OFFICIAL, cache=cache)
+    ordered = ordered_lookup_bases([requester, dep_root], requester)
+    assert ordered[0] == requester.resolve()
+    cache.set("code", "A", LoadMode.OFFICIAL.value, dep_root, ".x")
+    assert lookup._find_in_cached_base("code", "A", (".x",), ordered=ordered) == requester / "A.x"
+    assert cache.get("code", "A", LoadMode.OFFICIAL.value) == {
+        "base_dir": str(requester.resolve()),
+        "ext": ".x",
+    }
+
+
+def test_find_in_cached_base_falls_through_to_cached_base(tmp_path: Path) -> None:
+    requester = tmp_path / "cluster" / "programs"
+    requester.mkdir(parents=True)
+    dep_root = tmp_path / "cluster" / "libs"
+    dep_root.mkdir(parents=True)
+    _write(dep_root, "B.x")
+    cache_dir = tmp_path / "cache"
+    cache = FileLookupCache(cache_dir, write_through=True)
+    lookup = ProjectLookup([requester, dep_root], LoadMode.OFFICIAL, cache=cache)
+    ordered = ordered_lookup_bases([requester, dep_root], requester)
+    cache.set("code", "B", LoadMode.OFFICIAL.value, dep_root, ".x")
+    assert lookup._find_in_cached_base("code", "B", (".x",), ordered=ordered) == dep_root / "B.x"
+
+
+def _raise_if_called(
+    self: ProjectLookup,
+    name: str,
+    extensions: Sequence[str],
+    base: Path,
+    *,
+    kind: str,
+) -> Path:
+    raise AssertionError("cached resolution must not rescan")
+
+
+def test_find_returns_cached_result_without_scanning(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    root = tmp_path / "p"
+    _write(root, "Cached.s")
+    cache_dir = tmp_path / "cache"
+    cache = FileLookupCache(cache_dir, write_through=True)
+    first = ProjectLookup([root], LoadMode.DRAFT, cache=cache)
+    assert first.find_code("Cached") == root / "Cached.s"
+
+    fresh = ProjectLookup([root], LoadMode.DRAFT, cache=cache)
+    monkeypatch.setattr(ProjectLookup, "_find_in_base", _raise_if_called)
+    assert fresh.find_code("Cached") == root / "Cached.s"
+
+
+def test_find_full_scan_fallbacks(tmp_path: Path) -> None:
     root = tmp_path / "p"
     _write(root, "A.s")
     _write(root, "Z.x")
 
     lookup = ProjectLookup([root], LoadMode.DRAFT)
-    monkeypatch.setattr(ProjectLookup, "_find_in_ordered_bases_without_cache", _no_ordered_match)
-    monkeypatch.setattr(ProjectLookup, "_find_in_cached_base", _no_cached_match)
     assert lookup.find_code("A") == root / "A.s"
 
     indexed = ProjectLookup([root], LoadMode.DRAFT)
     indexed._index.prime()
-    monkeypatch.setattr(ProjectLookup, "_find_in_ordered_bases_without_cache", _no_ordered_match)
-    monkeypatch.setattr(ProjectLookup, "_find_in_cached_base", _no_cached_match)
     assert indexed.find_code("Z") == root / "Z.x"
 
     missing = ProjectLookup([root], LoadMode.DRAFT)
-    monkeypatch.setattr(ProjectLookup, "_find_in_ordered_bases_without_cache", _no_ordered_match)
-    monkeypatch.setattr(ProjectLookup, "_find_in_cached_base", _no_cached_match)
     assert missing.find_code("Nope") is None
 
     late = ProjectLookup([root], LoadMode.DRAFT)
     late._index.prime()
     late_file = _write(root, "Late.s")
-    monkeypatch.setattr(ProjectLookup, "_find_in_ordered_bases_without_cache", _no_ordered_match)
-    monkeypatch.setattr(ProjectLookup, "_find_in_cached_base", _no_cached_match)
-    found = late.find_code("Late")
-    assert found == late_file
+    assert late.find_code("Late") == late_file
     assert late._index.find_in_index(base=root, name="Late", extensions=(".s",)) == late_file
 
 
-def test_find_returns_cached_result_when_ordered_misses(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_find_forgets_cached_entry_when_file_is_gone(tmp_path: Path) -> None:
     root = tmp_path / "p"
     root.mkdir()
     cache = FileLookupCache(tmp_path / "cache", write_through=True)
     lookup = ProjectLookup([root], LoadMode.OFFICIAL, cache=cache)
     cache.set("code", "Keep", LoadMode.OFFICIAL.value, root, ".x")
-
-    monkeypatch.setattr(
-        ProjectLookup,
-        "_find_in_ordered_bases_without_cache",
-        _no_ordered_match,
-    )
     assert lookup.find("Keep", ArtifactKind.CODE) is None
+    assert cache.get("code", "Keep", LoadMode.OFFICIAL.value) is None
+
+
+def test_find_cache_refreshes_when_higher_precedence_file_appears(tmp_path: Path) -> None:
+    requester = tmp_path / "cluster" / "programs"
+    requester.mkdir(parents=True)
+    dep_root = tmp_path / "cluster" / "libs"
+    dep_root.mkdir(parents=True)
+    _write(dep_root, "A.s")
+    cache_dir = tmp_path / "cache"
+    cache = FileLookupCache(cache_dir, write_through=True)
+    first = ProjectLookup([requester, dep_root], LoadMode.DRAFT, cache=cache)
+    assert first.find_code("A") == dep_root / "A.s"
+
+    _write(requester, "A.s")
+    second = ProjectLookup([requester, dep_root], LoadMode.DRAFT, cache=cache)
+    assert second.find_code("A") == requester / "A.s"
+    assert cache.get("code", "a", LoadMode.DRAFT.value) == {
+        "base_dir": str(requester.resolve()),
+        "ext": ".s",
+    }
 
 
 def test_project_lookup_requester_ordering_end_to_end(tmp_path: Path) -> None:
