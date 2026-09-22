@@ -200,7 +200,11 @@ class ProjectLookup:
     The mode selects candidate extensions; each artifact falls back per artifact
     (``.s`` → ``.x`` etc. in draft mode) and across roots in
     ``ordered_lookup_bases`` order. An optional parser-owned ``FileLookupCache``
-    records resolutions and is consulted after the ordered scan.
+    short-circuits the ordered scan: a cached resolution is trusted only when
+    its base is still a configured root, is still present in the current ordered
+    bases, and the artifact still exists, and after confirming no
+    higher-precedence base holds it. Misses fall through to the full ordered
+    scan, which refreshes the cache.
     """
 
     def __init__(
@@ -222,27 +226,20 @@ class ProjectLookup:
         if self._debug is not None:
             self._debug(message)
 
-    def _find_in_ordered_bases_without_cache(
-        self,
-        name: str,
-        extensions: Sequence[str],
-        *,
-        requester_dir: Path | None,
-        kind: str,
-    ) -> Path | None:
-        for base in ordered_lookup_bases(self._roots, requester_dir):
-            indexed = self._index.find_in_index(base=base, name=name, extensions=extensions)
-            if indexed is not None:
-                self._dbg(f"Using ordered lookup file: {indexed}")
-                self._remember(kind, name, base, indexed.suffix.lower())
-                return indexed
-            for ext in extensions:
-                candidate = base / f"{name}{ext}"
-                if candidate.exists():
-                    self._dbg(f"Using ordered lookup file: {candidate}")
-                    self._remember(kind, name, base, ext)
-                    self._index.add(base=base, name=name, path=candidate)
-                    return candidate
+    def _find_in_base(self, name: str, extensions: Sequence[str], base: Path, *, kind: str) -> Path | None:
+        """Resolve ``name`` against a single base via its index, then a stat fallback."""
+        indexed = self._index.find_in_index(base=base, name=name, extensions=extensions)
+        if indexed is not None:
+            self._dbg(f"Using ordered lookup file: {indexed}")
+            self._remember(kind, name, base, indexed.suffix.lower())
+            return indexed
+        for ext in extensions:
+            candidate = base / f"{name}{ext}"
+            if candidate.exists():
+                self._dbg(f"Using ordered lookup file: {candidate}")
+                self._remember(kind, name, base, ext)
+                self._index.add(base=base, name=name, path=candidate)
+                return candidate
         return None
 
     def _find_in_cached_base(
@@ -251,17 +248,37 @@ class ProjectLookup:
         name: str,
         extensions: Sequence[str],
         *,
-        base_allowed: Callable[[Path], bool],
+        ordered: Sequence[Path],
     ) -> Path | None:
+        """Trust a cached resolution only when it still holds under current ordering.
+
+        The cached base must be a configured root that is still present in the
+        ordered bases, and no higher-precedence (earlier) base may hold the
+        artifact. This preserves requester-relative precedence while skipping the
+        scan of every base after the cached one. On any failure the entry is
+        forgotten and the caller falls through to the full ordered scan.
+        """
         if self._cache is None:
             return None
         cached = self._cache.get(kind, name, self._mode.value)
         if not cached:
             return None
         base = Path(cached["base_dir"])
-        if not base or not base_allowed(base):
+        if not cached["base_dir"] or not _is_allowed_base(self._roots, base):
             self._cache.forget(kind, name, self._mode.value)
             return None
+        base_key = _lookup_path_key(base)
+        position = next(
+            (index for index, resolved in enumerate(ordered) if _lookup_path_key(resolved) == base_key),
+            None,
+        )
+        if position is None:
+            self._cache.forget(kind, name, self._mode.value)
+            return None
+        for outranking in ordered[:position]:
+            found = self._find_in_base(name, extensions, outranking, kind=kind)
+            if found is not None:
+                return found
         cached_ext = cached["ext"]
         ordered_exts = [cached_ext] if cached_ext in extensions else []
         ordered_exts.extend(ext for ext in extensions if ext != cached_ext)
@@ -278,32 +295,22 @@ class ProjectLookup:
             self._cache.set(kind, name, self._mode.value, base, ext)
 
     def find(self, name: str, kind: ArtifactKind, *, requester_dir: Path | None = None) -> Path | None:
-        """Resolve ``name`` of ``kind`` across the ordered roots, or ``None``."""
+        """Resolve ``name`` of ``kind`` across the ordered roots, or ``None``.
+
+        The cache is consulted first (when present) so a stable layout skips the
+        ordered scan entirely; only on a miss is the full ordered scan run, and
+        every successful resolution refreshes the cache.
+        """
         extensions = candidate_extensions(kind, self._mode)
         kind_value = kind.value
-        ordered = self._find_in_ordered_bases_without_cache(
-            name, extensions, requester_dir=requester_dir, kind=kind_value
-        )
-        if ordered is not None:
-            return ordered
-        cached = self._find_in_cached_base(
-            kind_value, name, extensions, base_allowed=lambda base: _is_allowed_base(self._roots, base)
-        )
+        ordered = ordered_lookup_bases(self._roots, requester_dir)
+        cached = self._find_in_cached_base(kind_value, name, extensions, ordered=ordered)
         if cached is not None:
             return cached
-        for base in self._roots:
-            indexed = self._index.find_in_index(base=base, name=name, extensions=extensions)
-            if indexed is not None:
-                self._dbg(f"Using {kind_value} file: {indexed}")
-                self._remember(kind_value, name, base, indexed.suffix.lower())
-                return indexed
-            for ext in extensions:
-                path = base / f"{name}{ext}"
-                if path.exists():
-                    self._dbg(f"Using {kind_value} file: {path}")
-                    self._remember(kind_value, name, base, ext)
-                    self._index.add(base=base, name=name, path=path)
-                    return path
+        for base in ordered:
+            found = self._find_in_base(name, extensions, base, kind=kind_value)
+            if found is not None:
+                return found
         self._dbg(f"No {kind_value} file found for {name!r} in mode={self._mode.value}")
         return None
 

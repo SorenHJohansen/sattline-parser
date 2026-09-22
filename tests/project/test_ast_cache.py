@@ -19,6 +19,7 @@ from sattline_parser.project.ast_cache import (
     _PICKLE_CACHE_MAGIC,
     _PICKLE_HMAC_KEY_NAME,
     _as_data_dict,
+    _code_path_key,
     _load_or_create_pickle_hmac_key,
     _load_pickle_payload,
     _matches_stat_snapshot,
@@ -336,6 +337,22 @@ def test_load_rejects_stat_change(tmp_path: Path) -> None:
     assert cache.load(code_path, "draft") == ast
     code_path.write_text(_MINIMAL_SOURCE + "\n", encoding="utf-8")
     assert cache.load(code_path, "draft") is None
+
+
+def test_load_key_normalizes_path_spelling(tmp_path: Path) -> None:
+    code_path = _write_code(tmp_path)
+    cache = FileASTCache(tmp_path)
+    ast = _picture(code_path)
+    cache.save(code_path, "draft", ast)
+    alternate = tmp_path / ".." / tmp_path.name / code_path.name
+    assert alternate.resolve() == code_path.resolve()
+    assert cache.load(alternate, "draft") == ast
+
+
+def test_code_path_key_resolve_failure(tmp_path: Path) -> None:
+    code_path = _write_code(tmp_path)
+    with patch(f"{_AC_PATH}.Path.resolve", side_effect=OSError("boom")):
+        assert _code_path_key(code_path) == str(code_path)
 
 
 def test_load_rejects_tampered_and_garbage_envelope(tmp_path: Path) -> None:
