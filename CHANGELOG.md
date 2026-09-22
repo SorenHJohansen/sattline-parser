@@ -5,6 +5,54 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Documentation
+
+- README: new "Project layer" usage section covering `SattLineProject.load`,
+  casefolded identity, `.l`/`.z` dependency resolution, `.g`/`.y` companions,
+  structured load errors, and hermetic `cache_dir=None` loads.
+
+### Added
+
+- Phase 4 of the project-layer plan: graphics companion parsing. The loader now
+  resolves each program's same-directory `.g` / `.y` companion via
+  `resolve_graphics_companion_path` (draft prefers `.g`, falls back to `.y`;
+  official and `.x` code only accept `.y`; a `.g` / `.y` input resolves to
+  itself) and parses it into a `GraphicsModel` on `SattLineProgram.graphics`.
+  `parse_graphics_text` / `parse_graphics_file` scan composite records (families
+  `1`/`2`/`4`/`5`), picture-display records (`9031`, keep-shape flag, variable /
+  literal path rows), and `Var`/`Lit`/`Expr` bindings — including Lark-parsed
+  expression bindings with source-span offsetting. Graphics content problems
+  become `GraphicsMessage` values (`errors` / `warnings` properties); companion
+  read failures map to `ArtifactLoadError` / `DependencyParseError` honoring the
+  existing strict/non-strict behavior.
+- Phase 3 of the project-layer plan: `SattLineProject.load` is now wired end to
+  end. `read_dependency_names` parses `.l` / `.z` dependency files, `ProjectLoader`
+  recursively resolves dependencies requester-relative to the declaring file with
+  casefolded identity memoization (each program visited and parsed exactly once;
+  cycles resolve as edges in the derived graph, never raised), and loads can store
+  results in the parser-owned `FileLookupCache` plus a new HMAC-signed pickle
+  `FileASTCache` (`FILE_AST_CACHE_VERSION = 1`, stat-snapshot validated) under a
+  caller-supplied `cache_dir`. Structured failures map to `DependencyNotFoundError`,
+  `DependencyParseError`, and `ArtifactLoadError`, and `strict=False` skips failing
+  programs instead of aborting.
+- Phase 2 of the project-layer plan: `ArtifactKind`, the extension helpers
+  (`code_ext`/`deps_ext`/`graphics_ext`, `*_ext_candidates`,
+  `preferred_extension`, `candidate_extensions`), the per-root `SourceIndex`,
+  requester-relative ordered lookup (`ordered_lookup_bases`,
+  `shared_lookup_root_for`, `ProjectLookup` with `find`/`find_code`/`find_deps`),
+  and the parser-owned, versioned `FileLookupCache`
+  (`LOOKUP_CACHE_VERSION = 1`). Artifact extension/draft-fallback rules and
+  per-artifact discovery now live in the parser; loading behavior still lands in
+  later phases.
+- New `sattline_parser.project` layer (Phase 1 of the project-layer plan):
+  `LoadMode`, `ProgramFormat`, the graphics companion model (`GraphicsModel`,
+  `GraphicsMessage`, `GraphicsCompositeRecord`, `GraphicsPictureDisplayRecord`),
+  `SattLineProgram`, `SattLineProject`, `DependencyGraph`, and the structured
+  load errors (`ProjectLoadError` and subclasses). Additive only — artifact
+  discovery and loading behavior land in later phases.
+
 ## [2026.9.1] - 2026-09-06
 
 ### Changed

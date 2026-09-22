@@ -128,6 +128,55 @@ program
 
 Think of the AST as a structured, machine-readable view of the program, that tools (a linter, a refactorer, an editor, a report generator) can walk without re-parsing the text. Since an AST is just nested objects, answering questions about the program becomes ordinary Python.
 
+### Project layer: load a whole project
+
+Beyond single sources, `sattline_parser.project` owns the SattLine **project
+layer**: search-root discovery, per-artifact draft→official fallback,
+recursive requester-relative dependency resolution, and `.g`/`.y` graphics
+companion parsing. `SattLineProject.load` resolves one or more targets across
+the ordered roots and returns the complete resolved graph:
+
+```python
+from pathlib import Path
+from sattline_parser.project import LoadMode, SattLineProject
+
+project = SattLineProject.load(
+    roots=[Path("programs"), Path("libs")],
+    mode=LoadMode.DRAFT,
+    targets=["MyProgram"],
+)
+
+program = project.get("MyProgram")     # case-insensitive; raises KeyError if absent
+print(program.name)
+print(list(project.graph().nodes))     # casefolded canonical identities
+if program.graphics is not None:       # GraphicsMessage values, never raised
+    print(program.graphics.errors)
+```
+
+- Each target is resolved across ordered roots, its `.l` / `.z` dependency file
+  is read, and dependencies load recursively before the target itself.
+- Programs are canonicalized by casefolded identity: each name is visited and
+  parsed exactly once, and cycles resolve as edges in the derived
+  `DependencyGraph` (never infinite recursion).
+- `strict=True` (default) fails fast on missing or unparseable artifacts;
+  `strict=False` skips the failing program and continues. Failures surface as
+  structured errors (`ProjectLoadError`, `ArtifactLoadError`,
+  `DependencyNotFoundError`, `DependencyParseError`).
+- `cache_dir=...` optionally enables the parser-owned lookup and per-file AST
+  caches (`FileLookupCache` / `FileASTCache`) so repeated loads skip
+  re-discovery and re-parsing. When `cache_dir=None` (default) the load is
+  fully in-memory and hermetic — no disk writes, no shared cache state.
+
+```python
+# Hermetic callers (no disk cache) are the recommended default:
+project = SattLineProject.load(
+    roots=[Path("programs"), Path("libs")],
+    mode=LoadMode.DRAFT,
+    targets=["MyProgram"],
+    cache_dir=None,
+)
+```
+
 ## Development
 
 ```bash
@@ -174,6 +223,7 @@ satisfies the range, so the supported range is actually exercised. Installs use
 - `src/sattline_parser/models/` : AST models
 - `src/sattline_parser/transformer/` : transformer mixins and `SLTransformer`
 - `src/sattline_parser/api.py` : public entry points
+- `src/sattline_parser/project/` : project/artifact layer (`SattLineProject`, discovery, resolution, `.g`/`.y` parsing, parser-owned caches)
 - `src/sattline_parser/fuzz_harness.py` : standalone fuzzing
 
 ## License
