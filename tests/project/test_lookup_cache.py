@@ -34,8 +34,12 @@ def test_defaults_are_exposed() -> None:
 
 def test_set_get_roundtrip_casefolds_name(tmp_path: Path) -> None:
     cache = FileLookupCache(tmp_path, write_through=True)
-    cache.set("code", "ControlLib", "draft", base_dir=Path("/tmp/X"), ext=".s")
-    assert cache.get("code", "controllib", "draft") == {"base_dir": "/tmp/X", "ext": ".s"}
+    base_dir = Path("/tmp/X")
+    cache.set("code", "ControlLib", "draft", base_dir=base_dir, ext=".s")
+    assert cache.get("code", "controllib", "draft") == {
+        "base_dir": _normalize_base_dir(base_dir),
+        "ext": ".s",
+    }
     assert cache.get("code", "Unknown", "draft") is None
 
 
@@ -67,9 +71,13 @@ def test_forget_removes_entry(tmp_path: Path) -> None:
 
 def test_write_through_persists_and_reloads(tmp_path: Path) -> None:
     cache = FileLookupCache(tmp_path, write_through=True)
-    cache.set("code", "Lib", "official", base_dir=Path("/data/lib"), ext=".x")
+    base_dir = Path("/data/lib")
+    cache.set("code", "Lib", "official", base_dir=base_dir, ext=".x")
     reloaded = FileLookupCache(tmp_path, write_through=True)
-    assert reloaded.get("code", "lib", "official") == {"base_dir": "/data/lib", "ext": ".x"}
+    assert reloaded.get("code", "lib", "official") == {
+        "base_dir": _normalize_base_dir(base_dir),
+        "ext": ".x",
+    }
 
 
 def test_flush_interval_skips_disk_until_threshold(tmp_path: Path) -> None:

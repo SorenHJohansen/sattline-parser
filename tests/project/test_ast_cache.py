@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import os
 import shutil
 from pathlib import Path
 from unittest.mock import patch
@@ -131,7 +132,8 @@ def test_load_or_create_hmac_key_creates_then_reuses(tmp_path: Path) -> None:
     first = _load_or_create_pickle_hmac_key(tmp_path)
     assert first is not None and len(first) == 32
     assert _load_or_create_pickle_hmac_key(tmp_path) == first
-    assert _key_stat_mode_is_private(tmp_path)
+    if os.name == "posix":
+        assert _key_stat_mode_is_private(tmp_path)
 
 
 def _key_stat_mode_is_private(directory: Path) -> bool:
