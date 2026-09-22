@@ -13,7 +13,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import os
-import pickle
+import pickle  # nosec B403 - HMAC-signed pickle envelope, key creation racy/excl guarded
 import secrets
 from pathlib import Path
 from typing import cast
@@ -138,7 +138,7 @@ def _load_pickle_payload(path: Path) -> object | None:
     if not hmac.compare_digest(signature, expected_signature):
         return None
     try:
-        return pickle.loads(pickled_payload)
+        return pickle.loads(pickled_payload)  # nosec B301 - payload HMAC-verified above
     except _ALLOWED_PICKLE_LOADER_ERRORS:
         return None
 
