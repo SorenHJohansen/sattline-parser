@@ -22,6 +22,7 @@ from lark.exceptions import UnexpectedInput
 from sattline_parser.models.ast_model import BasePicture
 from sattline_parser.source_document import remap_parse_error, remap_tree_to_original
 from sattline_parser.transformer.sl_transformer import SLTransformer
+from sattline_parser.validation import Diagnostic, validate_basepicture
 
 from .errors import (
     ParseErrorDetails,
@@ -46,10 +47,12 @@ __all__ = [
     "create_sl_parser",
     "describe_parse_error",
     "load_source_text",
+    "parse_and_validate",
     "parse_source_file",
     "parse_source_text",
     "read_text_with_fallback",
     "render_ide_text",
+    "validate_basepicture",
 ]
 
 GRAMMAR_PATH = Path(__file__).resolve().parent / "grammar" / "sattline.lark"
@@ -289,6 +292,35 @@ def parse_source_text(
         debug(f"Transform result type: {type(basepic).__name__}")
 
     return basepic
+
+
+def parse_and_validate(
+    src: str,
+    *,
+    parser: Lark | None = None,
+    transformer: SLTransformer | None = None,
+    debug: Callable[[str], None] | None = None,
+    source_path: Path | None = None,
+    log_failures: bool = True,
+    retain_parse_tree: bool = False,
+) -> tuple[BasePicture, tuple[Diagnostic, ...]]:
+    """Parse a SattLine source and run strict single-source validation.
+
+    Returns ``(basepicture, diagnostics)``; ``diagnostics`` is empty for a
+    source that fully validates. ``parse_source_text`` itself stays a pure
+    parse/transform pipeline — callers opt into validation by using this entry
+    point.
+    """
+    basepic = parse_source_text(
+        src,
+        parser=parser,
+        transformer=transformer,
+        debug=debug,
+        source_path=source_path,
+        log_failures=log_failures,
+        retain_parse_tree=retain_parse_tree,
+    )
+    return basepic, validate_basepicture(basepic)
 
 
 def parse_source_file(
