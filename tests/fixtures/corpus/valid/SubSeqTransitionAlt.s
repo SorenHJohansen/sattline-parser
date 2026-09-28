@@ -2,9 +2,9 @@
 "Original file date: ---"
 "Program date: 2026-08-25-12:00:00.000, name: SubSeqTransitionAlt"
 (* Covers SUBSEQTRANSITION whose body is an ALTERNATIVESEQ.
-   The ABB export emits a double ALTERNATIVESEQ marker (#34 #34)
-   in this context: the first acts as a structural wrapper and the
-   second starts the actual alternative branches.
+   The alternative group inside a transition sub uses a single
+   ALTERNATIVESEQ marker, matching the strict SattLine syntax.
+   A redundant double ALTERNATIVESEQ marker would be rejected.
    Expected: strict syntax-check passes. *)
 
 BasePicture Invocation
@@ -31,7 +31,6 @@ ModuleCode
             OutputA = 0;
             OutputB = 0;
       SUBSEQTRANSITION TrCheckPhase
-         ALTERNATIVESEQ
          ALTERNATIVESEQ
             SEQTRANSITION TrModeA WAIT_FOR Mode == 1
             SEQSTEP ModeA

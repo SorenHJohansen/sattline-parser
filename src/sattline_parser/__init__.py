@@ -29,9 +29,17 @@ from sattline_parser.preprocessing import (
     render_ide_text,
 )
 from sattline_parser.transformer.sl_transformer import SLTransformer
+from sattline_parser.validation import Diagnostic, DiagnosticCode, validate_basepicture
 
 from .__version__ import __version__
-from .api import create_parser, create_sl_parser, describe_parse_error, parse_source_file, parse_source_text
+from .api import (
+    create_parser,
+    create_sl_parser,
+    describe_parse_error,
+    parse_and_validate,
+    parse_source_file,
+    parse_source_text,
+)
 from .grammar import constants
 
 if TYPE_CHECKING:
@@ -90,6 +98,8 @@ __all__ = [
     "BinOp",
     "BoolOp",
     "Compare",
+    "Diagnostic",
+    "DiagnosticCode",
     "FuncCall",
     "FuncCallStmt",
     "FuzzResult",
@@ -113,6 +123,7 @@ __all__ = [
     "fuzz_parse_text",
     "generate_random_text",
     "is_compressed",
+    "parse_and_validate",
     "parse_source_file",
     "parse_source_text",
     "preprocess_sl_text",
@@ -120,4 +131,5 @@ __all__ = [
     "render_ide_text",
     "run_corpus_regression",
     "run_random_fuzz",
+    "validate_basepicture",
 ]
