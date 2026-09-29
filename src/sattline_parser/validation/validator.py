@@ -31,6 +31,7 @@ from sattline_parser.validation.declarations import (
 )
 from sattline_parser.validation.diagnostics import Diagnostic
 from sattline_parser.validation.symbols import Scope, build_scope
+from sattline_parser.validation.transfers import check_moduletype_transfers
 
 Submodule = SingleModule | FrameModule | ModuleTypeInstance
 
@@ -39,6 +40,7 @@ def validate_basepicture(bp: BasePicture) -> tuple[Diagnostic, ...]:
     """Validate a transformed BasePicture; returns all findings (empty when valid)."""
     errors: list[Diagnostic] = []
     records = {datatype.name.casefold(): datatype for datatype in bp.datatype_defs}
+    moduletypes = {moduletype.name.casefold(): moduletype for moduletype in bp.moduletype_defs}
 
     check_definition_uniqueness(bp, errors)
     check_builtin_datatype_shadows(bp, errors)
@@ -51,21 +53,35 @@ def validate_basepicture(bp: BasePicture) -> tuple[Diagnostic, ...]:
     for code in bp.modulecodes:
         walk_module_code(code, base_scope, records, errors)
     for child in bp.submodules:
-        _walk_submodule(child, base_scope, records, errors)
+        _walk_submodule(child, base_scope, records, moduletypes, errors)
     for moduletype in bp.moduletype_defs:
-        _walk_moduletype_def(moduletype, records, errors)
+        _walk_moduletype_def(moduletype, records, moduletypes, errors)
 
     return tuple(errors)
 
 
-def _walk_submodule(child: Submodule, parent: Scope, records: dict[str, DataType], errors: list[Diagnostic]) -> None:
+def _walk_submodule(
+    child: Submodule,
+    parent: Scope,
+    records: dict[str, DataType],
+    moduletypes: dict[str, ModuleTypeDef],
+    errors: list[Diagnostic],
+) -> None:
     if isinstance(child, ModuleTypeInstance):
+        moduletype = moduletypes.get(child.moduletype_name.casefold())
+        if moduletype is not None:
+            check_moduletype_transfers(child, moduletype, parent, records, errors)
         return
     scope = _child_scope(child, parent)
-    _walk_definition(child, scope, records, errors)
+    _walk_definition(child, scope, records, moduletypes, errors)
 
 
-def _walk_moduletype_def(moduletype: ModuleTypeDef, records: dict[str, DataType], errors: list[Diagnostic]) -> None:
+def _walk_moduletype_def(
+    moduletype: ModuleTypeDef,
+    records: dict[str, DataType],
+    moduletypes: dict[str, ModuleTypeDef],
+    errors: list[Diagnostic],
+) -> None:
     scope = build_scope(None, [*moduletype.moduleparameters, *moduletype.localvariables])
     check_scope_declarations(moduletype.moduleparameters, moduletype.localvariables, errors)
     check_variable_declarations([*moduletype.moduleparameters, *moduletype.localvariables], records, errors)
@@ -73,7 +89,7 @@ def _walk_moduletype_def(moduletype: ModuleTypeDef, records: dict[str, DataType]
     for code in moduletype.modulecodes:
         walk_module_code(code, scope, records, errors)
     for child in moduletype.submodules:
-        _walk_submodule(child, scope, records, errors)
+        _walk_submodule(child, scope, records, moduletypes, errors)
 
 
 def _child_scope(child: SingleModule | FrameModule, parent: Scope) -> Scope:
@@ -93,7 +109,11 @@ def _local_variables(child: SingleModule | FrameModule) -> list[Variable]:
 
 
 def _walk_definition(
-    child: SingleModule | FrameModule, scope: Scope, records: dict[str, DataType], errors: list[Diagnostic]
+    child: SingleModule | FrameModule,
+    scope: Scope,
+    records: dict[str, DataType],
+    moduletypes: dict[str, ModuleTypeDef],
+    errors: list[Diagnostic],
 ) -> None:
     parameters = _module_parameters(child)
     notes = _local_variables(child)
@@ -103,4 +123,4 @@ def _walk_definition(
     for code in child.modulecodes:
         walk_module_code(code, scope, records, errors)
     for sub in child.submodules:
-        _walk_submodule(sub, scope, records, errors)
+        _walk_submodule(sub, scope, records, moduletypes, errors)

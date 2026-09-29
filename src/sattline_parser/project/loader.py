@@ -28,7 +28,7 @@ from pathlib import Path
 
 from lark.exceptions import LarkError
 
-from sattline_parser.api import parse_source_file, read_text_with_fallback
+from sattline_parser.api import parse_source_file, read_text_cp1252
 from sattline_parser.models.ast_model import BasePicture
 
 from .ast_cache import FileASTCache
@@ -56,7 +56,7 @@ def read_dependency_names(deps_path: Path) -> tuple[str, ...]:
     Each non-blank line is one dependency name; lines are trimmed, blank lines
     are ignored, and declaration order is preserved.
     """
-    text = read_text_with_fallback(deps_path)
+    text = read_text_cp1252(deps_path)
     return tuple(line.strip() for line in text.splitlines() if line.strip())
 
 

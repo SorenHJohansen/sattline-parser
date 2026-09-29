@@ -129,6 +129,12 @@ by real output · `[model]` = strongly implied by AST/language semantics ·
 3. `IF`/ternary condition boolean; mutually compatible branches. `[inferred]`
 4. Builtin argument **types** (in/out/inout) — current `BuiltinFunction` only
    models arity + out positions. `[inferred]`
+4a. **Call arguments must be variables** — raw string/number literals in a
+    call (e.g. `EqualStrings("alpha", "beta")`) are rejected; pass a declared
+    variable instead. `[user]` / observed: re-probed while clearing
+    `BadBuiltinWrong.x` (the real parser rejects literals in `EqualStrings`).
+    **Implemented** as SL-V015 `STRING_LITERAL_CALL_ARGUMENT` (flags each
+    string-literal argument in any call, not just known builtins).
 5. SFC-accessor typing: `Step.X` boolean, `Step.T` duration, `Seq.Reset`
    boolean. `[inferred]`
 6. Record-qualification depth (`A.B.C` on a scalar root). `[inferred]`
@@ -187,7 +193,13 @@ by real output · `[model]` = strongly implied by AST/language semantics ·
 24. Instance/param arity vs declared moduletype params (positional + named
     binding). `[model]`
 25. Param-transfer typing (value vs formal param type — the
-    `DurationInParameterMapping`/`GlobalParameterMapping` mechanism). `[model]`
+    `DurationInParameterMapping`/`GlobalParameterMapping` mechanism).
+    **Confirmed** `[corpus]` — real rejects an incompatible variable supply
+    verbatim: ``Submodule Child, parameter EnableFlag: Variable CounterValue
+    is an invalid type`` (BadCrossMod.x). Implemented as **SL-V027** for the
+    single-file case (module type declared in the same file); transfers into
+    externally-declared module types, GLOBAL sources, and undeclared sources
+    are skipped and stay consumer territory. `[inferred] → [corpus]`
 26. GLOBAL-marked params/vars must have a matching declaration in scope. `[inferred]`
 27. ~~Formal param direction (`in`/`out`) matching~~ — **not checked** by the
     real parser. `[user]` — drop.
@@ -234,6 +246,20 @@ by real output · `[model]` = strongly implied by AST/language semantics ·
 | SL-V022 `SFC_INIT_STEP_PLACEMENT` | Unlimited `SEQINITSTEP`s allowed `[user]` | feed a multi-init sequence to real parser |
 | SL-V020 `UNKNOWN_DATATYPE_NAME` | `AnyType` is a legal (parameter-only) type `[user]` | feed `: AnyType` param, field, localvar |
 | SFC accessor exemption (dotted `Step.X`) | accessors only legal when enabled for the sequence `[user]` | feed accessor with function disabled |
+
+**Resolved 2026-09-29 — documented divergence (kept strict).** The real
+*compiler* accepts all seven of these constructs; the real *IDE* blocks every
+one of them at edit time (e.g. the variables panel refuses to add a duplicated
+name), so they only arise from hand-authored files. Per planning decision the
+parser keeps the strict single-source checks as-is; these are recorded as
+accepted divergence, not force-parity, until a consumer-layer context argues
+otherwise:
+
+| Rule(s) | Real behavior (probe) |
+| --- | --- |
+| SL-V001/002/003/025 duplicate names | compiles clean: `BadDupDatatypeName`, `BadDupModTypeName`, `BadDupVariaNames`, `BadDupRecFldName` |
+| SL-V009/010 bare duration/time init | compiles clean: `BadBareDurStr`, `BadBareTimeStr` |
+| SL-V026 `BUILTIN_DATATYPE_SHADOWED` | compiles clean: `BadDatatypeShadows` |
 
 ## 7. Deliverables
 

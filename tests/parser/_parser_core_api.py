@@ -160,18 +160,20 @@ def test_create_sl_parser_delegates_to_create_parser(monkeypatch):
     assert parser_api.create_sl_parser() is sentinel
 
 
-def test_read_text_with_fallback_accepts_cp1252_bytes(tmp_path):
+def test_read_text_cp1252_accepts_cp1252_bytes(tmp_path):
     source_file = tmp_path / "cp1252.k"
     source_file.write_bytes("Søren".encode("cp1252"))
 
-    assert parser_api.read_text_with_fallback(source_file) == "Søren"
+    assert parser_api.read_text_cp1252(source_file) == "Søren"
 
 
-def test_read_text_with_fallback_falls_back_to_latin1(tmp_path):
-    source_file = tmp_path / "latin1.bin"
+def test_read_text_cp1252_rejects_bytes_invalid_in_cp1252(tmp_path):
+    # 0x81 is undefined in Windows-1252: strict decode, no latin-1/utf-8 fallback
+    source_file = tmp_path / "invalid_cp1252.s"
     source_file.write_bytes(b"\x81A")
 
-    assert parser_api.read_text_with_fallback(source_file) == "\x81A"
+    with pytest.raises(UnicodeDecodeError):
+        parser_api.read_text_cp1252(source_file)
 
 
 def test_load_source_text_decodes_compressed_sources_and_emits_debug(monkeypatch, tmp_path):
