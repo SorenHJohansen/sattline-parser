@@ -86,10 +86,10 @@ def test_log_parser_failure_line_without_column(caplog: pytest.LogCaptureFixture
     assert any("(line 1)" in record.message for record in caplog.records)
 
 
-def test_read_text_with_fallback_raises_oserror() -> None:
+def test_read_text_cp1252_raises_oserror() -> None:
     missing = Path(__file__).parent / "_this_file_must_not_exist.s"
     with pytest.raises(OSError):
-        parser_api.read_text_with_fallback(missing)
+        parser_api.read_text_cp1252(missing)
 
 
 def test_load_source_text_decode_failure(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
@@ -718,15 +718,16 @@ def test_uncompressed_golden_file_parses() -> None:
     assert bp.header.name == "BasePicture"
 
 
-# ---- api.py:206 latin-1 fallback ----
+# ---- api.py: read_text_cp1252 strict decode ----
 
 
-def test_read_text_with_fallback_latin1_path(tmp_path: Path) -> None:
-    # byte 0x81 is invalid in both UTF-8 and CP1252 but valid in latin-1
+def test_read_text_cp1252_rejects_latin1_only_bytes(tmp_path: Path) -> None:
+    # byte 0x81 is invalid in both UTF-8 and Windows-1252 (but valid in latin-1);
+    # the real parser only reads Windows-1252, so there is no fallback.
     bad_file = tmp_path / "latin1_test.s"
     bad_file.write_bytes(b"\x81hello")
-    result = parser_api.read_text_with_fallback(bad_file)
-    assert result == "\x81hello"
+    with pytest.raises(UnicodeDecodeError):
+        parser_api.read_text_cp1252(bad_file)
 
 
 # ---- sattline_lexer.py:74 _comment_end balanced path ----

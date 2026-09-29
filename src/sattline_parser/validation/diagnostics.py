@@ -40,6 +40,7 @@ class DiagnosticCode(StrEnum):
     SFC_PARALLEL_BRANCH_START = "SL-V024"
     DUPLICATE_RECORD_FIELD_NAME = "SL-V025"
     BUILTIN_DATATYPE_SHADOWED = "SL-V026"
+    PARAM_TRANSFER_TYPE_MISMATCH = "SL-V027"
 
 
 @dataclass(frozen=True, slots=True)

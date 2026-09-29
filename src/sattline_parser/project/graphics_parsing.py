@@ -12,7 +12,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from sattline_parser.api import read_text_with_fallback
+from sattline_parser.api import read_text_cp1252
 from sattline_parser.models.ast_model import GraphicsBinding, SourceSpan
 
 from .formats import graphics_ext_candidates
@@ -279,7 +279,7 @@ def parse_graphics_file(file_path: Path) -> GraphicsModel:
     ``OSError`` propagates to the caller (the loader maps it onto a load error);
     structural problems inside the file become ``GraphicsMessage`` values.
     """
-    text = read_text_with_fallback(file_path)
+    text = read_text_cp1252(file_path)
     return parse_graphics_text(text)
 
 

@@ -50,7 +50,7 @@ __all__ = [
     "parse_and_validate",
     "parse_source_file",
     "parse_source_text",
-    "read_text_with_fallback",
+    "read_text_cp1252",
     "render_ide_text",
     "validate_basepicture",
 ]
@@ -192,25 +192,25 @@ def _decode_coded_file_bytes(
         raise
 
 
-def read_text_with_fallback(path: Path) -> str:
-    """Read a text file trying utf-8, then cp1252, then latin-1.
+def read_text_cp1252(path: Path) -> str:
+    """Read a SattLine source file as **Windows-1252** (cp1252) text.
 
-    Reads in binary mode and decodes manually to preserve original line
-    endings (CRLF). Python's ``path.read_text()`` performs universal newline
-    translation which would silently convert CRLF to LF.
+    Windows-1252 is the only encoding the real SattLine parser accepts, so this
+    is a strict decode with **no encoding fallback**: a file whose bytes are
+    not valid Windows-1252 (the undefined bytes ``0x81 0x8D 0x8F 0x90 0x9D``)
+    raises :class:`UnicodeDecodeError` rather than being silently re-read as
+    utf-8 or latin-1, which would decode a mis-encoded file into plausible but
+    wrong text instead of reporting the problem.
+
+    Reads in binary mode to preserve original line endings (CRLF). Python's
+    ``path.read_text()`` performs universal newline translation which would
+    silently convert CRLF to LF.
     """
-    raw = path.read_bytes()
-    for encoding in ("utf-8", "cp1252", "latin-1"):
-        try:
-            return raw.decode(encoding)
-        except UnicodeDecodeError:
-            continue
-    # latin-1 never fails — it maps all 256 byte values
-    return raw.decode("latin-1")  # pragma: no cover — loop always returns on 3rd iteration
+    return path.read_bytes().decode("cp1252")
 
 
 # Internal alias kept for callers that import the private name.
-_read_text_simple = read_text_with_fallback
+_read_text_simple = read_text_cp1252
 
 
 def load_source_text(
@@ -335,7 +335,7 @@ def parse_source_file(
     source_path = Path(code_path)
     if debug is not None:
         debug(f"Parsing file: {source_path}")
-    # Read the raw file (with encoding fallback) and hand the original text to
+    # Read the raw file (strict Windows-1252) and hand the original text to
     # parse_source_text so compression/decoding and source provenance happen
     # exactly once and consistently with parse_source_text().
     raw_bytes = source_path.read_bytes()

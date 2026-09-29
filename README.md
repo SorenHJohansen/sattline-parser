@@ -42,7 +42,7 @@ basepicture = parse_source_file(Path("program.s"))
 ```python
 from sattline_parser import parse_source_text
 
-source = open("program.x", encoding="utf-8").read()
+source = open("program.x", encoding="cp1252").read()
 basepicture = parse_source_text(source)
 ```
 
@@ -50,9 +50,9 @@ basepicture = parse_source_text(source)
 
 ### Choosing an entry point
 
-`parse_source_file` is for when you have a path on disk. It handles the file I/O for you: it reads the file with an encoding fallback (`utf-8`, then `cp1252`, then `latin-1`) and passes the path along so error messages can name the source file.
+`parse_source_file` is for when you have a path on disk. It handles the file I/O for you: it reads the file as **Windows-1252** (`cp1252`) — the only encoding the real SattLine parser accepts, with no fallback to `utf-8` or `latin-1` — and passes the path along so error messages can name the source file.
 
-`parse_source_text` is for when you already hold the source as a string: a snippet, an editor buffer, a response from an API, or content read by your own code. The two are interchangeable in behavior; `parse_source_file(path)` is equivalent to `parse_source_text(path.read_text(...))` plus the encoding fallback and path-aware error reporting. Start with `parse_source_file` when you have a path, `parse_source_text` otherwise.
+`parse_source_text` is for when you already hold the source as a string: a snippet, an editor buffer, a response from an API, or content read by your own code. The two are interchangeable in behavior; `parse_source_file(path)` is equivalent to `parse_source_text(path.read_bytes().decode("cp1252"))` plus path-aware error reporting. Start with `parse_source_file` when you have a path, `parse_source_text` otherwise.
 
 Both entry points handle cleanup automatically, so you do not need to pre-process the source:
 

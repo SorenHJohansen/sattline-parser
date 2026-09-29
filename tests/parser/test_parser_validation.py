@@ -53,6 +53,7 @@ _INVALID_VALIDATION_FIXTURES: dict[str, str] = {
     "ConstVarAsBuiltinOutArg": "SL-V007",
     "DuplicateRecordFieldName": "SL-V025",
     "DatatypeShadowsBuiltinName": "SL-V026",
+    "CrossModuleContractMismatch": "SL-V027",
 }
 
 _PARSE_REJECTED_FIXTURES = [
@@ -113,9 +114,10 @@ def test_invalid_validation_fixtures_report_expected_codes():
         assert bp is not None
 
 
-def test_cross_module_contract_mismatch_is_consumer_boundary():
+def test_cross_module_contract_mismatch_flagged():
     _bp, diagnostics = parse_and_validate(_raw(_corpus("invalid/CrossModuleContractMismatch.s")))
-    assert diagnostics == ()
+    assert "SL-V027" in {d.code.value for d in diagnostics}
+    assert any("EnableFlag" in d.message and "CounterValue" in d.message for d in diagnostics)
 
 
 def test_parse_rejected_fixtures_still_raise_parse_errors():
@@ -665,6 +667,120 @@ def test_moduletype_and_nested_module_walks():
     bp.localvariables = [_var("P", "integer")]
     bp.moduletype_defs = [moduletype]
     bp.submodules = [frame]
+    diagnostics = validate_basepicture(bp)
+    assert diagnostics == ()
+
+
+def _transfer(
+    target: str, source: str | None, *, global_: bool = False, source_type: str = "value"
+) -> ParameterMapping:
+    return ParameterMapping(
+        target=VarRef(target),
+        source_type=source_type,
+        is_duration=False,
+        is_source_global=global_,
+        source=VarRef(source) if source else None,
+    )
+
+
+def test_param_transfer_type_mismatch_flagged():
+    moduletype = ModuleTypeDef(
+        name="ChildType",
+        moduleparameters=[_var("EnableFlag", "boolean")],
+        modulecodes=[ModuleCode(equations=[_equation(Assignment(VarRef("EnableFlag"), 0))])],
+    )
+    bp = _base_picture()
+    bp.localvariables = [_var("CounterValue", "integer")]
+    bp.moduletype_defs = [moduletype]
+    bp.submodules = [
+        ModuleTypeInstance(
+            header=_module_header("Child"),
+            moduletype_name="ChildType",
+            parametermappings=[_transfer("EnableFlag", "CounterValue")],
+        )
+    ]
+    diagnostics = validate_basepicture(bp)
+    assert [d.code.value for d in diagnostics] == ["SL-V027"]
+    assert "EnableFlag" in diagnostics[0].message and "CounterValue" in diagnostics[0].message
+
+
+def test_param_transfer_record_vs_builtin_mismatch_flagged():
+    moduletype = ModuleTypeDef(name="RecType", moduleparameters=[_var("Payload", "Rec")])
+    bp = _base_picture()
+    bp.datatype_defs = [DataType(name="Rec", description=None, datecode=None)]
+    bp.localvariables = [_var("CounterValue", "integer")]
+    bp.moduletype_defs = [moduletype]
+    bp.submodules = [
+        ModuleTypeInstance(
+            header=_module_header("Child"),
+            moduletype_name="RecType",
+            parametermappings=[_transfer("Payload", "CounterValue")],
+        )
+    ]
+    diagnostics = validate_basepicture(bp)
+    assert [d.code.value for d in diagnostics] == ["SL-V027"]
+
+
+def test_param_transfer_same_record_and_anytype_clean():
+    moduletype = ModuleTypeDef(
+        name="MixedType",
+        moduleparameters=[_var("Payload", "Rec"), _var("Any", "AnyType")],
+    )
+    bp = _base_picture()
+    bp.datatype_defs = [
+        DataType(name="Rec", description=None, datecode=None),
+        DataType(name="AnyType", description=None, datecode=None),
+    ]
+    bp.localvariables = [_var("RecValue", "Rec")]
+    bp.moduletype_defs = [moduletype]
+    bp.submodules = [
+        ModuleTypeInstance(
+            header=_module_header("Child"),
+            moduletype_name="MixedType",
+            parametermappings=[
+                _transfer("Payload", "RecValue"),  # record == record, names match
+                _transfer("Any", "RecValue"),  # AnyType formal accepts anything
+            ],
+        )
+    ]
+    diagnostics = validate_basepicture(bp)
+    assert diagnostics == ()
+
+
+def test_param_transfer_compatibilities_clean():
+    moduletype = ModuleTypeDef(
+        name="MixType",
+        moduleparameters=[
+            _var("Speed", "real"),
+            _var("Running", "boolean"),
+            _var("Count", "integer"),
+            _var("Gain", "real"),
+            _var("SharedBias", "real"),
+            _var("Ghost", "real"),  # declared but only used for skip-path mappings
+        ],
+    )
+    bp = _base_picture()
+    bp.localvariables = [
+        _var("SpeedRef", "real"),
+        _var("RunFlag", "boolean"),
+        _var("Counter", "integer"),
+    ]
+    bp.moduletype_defs = [moduletype]
+    bp.submodules = [
+        ModuleTypeInstance(
+            header=_module_header("Mix"),
+            moduletype_name="MixType",
+            parametermappings=[
+                _transfer("Speed", "SpeedRef"),  # real => real
+                _transfer("Running", "RunFlag"),  # boolean => boolean
+                _transfer("Count", "Counter"),  # integer => integer
+                _transfer("Gain", "Counter"),  # integer => real: numeric widening
+                _transfer("SharedBias", None, global_=True),  # GLOBAL source: unresolved
+                _transfer("Ghost", "MissingVar"),  # source variable not declared: skip
+                _transfer("AbsentParam", "SpeedRef"),  # unknown target param: skip
+            ],
+        )
+    ]
     diagnostics = validate_basepicture(bp)
     assert diagnostics == ()
 

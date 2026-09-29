@@ -1,0 +1,1690 @@
+{
+  "schema": 1,
+  "date": "2026-09-29",
+  "generated": "2026-09-29",
+  "gui_version": "unknown",
+  "transcript": "probes/TRANSCRIPT.md",
+  "summary": {
+    "rev": 0,
+    "pending": 117,
+    "confirmed": 9,
+    "template-broken": 1,
+    "survey-surprise": 7
+  },
+  "probes": [
+    {
+      "id": "C-101",
+      "area": "moduletype-graph",
+      "tier": 3,
+      "verdict": "pending",
+      "reversals": [],
+      "evidence": [
+        {
+          "probe_id": "C-101",
+          "area": "moduletype-graph",
+          "tier": 3,
+          "file": "rules/C-101/control-acyclic.s",
+          "kind": "control",
+          "expected": "accept",
+          "real": "",
+          "message": ""
+        },
+        {
+          "probe_id": "C-101",
+          "area": "moduletype-graph",
+          "tier": 3,
+          "file": "rules/C-101/violation-cycle.s",
+          "kind": "violation",
+          "expected": "reject",
+          "real": "",
+          "message": ""
+        }
+      ]
+    },
+    {
+      "id": "C-102",
+      "area": "moduletype-graph",
+      "tier": 3,
+      "verdict": "pending",
+      "reversals": [],
+      "evidence": [
+        {
+          "probe_id": "C-102",
+          "area": "moduletype-graph",
+          "tier": 3,
+          "file": "rules/C-102/control-acyclic.s",
+          "kind": "control",
+          "expected": "accept",
+          "real": "",
+          "message": ""
+        },
+        {
+          "probe_id": "C-102",
+          "area": "moduletype-graph",
+          "tier": 3,
+          "file": "rules/C-102/violation-self-instance.s",
+          "kind": "violation",
+          "expected": "reject",
+          "real": "",
+          "message": ""
+        }
+      ]
+    },
+    {
+      "id": "C-103",
+      "area": "moduletype-graph",
+      "tier": 3,
+      "verdict": "pending",
+      "reversals": [],
+      "evidence": [
+        {
+          "probe_id": "C-103",
+          "area": "moduletype-graph",
+          "tier": 3,
+          "file": "rules/C-103/control-instantiated.s",
+          "kind": "control",
+          "expected": "accept",
+          "real": "",
+          "message": ""
+        },
+        {
+          "probe_id": "C-103",
+          "area": "moduletype-graph",
+          "tier": 3,
+          "file": "rules/C-103/violation-unused.s",
+          "kind": "violation",
+          "expected": "reject",
+          "real": "",
+          "message": ""
+        }
+      ]
+    },
+    {
+      "id": "C-104",
+      "area": "moduletype-graph",
+      "tier": 3,
+      "verdict": "pending",
+      "reversals": [],
+      "evidence": [
+        {
+          "probe_id": "C-104",
+          "area": "moduletype-graph",
+          "tier": 3,
+          "file": "rules/C-104/control-defined.s",
+          "kind": "control",
+          "expected": "accept",
+          "real": "",
+          "message": ""
+        },
+        {
+          "probe_id": "C-104",
+          "area": "moduletype-graph",
+          "tier": 3,
+          "file": "rules/C-104/violation-undefined-binding.s",
+          "kind": "violation",
+          "expected": "reject",
+          "real": "",
+          "message": ""
+        }
+      ]
+    },
+    {
+      "id": "C-105",
+      "area": "moduletype-graph",
+      "tier": 3,
+      "verdict": "pending",
+      "reversals": [],
+      "evidence": [
+        {
+          "probe_id": "C-105",
+          "area": "moduletype-graph",
+          "tier": 3,
+          "file": "rules/C-105/control-full-arity.s",
+          "kind": "control",
+          "expected": "accept",
+          "real": "",
+          "message": ""
+        },
+        {
+          "probe_id": "C-105",
+          "area": "moduletype-graph",
+          "tier": 3,
+          "file": "rules/C-105/violation-missing-mapping.s",
+          "kind": "violation",
+          "expected": "reject",
+          "real": "",
+          "message": ""
+        }
+      ]
+    },
+    {
+      "id": "C-106",
+      "area": "moduletype-graph",
+      "tier": 3,
+      "verdict": "pending",
+      "reversals": [],
+      "evidence": [
+        {
+          "probe_id": "C-106",
+          "area": "moduletype-graph",
+          "tier": 3,
+          "file": "rules/C-106/control-typed-transfer.s",
+          "kind": "control",
+          "expected": "accept",
+          "real": "",
+          "message": ""
+        },
+        {
+          "probe_id": "C-106",
+          "area": "moduletype-graph",
+          "tier": 3,
+          "file": "rules/C-106/violation-bool-to-real.s",
+          "kind": "violation",
+          "expected": "reject",
+          "real": "",
+          "message": ""
+        }
+      ]
+    },
+    {
+      "id": "C-201",
+      "area": "graphics-correlation",
+      "tier": 3,
+      "verdict": "pending",
+      "reversals": [],
+      "evidence": [
+        {
+          "probe_id": "C-201",
+          "area": "graphics-correlation",
+          "tier": 3,
+          "file": "rules/C-201/control-date-match.s",
+          "kind": "control",
+          "expected": "accept",
+          "real": "",
+          "message": ""
+        },
+        {
+          "probe_id": "C-201",
+          "area": "graphics-correlation",
+          "tier": 3,
+          "file": "rules/C-201/violation-date-shift.s",
+          "kind": "violation",
+          "expected": "reject",
+          "real": "",
+          "message": ""
+        }
+      ]
+    },
+    {
+      "id": "C-202",
+      "area": "graphics-correlation",
+      "tier": 3,
+      "verdict": "pending",
+      "reversals": [],
+      "evidence": [
+        {
+          "probe_id": "C-202",
+          "area": "graphics-correlation",
+          "tier": 3,
+          "file": "rules/C-202/control-count-match.s",
+          "kind": "control",
+          "expected": "accept",
+          "real": "",
+          "message": ""
+        },
+        {
+          "probe_id": "C-202",
+          "area": "graphics-correlation",
+          "tier": 3,
+          "file": "rules/C-202/violation-extra-object.s",
+          "kind": "violation",
+          "expected": "reject",
+          "real": "",
+          "message": ""
+        }
+      ]
+    },
+    {
+      "id": "PRJ-AuxLib",
+      "area": "cross-module",
+      "tier": 3,
+      "verdict": "confirmed",
+      "reversals": [],
+      "evidence": [
+        {
+          "probe_id": "PRJ-AuxLib",
+          "area": "cross-module",
+          "tier": 3,
+          "file": "AuxLib.x",
+          "kind": "library",
+          "expected": "accept",
+          "real": "reject",
+          "message": "line 17 >>>;<<< after DateCode_ 220100: AliasSym Expected (syntax) - ours rejects identically"
+        }
+      ]
+    },
+    {
+      "id": "PRJ-LoopA",
+      "area": "cross-module",
+      "tier": 3,
+      "verdict": "pending",
+      "reversals": [],
+      "evidence": [
+        {
+          "probe_id": "PRJ-LoopA",
+          "area": "cross-module",
+          "tier": 3,
+          "file": "proj/LoopA/LoopA.s",
+          "kind": "library",
+          "expected": "accept",
+          "real": "",
+          "message": ""
+        }
+      ]
+    },
+    {
+      "id": "PRJ-LoopB",
+      "area": "cross-module",
+      "tier": 3,
+      "verdict": "pending",
+      "reversals": [],
+      "evidence": [
+        {
+          "probe_id": "PRJ-LoopB",
+          "area": "cross-module",
+          "tier": 3,
+          "file": "proj/LoopB/LoopB.s",
+          "kind": "library",
+          "expected": "accept",
+          "real": "",
+          "message": ""
+        }
+      ]
+    },
+    {
+      "id": "PRJ-Prog",
+      "area": "cross-module",
+      "tier": 3,
+      "verdict": "pending",
+      "reversals": [],
+      "evidence": [
+        {
+          "probe_id": "PRJ-Prog",
+          "area": "cross-module",
+          "tier": 3,
+          "file": "proj/Prog/Prog.s",
+          "kind": "program",
+          "expected": "reject",
+          "real": "",
+          "message": ""
+        }
+      ]
+    },
+    {
+      "id": "PRJ-ProgBadDep",
+      "area": "cross-module",
+      "tier": 3,
+      "verdict": "pending",
+      "reversals": [],
+      "evidence": [
+        {
+          "probe_id": "PRJ-ProgBadDep",
+          "area": "cross-module",
+          "tier": 3,
+          "file": "proj/ProgBadDep/ProgBadDep.s",
+          "kind": "program",
+          "expected": "reject",
+          "real": "",
+          "message": ""
+        }
+      ]
+    },
+    {
+      "id": "PRJ-PumpLib",
+      "area": "cross-module",
+      "tier": 3,
+      "verdict": "pending",
+      "reversals": [],
+      "evidence": [
+        {
+          "probe_id": "PRJ-PumpLib",
+          "area": "cross-module",
+          "tier": 3,
+          "file": "proj/PumpLib/PumpLib.s",
+          "kind": "library",
+          "expected": "accept",
+          "real": "",
+          "message": ""
+        }
+      ]
+    },
+    {
+      "id": "PRJ-UnusedLib",
+      "area": "cross-module",
+      "tier": 3,
+      "verdict": "pending",
+      "reversals": [],
+      "evidence": [
+        {
+          "probe_id": "PRJ-UnusedLib",
+          "area": "cross-module",
+          "tier": 3,
+          "file": "proj/UnusedLib/UnusedLib.s",
+          "kind": "library",
+          "expected": "accept",
+          "real": "",
+          "message": ""
+        }
+      ]
+    },
+    {
+      "id": "R-101",
+      "area": "sfc",
+      "tier": 1,
+      "verdict": "pending",
+      "reversals": [],
+      "evidence": [
+        {
+          "probe_id": "R-101",
+          "area": "sfc",
+          "tier": 1,
+          "file": "rules/R-101/control-single-init.s",
+          "kind": "control",
+          "expected": "accept",
+          "real": "",
+          "message": ""
+        },
+        {
+          "probe_id": "R-101",
+          "area": "sfc",
+          "tier": 1,
+          "file": "rules/R-101/violation-second-init.s",
+          "kind": "violation",
+          "expected": "accept",
+          "real": "",
+          "message": ""
+        }
+      ]
+    },
+    {
+      "id": "R-102",
+      "area": "sfc",
+      "tier": 1,
+      "verdict": "pending",
+      "reversals": [],
+      "evidence": [
+        {
+          "probe_id": "R-102",
+          "area": "sfc",
+          "tier": 1,
+          "file": "rules/R-102/control-init-first.s",
+          "kind": "control",
+          "expected": "accept",
+          "real": "",
+          "message": ""
+        },
+        {
+          "probe_id": "R-102",
+          "area": "sfc",
+          "tier": 1,
+          "file": "rules/R-102/violation-init-after-step.s",
+          "kind": "violation",
+          "expected": "accept",
+          "real": "",
+          "message": ""
+        }
+      ]
+    },
+    {
+      "id": "T1-001",
+      "area": "expression-types",
+      "tier": 1,
+      "verdict": "pending",
+      "reversals": [],
+      "evidence": [
+        {
+          "probe_id": "T1-001",
+          "area": "expression-types",
+          "tier": 1,
+          "file": "rules/T1-001/control.s",
+          "kind": "control",
+          "expected": "accept",
+          "real": "",
+          "message": ""
+        },
+        {
+          "probe_id": "T1-001",
+          "area": "expression-types",
+          "tier": 1,
+          "file": "rules/T1-001/violation-int-from-bool.s",
+          "kind": "violation",
+          "expected": "reject",
+          "real": "",
+          "message": ""
+        }
+      ]
+    },
+    {
+      "id": "T1-002",
+      "area": "expression-types",
+      "tier": 1,
+      "verdict": "pending",
+      "reversals": [],
+      "evidence": [
+        {
+          "probe_id": "T1-002",
+          "area": "expression-types",
+          "tier": 1,
+          "file": "rules/T1-002/control.s",
+          "kind": "control",
+          "expected": "accept",
+          "real": "",
+          "message": ""
+        },
+        {
+          "probe_id": "T1-002",
+          "area": "expression-types",
+          "tier": 1,
+          "file": "rules/T1-002/violation-real-vs-bool.s",
+          "kind": "violation",
+          "expected": "reject",
+          "real": "",
+          "message": ""
+        }
+      ]
+    },
+    {
+      "id": "T1-003",
+      "area": "expression-types",
+      "tier": 1,
+      "verdict": "pending",
+      "reversals": [],
+      "evidence": [
+        {
+          "probe_id": "T1-003",
+          "area": "expression-types",
+          "tier": 1,
+          "file": "rules/T1-003/control.s",
+          "kind": "control",
+          "expected": "accept",
+          "real": "",
+          "message": ""
+        },
+        {
+          "probe_id": "T1-003",
+          "area": "expression-types",
+          "tier": 1,
+          "file": "rules/T1-003/violation-int-condition.s",
+          "kind": "violation",
+          "expected": "reject",
+          "real": "",
+          "message": ""
+        }
+      ]
+    },
+    {
+      "id": "T1-004",
+      "area": "expression-types",
+      "tier": 1,
+      "verdict": "pending",
+      "reversals": [],
+      "evidence": [
+        {
+          "probe_id": "T1-004",
+          "area": "expression-types",
+          "tier": 1,
+          "file": "rules/T1-004/control.s",
+          "kind": "control",
+          "expected": "accept",
+          "real": "",
+          "message": ""
+        },
+        {
+          "probe_id": "T1-004",
+          "area": "expression-types",
+          "tier": 1,
+          "file": "rules/T1-004/violation-string-arg.s",
+          "kind": "violation",
+          "expected": "reject",
+          "real": "",
+          "message": ""
+        }
+      ]
+    },
+    {
+      "id": "T1-005",
+      "area": "expression-types",
+      "tier": 1,
+      "verdict": "pending",
+      "reversals": [],
+      "evidence": [
+        {
+          "probe_id": "T1-005",
+          "area": "expression-types",
+          "tier": 1,
+          "file": "rules/T1-005/control.s",
+          "kind": "control",
+          "expected": "accept",
+          "real": "",
+          "message": ""
+        },
+        {
+          "probe_id": "T1-005",
+          "area": "expression-types",
+          "tier": 1,
+          "file": "rules/T1-005/violation-too-deep.s",
+          "kind": "violation",
+          "expected": "reject",
+          "real": "",
+          "message": ""
+        }
+      ]
+    },
+    {
+      "id": "T1-006",
+      "area": "context-restricted-types",
+      "tier": 1,
+      "verdict": "template-broken",
+      "reversals": [],
+      "evidence": [
+        {
+          "probe_id": "T1-006",
+          "area": "context-restricted-types",
+          "tier": 1,
+          "file": "AnyTypeParam.x",
+          "kind": "control",
+          "expected": "accept",
+          "real": "reject",
+          "message": "Submodule Controller1, parameter Query not connected."
+        },
+        {
+          "probe_id": "T1-006",
+          "area": "context-restricted-types",
+          "tier": 1,
+          "file": "AnyTypeLocVar.x",
+          "kind": "violation",
+          "expected": "reject",
+          "real": "reject",
+          "message": "ControllerType GLOBAL GlobalSetpoint not found at BasePicture.Controller2"
+        }
+      ]
+    },
+    {
+      "id": "T1-006b",
+      "area": "context-restricted-types",
+      "tier": 1,
+      "verdict": "pending",
+      "reversals": [],
+      "evidence": [
+        {
+          "probe_id": "T1-006b",
+          "area": "context-restricted-types",
+          "tier": 1,
+          "file": "rules/T1-006b/control.s",
+          "kind": "control",
+          "expected": "accept",
+          "real": "",
+          "message": ""
+        },
+        {
+          "probe_id": "T1-006b",
+          "area": "context-restricted-types",
+          "tier": 1,
+          "file": "rules/T1-006b/violation-anytype-field.s",
+          "kind": "violation",
+          "expected": "reject",
+          "real": "",
+          "message": ""
+        }
+      ]
+    },
+    {
+      "id": "T1-007",
+      "area": "statement-context",
+      "tier": 1,
+      "verdict": "pending",
+      "reversals": [],
+      "evidence": [
+        {
+          "probe_id": "T1-007",
+          "area": "statement-context",
+          "tier": 1,
+          "file": "rules/T1-007/control-default-param.s",
+          "kind": "control",
+          "expected": "accept",
+          "real": "",
+          "message": ""
+        },
+        {
+          "probe_id": "T1-007",
+          "area": "statement-context",
+          "tier": 1,
+          "file": "rules/T1-007/violation-default-scalar-localvar.s",
+          "kind": "violation",
+          "expected": "unknown",
+          "real": "",
+          "message": ""
+        }
+      ]
+    },
+    {
+      "id": "T1-008",
+      "area": "statement-context",
+      "tier": 1,
+      "verdict": "pending",
+      "reversals": [],
+      "evidence": [
+        {
+          "probe_id": "T1-008",
+          "area": "statement-context",
+          "tier": 1,
+          "file": "rules/T1-008/control-with-init.s",
+          "kind": "control",
+          "expected": "accept",
+          "real": "",
+          "message": ""
+        },
+        {
+          "probe_id": "T1-008",
+          "area": "statement-context",
+          "tier": 1,
+          "file": "rules/T1-008/violation-const-no-init.s",
+          "kind": "violation",
+          "expected": "accept",
+          "real": "",
+          "message": ""
+        }
+      ]
+    },
+    {
+      "id": "T1-009",
+      "area": "statement-context",
+      "tier": 1,
+      "verdict": "pending",
+      "reversals": [],
+      "evidence": [
+        {
+          "probe_id": "T1-009",
+          "area": "statement-context",
+          "tier": 1,
+          "file": "rules/T1-009/control.s",
+          "kind": "control",
+          "expected": "accept",
+          "real": "",
+          "message": ""
+        },
+        {
+          "probe_id": "T1-009",
+          "area": "statement-context",
+          "tier": 1,
+          "file": "rules/T1-009/violation-state-int.s",
+          "kind": "violation",
+          "expected": "unknown",
+          "real": "",
+          "message": ""
+        },
+        {
+          "probe_id": "T1-009",
+          "area": "statement-context",
+          "tier": 1,
+          "file": "rules/T1-009/violation-opsave-string.s",
+          "kind": "violation",
+          "expected": "unknown",
+          "real": "",
+          "message": ""
+        }
+      ]
+    },
+    {
+      "id": "T1-010",
+      "area": "statement-context",
+      "tier": 1,
+      "verdict": "pending",
+      "reversals": [],
+      "evidence": [
+        {
+          "probe_id": "T1-010",
+          "area": "statement-context",
+          "tier": 1,
+          "file": "rules/T1-010/control.s",
+          "kind": "control",
+          "expected": "accept",
+          "real": "",
+          "message": ""
+        },
+        {
+          "probe_id": "T1-010",
+          "area": "statement-context",
+          "tier": 1,
+          "file": "rules/T1-010/violation-old-on-nonstate.s",
+          "kind": "violation",
+          "expected": "reject",
+          "real": "",
+          "message": ""
+        }
+      ]
+    },
+    {
+      "id": "T1-011",
+      "area": "sfc",
+      "tier": 1,
+      "verdict": "pending",
+      "reversals": [],
+      "evidence": [
+        {
+          "probe_id": "T1-011",
+          "area": "sfc",
+          "tier": 1,
+          "file": "rules/T1-011/control.s",
+          "kind": "control",
+          "expected": "accept",
+          "real": "",
+          "message": ""
+        },
+        {
+          "probe_id": "T1-011",
+          "area": "sfc",
+          "tier": 1,
+          "file": "rules/T1-011/violation-step-accessor.s",
+          "kind": "violation",
+          "expected": "accept",
+          "real": "",
+          "message": ""
+        },
+        {
+          "probe_id": "T1-011",
+          "area": "sfc",
+          "tier": 1,
+          "file": "rules/T1-011/violation-seq-reset.s",
+          "kind": "violation",
+          "expected": "accept",
+          "real": "",
+          "message": ""
+        }
+      ]
+    },
+    {
+      "id": "T1-012",
+      "area": "reserved-names",
+      "tier": 1,
+      "verdict": "pending",
+      "reversals": [],
+      "evidence": [
+        {
+          "probe_id": "T1-012",
+          "area": "reserved-names",
+          "tier": 1,
+          "file": "rules/T1-012/control-ordinary-name.s",
+          "kind": "control",
+          "expected": "accept",
+          "real": "",
+          "message": ""
+        },
+        {
+          "probe_id": "T1-012",
+          "area": "reserved-names",
+          "tier": 1,
+          "file": "rules/T1-012/violation-var-on.s",
+          "kind": "violation",
+          "expected": "reject",
+          "real": "",
+          "message": ""
+        },
+        {
+          "probe_id": "T1-012",
+          "area": "reserved-names",
+          "tier": 1,
+          "file": "rules/T1-012/violation-var-off.s",
+          "kind": "violation",
+          "expected": "reject",
+          "real": "",
+          "message": ""
+        },
+        {
+          "probe_id": "T1-012",
+          "area": "reserved-names",
+          "tier": 1,
+          "file": "rules/T1-012/violation-var-groupdata.s",
+          "kind": "violation",
+          "expected": "reject",
+          "real": "",
+          "message": ""
+        }
+      ]
+    }
+  ],
+  "tier0": [
+    {
+      "file": "tier0/t0-valid-AllDatatypes.s",
+      "kind": "inventory",
+      "expected": "accept",
+      "real": "",
+      "message": "",
+      "verdict": "pending"
+    },
+    {
+      "file": "tier0/t0-valid-BuiltinCalls.s",
+      "kind": "inventory",
+      "expected": "accept",
+      "real": "",
+      "message": "",
+      "verdict": "pending"
+    },
+    {
+      "file": "tier0/t0-valid-CompressedFullGrammar.s",
+      "kind": "inventory",
+      "expected": "accept",
+      "real": "",
+      "message": "",
+      "verdict": "pending"
+    },
+    {
+      "file": "tier0/t0-valid-CompressedSequenceBasic.s",
+      "kind": "inventory",
+      "expected": "accept",
+      "real": "",
+      "message": "",
+      "verdict": "pending"
+    },
+    {
+      "file": "tier0/t0-valid-ControlFlow.s",
+      "kind": "inventory",
+      "expected": "accept",
+      "real": "",
+      "message": "",
+      "verdict": "pending"
+    },
+    {
+      "file": "tier0/t0-valid-CoordInVarTail.s",
+      "kind": "inventory",
+      "expected": "accept",
+      "real": "",
+      "message": "",
+      "verdict": "pending"
+    },
+    {
+      "file": "tier0/t0-valid-DefaultInitOnRecord.s",
+      "kind": "inventory",
+      "expected": "accept",
+      "real": "",
+      "message": "",
+      "verdict": "pending"
+    },
+    {
+      "file": "tier0/t0-valid-DurationAndTime.s",
+      "kind": "inventory",
+      "expected": "accept",
+      "real": "",
+      "message": "",
+      "verdict": "pending"
+    },
+    {
+      "file": "tier0/t0-valid-GraphObjectEnableTails.s",
+      "kind": "inventory",
+      "expected": "accept",
+      "real": "",
+      "message": "",
+      "verdict": "pending"
+    },
+    {
+      "file": "tier0/t0-valid-GraphObjectShapes.s",
+      "kind": "inventory",
+      "expected": "accept",
+      "real": "",
+      "message": "",
+      "verdict": "pending"
+    },
+    {
+      "file": "tier0/t0-valid-GraphObjectsSectionLayer.s",
+      "kind": "inventory",
+      "expected": "accept",
+      "real": "",
+      "message": "",
+      "verdict": "pending"
+    },
+    {
+      "file": "tier0/t0-valid-GraphicsObjects.s",
+      "kind": "inventory",
+      "expected": "accept",
+      "real": "",
+      "message": "",
+      "verdict": "pending"
+    },
+    {
+      "file": "tier0/t0-valid-InteractEnableTails.s",
+      "kind": "inventory",
+      "expected": "accept",
+      "real": "",
+      "message": "",
+      "verdict": "pending"
+    },
+    {
+      "file": "tier0/t0-valid-InteractWidgets.s",
+      "kind": "inventory",
+      "expected": "accept",
+      "real": "",
+      "message": "",
+      "verdict": "pending"
+    },
+    {
+      "file": "tier0/t0-valid-MinimalProgram.s",
+      "kind": "inventory",
+      "expected": "accept",
+      "real": "",
+      "message": "",
+      "verdict": "pending"
+    },
+    {
+      "file": "tier0/t0-valid-MultiEquationBlocks.s",
+      "kind": "inventory",
+      "expected": "accept",
+      "real": "",
+      "message": "",
+      "verdict": "pending"
+    },
+    {
+      "file": "tier0/t0-valid-MultiTypedefBlocks.s",
+      "kind": "inventory",
+      "expected": "accept",
+      "real": "",
+      "message": "",
+      "verdict": "pending"
+    },
+    {
+      "file": "tier0/t0-valid-MultipleModuleDefBlocks.s",
+      "kind": "inventory",
+      "expected": "accept",
+      "real": "",
+      "message": "",
+      "verdict": "pending"
+    },
+    {
+      "file": "tier0/t0-valid-NestedSubmodules.s",
+      "kind": "inventory",
+      "expected": "accept",
+      "real": "",
+      "message": "",
+      "verdict": "pending"
+    },
+    {
+      "file": "tier0/t0-valid-OldNewOnStateField.s",
+      "kind": "inventory",
+      "expected": "accept",
+      "real": "",
+      "message": "",
+      "verdict": "pending"
+    },
+    {
+      "file": "tier0/t0-valid-OpenSequenceSeqFork.s",
+      "kind": "inventory",
+      "expected": "accept",
+      "real": "",
+      "message": "",
+      "verdict": "pending"
+    },
+    {
+      "file": "tier0/t0-valid-QuotedIdentifiers.s",
+      "kind": "inventory",
+      "expected": "accept",
+      "real": "",
+      "message": "",
+      "verdict": "pending"
+    },
+    {
+      "file": "tier0/t0-valid-RecordTypeAccess.s",
+      "kind": "inventory",
+      "expected": "accept",
+      "real": "",
+      "message": "",
+      "verdict": "pending"
+    },
+    {
+      "file": "tier0/t0-valid-SFCUnnamedElements.s",
+      "kind": "inventory",
+      "expected": "accept",
+      "real": "",
+      "message": "",
+      "verdict": "pending"
+    },
+    {
+      "file": "tier0/t0-valid-SequenceAlternative.s",
+      "kind": "inventory",
+      "expected": "accept",
+      "real": "",
+      "message": "",
+      "verdict": "pending"
+    },
+    {
+      "file": "tier0/t0-valid-SequenceBasic.s",
+      "kind": "inventory",
+      "expected": "accept",
+      "real": "",
+      "message": "",
+      "verdict": "pending"
+    },
+    {
+      "file": "tier0/t0-valid-SequenceParallel.s",
+      "kind": "inventory",
+      "expected": "accept",
+      "real": "",
+      "message": "",
+      "verdict": "pending"
+    },
+    {
+      "file": "tier0/t0-valid-SubSeqTransition.s",
+      "kind": "inventory",
+      "expected": "accept",
+      "real": "",
+      "message": "",
+      "verdict": "pending"
+    },
+    {
+      "file": "tier0/t0-valid-SubSeqTransitionAlt.s",
+      "kind": "inventory",
+      "expected": "accept",
+      "real": "",
+      "message": "",
+      "verdict": "pending"
+    },
+    {
+      "file": "tier0/t0-valid-SubmoduleParams.s",
+      "kind": "inventory",
+      "expected": "accept",
+      "real": "",
+      "message": "",
+      "verdict": "pending"
+    },
+    {
+      "file": "tier0/t0-valid-SubsequenceBlock.s",
+      "kind": "inventory",
+      "expected": "accept",
+      "real": "",
+      "message": "",
+      "verdict": "pending"
+    },
+    {
+      "file": "tier0/t0-valid-UnCompressedFullGrammar.s",
+      "kind": "inventory",
+      "expected": "accept",
+      "real": "",
+      "message": "",
+      "verdict": "pending"
+    },
+    {
+      "file": "tier0/t0-valid-VariableModifiers.s",
+      "kind": "inventory",
+      "expected": "accept",
+      "real": "",
+      "message": "",
+      "verdict": "pending"
+    },
+    {
+      "file": "tier0/t0-edge-ArithmeticPrecedence.s",
+      "kind": "inventory",
+      "expected": "accept",
+      "real": "",
+      "message": "",
+      "verdict": "pending"
+    },
+    {
+      "file": "tier0/t0-edge-BareDurationZero.s",
+      "kind": "inventory",
+      "expected": "accept",
+      "real": "",
+      "message": "",
+      "verdict": "pending"
+    },
+    {
+      "file": "tier0/t0-edge-CaseInsensitiveIdentifiers.s",
+      "kind": "inventory",
+      "expected": "accept",
+      "real": "",
+      "message": "",
+      "verdict": "pending"
+    },
+    {
+      "file": "tier0/t0-edge-CommentInsideEquation.s",
+      "kind": "inventory",
+      "expected": "accept",
+      "real": "",
+      "message": "",
+      "verdict": "pending"
+    },
+    {
+      "file": "tier0/t0-edge-ConstStringSetGetPos.s",
+      "kind": "inventory",
+      "expected": "accept",
+      "real": "",
+      "message": "",
+      "verdict": "pending"
+    },
+    {
+      "file": "tier0/t0-edge-CoordinateInvarTail.s",
+      "kind": "inventory",
+      "expected": "accept",
+      "real": "",
+      "message": "",
+      "verdict": "pending"
+    },
+    {
+      "file": "tier0/t0-edge-DeeplyNestedComments.s",
+      "kind": "inventory",
+      "expected": "accept",
+      "real": "",
+      "message": "",
+      "verdict": "pending"
+    },
+    {
+      "file": "tier0/t0-edge-DurationInParameterMapping.s",
+      "kind": "inventory",
+      "expected": "accept",
+      "real": "",
+      "message": "",
+      "verdict": "pending"
+    },
+    {
+      "file": "tier0/t0-edge-DurationVariousFormats.s",
+      "kind": "inventory",
+      "expected": "accept",
+      "real": "",
+      "message": "",
+      "verdict": "pending"
+    },
+    {
+      "file": "tier0/t0-edge-ElsifExpression.s",
+      "kind": "inventory",
+      "expected": "accept",
+      "real": "",
+      "message": "",
+      "verdict": "pending"
+    },
+    {
+      "file": "tier0/t0-edge-EmptyCodeBlocks.s",
+      "kind": "inventory",
+      "expected": "accept",
+      "real": "",
+      "message": "",
+      "verdict": "pending"
+    },
+    {
+      "file": "tier0/t0-edge-EmptyRecordType.s",
+      "kind": "inventory",
+      "expected": "accept",
+      "real": "",
+      "message": "",
+      "verdict": "pending"
+    },
+    {
+      "file": "tier0/t0-edge-FrameModuleInvocation.s",
+      "kind": "inventory",
+      "expected": "accept",
+      "real": "",
+      "message": "",
+      "verdict": "pending"
+    },
+    {
+      "file": "tier0/t0-edge-GlobalParameterMapping.s",
+      "kind": "inventory",
+      "expected": "accept",
+      "real": "",
+      "message": "",
+      "verdict": "pending"
+    },
+    {
+      "file": "tier0/t0-edge-KeywordPrefixedIdentifiers.s",
+      "kind": "inventory",
+      "expected": "accept",
+      "real": "",
+      "message": "",
+      "verdict": "pending"
+    },
+    {
+      "file": "tier0/t0-edge-LegacySequenceNoInitStep.s",
+      "kind": "inventory",
+      "expected": "accept",
+      "real": "",
+      "message": "",
+      "verdict": "pending"
+    },
+    {
+      "file": "tier0/t0-edge-MinimalSequence.s",
+      "kind": "inventory",
+      "expected": "accept",
+      "real": "",
+      "message": "",
+      "verdict": "pending"
+    },
+    {
+      "file": "tier0/t0-edge-ModuleDefNoTrailingEnddef.s",
+      "kind": "inventory",
+      "expected": "accept",
+      "real": "",
+      "message": "",
+      "verdict": "pending"
+    },
+    {
+      "file": "tier0/t0-edge-ModuleOptions.s",
+      "kind": "inventory",
+      "expected": "accept",
+      "real": "",
+      "message": "",
+      "verdict": "pending"
+    },
+    {
+      "file": "tier0/t0-edge-NegativeDurationValue.s",
+      "kind": "inventory",
+      "expected": "accept",
+      "real": "",
+      "message": "",
+      "verdict": "pending"
+    },
+    {
+      "file": "tier0/t0-edge-OldNewOnDottedStateField.s",
+      "kind": "inventory",
+      "expected": "accept",
+      "real": "",
+      "message": "",
+      "verdict": "pending"
+    },
+    {
+      "file": "tier0/t0-edge-OpSaveAndStateCombined.s",
+      "kind": "inventory",
+      "expected": "accept",
+      "real": "",
+      "message": "",
+      "verdict": "pending"
+    },
+    {
+      "file": "tier0/t0-edge-QuotedIdentifierMaxLength.s",
+      "kind": "inventory",
+      "expected": "accept",
+      "real": "",
+      "message": "",
+      "verdict": "pending"
+    },
+    {
+      "file": "tier0/t0-edge-ScanGroupClause.s",
+      "kind": "inventory",
+      "expected": "accept",
+      "real": "",
+      "message": "",
+      "verdict": "pending"
+    },
+    {
+      "file": "tier0/t0-edge-SeqBreak.s",
+      "kind": "inventory",
+      "expected": "accept",
+      "real": "",
+      "message": "",
+      "verdict": "pending"
+    },
+    {
+      "file": "tier0/t0-edge-SeqForkMultipleTargets.s",
+      "kind": "inventory",
+      "expected": "accept",
+      "real": "",
+      "message": "",
+      "verdict": "pending"
+    },
+    {
+      "file": "tier0/t0-edge-SequenceAlternative.s",
+      "kind": "inventory",
+      "expected": "accept",
+      "real": "",
+      "message": "",
+      "verdict": "pending"
+    },
+    {
+      "file": "tier0/t0-edge-SequenceParallel.s",
+      "kind": "inventory",
+      "expected": "accept",
+      "real": "",
+      "message": "",
+      "verdict": "pending"
+    },
+    {
+      "file": "tier0/t0-edge-SimpleModuleTypeInvocation.s",
+      "kind": "inventory",
+      "expected": "accept",
+      "real": "",
+      "message": "",
+      "verdict": "pending"
+    },
+    {
+      "file": "tier0/t0-edge-SubSequenceDefinition.s",
+      "kind": "inventory",
+      "expected": "accept",
+      "real": "",
+      "message": "",
+      "verdict": "pending"
+    },
+    {
+      "file": "tier0/t0-edge-SubSequenceTransition.s",
+      "kind": "inventory",
+      "expected": "accept",
+      "real": "",
+      "message": "",
+      "verdict": "pending"
+    },
+    {
+      "file": "tier0/t0-edge-TerminalSeqStep.s",
+      "kind": "inventory",
+      "expected": "accept",
+      "real": "",
+      "message": "",
+      "verdict": "pending"
+    },
+    {
+      "file": "tier0/t0-edge-TimeValueInit.s",
+      "kind": "inventory",
+      "expected": "accept",
+      "real": "",
+      "message": "",
+      "verdict": "pending"
+    },
+    {
+      "file": "tier0/t0-edge-UnicodeIdentifiers.s",
+      "kind": "inventory",
+      "expected": "accept",
+      "real": "",
+      "message": "",
+      "verdict": "pending"
+    },
+    {
+      "file": "BadBareDurStr.x",
+      "kind": "inventory",
+      "expected": "reject",
+      "real": "accept",
+      "message": "compiles without errors (IDE refuses to create via editors; direct file load accepts)",
+      "verdict": "survey-surprise"
+    },
+    {
+      "file": "BadBareTimeStr.x",
+      "kind": "inventory",
+      "expected": "reject",
+      "real": "accept",
+      "message": "compiles without errors (IDE refuses to create via editors; direct file load accepts)",
+      "verdict": "survey-surprise"
+    },
+    {
+      "file": "tier0/t0-invalid-BadDurationLiteral.s",
+      "kind": "inventory",
+      "expected": "reject",
+      "real": "",
+      "message": "",
+      "verdict": "pending"
+    },
+    {
+      "file": "tier0/t0-invalid-BadTimeLiteral.s",
+      "kind": "inventory",
+      "expected": "reject",
+      "real": "",
+      "message": "",
+      "verdict": "pending"
+    },
+    {
+      "file": "BadBuiltinDatatype.x",
+      "kind": "inventory",
+      "expected": "reject",
+      "real": "reject",
+      "message": "\"Datatype intege not found\" (dialog: replace / open new library / delete / abort)",
+      "verdict": "confirmed"
+    },
+    {
+      "file": "BadBuiltinOutArg.x",
+      "kind": "inventory",
+      "expected": "reject",
+      "real": "reject",
+      "message": "Type error in if-sentence. If UseA THEN DestinationA ELSE DestinationB ENDIF",
+      "verdict": "confirmed"
+    },
+    {
+      "file": "BadBuiltinWrong.x",
+      "kind": "inventory",
+      "expected": "reject",
+      "real": "reject",
+      "message": "Too few parameters EqualString(Name1, Name2)",
+      "verdict": "confirmed"
+    },
+    {
+      "file": "BadConsecSeqSteps.x",
+      "kind": "inventory",
+      "expected": "reject",
+      "real": "reject",
+      "message": "line 28 >>>SEQSTEP<<< Step2. Incorrect syntax - Error 32",
+      "verdict": "confirmed"
+    },
+    {
+      "file": "BadConstVarAs.x",
+      "kind": "inventory",
+      "expected": "reject",
+      "real": "reject",
+      "message": "out parameter is not a variable: Fixed",
+      "verdict": "confirmed"
+    },
+    {
+      "file": "BadCrossMod.x",
+      "kind": "inventory",
+      "expected": "reject",
+      "real": "reject",
+      "message": "Submodule Child, parameter EnableFlag: Variable CounterValue is an invalid type",
+      "verdict": "confirmed"
+    },
+    {
+      "file": "BadDatatypeShadows.x",
+      "kind": "inventory",
+      "expected": "reject",
+      "real": "accept",
+      "message": "compiles without errors (IDE refuses to create via editors; direct file load accepts)",
+      "verdict": "survey-surprise"
+    },
+    {
+      "file": "BadDupDatatypeName.x",
+      "kind": "inventory",
+      "expected": "reject",
+      "real": "accept",
+      "message": "compiles without errors (IDE refuses to create via editors; direct file load accepts)",
+      "verdict": "survey-surprise"
+    },
+    {
+      "file": "BadDupModTypeName.x",
+      "kind": "inventory",
+      "expected": "reject",
+      "real": "accept",
+      "message": "compiles without errors (IDE refuses to create via editors; direct file load accepts)",
+      "verdict": "survey-surprise"
+    },
+    {
+      "file": "BadDupRecFldName.x",
+      "kind": "inventory",
+      "expected": "reject",
+      "real": "accept",
+      "message": "compiles without errors (IDE refuses to create via editors; direct file load accepts)",
+      "verdict": "survey-surprise"
+    },
+    {
+      "file": "BadDupSfcElemNames.x",
+      "kind": "inventory",
+      "expected": "reject",
+      "real": "reject",
+      "message": "error in sequence block",
+      "verdict": "confirmed"
+    },
+    {
+      "file": "BadDupSibSubmods.x",
+      "kind": "inventory",
+      "expected": "reject",
+      "real": "reject",
+      "message": "module name is not unique: SensorA",
+      "verdict": "confirmed"
+    },
+    {
+      "file": "BadDupVariaNames.x",
+      "kind": "inventory",
+      "expected": "reject",
+      "real": "accept",
+      "message": "compiles without errors (IDE refuses to create via editors; direct file load accepts)",
+      "verdict": "survey-surprise"
+    },
+    {
+      "file": "tier0/t0-invalid-EncodingStress.s",
+      "kind": "inventory",
+      "expected": "reject",
+      "real": "",
+      "message": "",
+      "verdict": "pending"
+    },
+    {
+      "file": "tier0/t0-invalid-FreestandingCommentInModuleCode.s",
+      "kind": "inventory",
+      "expected": "reject",
+      "real": "",
+      "message": "",
+      "verdict": "pending"
+    },
+    {
+      "file": "tier0/t0-invalid-GraphObjectsDoubleLayer.s",
+      "kind": "inventory",
+      "expected": "reject",
+      "real": "",
+      "message": "",
+      "verdict": "pending"
+    },
+    {
+      "file": "tier0/t0-invalid-InitValueTypeMismatch.s",
+      "kind": "inventory",
+      "expected": "reject",
+      "real": "",
+      "message": "",
+      "verdict": "pending"
+    },
+    {
+      "file": "tier0/t0-invalid-Malformed.s",
+      "kind": "inventory",
+      "expected": "reject",
+      "real": "",
+      "message": "",
+      "verdict": "pending"
+    },
+    {
+      "file": "tier0/t0-invalid-ModuleCodeWithoutModuleDef.s",
+      "kind": "inventory",
+      "expected": "reject",
+      "real": "",
+      "message": "",
+      "verdict": "pending"
+    },
+    {
+      "file": "tier0/t0-invalid-NotSattLine.s",
+      "kind": "inventory",
+      "expected": "reject",
+      "real": "",
+      "message": "",
+      "verdict": "pending"
+    },
+    {
+      "file": "tier0/t0-invalid-OldNewOnNonState.s",
+      "kind": "inventory",
+      "expected": "reject",
+      "real": "",
+      "message": "",
+      "verdict": "pending"
+    },
+    {
+      "file": "tier0/t0-invalid-OldNewOnNonStateRecordField.s",
+      "kind": "inventory",
+      "expected": "reject",
+      "real": "",
+      "message": "",
+      "verdict": "pending"
+    },
+    {
+      "file": "tier0/t0-invalid-OversizedInput.s",
+      "kind": "inventory",
+      "expected": "reject",
+      "real": "",
+      "message": "",
+      "verdict": "pending"
+    },
+    {
+      "file": "tier0/t0-invalid-SFCAlternativeBranchStartsWithStep.s",
+      "kind": "inventory",
+      "expected": "reject",
+      "real": "",
+      "message": "",
+      "verdict": "pending"
+    },
+    {
+      "file": "tier0/t0-invalid-SFCInitStepNotFirst.s",
+      "kind": "inventory",
+      "expected": "reject",
+      "real": "",
+      "message": "",
+      "verdict": "pending"
+    },
+    {
+      "file": "tier0/t0-invalid-SFCInitStepRepeated.s",
+      "kind": "inventory",
+      "expected": "reject",
+      "real": "",
+      "message": "",
+      "verdict": "pending"
+    },
+    {
+      "file": "tier0/t0-invalid-SFCParallelBranchStartsWithTransition.s",
+      "kind": "inventory",
+      "expected": "reject",
+      "real": "",
+      "message": "",
+      "verdict": "pending"
+    },
+    {
+      "file": "tier0/t0-invalid-SeqForkUnknownTarget.s",
+      "kind": "inventory",
+      "expected": "reject",
+      "real": "",
+      "message": "",
+      "verdict": "pending"
+    },
+    {
+      "file": "tier0/t0-invalid-StringLiteralInCallArgument.s",
+      "kind": "inventory",
+      "expected": "reject",
+      "real": "",
+      "message": "",
+      "verdict": "pending"
+    },
+    {
+      "file": "tier0/t0-invalid-UndefinedVariableRef.s",
+      "kind": "inventory",
+      "expected": "reject",
+      "real": "",
+      "message": "",
+      "verdict": "pending"
+    },
+    {
+      "file": "tier0/t0-invalid-UnknownDatatypeName.s",
+      "kind": "inventory",
+      "expected": "reject",
+      "real": "",
+      "message": "",
+      "verdict": "pending"
+    },
+    {
+      "file": "tier0/t0-invalid-UnterminatedComment.s",
+      "kind": "inventory",
+      "expected": "reject",
+      "real": "",
+      "message": "",
+      "verdict": "pending"
+    },
+    {
+      "file": "tier0/t0-invalid-WriteToConstVariable.s",
+      "kind": "inventory",
+      "expected": "reject",
+      "real": "",
+      "message": "",
+      "verdict": "pending"
+    }
+  ]
+}

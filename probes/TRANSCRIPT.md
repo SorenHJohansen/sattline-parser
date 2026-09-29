@@ -17,8 +17,8 @@
 | T1-004 | expression-types | 1 | rules/T1-004/violation-string-arg.s | violation | reject |  |  |
 | T1-005 | expression-types | 1 | rules/T1-005/control.s | control | accept |  |  |
 | T1-005 | expression-types | 1 | rules/T1-005/violation-too-deep.s | violation | reject |  |  |
-| T1-006 | context-restricted-types | 1 | rules/T1-006/anytype-param.s | control | accept |  |  |
-| T1-006 | context-restricted-types | 1 | rules/T1-006/anytype-localvar.s | violation | reject |  |  |
+| T1-006 | context-restricted-types | 1 | AnyTypeParam.x | control | accept | reject | Submodule Controller1, parameter Query not connected. |
+| T1-006 | context-restricted-types | 1 | AnyTypeLocVar.x | violation | reject | reject | ControllerType GLOBAL GlobalSetpoint not found at BasePicture.Controller2 |
 | T1-006b | context-restricted-types | 1 | rules/T1-006b/control.s | control | accept |  |  |
 | T1-006b | context-restricted-types | 1 | rules/T1-006b/violation-anytype-field.s | violation | reject |  |  |
 | T1-007 | statement-context | 1 | rules/T1-007/control-default-param.s | control | accept |  |  |
@@ -124,23 +124,23 @@
 | t0-edge-TerminalSeqStep | tier0-sweep | 0 | tier0/t0-edge-TerminalSeqStep.s | inventory | accept |  |  |
 | t0-edge-TimeValueInit | tier0-sweep | 0 | tier0/t0-edge-TimeValueInit.s | inventory | accept |  |  |
 | t0-edge-UnicodeIdentifiers | tier0-sweep | 0 | tier0/t0-edge-UnicodeIdentifiers.s | inventory | accept |  |  |
-| t0-invalid-BadBareDurationString | tier0-sweep | 0 | tier0/t0-invalid-BadBareDurationString.s | inventory | reject |  |  |
-| t0-invalid-BadBareTimeString | tier0-sweep | 0 | tier0/t0-invalid-BadBareTimeString.s | inventory | reject |  |  |
+| t0-invalid-BadBareDurationString | tier0-sweep | 0 | BadBareDurStr.x | inventory | reject | accept | compiles without errors (IDE refuses to create via editors; direct file load accepts) |
+| t0-invalid-BadBareTimeString | tier0-sweep | 0 | BadBareTimeStr.x | inventory | reject | accept | compiles without errors (IDE refuses to create via editors; direct file load accepts) |
 | t0-invalid-BadDurationLiteral | tier0-sweep | 0 | tier0/t0-invalid-BadDurationLiteral.s | inventory | reject |  |  |
 | t0-invalid-BadTimeLiteral | tier0-sweep | 0 | tier0/t0-invalid-BadTimeLiteral.s | inventory | reject |  |  |
-| t0-invalid-BuiltinDatatypeTypo | tier0-sweep | 0 | tier0/t0-invalid-BuiltinDatatypeTypo.s | inventory | reject |  |  |
-| t0-invalid-BuiltinOutArgNotVariable | tier0-sweep | 0 | tier0/t0-invalid-BuiltinOutArgNotVariable.s | inventory | reject |  |  |
-| t0-invalid-BuiltinWrongArity | tier0-sweep | 0 | tier0/t0-invalid-BuiltinWrongArity.s | inventory | reject |  |  |
-| t0-invalid-ConsecutiveSeqSteps | tier0-sweep | 0 | tier0/t0-invalid-ConsecutiveSeqSteps.s | inventory | reject |  |  |
-| t0-invalid-ConstVarAsBuiltinOutArg | tier0-sweep | 0 | tier0/t0-invalid-ConstVarAsBuiltinOutArg.s | inventory | reject |  |  |
-| t0-invalid-CrossModuleContractMismatch | tier0-sweep | 0 | tier0/t0-invalid-CrossModuleContractMismatch.s | inventory | reject |  |  |
-| t0-invalid-DatatypeShadowsBuiltinName | tier0-sweep | 0 | tier0/t0-invalid-DatatypeShadowsBuiltinName.s | inventory | reject |  |  |
-| t0-invalid-DuplicateDatatypeName | tier0-sweep | 0 | tier0/t0-invalid-DuplicateDatatypeName.s | inventory | reject |  |  |
-| t0-invalid-DuplicateModuletypeName | tier0-sweep | 0 | tier0/t0-invalid-DuplicateModuletypeName.s | inventory | reject |  |  |
-| t0-invalid-DuplicateRecordFieldName | tier0-sweep | 0 | tier0/t0-invalid-DuplicateRecordFieldName.s | inventory | reject |  |  |
-| t0-invalid-DuplicateSFCElementNames | tier0-sweep | 0 | tier0/t0-invalid-DuplicateSFCElementNames.s | inventory | reject |  |  |
-| t0-invalid-DuplicateSiblingSubmodules | tier0-sweep | 0 | tier0/t0-invalid-DuplicateSiblingSubmodules.s | inventory | reject |  |  |
-| t0-invalid-DuplicateVariableNames | tier0-sweep | 0 | tier0/t0-invalid-DuplicateVariableNames.s | inventory | reject |  |  |
+| t0-invalid-BuiltinDatatypeTypo | tier0-sweep | 0 | BadBuiltinDatatype.x | inventory | reject | reject | "Datatype intege not found" (dialog: replace / open new library / delete / abort) |
+| t0-invalid-BuiltinOutArgNotVariable | tier0-sweep | 0 | BadBuiltinOutArg.x | inventory | reject | reject | Type error in if-sentence. If UseA THEN DestinationA ELSE DestinationB ENDIF |
+| t0-invalid-BuiltinWrongArity | tier0-sweep | 0 | BadBuiltinWrong.x | inventory | reject | reject | Too few parameters EqualString(Name1, Name2) |
+| t0-invalid-ConsecutiveSeqSteps | tier0-sweep | 0 | BadConsecSeqSteps.x | inventory | reject | reject | line 28 >>>SEQSTEP<<< Step2. Incorrect syntax - Error 32 |
+| t0-invalid-ConstVarAsBuiltinOutArg | tier0-sweep | 0 | BadConstVarAs.x | inventory | reject | reject | out parameter is not a variable: Fixed |
+| t0-invalid-CrossModuleContractMismatch | tier0-sweep | 0 | BadCrossMod.x | inventory | reject | reject | Submodule Child, parameter EnableFlag: Variable CounterValue is an invalid type |
+| t0-invalid-DatatypeShadowsBuiltinName | tier0-sweep | 0 | BadDatatypeShadows.x | inventory | reject | accept | compiles without errors (IDE refuses to create via editors; direct file load accepts) |
+| t0-invalid-DuplicateDatatypeName | tier0-sweep | 0 | BadDupDatatypeName.x | inventory | reject | accept | compiles without errors (IDE refuses to create via editors; direct file load accepts) |
+| t0-invalid-DuplicateModuletypeName | tier0-sweep | 0 | BadDupModTypeName.x | inventory | reject | accept | compiles without errors (IDE refuses to create via editors; direct file load accepts) |
+| t0-invalid-DuplicateRecordFieldName | tier0-sweep | 0 | BadDupRecFldName.x | inventory | reject | accept | compiles without errors (IDE refuses to create via editors; direct file load accepts) |
+| t0-invalid-DuplicateSFCElementNames | tier0-sweep | 0 | BadDupSfcElemNames.x | inventory | reject | reject | error in sequence block |
+| t0-invalid-DuplicateSiblingSubmodules | tier0-sweep | 0 | BadDupSibSubmods.x | inventory | reject | reject | module name is not unique: SensorA |
+| t0-invalid-DuplicateVariableNames | tier0-sweep | 0 | BadDupVariaNames.x | inventory | reject | accept | compiles without errors (IDE refuses to create via editors; direct file load accepts) |
 | t0-invalid-EncodingStress | tier0-sweep | 0 | tier0/t0-invalid-EncodingStress.s | inventory | reject |  |  |
 | t0-invalid-FreestandingCommentInModuleCode | tier0-sweep | 0 | tier0/t0-invalid-FreestandingCommentInModuleCode.s | inventory | reject |  |  |
 | t0-invalid-GraphObjectsDoubleLayer | tier0-sweep | 0 | tier0/t0-invalid-GraphObjectsDoubleLayer.s | inventory | reject |  |  |
@@ -162,7 +162,7 @@
 | t0-invalid-UnterminatedComment | tier0-sweep | 0 | tier0/t0-invalid-UnterminatedComment.s | inventory | reject |  |  |
 | t0-invalid-WriteToConstVariable | tier0-sweep | 0 | tier0/t0-invalid-WriteToConstVariable.s | inventory | reject |  |  |
 | PRJ-PumpLib | cross-module | 3 | proj/PumpLib/PumpLib.s | library | accept |  |  |
-| PRJ-AuxLib | cross-module | 3 | proj/AuxLib/AuxLib.s | library | accept |  |  |
+| PRJ-AuxLib | cross-module | 3 | AuxLib.x | library | accept | reject | line 17 >>>;<<< after DateCode_ 220100: AliasSym Expected (syntax) - ours rejects identically |
 | PRJ-UnusedLib | cross-module | 3 | proj/UnusedLib/UnusedLib.s | library | accept |  |  |
 | PRJ-LoopA | cross-module | 3 | proj/LoopA/LoopA.s | library | accept |  |  |
 | PRJ-LoopB | cross-module | 3 | proj/LoopB/LoopB.s | library | accept |  |  |
