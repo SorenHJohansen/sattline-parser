@@ -7,6 +7,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+
+- **Source files are now decoded strictly as Windows-1252 (cp1252)** — the only
+  encoding the real SattLine parser accepts. `read_text_with_fallback` (which
+  tried utf-8, then cp1252, then latin-1) is replaced by `read_text_cp1252`,
+  which has **no encoding fallback**: bytes that are not valid Windows-1252
+  (`0x81 0x8D 0x8F 0x90 0x9D`) now raise `UnicodeDecodeError` instead of being
+  silently re-read as latin-1. This removes a silent-fallback path that could
+  decode a mis-encoded file into plausible but wrong text. (Breaking rename of
+  the public `read_text_with_fallback` export; behavior of `load_source_text`,
+  `parse_source_file`, and the project loader is otherwise unchanged.)
+
+### Added
+
+- Validation rule **SL-V027 `PARAM_TRANSFER_TYPE_MISMATCH`**: a module-type
+  instance whose parameter transfer supplies an incompatible variable type is
+  now flagged (real-parser confirmed: `Submodule Child, parameter EnableFlag:
+  Variable CounterValue is an invalid type`). Implemented in
+  `sattline_parser.validation.transfers`; GLOBAL/literal sources, undeclared
+  sources, unknown target parameters, `AnyType` formals, numeric widening
+  (integer↔real), and record-typed transfers are handled.
+
 ### Documentation
 
 - README: new "Project layer" usage section covering `SattLineProject.load`,
