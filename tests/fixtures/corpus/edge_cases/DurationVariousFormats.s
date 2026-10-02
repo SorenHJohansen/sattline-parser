@@ -4,7 +4,12 @@
 (* EDGE CASE: All documented valid duration literal forms in one file.
    Covers Duration_Value wrapper form in every supported format variation.
    All forms must pass strict validation without error.
-   Expected: strict syntax-check passes. *)
+   Expected: strict syntax-check passes.
+   Probe 2026-10-01: the real parser accepts every declaration form below, but
+   rejects *comparing* durations or times -- "Only integer and real allowed for
+   this operator" for exactly the statement that used to be here. No probed form
+   of legal duration/time usage exists, so the variables are declared and left
+   alone. See invalid/NonNumericComparisonOperand.s. *)
 
 BasePicture Invocation
    ( 0.0 , 0.0 , 0.0 , 1.0 , 1.0
@@ -38,7 +43,6 @@ ModuleDef
 ClippingBounds = ( -1.0 , -1.0 ) ( 1.0 , 1.0 )
 ModuleCode
    EQUATIONBLOCK Main COORD 0.0, 0.0 OBJSIZE 1.0, 1.0 :
-      Sink = D01 == D02 OR D03 == D04 OR D05 == D06 OR D07 == D08 OR
-             D09 == D10 OR D11 == D12 OR D13 == D01;
+      Sink = True;
 
 ENDDEF (*BasePicture*);

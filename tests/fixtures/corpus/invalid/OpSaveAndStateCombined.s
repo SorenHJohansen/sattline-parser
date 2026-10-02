@@ -2,10 +2,11 @@
 "Original file date: ---"
 "Program date: 2026-04-23-12:00:00.000, name: OpSaveStateMix"
 (* Covers a variable declared with both OpSave and State modifiers.
-   The grammar allows any combination of CONST, STATE, OPSAVE, SECURE modifiers
-   in a variable group. OpSave causes the value to be restored on power-up,
-   State enables :Old / :New access. Combining them is valid.
-   Expected: strict syntax-check passes. *)
+   OpSave restores the value on power-up, State enables :Old / :New access.
+   The editor rejects the pair: "Invalid attribute identifier or invalid
+   combination of attributes". The grammar still parses any modifier sequence;
+   the combination is caught by validation rule SL-V031.
+   Expected: rejected by validation. *)
 
 BasePicture Invocation
    ( 0.0 , 0.0 , 0.0 , 1.0 , 1.0

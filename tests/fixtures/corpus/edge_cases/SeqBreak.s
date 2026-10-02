@@ -2,7 +2,9 @@
 "Original file date: ---"
 "Program date: 2026-06-19-12:00:00.000, name: SeqBreakEdge"
 (* Edge case: SEQBREAK used to exit a sequence early.
-   Grammar rule: seqbreak. *)
+   Grammar rule: seqbreak. *   Added a closing SEQTRANSITION: the body originally ended on SEQSTEP Finish,
+   which is illegal in itself (SL-V033). That was incidental to what this file
+   tests, and it masked the real SEQBREAK question. *)
 
 BasePicture Invocation
    ( 0.0 , 0.0 , 0.0 , 1.0 , 1.0
@@ -24,6 +26,7 @@ ModuleCode
       SEQBREAK
       SEQTRANSITION TrDone WAIT_FOR NOT Abort
       SEQSTEP Finish
+      SEQTRANSITION TrEnd WAIT_FOR NOT Abort
    ENDSEQUENCE
 
 ENDDEF (*BasePicture*);

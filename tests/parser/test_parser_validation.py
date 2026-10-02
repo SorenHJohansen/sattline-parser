@@ -21,10 +21,25 @@ from sattline_parser.validation.builtins import (
 from sattline_parser.validation.diagnostics import Diagnostic, DiagnosticCode, DiagnosticSeverity
 from sattline_parser.validation.literals import is_valid_duration, is_valid_time
 from sattline_parser.validation.symbols import build_scope, resolve_var
+from sattline_parser.validation.typing import (
+    TypeFamily,
+    assignment_is_compatible,
+    datatype_family,
+    family_of,
+    infer_expr_type,
+    is_boolean,
+    is_numeric,
+    operand_types,
+)
 
 from ._parser_core_test_support import *
 
 _INVALID_VALIDATION_FIXTURES: dict[str, str] = {
+    "OpSaveAndStateCombined": "SL-V031",
+    "CoordinateInvarTail": "SL-V032",
+    "SequenceParallel": "SL-V033",
+    "SubSequenceDefinition": "SL-V033",
+    "TerminalSeqStep": "SL-V033",
     "DuplicateDatatypeName": "SL-V001",
     "DuplicateModuletypeName": "SL-V002",
     "DuplicateVariableNames": "SL-V003",
@@ -54,12 +69,18 @@ _INVALID_VALIDATION_FIXTURES: dict[str, str] = {
     "DuplicateRecordFieldName": "SL-V025",
     "DatatypeShadowsBuiltinName": "SL-V026",
     "CrossModuleContractMismatch": "SL-V027",
+    "NonNumericComparisonOperand": "SL-V028",
+    "AssignmentFamilyMismatch": "SL-V029",
+    "IfConditionNotBoolean": "SL-V030",
 }
 
 _PARSE_REJECTED_FIXTURES = [
+    "CoordInVarTail",
+    "EnableExpressionTail",
     "EncodingStress",
     "FreestandingCommentInModuleCode",
     "GraphObjectsDoubleLayer",
+    "GraphObjectsSectionLayer",
     "Malformed",
     "ModuleCodeWithoutModuleDef",
     "NotSattLine",
@@ -687,7 +708,7 @@ def test_param_transfer_type_mismatch_flagged():
     moduletype = ModuleTypeDef(
         name="ChildType",
         moduleparameters=[_var("EnableFlag", "boolean")],
-        modulecodes=[ModuleCode(equations=[_equation(Assignment(VarRef("EnableFlag"), 0))])],
+        modulecodes=[ModuleCode(equations=[_equation(Assignment(VarRef("EnableFlag"), False))])],
     )
     bp = _base_picture()
     bp.localvariables = [_var("CounterValue", "integer")]
@@ -791,3 +812,215 @@ def test_diagnostic_model_defaults():
     assert diag.span is None
     assert diag.code.value == "SL-V016"
     assert isinstance(DiagnosticCode.DUPLICATE_VARIABLE_NAME, DiagnosticCode)
+
+
+def _typed_bp(variables: list[Variable], *items: object, datatypes: list[DataType] | None = None) -> BasePicture:
+    """A base picture whose single equation holds ``items``, for typing tests."""
+    bp = _base_picture()
+    bp.localvariables = variables
+    if datatypes is not None:
+        bp.datatype_defs = datatypes
+    bp.modulecodes = [ModuleCode(equations=[_equation(*items)])]
+    return bp
+
+
+def test_operand_rule_skips_call_results_and_record_fields():
+    """Unproven operand types must stay silent: builtin returns and record fields."""
+    bp = _typed_bp(
+        [_var("Rate", "real"), _var("Running", "boolean"), _var("Rec", "Rec")],
+        Assignment(VarRef("Running"), Compare(FuncCall("Test", []), "==", VarRef("Rate"))),
+        datatypes=[DataType(name="Rec", description=None, datecode=None, var_list=[_var("Speed", "real")])],
+    )
+    assert [d.code.value for d in validate_basepicture(bp) if d.code.value.startswith("SL-V02")] == []
+
+
+def test_operand_rule_flags_duration_equality_once_per_operand():
+    bp = _typed_bp(
+        [_var("DurFull", "duration"), _var("Sink", "boolean")],
+        Assignment(VarRef("Sink"), Compare(VarRef("DurFull"), "==", VarRef("DurFull"))),
+    )
+    diagnostics = validate_basepicture(bp)
+    assert [d.code.value for d in diagnostics] == ["SL-V028", "SL-V028"]
+
+
+def test_assignment_rule_allows_numeric_widening_and_same_family():
+    """integer into real and same-family assignment are probed-accept, so silent."""
+    bp = _typed_bp(
+        [
+            _var("Count", "integer"),
+            _var("Rate", "real"),
+            _var("Flag1", "boolean"),
+            _var("Flag2", "boolean"),
+            _var("Label", "identstring"),
+            _var("Tag", "tagstring"),
+        ],
+        Assignment(VarRef("Rate"), VarRef("Count")),
+        Assignment(VarRef("Count"), VarRef("Count")),
+        Assignment(VarRef("Flag2"), VarRef("Flag1")),
+        Assignment(VarRef("Tag"), VarRef("Label")),
+        Assignment(VarRef("Rate"), 1.5),
+    )
+    assert [d.code.value for d in validate_basepicture(bp)] == []
+
+
+def test_assignment_rule_skips_unresolved_target_and_unknown_source():
+    """Neither a missing variable nor an unprovable source type is a mismatch."""
+    bp = _typed_bp(
+        [_var("Count", "integer")],
+        Assignment(VarRef("Ghost"), VarRef("Count")),
+        Assignment(VarRef("Count"), FuncCall("Untyped", [])),
+    )
+    assert [d.code.value for d in validate_basepicture(bp)] == ["SL-V019"]
+
+
+def test_condition_rule_flags_non_boolean_and_allows_boolean():
+    bp = _typed_bp(
+        [_var("Count", "integer"), _var("Rate", "real"), _var("Flag1", "boolean"), _var("Flag2", "boolean")],
+        IfStmt(
+            branches=(
+                (VarRef("Count"), (Assignment(VarRef("Flag1"), True),)),
+                (Compare(VarRef("Count"), ">", 0), (Assignment(VarRef("Flag2"), False),)),
+            ),
+            else_block=None,
+        ),
+    )
+    assert [d.code.value for d in validate_basepicture(bp)] == ["SL-V030"]
+
+
+def test_condition_rule_skips_call_result_condition():
+    bp = _typed_bp(
+        [_var("Rate", "real"), _var("Flag1", "boolean")],
+        IfStmt(branches=((FuncCall("Untyped", []), (Assignment(VarRef("Flag1"), True),)),), else_block=None),
+    )
+    assert [d.code.value for d in validate_basepicture(bp)] == []
+
+
+def test_ternary_condition_is_checked_and_branch_types_must_agree():
+    """An inline IF expression is condition-checked; mixed branch types are unproven."""
+    bp = _typed_bp(
+        [_var("Count", "integer"), _var("Rate", "real"), _var("Flag1", "boolean")],
+        Assignment(
+            VarRef("Flag1"), TernaryOp(branches=((VarRef("Count"), VarRef("Count")),), else_expr=VarRef("Rate"))
+        ),
+    )
+    assert [d.code.value for d in validate_basepicture(bp)] == ["SL-V030"]
+
+
+def test_ternary_with_agreeing_branches_infers_type():
+    ternary = TernaryOp(branches=((True, VarRef("Count")),), else_expr=VarRef("Count"))
+    assert infer_expr_type(ternary, build_scope(None, [_var("Count", "integer")]), {}) == "integer"
+
+
+def test_datatype_family_helpers():
+    assert datatype_family("integer") is TypeFamily.NUMERIC
+    assert datatype_family("real") is TypeFamily.NUMERIC
+    assert datatype_family("boolean") is TypeFamily.BOOLEAN
+    assert datatype_family("duration") is TypeFamily.TEMPORAL
+    assert datatype_family("time") is TypeFamily.TEMPORAL
+    assert datatype_family("identstring") is TypeFamily.STRING
+    assert datatype_family("MyRecord") is None
+    assert is_numeric("real") and not is_numeric("boolean")
+    assert is_boolean("boolean") and not is_boolean("integer")
+    assert family_of(None) is None
+    assert operand_types(Compare(True, "==", 1), build_scope(None, []), {}) == ("boolean", "integer")
+
+
+def test_string_literal_expression_infers_string():
+    assert infer_expr_type("text", build_scope(None, []), {}) == "string"
+
+
+def test_ternary_with_unknown_branch_type_is_unproven():
+    """A branch whose type cannot be proved makes the whole ternary unknown."""
+    ternary = TernaryOp(branches=((True, VarRef("Count")),), else_expr=VarRef("Rec"))
+    assert infer_expr_type(ternary, build_scope(None, [_var("Count", "integer"), _var("Rec", "Rec")]), {}) is None
+
+
+def test_assignment_between_custom_types_is_left_permissive():
+    """Record identity is not part of any probed rule, so same-name records pass."""
+    assert assignment_is_compatible("Rec", "Rec") is True
+    assert assignment_is_compatible("Rec", "integer") is True
+    assert assignment_is_compatible("integer", "Rec") is True
+    assert assignment_is_compatible("boolean", "integer") is False
+    assert assignment_is_compatible("integer", "boolean") is False
+    assert assignment_is_compatible("duration", "time") is True
+    assert assignment_is_compatible("time", "duration") is True
+    assert assignment_is_compatible("integer", "real") is True
+
+
+def test_attribute_combination_rejects_opsave_with_state_in_either_order():
+    """The editor refuses the pair, so modifier order must not rescue it."""
+    forward = Variable(name="Forward", datatype="integer", opsave=True, state=True)
+    reverse = Variable(name="Reverse", datatype="boolean", opsave=True, state=True)
+    for variable in (forward, reverse):
+        codes = [d.code.value for d in validate_basepicture(_typed_bp([variable]))]
+        assert "SL-V031" in codes, f"{variable.name}: {codes}"
+
+
+def test_attribute_combination_leaves_single_modifiers_clean():
+    """Opsave alone and State alone are both editor-accepted controls."""
+    saved = Variable(name="SavedOnly", datatype="integer", opsave=True)
+    live = Variable(name="LiveOnly", datatype="integer", state=True)
+    guarded = Variable(name="ConstOnly", datatype="integer", const=True)
+    codes = [d.code.value for d in validate_basepicture(_typed_bp([saved, live, guarded]))]
+    assert codes == []
+
+
+def test_coordinate_tail_type_rule_scopes_to_computed_expressions():
+    """A real-typed tail passes and an integer-typed tail is reported (SL-V032)."""
+    integer_tail = BinOp(left=VarRef("Source"), op="+", right=1)
+    real_tail = BinOp(left=VarRef("Source"), op="+", right=1.0)
+    module_def = ModuleDef(clipping_bounds=((-1.0, -1.0), (1.0, 1.0)), clipping_tails=[integer_tail])
+    bp = _base_picture()
+    bp.localvariables = [_var("Source", "integer")]
+    bp.moduledefs = [module_def]
+    assert "SL-V032" in [d.code.value for d in validate_basepicture(bp)]
+
+    module_def.clipping_tails = [real_tail]
+    bp.localvariables = [_var("Source", "real")]
+    assert [d.code.value for d in validate_basepicture(bp)] == []
+
+
+def test_coordinate_tail_rule_covers_bare_variable_tails():
+    """A coordinate position is never an integer, computed or bare."""
+    module_def = ModuleDef(clipping_bounds=((-1.0, -1.0), (1.0, 1.0)), clipping_tails=[VarRef("Source")])
+    bp = _base_picture()
+    bp.localvariables = [_var("Source", "integer")]
+    bp.moduledefs = [module_def]
+    assert "SL-V032" in [d.code.value for d in validate_basepicture(bp)]
+
+    bp.localvariables = [_var("Source", "real")]
+    assert [d.code.value for d in validate_basepicture(bp)] == []
+
+
+def test_coordinate_tail_rule_skips_reference_names():
+    """An InVar_ "Name" tail is a reference, not a value, so it stays silent."""
+    module_def = ModuleDef(clipping_bounds=((-1.0, -1.0), (1.0, 1.0)), clipping_tails=["ClipX"])
+    bp = _base_picture()
+    bp.moduledefs = [module_def]
+    assert [d.code.value for d in validate_basepicture(bp)] == []
+
+
+def test_sequence_ends_with_step_skips_open_sequences():
+    """A closed SEQUENCE must close on a transition; OPENSEQUENCE may end on a step."""
+    for seq_type, expected in (
+        (const.GRAMMAR_VALUE_SEQUENCE, ["SL-V033"]),
+        (const.GRAMMAR_VALUE_OPENSEQUENCE, []),
+    ):
+        picture = _base_picture()
+        picture.modulecodes = [
+            ModuleCode(
+                sequences=[
+                    Sequence(
+                        name="Seq",
+                        type=seq_type,
+                        position=(0.0, 0.0),
+                        size=(1.0, 1.0),
+                        code=[
+                            SFCStep(kind="step", name="Last", code=SFCCodeBlocks()),
+                            CodeComment(text="a trailing comment is not the last element"),
+                        ],
+                    )
+                ]
+            )
+        ]
+        assert [d.code.value for d in validate_basepicture(picture)] == expected, seq_type

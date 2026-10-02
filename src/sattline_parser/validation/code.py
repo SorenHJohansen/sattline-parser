@@ -11,11 +11,13 @@ element names.
 
 from __future__ import annotations
 
+from sattline_parser.grammar import constants as const
 from sattline_parser.models.ast_model import (
     CodeComment,
     DataType,
     Equation,
     ModuleCode,
+    ModuleDef,
     Sequence,
     SFCAlternative,
     SFCBodyItem,
@@ -25,6 +27,8 @@ from sattline_parser.models.ast_model import (
     SFCSubsequence,
     SFCTransition,
     SFCTransitionSub,
+    Simple_DataType,
+    SourceSpan,
     Variable,
 )
 from sattline_parser.models.expressions import (
@@ -44,6 +48,13 @@ from sattline_parser.models.expressions import (
 from sattline_parser.validation.builtins import builtin_function_signature
 from sattline_parser.validation.diagnostics import Diagnostic, DiagnosticCode
 from sattline_parser.validation.symbols import Scope, resolve_var
+from sattline_parser.validation.typing import (
+    assignment_is_compatible,
+    assignment_types,
+    infer_expr_type,
+    is_boolean,
+    is_numeric,
+)
 
 # Boolean constants the SattLine language provides but that resolve through the
 # grammar as plain name references rather than True/False literals.
@@ -81,6 +92,7 @@ def walk_module_code(mc: ModuleCode, scope: Scope, records: dict[str, DataType],
         _check_consecutive_steps(sequence.code, errors)
         _check_fork_targets(sequence.code, all_known, errors)
         _check_sequence_structure(sequence.code, errors)
+        _check_sequence_does_not_end_with_step(sequence.code, errors, sequence.type == const.GRAMMAR_VALUE_OPENSEQUENCE)
         walk_sequence_body(sequence.code, scope, records, sfc_names, errors)
     for equation in mc.equations or ():
         walk_equation_block(equation, scope, records, sfc_names, errors)
@@ -98,6 +110,7 @@ def walk_code_item(
             walk_expression(arg, scope, records, sfc_names, errors)
     elif isinstance(item, IfStmt):
         for condition, body in item.branches:
+            _check_condition(condition, scope, records, errors)
             walk_expression(condition, scope, records, sfc_names, errors)
             for nested in body:
                 walk_code_item(nested, scope, records, sfc_names, errors)
@@ -129,6 +142,7 @@ def walk_expression(
     elif isinstance(expr, NotOp):
         walk_expression(expr.operand, scope, records, sfc_names, errors)
     elif isinstance(expr, Compare | BinOp):
+        _check_operands(expr, scope, records, errors)
         walk_expression(expr.left, scope, records, sfc_names, errors)
         walk_expression(expr.right, scope, records, sfc_names, errors)
     elif isinstance(expr, UnaryOp):
@@ -139,6 +153,7 @@ def walk_expression(
             walk_expression(arg, scope, records, sfc_names, errors)
     elif isinstance(expr, TernaryOp):
         for condition, then_expr in expr.branches:
+            _check_condition(condition, scope, records, errors)
             walk_expression(condition, scope, records, sfc_names, errors)
             walk_expression(then_expr, scope, records, sfc_names, errors)
         if expr.else_expr is not None:
@@ -163,6 +178,89 @@ def walk_sfc_item(
         walk_sequence_body(item.body, scope, records, sfc_names, errors)
 
 
+def _check_operands(
+    expr: Compare | BinOp, scope: Scope, records: dict[str, DataType], errors: list[Diagnostic]
+) -> None:
+    """Both operands of a comparison/arithmetic operator must be integer or real.
+
+    Real message: ``Only integer and real allowed for this operator <expr>``.
+    The same check covers ``boolean`` and ``duration``/``time`` operands, which
+    is why this is one rule rather than a per-datatype special case.
+    """
+    for operand in (expr.left, expr.right):
+        operand_type = infer_expr_type(operand, scope, records)
+        if operand_type is not None and not is_numeric(operand_type):
+            errors.append(
+                Diagnostic(
+                    code=DiagnosticCode.OPERAND_NOT_NUMERIC,
+                    message=(
+                        f"Only integer and real allowed for this operator {expr.op}; operand is of type {operand_type}"
+                    ),
+                    span=_expression_span(expr),
+                )
+            )
+
+
+def _check_condition(
+    condition: SLExpression, scope: Scope, records: dict[str, DataType], errors: list[Diagnostic]
+) -> None:
+    """An IF / ELSIF / ternary condition must be boolean.
+
+    Real message: ``Condition in IF-sentence is not boolean``.
+    """
+    condition_type = infer_expr_type(condition, scope, records)
+    if condition_type is not None and not is_boolean(condition_type):
+        errors.append(
+            Diagnostic(
+                code=DiagnosticCode.CONDITION_NOT_BOOLEAN,
+                message=f"Condition in IF-sentence is not boolean; condition is of type {condition_type}",
+                span=_expression_span(condition),
+            )
+        )
+
+
+def _expression_span(expr: SLExpression) -> SourceSpan | None:
+    """Span of a parsed expression node; primitives carry none."""
+    span = getattr(expr, "span", None)
+    return span if isinstance(span, SourceSpan) else None
+
+
+def check_coordinate_tail_types(
+    module_def: ModuleDef, scope: Scope, records: dict[str, DataType], errors: list[Diagnostic]
+) -> None:
+    """A coordinate position must be real, never integer (SL-V032).
+
+    The real tool reports *"The expression is of an invalid type Source + 1"*
+    for an integer-typed ``ClippingBounds`` corner tail, and the error disappears
+    once the same tail is declared ``real``. The constraint is on the coordinate
+    *position*, so it applies to every collected tail, not just computed ones:
+    a bare integer variable in a corner is rejected the same way.
+
+    ``str`` tails are skipped. An ``InVar_ "Name"`` tail carries a variable
+    *reference*, not a value, and resolving the name is not evidenced.
+    Unknown types stay silent, as elsewhere in this module.
+    """
+    seen: set[int] = set()
+    tails: list[object] = [*(module_def.clipping_tails or []), *(module_def.properties.get(const.KEY_TAILS) or [])]
+    for tail in tails:
+        if not isinstance(tail, BoolOp | NotOp | Compare | BinOp | UnaryOp | FuncCall | TernaryOp | VarRef):
+            continue
+        if id(tail) in seen:
+            continue
+        seen.add(id(tail))
+        inferred = infer_expr_type(tail, scope, records)
+        if inferred is not None and inferred.casefold() != Simple_DataType.REAL.value:
+            errors.append(
+                Diagnostic(
+                    code=DiagnosticCode.COORDINATE_NOT_REAL,
+                    message=(
+                        f"Coordinate position is of an invalid type: it is {inferred}, but a coordinate must be a real"
+                    ),
+                    span=_expression_span(tail),
+                )
+            )
+
+
 def _check_assignment(
     assignment: Assignment, scope: Scope, records: dict[str, DataType], errors: list[Diagnostic]
 ) -> None:
@@ -181,6 +279,18 @@ def _check_assignment(
             Diagnostic(
                 code=DiagnosticCode.WRITE_TO_CONST_VARIABLE,
                 message=f"Cannot assign to Const variable {assignment.target.name} in module code",
+                span=assignment.span,
+            )
+        )
+    target_type, source_type = assignment_types(assignment, scope, records)
+    if target_type is not None and source_type is not None and not assignment_is_compatible(source_type, target_type):
+        errors.append(
+            Diagnostic(
+                code=DiagnosticCode.ASSIGNMENT_TYPE_MISMATCH,
+                message=(
+                    f"Datatype error in assignment: {assignment.target.name} is of type {target_type} "
+                    f"but is assigned a value of type {source_type}"
+                ),
                 span=assignment.span,
             )
         )
@@ -366,7 +476,7 @@ def _named_sfc_element_name(item: SFCBodyItem) -> str | None:
     return None
 
 
-def _check_sequence_structure(items: list[SFCBodyItem], errors: list[Diagnostic]) -> None:
+def _check_sequence_structure(items: list[SFCBodyItem], errors: list[Diagnostic], is_open: bool = False) -> None:
     """Enforce SEQINITSTEP placement and alternative/parallel branch layouts."""
     init_seen = False
     seen_non_init_element = False
@@ -403,6 +513,36 @@ def _check_sequence_structure(items: list[SFCBodyItem], errors: list[Diagnostic]
                 _check_sequence_structure(branch, errors)
         elif isinstance(item, SFCSubsequence | SFCTransitionSub):
             _check_sequence_structure(item.body, errors)
+
+
+def _check_sequence_does_not_end_with_step(items: list[SFCBodyItem], errors: list[Diagnostic], is_open: bool) -> None:
+    """A closed sequence body must close on a transition, not a step (SL-V033).
+
+    For a closed ``SEQUENCE`` the real tool points at ``ENDSEQUENCE`` with
+    ``Incorrect Syntax - Error 32`` when the body's last element is ``SEQSTEP``:
+    the body is unfinished, so the terminator arrives early. Confirmed
+    independently by ``EdgeSeqPar``, ``EdgeSubSeqDef`` and ``EdgeTermSeqStep``.
+
+    ``OPENSEQUENCE`` is exempt - an open sequence may legitimately end on a step.
+    Whether a branch or sub-sequence inherits the enclosing sequence's openness is
+    not evidenced, so the enclosing value is reused rather than guessed.
+    """
+    if is_open:
+        return
+    for item in reversed(items):
+        if isinstance(item, CodeComment):
+            continue
+        if isinstance(item, SFCStep):
+            errors.append(
+                Diagnostic(
+                    code=DiagnosticCode.SEQUENCE_ENDS_WITH_STEP,
+                    message=(
+                        "A sequence must not end with a step; it must end with a SEQTRANSITION before ENDSEQUENCE"
+                    ),
+                    span=None,
+                )
+            )
+        return
 
 
 def _check_alternative_branch_start(branch: list[SFCBodyItem], errors: list[Diagnostic]) -> None:

@@ -122,11 +122,36 @@ by real output · `[model]` = strongly implied by AST/language semantics ·
 
 ### 6.1 Validation tier — intra-file (`src/sattline_parser/validation/`)
 
-**Expression typing — largest gap:**
-1. Assignment LHS↔RHS type compat, incl. allowed implicit conversions
-   (int↔real) vs forbidden (string↔numeric, time↔integer). `[inferred]`
-2. Binary/compare operand types (`time > integer`, string arithmetic). `[inferred]`
-3. `IF`/ternary condition boolean; mutually compatible branches. `[inferred]`
+**Expression typing — implemented.**
+Probed 2026-10-01; the real tool confirmed three rules, all three now ship.
+See §11 for the outcome and the four corpus expectations they corrected.
+
+1. Assignment LHS↔RHS type compat. `[inferred]` → **confirmed → SL-V029**
+   `[user, 2026-10-01]`: `ViolIntFromBool.x` (T1-001) is rejected with
+   `Datatype error in assignment: Output = Flag1;` — assigning a `boolean` to
+   an `integer` is illegal. Ours accepts. Note this **confirms** the
+   `DurationInParameterMapping`/bool rejection already seen in `BadCrossMod.x`
+   and implemented as SL-V027 for the single-file case, but that rule only
+   covers submodule parameter supply, not a plain `:=` in an equation block.
+   SL-V029 is the equation-block rule; it groups primitives into type families
+   (numeric / boolean / string / temporal) rather than demanding an exact
+   match, because `integer` into `real` is probed-accept.
+2. Binary/compare operand types. `[inferred]` → **confirmed → SL-V028**
+   `[user, 2026-10-01]`, twice:
+   - `ViolRealVsBool.x` (T1-002): `Only integer and real allowed for this
+     operator X > Flag1` — a `boolean` operand is illegal in a comparison.
+   - `EdgeBareDurZero.x`, `EdgeNegDurVal.x`, `ValidDurAndTime.x`:
+     `Only integer og real allowed for this operator ZeroDur == ZeroFull` —
+     `duration` (and `time`) operands are illegal in `==`/`<`/`>` too. So the
+     numeric-only operand rule covers *both* booleans and time-like types.
+     The three negative/zero/complex duration **declarations** are fine; it is
+     only the comparison that fails. Ours now rejects all three files
+     (SL-V028); this also invalidated four of our own corpus fixtures (§11).
+3. `IF`/ternary condition must be boolean. `[inferred]` → **confirmed → SL-V030**
+   `[user, 2026-10-01]`: `ViolIntCond.x` (T1-003) is rejected with
+   `Condition in IF-sentence is not boolean :IF A THEN A = 1;`. Ours now
+   rejects (SL-V030). Branch-type compatibility is still `[inferred]` —
+   unprobed, and a ternary with disagreeing branches is left unflagged.
 4. Builtin argument **types** (in/out/inout) — current `BuiltinFunction` only
    models arity + out positions. `[inferred]`
 4a. **Call arguments must be variables** — raw string/number literals in a
@@ -154,8 +179,96 @@ by real output · `[model]` = strongly implied by AST/language semantics ·
     value when unset. `[user]` Removes the earlier "Const needs init"
     hypothesis entirely; no rule.
 11. State / OpSave / Secure modifier legality per datatype. `[inferred]`
-12. `:Old` / `:New` only inside STEP ENTER/ACTIVE/EXIT code (today we check
-    target is State, not location). `[inferred]`
+
+    **SL-V031 IMPLEMENTED 2026-10-01** - the `OpSave + State` pair is invalid.
+    The file-load path for `EdgeOpSaveAndState.x` could not render its message
+    (*"unable to read error message file"*), so I parked it rather than guess.
+    The editor then supplied the missing text verbatim: **"Invalid attribute
+    identifider or invalid combination of attributes"** (sic, typo in the tool).
+    That turns an unreadable rejection into a real rule, and the wording settles
+    the mechanism: the *combination* is invalid, not the spelling of an attribute.
+    Scope is deliberately narrow - only the `opsave`+`state` pair is rejected.
+    `State` alone and `OpSave` alone stay clean (`CtrlG.x` / `CtrlWithInit.x`,
+    plus single-modifier controls in the fixture). `OpSave+Const`, `State+Const`,
+    `Secure` combinations and modifier order remain unproven; the transformer
+    flattens modifiers to booleans so order/repetition are not representable in
+    the AST at all. `OpSaveConst.x` and `OpSaveStateReversed.x` are queued.
+    Implemented as a **validation** error, not a grammar restriction: the editor
+    reports an attribute complaint, and validation keeps it out of the parser.
+
+13. **A coordinate position must be a real, never an integer.** SL-V032 IMPLEMENTED.
+14. **A closed sequence body must not end with a step.** SL-V033 IMPLEMENTED.
+    Three independent probes (`EdgeTermSeqStep.x`, `EdgeSeqPar.x`,
+    `EdgeSubSeqDef.x`) all put the caret on `ENDSEQUENCE` with
+    `Incorrect Syntax - Error 32` rather than on the step itself. Reading the
+    caret positionally: the tool was still waiting for more body when the
+    terminator arrived, so the last `SEQSTEP` left the body unfinished.
+    `[user]` **The grammar is correct and must not be changed.** The editor is
+    graphical, so this state is simply unreachable there; the defect is a
+    *missing rejection rule*, not absent vocabulary.
+    `[user]` The rule's scope is conditional: legality depends on whether the
+    sequence is open. `Sequence.type` already carries `SEQUENCE` vs
+    `OPENSEQUENCE`, so the check is gated on that and `OPENSEQUENCE` is exempt.
+    Two scoping decisions kept deliberately narrow, because only the outer body
+    is evidenced:
+    * the check runs on the sequence's own body only - not inside
+      `ALTERNATIVEBRANCH` / parallel branches or sub-sequence bodies, where
+      termination rules may differ;
+    * branches that end on a step produce **one** diagnostic for the enclosing
+      sequence rather than one per branch, matching the single caret the tool
+      emits.
+    `SeqBreak.s` and `SequenceAlternative.s` also ended on a step, but that was
+    incidental to what those files probe (`SEQBREAK` placement and
+    `ALTERNATIVESEQ`/`ENDLOOPSEQ` respectively). They were corrected to end on
+    a transition rather than being reclassified, because otherwise the trailing
+    step would mask the real question those files exist to answer. Both remain
+    open `we-too-lenient` gaps.
+
+    `[user]` The first version of this rule was too narrow: I scoped it to
+    ClippingBounds *computed* tails and deliberately left bare-variable tails
+    permissive as "unproven". The user then stated the rule generally - a
+    coordinate position can never be an integer - which is the correct scope, so
+    the check now covers every collected tail, computed or bare. Kept as validation
+    rather than grammar so real-typed computed tails still parse.
+    Why the grammar alone cannot carry this: every coordinate *literal* position is
+    already `REAL`-only in the grammar (`coordinates`, `clip_value`,
+    `clip_value_plain`, `objsizedef`), so an integer can only reach a coordinate
+    through a tail. The corpus contains zero integer coordinate literals, and the
+    only non-real tail anywhere in the fixtures was the one probe.
+    Two implementation notes worth keeping:
+    * `ModuleDef.clipping_bounds` holds only the resolved float corners, so tail
+      expressions were being dropped. Added `ModuleDef.clipping_tails` and populate
+      it in `moduledef`; the shared `tails` property is untouched, so graphics and
+      interact consumers are unaffected.
+    * `_extract_coord_tails` collected only `str`, numeric pairs and `VarRef`, so
+      expression tails were silently discarded. Extended it to the remaining
+      expression nodes.
+    Known gap, deliberately left: an `InVar_ "Name"` tail carries a variable
+    *reference* whose value could be integer, but resolving the name is not
+    evidenced and no corpus file uses that shape in a coordinate. Flagged rather
+    than silently ignored.
+
+12. `InVar_` / `OutVar_` **coordinate tail** must name a quoted DefineSym.
+    **IMPLEMENTED 2026-10-01.** `ValidCoordInVar.x` gives an unambiguous syntax
+    error (`DefineSym Expected` at `InVar_ PanelX`).
+    *My first pass at this was wrong* and I want the correction on record: I
+    regex-scanned the corpus, counted 50 "unquoted" sites, called them all defects,
+    and proposed ~50 mechanical edits including 38 in `UnCompressedFullGrammar.s`.
+    The user pointed out that file is a golden file the real tool compiles cleanly.
+    Re-scanning properly - comments and string contents stripped, literals
+    distinguished from identifiers - shows the 50 were almost all false positives:
+    `InVar_ True` / `InVar_ 1` / `InVar_ 0.5` are **literals** (the `value`
+    alternative), and `InVar_ LitString "..."` is the separate `litstring_tail`
+    rule. `LitString` is never declared as a variable; it is a literal marker.
+    The **only** genuine bare-name `InVar_` in the entire corpus is the four
+    identifiers in `CoordInVarTail.s` - precisely the rejected construct.
+    So: **zero golden-file edits were needed**, both golden files still parse
+    untouched, and the one real defect moved `valid/` -> `invalid/`.
+    Scoped to the **coordinate** context only (`coord_invar_tail`). The interact
+    `invar` / `invar_tail` contexts still permit a bare name, because the
+    rejection is only evidenced for coordinates and a bare-name binding is
+    semantically plausible there.
+
 
 **SFC:**
 13. **Accessor enabling & namespace**: `Step.X` / `Step.T` are only legal when
@@ -164,9 +277,13 @@ by real output · `[model]` = strongly implied by AST/language semantics ·
     variables. The same applies to `.Reset` on a sequence. `[user]` Extends the
     existing `DuplicateSFCElementNames` (SL-V021) and SFC-accessor exemption
     work into a full namespace rule.
-14. **Unlimited `SEQINITSTEP`s are allowed** `[user]` — so our SL-V022
-    init-placement rule (must be first / single init) is a **candidate
-    reversal**: probe before relying on it.
+14. ~~**Unlimited `SEQINITSTEP`s are allowed**~~ — **disproven**.
+    `[user]` `ViolSecInit.x` (R-101 violation) is rejected by the real
+    parser: line 48 `>>>ENDSEQUENCE<<< Incorrect Syntax - Error 32`. A
+    second init step is *not* allowed, so **SL-V022 stands** (must be
+    first / single init). Ours rejects with SL-V022. The transcript
+    classifies R-101 as `surprise-reject` because the *hypothesis* cell
+    said accept; the hypothesis was wrong, not our rule.
 15. SFC reachability is **not** checked by the real parser. `[user]` — drop.
 16. `SEQFORK` forward-only semantics are **not** checked. `[user]` — drop
     (we check only target existence, which stays).
@@ -175,7 +292,10 @@ by real output · `[model]` = strongly implied by AST/language semantics ·
 
 **Reserved names / catalog completeness:**
 18. Declaring a variable/datatype named `On` / `Off` / `GroupData` (we exempt
-    reads but never forbid re-declaration). `[inferred]`
+    reads but never forbid re-declaration). `[inferred]` — **confirmed**:
+    `ViolVarOn.x` / `ViolVarOff.x` (T1-012) are both rejected by the real
+    parser with `>>>On<<<` / `>>>Off<<< AliasSym Expected`. Ours still
+    accepts both, so this is a real **implementation gap**, not a reversal.
 19. Builtin catalog completeness — only 8 functions modeled. `[inferred]`
 
 ### 6.2 Semantic / cross-module — project graph territory
@@ -185,14 +305,30 @@ by real output · `[model]` = strongly implied by AST/language semantics ·
     whose body transitively instantiates itself → infinite expansion; (b)
     **library loops** — a library unit whose dependencies transitively loop
     back on itself. Real parser should detect both. `[user]`
+    **Library-loop detection confirmed** `[user, 2026-10-01]`: loading
+    `LoopA.x` emits `Library:LoopA reference removed to avoid loops`. So the
+    real tool *does* break library cycles rather than erroring — a loop is a
+    **recovery**, not a rejection. This is the one positive result in the
+    project tier.
 21. Self-instance (degenerate variant of 20a). `[model]`
 22. **Moduletype not invoked where it is declared** (declared in
     `TYPEDEFINITIONS` but zero instances in its own unit/library). `[user]`
 23. Instance references a moduletype name with no definition anywhere
     (`ModuleTypeInstance` is fully skipped today). `[model]`
 24. Instance/param arity vs declared moduletype params (positional + named
-    binding). `[model]`
-25. Param-transfer typing (value vs formal param type — the
+    binding). `[model]` — **confirmed** `[user, 2026-10-01]`: a submodule
+    invocation must sit in the **submodule list** (`SUBMODULES`, or bare in
+    the module header position as `CtrlAcyc.x` does), **not** inside
+    `LOCALVARIABLES`. `Prog.x` and `ProgBadDep.x` both place the instance in
+    `LOCALVARIABLES` and are rejected (`Unexpected symbol or end of input` /
+    `Error 76`). Ours rejects identically (`Unexpected token INVOCATION`).
+25. Instance header form: `) : TypeName;` — a **type symbol** — is required
+    after the coordinates. The inline `) : MODULEDEFINITION DateCode_ N` form
+    is rejected with `AliasSym Expected` even with the terminator present.
+    `[user, 2026-10-01]` This is what made `LoopA.x` / `LoopB.x` /
+    `AuxLib.x` unusable (the `;` looked stray but was not — the *form* is
+    wrong). Ours is lenient here and accepts the inline form.
+26. Param-transfer typing (value vs formal param type — the
     `DurationInParameterMapping`/`GlobalParameterMapping` mechanism).
     **Confirmed** `[corpus]` — real rejects an incompatible variable supply
     verbatim: ``Submodule Child, parameter EnableFlag: Variable CounterValue
@@ -200,41 +336,197 @@ by real output · `[model]` = strongly implied by AST/language semantics ·
     single-file case (module type declared in the same file); transfers into
     externally-declared module types, GLOBAL sources, and undeclared sources
     are skipped and stay consumer territory. `[inferred] → [corpus]`
-26. GLOBAL-marked params/vars must have a matching declaration in scope. `[inferred]`
-27. ~~Formal param direction (`in`/`out`) matching~~ — **not checked** by the
+27. GLOBAL-marked params/vars must have a matching declaration in scope.
+    `[inferred]` — **tool-side confirmed** `[user, 2026-10-01]`, ours not:
+    `EdgeGlobalParamMap.x` is rejected with `ControllerType GLOBAL GlobalBias
+    not found at BasePicture:Ctrl`, the same shape as the `GlobalSetpoint`
+    cluster. `GlobalBias` is a *second* symbol nobody declares, so the
+    missing-symbol class now covers two names. Ours accepts.
+28. ~~Formal param direction (`in`/`out`) matching~~ — **not checked** by the
     real parser. `[user]` — drop.
 
 **Cross-file variable contracts:**
-28. Referencing another program's variable — name/type/direction contract vs
+29. Referencing another program's variable — name/type/direction contract vs
     actual. `[corpus, consumer]`
-29. Writes into a dependency's const/read-only external var. `[inferred]`
-30. Ambiguous supply — a variable provided by two dependencies. `[inferred]`
-31. Referencing an undeclared external variable (no supplier) — accepted
+30. Writes into a dependency's const/read-only external var. `[inferred]`
+31. Ambiguous supply — a variable provided by two dependencies. `[inferred]`
+32. Referencing an undeclared external variable (no supplier) — accepted
     today. `[corpus, consumer]`
 
 **Dependency consistency:**
-32. **Undeclared dependency used** (a file references a name not in its `.l` /
+33. **Undeclared dependency used** (a file references a name not in its `.l` /
     `.z` dependency list) — probe. Note: the real parser does **not** detect a
     *declared-but-unused* dependency. `[inferred] / [user]`
 
 **Scan groups / GroupConn:**
-33. `( GroupConn = Var )` variable exists + is a `GroupData` variable; duplicate
-    group connections; group var used elsewhere. `[inferred]`
-34. `ScanGroupVar` declarations in moduletype bodies tied to the enclosing
+34. `( GroupConn = Var )` variable exists + is a `GroupData` variable; duplicate
+    group connections; group var used elsewhere. `[inferred]` — existence part
+    **confirmed** `[user, 2026-10-01]`: `EdgeScanGrpCl.x` writes
+    `MODULEDEFINITION DateCode_ 1 (GroupConn=FastScan)` but declares only
+    `InputA`/`OutputB`; the tool reports `"ScanGroup": Variable FastScan not
+    declared`. Ours accepts. The *type* half (must be `GroupData`) and the
+    duplicate/unused checks stay `[inferred]`.
+35. `ScanGroupVar` declarations in moduletype bodies tied to the enclosing
     group. `[inferred]`
 
 **Library hygiene:**
-35. Declared-but-unused DATATYPE / variable. `[inferred]`
+36. Declared-but-unused DATATYPE / variable. `[inferred]` — **prompt, not
+    error** `[user, 2026-10-01]`: opening `ViolUndefBind.x` yields
+    `ModuleType PumpType in ViolUndefBind is not used. Should it be removed?`
+    The file still goes on to run, and the same session confirmed "all the
+    remaining compile and go to run without warnings". So an unused module type
+    is an interactive cleanup *question*, not a diagnostic — do not implement
+    it as a validation error.
 
 ### 6.3 Graphics correlation — `sattline_parser.project` / consumer
 
-36. **Date consistency**: the dates in the initial 3 header lines must match
-    between the code file and the graphics file. `[user]`
-37. **Composite-object count parity**: the number of composite objects in the
+37. **Date consistency**: the dates in the initial 3 header lines must match
+    between the code file and the graphics file. `[user]` — **severity
+    corrected 2026-10-01**: a mismatch is a **warning, not an error**.
+    `ViolDateShift.x` (C-201 violation) shows
+    `Composite object file has wrong date. Syntax errors and system crash can
+    arise if this file is read. Continue?`; answering **yes** proceeds with no
+    error and no crash. Ours accepts, which now matches. The C-201 group
+    classifies as `not-enforced`. Keep any date check as a warning-level
+    diagnostic at most — do **not** make it a hard reject.
+38. **Composite-object count parity**: the number of composite objects in the
     code must equal the number in the graphics file. `[user]`
-38. Graphic object bindings ↔ module defs; enable/invar tails resolving to
+39. Graphic object bindings ↔ module defs; enable/invar tails resolving to
     declared vars. `[consumer/corpus]`
-39. **Mechanics research** (not a rule — a deliverable): document how the
+
+### 6.3a Tier-0 sweep result — 16 "valid" files the real tool REJECTS (2026-10-01)
+
+The single largest finding so far. Every file below was written as a *valid*
+construct and is `expected = accept` in the manifest, but the real tool
+rejects it. Ours accepts 16 of the 19. These are **not** one bug: they are
+**16 independent grammar gaps**, each needing its own probe + rule. The 3
+remaining are the encoding cases we already reject correctly.
+
+| Probe | Real diagnostic | Ours | Gap |
+| --- | --- | --- | --- |
+| `EdgeCmtInEq.x` | `SEQTRANSITION TrStart WAIT_FOR>>>(*<<< inline comment. Expression expected.` | accepts | a comment may not follow a bare `WAIT_FOR` expression |
+| `EdgeDurVarFmt.x` | `>>>(*<<< Duration_Value. AliasSym Expected.` | accepts | duration value list may not be followed by a comment |
+| `EdgeModDefNoTrail.x` | `>>><<< SemicolonSym Expected` | accepts | `ENDDEF` needs its terminating `;` |
+| `EdgeOpSaveAndState.x` | `SavedStateVar: integer Opsave >>>State<<< Unknown error - unable to read error message file.` | accepts | `State` is illegal on a `Opsave` var; the tool cannot even render the message |
+| `EdgeSeqAlt.x` | `>>>ALTERNATIVESEQ<<< EndLoopSeqSym Expected` | accepts | `ALTERNATIVESEQ` is not a standalone step |
+| `EdgeSeqBrk.x` | `>>>SEQBREAK<<< Unexpected symbol or end of input` | accepts | `SEQBREAK` is not a step in this position |
+| `EdgeSeqPar.x` | `>>>ENDSEQUENCE<<< Incorrect Syntax - Error 32` | rejects | **RESOLVED 2026-10-02 -> SL-V033.** The caret sits on `ENDSEQUENCE`, i.e. the body was unfinished: a closed sequence must close on a `SEQTRANSITION`, not a `SEQSTEP`. This is a missing *validation* rule, not a grammar defect - the grammar is correct |
+| `EdgeCoordInvarTail.x` | `The expression is an invalid type Source + 1` | rejects | **RESOLVED 2026-10-01 -> SL-V032.** Type rule, not a ban on expressions: re-declaring the same tail with `Source` as real made the error disappear. Corner tails must be real-typed; the earlier "literals only" reading is disproven |
+| `EdgeSubSeqDef.x` | `>>>ENDSEQUENCE<<< Incorrect Syntax - Error 32` | rejects | **RESOLVED 2026-10-02 -> SL-V033.** Same terminal-step cause: the outer body ends on a step. The nested sub-sequence body itself is legal |
+| `EdgeTermSeqStep.x` | `>>>ENDSEQUENCE<<< Incorrect Syntax - Error 32` | rejects | **RESOLVED 2026-10-02 -> SL-V033.** The minimal isolated case for the same rule |
+| `ValidComprSeqBasic.x` | `#22 MainSeq #01 >>>SeqControl<<<, SeqTimer). Incorrect Syntax - Error 33` | accepts | Error 33 = step number/order in a sequence header |
+| `ValidCoordInVar.x` | `( 0.1 : InVar_ >>>PanelX<<< DefineSym Expected` | accepts | a coordinate may not be a variable in that tail position |
+| `ValidGraphObjB.x` | `GraphObjects : >>>Layer_<<< 2 AliasSym Expected` | accepts | a layer *number* is illegal in the `GraphObjects` section |
+| `ValidGraphObjEnabl.x` | `"DisplayValue">>>ValueFraction<<< AliasSym Expected` | accepts | a bare enable token may not follow a property name |
+| `ValidInteractEnabl.x` | `>>>Enable_<<< = True: AliasSym Expected` | accepts | `Enable_` is a keyword, not a variable name |
+| `ValidOpenSeqSeq.x` | `>>>ALTERNATIVEBRANCH<<< Incorrect Syntax - Error 32` | accepts | open sequence inside a branch is illegal |
+| `ValidSubSeqTransB.x` | `>>>ALTERNATIVEBRANCH<<< Incorrect Syntax - Error 32` | accepts | `ALTERNATIVEBRANCH` in a sub-sequence transition |
+| `EdgeUnicodeIdents.x` | `D>>>é<<<bit Incorrect Syntax - Error 76` | **rejects** | matched — Error 76 = illegal identifier char |
+| `ValidComprFull.x` | `form>>>å<<<l Incorrect Syntax - Error 76` | **rejects** | matched |
+| `ValidUnComprFull.x` | `form>>>å<<<. Incorrect Syntax - Error 76` | **rejects** | matched |
+
+**Error-number glossary** (useful for reading raw messages):
+`Error 32` = sequence body/scope rejected · `Error 33` = sequence step
+header (number/order) · `Error 76` = illegal identifier character or reserved
+word used as a name · `AliasSym Expected` = a type/symbol was required where a
+literal appeared · `DefineSym Expected` = `:=`/definition required.
+
+### 6.3b Second sweep — 7 more gaps, 1 new crasher, 6 rule confirmations
+
+Same 2026-10-01 session, second batch. Of the 16 results, 6 close rule probes
+and 10 land in Tier 0 / project territory.
+
+**New rules confirmed, none of which we enforce:**
+
+| Probe | real message | ours | rule |
+| --- | --- | --- | --- |
+| `ViolIntFromBool.x` (T1-001) | `Datatype error in assignment: Output = Flag1;` | accepts | bool→numeric assignment is illegal (§6.1-1) |
+| `ViolRealVsBool.x` (T1-002) | `Only integer and real allowed for this operator X > Flag1` | accepts | comparison operands must be numeric (§6.1-2) |
+| `ViolIntCond.x` (T1-003) | `Condition in IF-sentence is not boolean` | accepts | `IF` condition must be boolean (§6.1-3) |
+| `EdgeBareDurZero.x` | `Only integer og real allowed for this operator ZeroDur == ZeroFull` | accepts | `duration` may not be compared (§6.1-2) |
+| `EdgeNegDurVal.x` | `only integer and real allowed for this operator NegFive==NegHour` | accepts | same; negative durations are legal *declarations* |
+| `ValidDurAndTime.x` | `only integer and real allowed for this operator: DurFull == DurBare` | accepts | same; all 10 duration/time initializer forms are fine |
+| `EdgeScanGrpCl.x` | `"ScanGroup": Variable FastScan not declared` | accepts | `GroupConn=` must name a declared variable (§6.2-34) |
+| `EdgeCoordInvarTail.x` | `The expression is an invalid type Source + 1` | rejects | **RESOLVED 2026-10-01 -> SL-V032.** Type rule, not a ban on expressions. Re-declaring the same tail with `Source` as real made the error disappear. Corner tails must be a coordinate position can never be an integer, so the tail must be
+real-typed; rule (b) "literals only" disproven |
+
+**The numeric-operand rule is one rule, not two.** `boolean` and `duration`
+fail the *same* check, which is worth stating as a single type-class rule
+(operands of `== != < <= > >= + - * /` must be integer/real) rather than a
+per-datatype special case.
+
+**Rules confirmed where we already agree** (no work): `ViolTooDeep.x`
+(SL-V019), `ViolOldOnNonState.x` (SL-V006), `ViolBoolToReal.x` (SL-V027),
+`ViolUndefBind.x` (C-104) — four probes reach `rule-confirmed`.
+
+**New crasher: `EdgeFrameModInvoc.x`.** A frame-style module invocation kills
+the GUI outright — no diagnostic, no dialog, nothing. That is now the 6th
+`crashes-tool` entry and belongs in the open-alone list in `probes/README.md`.
+
+**Still blocked on the missing symbol:** `ValidSubmodParams.x`,
+`ViolDefScalLocVar.x` (T1-007), `ViolMissMap.x` (C-105) all die on
+`GLOBAL GlobalSetpoint not found`, and `EdgeGlobalParamMap.x` on the *second*
+missing name `GlobalBias`. Four probes cannot test their intended rule until
+those two symbols exist.
+
+**Non-finding worth recording:** the real tool asked
+`ModuleType PumpType in ViolUndefBind is not used. Should it be removed?` and
+then ran the file. Unused declarations are an interactive question, not a
+diagnostic — do not implement §6.2-36 as an error.
+
+**Consequence for the plan.** Each row above needs its own isolating Tier-0
+probe and then a validator rule. Do **not** treat "the corpus accepted it" as
+evidence of validity — this batch proves the flattened corpus carried 16
+invalid constructs that we inherited.
+
+`analyze.py` now splits these automatically via a `gap` field on every tier-0
+row, derived from an `ours accepts` / `ours rejects` marker in the message cell:
+`agree` (both sides as expected) · `we-too-lenient` (real rejects, we accept —
+**the work queue**) · `we-too-strict` (real accepts, we reject — candidate
+divergence) · `wrong-both` (both reject, agreement on an invalid file) ·
+`unknown` (no marker recorded; never treated as agreement). Current counts:
+**19 we-too-lenient, 11 we-too-strict, 7 wrong-both, 20 agree, 0 unknown.**
+
+All 106 tier-0 files now carry an `ours` marker, so these counts are over the
+whole survey rather than the 91 files that happened to have one. Filling the
+last 15 moved `we-too-strict` 4 → 11 and `agree` 12 → 20, and left
+`we-too-lenient` at 19.
+
+The 11 `we-too-strict` rows are all the same kind of divergence — **a rule the
+real tool does not enforce when it loads a file**:
+
+- 7 newly surfaced, all with the identical real message *"compiles without
+  errors (IDE refuses to create via editors; direct file load accepts)"*:
+  SL-V009 `BadBareDurStr`, SL-V010 `BadBareTimeStr`, SL-V026
+  `BadDatatypeShadows`, SL-V001 `BadDupDatatypeName`, SL-V002
+  `BadDupModTypeName`, SL-V025 `BadDupRecFldName`, SL-V003 `BadDupVariaNames`.
+  Two thirds of these are *duplicate-declaration* rules, which suggests the real
+  tool checks uniqueness when it builds a library and not when it loads one.
+- 4 pre-existing, from the §6.4 IDE-vs-compiler divergence: SL-V011, SL-V012,
+  SL-V008, SL-V022.
+
+The message itself names the distinction: the IDE refuses to *create* these
+constructs, but loading the file is accepted. This package is a file parser, so
+it is modelled against the load path — which makes us **stricter than the tool
+on load, by design**. The right response is to keep the rules and document the
+stage they belong to, not to delete them. Deleting them would be wrong twice
+over: it would lose checks the build path does want, and it would do so on the
+strength of one probe each. Do not "fix" these 11; they are the recorded
+stage-scoped divergence from §6.4.
+
+Two other facts from the same sweep:
+
+- `BadBuiltinOutArg.x` is a **mis-targeted probe**, not a `we-too-strict` row.
+  The real tool rejected it for an unrelated reason (*"Type error in
+  if-sentence"*), so **SL-V014 is still unconfirmed** — neither proven nor
+  disproven. Its three SL-V010 hits are incidental: the file initialises its
+  time variables from bare strings, so it carries a second, unrelated defect.
+  This is the `Bad*.x` twin of the broken `Ctrl*` templates, and it needs a
+  rewrite before SL-V014 can be settled.
+- `we-too-lenient` did **not** rise when the 15 markers were filled. All 15
+  files were already being rejected, so no hidden grammar gap was sitting in
+  them. The lenient backlog is genuinely the 19 listed in §11.
+40. **Mechanics research** (not a rule — a deliverable): document how the
     `DateCode_` is generated and how it works, and how `.g`/`.y` files are
     paired with code, so the date-consistency and pairing rules above rest on
     understood internals. `[research]`
@@ -243,9 +535,20 @@ by real output · `[model]` = strongly implied by AST/language semantics ·
 
 | Rule | Finding driving the probe | Probe |
 | --- | --- | --- |
-| SL-V022 `SFC_INIT_STEP_PLACEMENT` | Unlimited `SEQINITSTEP`s allowed `[user]` | feed a multi-init sequence to real parser |
+| ~~SL-V022 `SFC_INIT_STEP_PLACEMENT`~~ | Unlimited `SEQINITSTEP`s allowed `[user]` | **closed 2026-10-01: hypothesis disproven, rule STANDS** — `ViolSecInit.x` rejected with `Error 32`; a second init step is not allowed |
+| `Enable_` with an expression tail | Our grammar allowed `enable_expression` after `Enable_ =` `[inferred]` | **closed 2026-10-01 as a grammar *removal*** — `ValidInteractEnabl.x` rejected with `AliasSym Expected`, so only the `invar` form is legal. **Watch:** the `InVar_` form is *unproven*, not confirmed — the only file exercising it (`UnCompressedFullGrammar.s`) errored at line 71 on a non-ASCII identifier, 300 lines before reaching it |
+| Section-level `Layer_` on `GraphObjects` | Our grammar allowed `layer_info?` there `[inferred]` | **closed 2026-10-01 as a grammar *removal*** — `ValidGraphObjB.x` rejected with `AliasSym Expected`. **Watch:** per-object `Layer_ = N` is unproven; no probe reaches it. Our own "full grammar" golden files are the only evidence and they are not real-tool validated |
 | SL-V020 `UNKNOWN_DATATYPE_NAME` | `AnyType` is a legal (parameter-only) type `[user]` | feed `: AnyType` param, field, localvar |
 | SFC accessor exemption (dotted `Step.X`) | accessors only legal when enabled for the sequence `[user]` | feed accessor with function disabled |
+
+Both 2026-10-01 grammar removals share a failure mode worth naming: they were
+**removals of syntax our own corpus had invented**, each driven by exactly one
+probe. A removal is the risky direction — if the real tool does in fact accept
+the form, we have introduced a false positive. Both are therefore on this
+watchlist, and both removed forms are preserved as `invalid/` fixtures
+(`EnableExpressionTail.s`, `GraphObjectsSectionLayer.s`) so the evidence is
+reversible rather than lost. The cheapest confirmation is a probe that feeds
+only the disputed construct, with no other novelty in the file.
 
 **Resolved 2026-09-29 — documented divergence (kept strict).** The real
 *compiler* accepts all seven of these constructs; the real *IDE* blocks every
@@ -260,6 +563,124 @@ otherwise:
 | SL-V001/002/003/025 duplicate names | compiles clean: `BadDupDatatypeName`, `BadDupModTypeName`, `BadDupVariaNames`, `BadDupRecFldName` |
 | SL-V009/010 bare duration/time init | compiles clean: `BadBareDurStr`, `BadBareTimeStr` |
 | SL-V026 `BUILTIN_DATATYPE_SHADOWED` | compiles clean: `BadDatatypeShadows` |
+
+**Tier-0 survey over-rejects (observed 2026-10-01, kept strict).** Four rules
+are contradicted by the *compiler* with no IDE involvement at all — the files
+compile clean, so these are plain over-rejects, not editor artifacts:
+
+| Rule | Probe | Real behavior | Ours |
+| --- | --- | --- | --- |
+| SL-V008 `INIT_VALUE_TYPE_MISMATCH` | `BadInitValType.x` | compiles without warnings | rejects (`str` init for an `integer`) |
+| SL-V011 `MALFORMED_DURATION_LITERAL` | `BadDurLit.x` | compiles without warnings | rejects (`'not-a-duration'`) |
+| SL-V012 (time literal) | `BadTimeLit.x` | compiles without warnings | rejects |
+| SL-V022 `SFC_INIT_STEP_PLACEMENT` | `BadSfcInitStepNot.x` | complies without warnings | rejects (init not first) |
+
+All four are on the analyzer's reversal watchlist (`WATCHLIST` in
+`scripts/probe/analyze.py`), so the snapshot reports `rev: 4` for them. Like the
+seven rows above, the rules stay strict until a consumer-layer context argues
+otherwise — but unlike those, no IDE guard exists to catch them, so a
+hand-authored file with a mistyped duration or time literal, a quoted integer
+initializer, or a sequence whose init is not first is silently accepted by the
+real compiler. These four are the strongest candidates for a future
+*force-parity* decision. SL-V022 is the widest gap: the real compiler accepts an
+init step anywhere in a sequence, while we reject any placement but the first.
+
+**Confirmed parity (2026-10-01, tier-0).** Seven rejects match ours, most with
+the same line and token:
+
+| Probe | Real message | Ours |
+| --- | --- | --- |
+| `BadFreeCmtInMod.x` | `line 21 >>>(*<<< This comment. AliasSym Expected.` | rejects, same line |
+| `BadGraphObjDouble.x` | `line 15. GraphObjects: >>>Layer_<<< = 2 Layer_ = 3. ... AliasSym expected.` | rejects, same line |
+| `BadSeqForkUnknown.x` | `line 30: >>>SEQBREAK<<< Unexpected symbol or end of input.` | SL-V017 |
+| `BadSfcAltBrStart.x` | `line 26: >>>ALTERNATIVESEQ<<< EngLoopSeqSym Expected.` | SL-V023 |
+| `BadSfcParBrStart.x` | `line 26 >>>SEQTRANSITION<<< Incorrect syntax - Error 29` | SL-V024 |
+| `BadUntermCmt.x` | `line 15: >>><<< AliasSymExpected` | rejects at line 15 |
+| `BadUndefVariaRef.x` | `BasePicture variable not defined: Ghost` | SL-V019 |
+| `BadUnknownDatatype.x` | `Zzzyx` not found; dialog: replace type / open new library / delete object / abort | SL-V020 |
+| `BadWriteToConst.x` | `Modul: …:BasePicture value cannot be changed: MaxLimit` | SL-V007 |
+
+**SL-V015 confirmed with a verbatim message (2026-10-01).** `BadStrLitInCall.x`
+is rejected by the real compiler with the caret on the literal itself:
+
+```
+Error on line 23 IsMatch = EqualStrings(Input, ">>>Expected<<<", True); Expression expected
+```
+
+So a string literal as a call argument really is illegal — "Expression expected"
+is the real parser's wording. This upgrades the §6.1 item 4a note from a
+user-reported rule to a probe-backed one; our SL-V015 rejects the same file at
+the same column. Note the real tool names the *first* offending literal only, so
+one diagnostic per call is the parity target.
+
+**Missing-symbol class — 4 probes are untestable (2026-10-01).** The real tool
+rejected three *controls* with `ControllerType GLOBAL GlobalSetpoint not found`:
+`CtrlDefParam.x`, `CtrlFullArity.x`, `CtrlTypedXfer.x`. Ours accepts all three
+cleanly. The cause is a gap in the probe set, not in either parser: nine files
+reference the module type `ControllerType` and the `GLOBAL GlobalSetpoint`
+`GlobalSetpoint` variable, but **no file in `probes/` ever declares
+`GlobalSetpoint`** — the corpus file `GlobalParamMap.s` declared the type in
+its own `TYPEDEFINITIONS`, and the flattening kept only the usage half. Several
+of the nine files *do* declare `ControllerType` themselves (e.g.
+`CtrlDefParam.x` has `ControllerType = MODULEDEFINITION DateCode_ 1` in
+`TYPEDEFINITIONS`); the tool's message names both symbols but the one that is
+actually unresolvable is `GlobalSetpoint`. Our grammar has no syntax for
+declaring a GLOBAL variable at all, so the symbol can only come from the tool's
+environment — and `probes.z`, the only dependency every other `.z` declares,
+does not provide it.
+
+| Probe | Id | Consequence |
+| --- | --- | --- |
+| `AnyTypeParam.x`, `AnyTypeLocVar.x` | T1-006 | the AnyType rule is **untested** — the earlier "real rejects AnyType as a parameter/localvar" reading is **retracted**; the file died on the missing symbol first |
+| `CtrlDefParam.x` | T1-007 | `template-broken` |
+| `CtrlFullArity.x` | C-105 | `template-broken` |
+| `CtrlTypedXfer.x` | C-106 | `template-broken` |
+| `ViolBoolToReal.x`, `ViolMissMap.x`, `ValidSubmodParams.x`, `ViolDefScalLocVar.x` | C-106, C-105, T1-007, T1-007 | will fail identically until the symbols exist |
+
+All four affected probe ids classify as `template-broken` in the snapshot, and
+the analyzer now checks a rejected control *before* the pending check so a broken
+control cannot hide behind an unanswered violation. Fixing this needs a library
+unit that declares `ControllerType` and `GlobalSetpoint` (or self-contained
+rewrites of the nine files that declare the type locally, as `EdgeGlobalParamMap.x`
+already does); the exact library syntax is not in our grammar, so it must come
+from the real tool.
+
+**The 22 controls are otherwise sound.** The other 19 controls all
+`loads without warnings` on the real tool and validate clean for us, so every
+paired probe except the four above now has a working template.
+
+**Tool-crash class (observed 2026-10-01).** A crash is a third, *terminal*
+outcome — neither accept nor reject — and is recorded as `crashes-tool` in the
+transcript and the snapshot; `analyze.py` must never fold it into `pending`
+(that would hide a known, reproducible result). Five probes now sit in this
+class, and the transcript marks them `crash` or `stall`:
+
+| Probe | Real outcome | Ours |
+| --- | --- | --- |
+| `BadEncodingStress.x` | crashes on open | rejects (`SEMICOLON` expected at line 14) |
+| `BadMalformed.x` | crashes on open | rejects (line 1, expected `STRING`) |
+| `BadModCodeWithMod.x` | crashes on open | rejects (line 13, bare `ModuleCode`) |
+| `BadNotSattLine.x` | crashes on open | rejects (line 1, plain text) |
+| `BadOversizeInput.x` | **stalls, never loads** | rejects (line 51, `Real_Value`) |
+
+`BadEncodingStress.x` crashes the real IDE **on open**, with no diagnostic.
+Despite its name the file is **pure ASCII**, so the crash is not an encoding
+effect: lines 1-3 are placeholder header lines (`"SyntaxVersion"`) instead of
+a real `"Syntax version …, date: … N"` line, and line 13 is a truncated
+expression (`Var1 = Var2 +`). Our parser rejects the same file cleanly — the
+behavior the strict, no-fallback Windows-1252 decode exists to guarantee: fail
+loudly on a malformed file rather than guessing an encoding.
+
+The three new crashers share one trait: they are files the real tool cannot
+salvage at all. `BadMalformed.x` and `BadNotSattLine.x` have no header line
+whatsoever, and `BadModCodeWithMod.x` is a bare `ModuleCode` with no
+`ModuleDef` — a missing-header or missing-`ModuleDef` file takes the IDE down
+rather than producing a diagnostic. `BadOversizeInput.x` is only 1652 bytes, so
+its stall is **not** a size limit; the file stalls before any parse result,
+which makes it unusable as a size probe — treat it as a tool-robustness
+observation, not an encoding/size finding. Consequence for the probe set: a
+crasher kills the whole GUI session, so crash-prone probes must not be batched
+together, and a stall needs its own session with a manual kill.
 
 ## 7. Deliverables
 
@@ -306,8 +727,94 @@ Parity work is complete when:
 - cross-module/graphics findings (§6.2/§6.3) are documented as a verified spec
   for the consumer layer;
 - a Tier 0 re-sweep of the whole fixture corpus passes against the committed
-  snapshot with zero unexplained mismatches.
+  snapshot with zero unexplained mismatches — where "explained" means every
+  `we-too-lenient` row has become a rule or a corrected probe, and every
+  `we-too-strict` row is a recorded divergence;
+- every defective probe template is either fixed or explicitly retired, so no
+  snapshot verdict rests on a construct the real tool cannot represent.
 
 ---
 
-*Last updated: 2026-09-28*
+## 11. Current state — 2026-10-01
+
+| | count |
+| --- | --- |
+| transcript rows | 163 |
+| tier-0 files surveyed | 106 |
+| `confirmed` | 25 |
+| `crashes-tool` | 6 |
+| `not-enforced` | 1 |
+| `rule-confirmed` | 6 |
+| `surprise-reject` | 1 |
+| `template-broken` | 4 |
+| `survey-mismatch` (tier-0) | 26 |
+| `survey-surprise` (tier-0) | 11 |
+| `pending` | 56 |
+
+Tier-0 versus our own parser: **17 we-too-lenient**, 11 we-too-strict (all
+documented stage-scoped divergences — §6.3), 9 wrong-both, 20 agree,
+**0 unknown** (all 106 files carry a marker).
+
+Two more closed this session, both **grammar removals** rather than new
+validator rules, and both on the §6.4 watchlist because a removal driven by a
+single probe is the risky direction:
+
+- `Enable_` no longer accepts a parenthesised expression tail
+  (`enable_expression` dropped from `enable`). `ValidInteractEnabl.x` was
+  rejected with `AliasSym Expected`. The *assignment* directive still accepts
+  `(expr)`, so the restriction is specific to `Enable_`.
+- `GraphObjects` no longer accepts a section-level `Layer_ = N` clause
+  (`layer_info?` dropped from `graph_objects`). `ValidGraphObjB.x` was rejected
+  with `AliasSym Expected`. Per-object `Layer_` is untouched.
+
+Both removals were **syntax our own corpus had invented**, so fixing them meant
+correcting four fixtures whose premise was wrong rather than adding coverage:
+`valid/GraphObjectsSectionLayer.s` moved to `invalid/` (it asserted a
+propagation feature that cannot exist), `valid/InteractEnableTails.s` lost the
+rejected line, and both copies of the compressed/uncompressed full-grammar
+golden files were changed in step so they stay equivalent. `we-too-lenient`
+19 → 17 and `wrong-both` 7 → 9, the latter because the real tool and we now
+agree those two files are invalid.
+
+Of the 7 `wrong-both`, 4 (`EdgeBareDurZero.x`, `EdgeDurVarFmt.x`,
+`EdgeNegDurVal.x`, `ValidDurAndTime.x`) are now **agreements with the real
+tool**: both reject them, and the "wrong" part is our expectation, not our
+parser. They were authored as expected-accept, but each one compares two
+durations, which the real parser forbids. The remaining 3
+(`EdgeUnicodeIdents.x`, `ValidComprFull.x`, `ValidUnComprFull.x`) are the
+non-ASCII identifier gap.
+
+Resolved this session: SL-V022 **stands** (item 14 disproven); date mismatch is a
+**warning, not an error** (§6.3 item 37); reserved-name re-declaration is a real
+**gap in us**, not a reversal (item 18); library loops are **broken, not
+rejected** (item 20); submodule invocation placement and header form are now
+specified (items 24-25); unused declarations are a **question, not an error**
+(item 36); the `GlobalSetpoint` wording is corrected (§6.2).
+
+**Expression typing is now implemented.** The three rules confirmed in §6.1
+items 1-3 ship as `SL-V028 OPERAND_NOT_NUMERIC`, `SL-V029
+ASSIGNMENT_TYPE_MISMATCH` and `SL-V030 CONDITION_NOT_BOOLEAN`, backed by
+`src/sattline_parser/validation/typing.py`. Inferring types means we reject 4
+more tier-0 files, so `we-too-lenient` fell 23 → 19. Each rule is deliberately
+permissive where the probes were silent: builtin call results, record-typed
+values and mixed-branch ternaries are all unproven and stay unflagged, and
+`real` into `integer` is *not* rejected because no probe covers it.
+
+Enforcing these rules exposed **four wrong expectations in our own corpus**:
+`valid/DurationAndTime.s`, `edge_cases/BareDurationZero.s`,
+`edge_cases/DurationVariousFormats.s` and `edge_cases/NegativeDurationValue.s`
+all declared duration/time variables and then compared them, which the real
+parser rejects. Each file's actual purpose is declaration coverage, which the
+real tool *does* accept, so the illegal comparison was removed and the finding
+recorded in the fixture header rather than by moving the file to `invalid/`.
+
+Six probes reach `rule-confirmed` where
+we already agree, which is the good news: SL-V006, SL-V019, SL-V027 and the
+C-104 moduletype rule all held up.
+
+Two probe files still need a real run before they can leave `pending`:
+`HighByteValid.x` and `HighByteInvalid.x` (open the invalid one alone).
+
+---
+
+*Last updated: 2026-10-01*

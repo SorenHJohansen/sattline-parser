@@ -4,6 +4,10 @@
 (* Covers InVar_ tails on invocation coordinate values.
    A submodule can have its position and size bound dynamically to variables
    by adding ": InVar_ <variable>" after a coordinate value.
+   Corrected 2026-10-01: the bare-name form is REJECTED by the real tool
+   ("DefineSym Expected" at `InVar_ PanelX`). An InVar_/OutVar_ coordinate tail
+   must name a quoted DefineSym; a bare identifier is not accepted here.
+   Expected: rejected by the parser.
    Expected: strict syntax-check passes. *)
 
 BasePicture Invocation

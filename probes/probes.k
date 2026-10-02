@@ -256,6 +256,10 @@ ProgramUnits
       Directory "probes"
       MainProgram False )
    Program
+    ( Name "ClippingBoundsRealExpr"
+      Directory "probes"
+      MainProgram False )
+   Program
     ( Name "EdgeBareDurZero"
       Directory "probes"
       MainProgram False )
@@ -340,6 +344,14 @@ ProgramUnits
       Directory "probes"
       MainProgram False )
    Program
+    ( Name "OpSaveConst"
+      Directory "probes"
+      MainProgram False )
+   Program
+    ( Name "OpSaveStateReversed"
+      Directory "probes"
+      MainProgram False )
+   Program
     ( Name "EdgeQuotedIdentMax"
       Directory "probes"
       MainProgram False )
@@ -385,6 +397,14 @@ ProgramUnits
       MainProgram False )
    Program
     ( Name "EdgeUnicodeIdents"
+      Directory "probes"
+      MainProgram False )
+   Program
+    ( Name "HighByteInvalid"
+      Directory "probes"
+      MainProgram False )
+   Program
+    ( Name "HighByteValid"
       Directory "probes"
       MainProgram False )
    Program
@@ -2237,7 +2257,27 @@ Screen
          
          FixPosition False )
       Position ( 0.218000 0.050000 0.270000 0.133000 )
-      Transform ( 0.244 0.0915 1.30917024612427 ) ) )
+      Transform ( 0.244 0.0915 1.30917024612427 ) )
+   Window
+    ( Attributes
+       ( WindowState Normal
+         ShowTools On
+         Visible True
+         
+         FixPosition False )
+      Content "HighByteInvalid"
+      Position ( 0.274000 0.050000 0.326000 0.133000 )
+      Transform ( 0.3 0.0915 0.107073138871261 ) )
+   Window
+    ( Attributes
+       ( WindowState Normal
+         ShowTools On
+         Visible True
+         
+         FixPosition False )
+      Content "HighByteValid"
+      Position ( 0.330000 0.050000 0.382000 0.133000 )
+      Transform ( 0.356 0.0915 0.107073138871261 ) ) )
 ColorTable
  ( ColorModel HLS
    100 ( Blink ( OnColor 12

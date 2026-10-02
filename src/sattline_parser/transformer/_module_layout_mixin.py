@@ -164,28 +164,36 @@ class ModuleLayoutMixin:
                 merged.update(cast(dict[str, object], payload))
         return Tree(const.TREE_TAG_MODULEDEF_OPTS_SEQ, cast(list[Any], [merged]))
 
+    @staticmethod
+    def _apply_clipping_bounds(module_def: ModuleDef, payload: dict[str, object]) -> None:
+        """Record the resolved ClippingBounds corners and their corner tails.
+
+        Tails go to both :attr:`ModuleDef.clipping_tails`, which validation reads to
+        type-check corner expressions, and to the shared ``tails`` property, which
+        the graphics/interact consumers already expect.
+        """
+        clipping_bounds = payload[const.GRAMMAR_VALUE_CLIPPINGBOUNDS]
+        if isinstance(clipping_bounds, tuple):
+            clipping_tuple = cast(tuple[object, ...], clipping_bounds)
+            if len(clipping_tuple) == 2:
+                module_def.clipping_bounds = cast(tuple[tuple[float, float], tuple[float, float]], clipping_tuple)
+        tails = payload.get(const.KEY_TAILS)
+        if not isinstance(tails, list) or not tails:
+            return
+        typed_tails = cast(list[object], tails)
+        module_def.clipping_tails = list(typed_tails)
+        property_tails = module_def.properties.get(const.KEY_TAILS)
+        if isinstance(property_tails, list):
+            cast(list[object], property_tails).extend(typed_tails)
+        else:
+            module_def.properties[const.KEY_TAILS] = list(typed_tails)
+
     def moduledef(self, items: list[TransformerItem]) -> ModuleDef:
         """Grammar moduledef -> ModuleDef with graphics, layout, and interact objects."""
         module_def = ModuleDef()
         for it in items:
             if isinstance(it, dict) and const.GRAMMAR_VALUE_CLIPPINGBOUNDS in it:
-                payload = cast(dict[str, object], it)
-                clipping_bounds = payload[const.GRAMMAR_VALUE_CLIPPINGBOUNDS]
-                if isinstance(clipping_bounds, tuple):
-                    clipping_tuple = cast(tuple[object, ...], clipping_bounds)
-                    if len(clipping_tuple) == 2:
-                        module_def.clipping_bounds = cast(
-                            tuple[tuple[float, float], tuple[float, float]],
-                            clipping_tuple,
-                        )
-                tails = payload.get(const.KEY_TAILS)
-                if isinstance(tails, list) and tails:
-                    typed_tails = cast(list[object], tails)
-                    property_tails = module_def.properties.get(const.KEY_TAILS)
-                    if isinstance(property_tails, list):
-                        cast(list[object], property_tails).extend(typed_tails)
-                    else:
-                        module_def.properties[const.KEY_TAILS] = list(typed_tails)
+                self._apply_clipping_bounds(module_def, cast(dict[str, object], it))
             elif isinstance(it, tuple):
                 clipping_tuple = cast(tuple[object, ...], it)
                 if len(clipping_tuple) == 2 and all(isinstance(t, tuple) for t in clipping_tuple):

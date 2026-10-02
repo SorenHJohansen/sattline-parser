@@ -24,9 +24,7 @@ from sattline_parser.validation.symbols import Scope, resolve_var
 
 _ANYTYPE = "anytype"
 
-_NUMERIC_TYPES: frozenset[Simple_DataType] = frozenset(
-    {Simple_DataType.INTEGER, Simple_DataType.REAL}
-)
+_NUMERIC_TYPES: frozenset[Simple_DataType] = frozenset({Simple_DataType.INTEGER, Simple_DataType.REAL})
 
 
 def _source_type_compatible(source: Variable, formal: Variable) -> bool:
