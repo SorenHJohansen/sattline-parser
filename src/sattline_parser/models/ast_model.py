@@ -333,6 +333,10 @@ class GraphicsBinding:
 @dataclass
 class ModuleDef:
     clipping_bounds: tuple[tuple[float, float], tuple[float, float]] | None = None
+    #: Coordinate tails attached to the ``ClippingBounds`` corners, in source
+    #: order. Retained so validation can type-check corner tail expressions;
+    #: :attr:`clipping_bounds` keeps only the resolved float values.
+    clipping_tails: list[object] | None = None
     zoom_limits: tuple[float, float] | None = None
     seq_layers: float | dict[str, float] | None = None
     grid: float = 0.2

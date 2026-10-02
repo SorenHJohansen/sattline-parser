@@ -57,6 +57,7 @@ T1-012-violation-var-off	ViolVarOff
 T1-012-violation-var-on	ViolVarOn
 UnusedLib	UnusedLib
 t0-edge-ArithmeticPrecedence	EdgeArithPrec
+t0-edge-ClippingBoundsRealExpr	ClippingBoundsRealExpr
 t0-edge-BareDurationZero	EdgeBareDurZero
 t0-edge-CaseInsensitiveIdentifiers	EdgeCaseInsens
 t0-edge-CommentInsideEquation	EdgeCmtInEq
@@ -78,6 +79,8 @@ t0-edge-ModuleOptions	EdgeModOpt
 t0-edge-NegativeDurationValue	EdgeNegDurVal
 t0-edge-OldNewOnDottedStateField	EdgeOldNewOnDotted
 t0-edge-OpSaveAndStateCombined	EdgeOpSaveAndState
+t0-edge-OpSaveConst	OpSaveConst
+t0-edge-OpSaveStateReversed	OpSaveStateReversed
 t0-edge-QuotedIdentifierMaxLength	EdgeQuotedIdentMax
 t0-edge-ScanGroupClause	EdgeScanGrpCl
 t0-edge-SeqBreak	EdgeSeqBrk

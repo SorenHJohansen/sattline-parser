@@ -90,7 +90,10 @@ def test_graph_objects_propagates_section_level_layer_to_objects():
     assert "layer" not in fresh_rect.properties
 
 
-def test_parse_source_text_propagates_graphobjects_section_layer():
+def test_graph_object_layer_is_per_object_not_section_level():
+    # Probe 2026-10-01: the real parser rejects a section-level layer clause with
+    # "GraphObjects : >>>Layer_<<< 2 AliasSym Expected". A layer belongs to the
+    # object that declares it, so there is nothing to propagate.
     bp = parser_core_parse_source_text(
         '"SyntaxVersion"\n'
         '"OriginalFileDate"\n'
@@ -98,14 +101,31 @@ def test_parse_source_text_propagates_graphobjects_section_layer():
         "BasePicture Invocation (0.0,0.0,0.0,1.0,1.0) : MODULEDEFINITION DateCode_ 1\n"
         "ModuleDef\n"
         "ClippingBounds = ( -1.0 , -1.0 ) ( 1.0 , 1.0 )\n"
-        "GraphObjects : Layer_ = 2\n"
+        "GraphObjects :\n"
         "   RectangleObject ( -1.0 , 1.0 ) ( 1.0 , -1.0 )\n"
+        "      Layer_ = 2\n"
         "   TextObject ( -0.8 , 0.5 ) ( 0.8 , -0.5 )\n"
         '      "DisplayValue"\n'
+        "      Layer_ = 3\n"
         "ENDDEF (*BasePicture*);\n"
     )
     assert bp.moduledef is not None
-    assert [go.properties.get("layer") for go in bp.moduledef.graph_objects] == [2, 2]
+    assert [go.properties.get("layer") for go in bp.moduledef.graph_objects] == [2, 3]
+
+
+def test_graphobjects_section_layer_clause_is_rejected():
+    with pytest.raises(UnexpectedInput):
+        parser_core_parse_source_text(
+            '"SyntaxVersion"\n'
+            '"OriginalFileDate"\n'
+            '"ProgramDate"\n'
+            "BasePicture Invocation (0.0,0.0,0.0,1.0,1.0) : MODULEDEFINITION DateCode_ 1\n"
+            "ModuleDef\n"
+            "ClippingBounds = ( -1.0 , -1.0 ) ( 1.0 , 1.0 )\n"
+            "GraphObjects : Layer_ = 2\n"
+            "   RectangleObject ( -1.0 , 1.0 ) ( 1.0 , -1.0 )\n"
+            "ENDDEF (*BasePicture*);\n"
+        )
 
 
 def test_graph_object_handles_standalone_and_attached_connection_nodes():

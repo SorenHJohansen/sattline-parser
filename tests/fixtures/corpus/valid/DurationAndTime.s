@@ -1,9 +1,16 @@
 "Syntax version 2.23, date: 2026-04-23-12:00:00.000 N"
 "Original file date: ---"
 "Program date: 2026-04-23-12:00:00.000, name: DurationAndTime"
-(* Covers duration and time variable declarations and usage.
+(* Covers duration and time variable declarations.
    Duration and time variables require Duration_Value and Time_Value keywords.
-   Expected: strict syntax-check passes. *)
+   Expected: strict syntax-check passes.
+
+   Probe 2026-10-01: the real parser also accepts all of these declaration
+   forms, including a bare Duration_Value "0" and a leading minus. What it
+   rejects is *using* a duration or time as a comparison operand:
+   "Only integer and real allowed for this operator" (see
+   invalid/NonNumericComparisonOperand.s). No probed form of legal duration or
+   time usage exists yet, so the variables are declared and left alone. *)
 
 BasePicture Invocation
    ( 0.0 , 0.0 , 0.0 , 1.0 , 1.0
@@ -27,6 +34,6 @@ ModuleDef
 ClippingBounds = ( -1.0 , -1.0 ) ( 1.0 , 1.0 )
 ModuleCode
    EQUATIONBLOCK Main COORD 0.0, 0.0 OBJSIZE 1.0, 1.0 :
-      Sink = DurFull == DurBare OR TimeFull == TimeBare OR DurZero == DurHours;
+      Sink = True;
 
 ENDDEF (*BasePicture*);

@@ -427,7 +427,7 @@ GraphObjects :
       FillColour : Colour0 = -1 : InVar_ "AreaColorVar" Colour1 = 9 : InVar_
       "AltAreaColorVar" ColourStyle = 0.0 : InVar_ "AreaColorMixVar"
    OvalObject ( 2.32 , 1.02 ) ( 2.7 , 0.7 )
-      Enable_ = True : ( NOT EnableVar)
+      Enable_ = True : InVar_ "EnableVar"
       OutlineColour : Colour0 = -3 : InVar_ "LineColorVar" Colour1 = -1 :
       InVar_ "AltLineColorVar" ColourStyle = 0.0 : InVar_ "ColorMixVar"
       FillColour : Colour0 = -1 : InVar_ "AreaColorVar" Colour1 = 9 : InVar_

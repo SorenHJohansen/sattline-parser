@@ -20,7 +20,7 @@ from sattline_parser.models.ast_model import (
     SingleModule,
     Variable,
 )
-from sattline_parser.validation.code import walk_module_code
+from sattline_parser.validation.code import check_coordinate_tail_types, walk_module_code
 from sattline_parser.validation.declarations import (
     check_builtin_datatype_shadows,
     check_definition_uniqueness,
@@ -49,6 +49,8 @@ def validate_basepicture(bp: BasePicture) -> tuple[Diagnostic, ...]:
     check_variable_declarations(bp.localvariables, records, errors)
     check_record_fields(records, errors)
     check_sibling_submodules(bp.submodules, errors)
+    for module_def in bp.moduledefs:
+        check_coordinate_tail_types(module_def, base_scope, records, errors)
 
     for code in bp.modulecodes:
         walk_module_code(code, base_scope, records, errors)
@@ -120,6 +122,8 @@ def _walk_definition(
     check_scope_declarations(parameters, notes, errors)
     check_variable_declarations([*parameters, *notes], records, errors)
     check_sibling_submodules(child.submodules, errors)
+    for module_def in child.moduledefs:
+        check_coordinate_tail_types(module_def, scope, records, errors)
     for code in child.modulecodes:
         walk_module_code(code, scope, records, errors)
     for sub in child.submodules:

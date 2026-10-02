@@ -1,0 +1,1977 @@
+{
+  "schema": 1,
+  "date": "2026-10-02",
+  "generated": "2026-10-02",
+  "gui_version": "unknown",
+  "transcript": "probes/TRANSCRIPT.md",
+  "summary": {
+    "rev": 4,
+    "pending": 58,
+    "rule-confirmed": 6,
+    "template-broken": 4,
+    "not-enforced": 1,
+    "confirmed": 32,
+    "surprise-reject": 1,
+    "survey-mismatch": 20,
+    "crashes-tool": 6,
+    "survey-surprise": 11
+  },
+  "probes": [
+    {
+      "id": "C-101",
+      "area": "moduletype-graph",
+      "tier": 3,
+      "verdict": "pending",
+      "reversals": [],
+      "evidence": [
+        {
+          "probe_id": "C-101",
+          "area": "moduletype-graph",
+          "tier": 3,
+          "file": "CtrlAcyc.x",
+          "kind": "control",
+          "expected": "accept",
+          "real": "accept",
+          "message": "loads without warnings"
+        },
+        {
+          "probe_id": "C-101",
+          "area": "moduletype-graph",
+          "tier": 3,
+          "file": "ViolCycle.x",
+          "kind": "violation",
+          "expected": "reject",
+          "real": "",
+          "message": ""
+        }
+      ]
+    },
+    {
+      "id": "C-102",
+      "area": "moduletype-graph",
+      "tier": 3,
+      "verdict": "pending",
+      "reversals": [],
+      "evidence": [
+        {
+          "probe_id": "C-102",
+          "area": "moduletype-graph",
+          "tier": 3,
+          "file": "CtrlAcycB.x",
+          "kind": "control",
+          "expected": "accept",
+          "real": "accept",
+          "message": "loads without warnings"
+        },
+        {
+          "probe_id": "C-102",
+          "area": "moduletype-graph",
+          "tier": 3,
+          "file": "ViolSelfInst.x",
+          "kind": "violation",
+          "expected": "reject",
+          "real": "",
+          "message": ""
+        }
+      ]
+    },
+    {
+      "id": "C-103",
+      "area": "moduletype-graph",
+      "tier": 3,
+      "verdict": "pending",
+      "reversals": [],
+      "evidence": [
+        {
+          "probe_id": "C-103",
+          "area": "moduletype-graph",
+          "tier": 3,
+          "file": "CtrlInst.x",
+          "kind": "control",
+          "expected": "accept",
+          "real": "accept",
+          "message": "loads without warnings"
+        },
+        {
+          "probe_id": "C-103",
+          "area": "moduletype-graph",
+          "tier": 3,
+          "file": "ViolUnused.x",
+          "kind": "violation",
+          "expected": "reject",
+          "real": "",
+          "message": ""
+        }
+      ]
+    },
+    {
+      "id": "C-104",
+      "area": "moduletype-graph",
+      "tier": 3,
+      "verdict": "rule-confirmed",
+      "reversals": [],
+      "evidence": [
+        {
+          "probe_id": "C-104",
+          "area": "moduletype-graph",
+          "tier": 3,
+          "file": "CtrlDef.x",
+          "kind": "control",
+          "expected": "accept",
+          "real": "accept",
+          "message": "loads without warnings"
+        },
+        {
+          "probe_id": "C-104",
+          "area": "moduletype-graph",
+          "tier": 3,
+          "file": "ViolUndefBind.x",
+          "kind": "violation",
+          "expected": "reject",
+          "real": "reject",
+          "message": "Moduletype GhostType not found (options: replace, open new library, delete object, abort). Ours ACCEPTS - known gap: ModuleTypeInstance is skipped in validation"
+        }
+      ]
+    },
+    {
+      "id": "C-105",
+      "area": "moduletype-graph",
+      "tier": 3,
+      "verdict": "template-broken",
+      "reversals": [],
+      "evidence": [
+        {
+          "probe_id": "C-105",
+          "area": "moduletype-graph",
+          "tier": 3,
+          "file": "CtrlFullArity.x",
+          "kind": "control",
+          "expected": "accept",
+          "real": "reject",
+          "message": "Modul:CtrlFullArity:ControllerType GLOBAL GlobalSetpoint not found at BasePicture:Controller2 - missing `ControllerType`/`GlobalSetpoint` symbol; ours accepts clean, so the control is broken, not the rule"
+        },
+        {
+          "probe_id": "C-105",
+          "area": "moduletype-graph",
+          "tier": 3,
+          "file": "ViolMissMap.x",
+          "kind": "violation",
+          "expected": "reject",
+          "real": "reject",
+          "message": "ControllerType: GLOBAL GlobalSetpoint not found at basepicture:controller1 - missing symbol; the missing-mapping rule itself is still untested"
+        }
+      ]
+    },
+    {
+      "id": "C-106",
+      "area": "moduletype-graph",
+      "tier": 3,
+      "verdict": "template-broken",
+      "reversals": [],
+      "evidence": [
+        {
+          "probe_id": "C-106",
+          "area": "moduletype-graph",
+          "tier": 3,
+          "file": "CtrlTypedXfer.x",
+          "kind": "control",
+          "expected": "accept",
+          "real": "reject",
+          "message": ":ControllerType GLOBAL GlobalSetpoint not found at BasePicture:Controller2 - missing `ControllerType`/`GlobalSetpoint` symbol; ours accepts clean, so the control is broken, not the rule"
+        },
+        {
+          "probe_id": "C-106",
+          "area": "moduletype-graph",
+          "tier": 3,
+          "file": "ViolBoolToReal.x",
+          "kind": "violation",
+          "expected": "reject",
+          "real": "reject",
+          "message": "BasePicture: Submodule Controller1, parameter Setpoint: Variable ControlEnabled is an invalid type - ours rejects with SL-V027 (same wording as SL-V027), so C-106 is rule-confirmed"
+        }
+      ]
+    },
+    {
+      "id": "C-201",
+      "area": "graphics-correlation",
+      "tier": 3,
+      "verdict": "not-enforced",
+      "reversals": [],
+      "evidence": [
+        {
+          "probe_id": "C-201",
+          "area": "graphics-correlation",
+          "tier": 3,
+          "file": "CtrlDateMatch.x",
+          "kind": "control",
+          "expected": "accept",
+          "real": "accept",
+          "message": "loads without warnings"
+        },
+        {
+          "probe_id": "C-201",
+          "area": "graphics-correlation",
+          "tier": 3,
+          "file": "ViolDateShift.x",
+          "kind": "violation",
+          "expected": "reject",
+          "real": "accept",
+          "message": "Dialog: \"Composite object file has wrong date. Syntax errors and system crash can arise if this file is read. Continue?\" -> answered YES, no crash. A graphics/code date mismatch is a WARNING, not an error. Ours accepts"
+        }
+      ]
+    },
+    {
+      "id": "C-202",
+      "area": "graphics-correlation",
+      "tier": 3,
+      "verdict": "pending",
+      "reversals": [],
+      "evidence": [
+        {
+          "probe_id": "C-202",
+          "area": "graphics-correlation",
+          "tier": 3,
+          "file": "CtrlCountMatch.x",
+          "kind": "control",
+          "expected": "accept",
+          "real": "accept",
+          "message": "loads without warnings"
+        },
+        {
+          "probe_id": "C-202",
+          "area": "graphics-correlation",
+          "tier": 3,
+          "file": "ViolExtraObj.x",
+          "kind": "violation",
+          "expected": "reject",
+          "real": "",
+          "message": ""
+        }
+      ]
+    },
+    {
+      "id": "PRJ-AuxLib",
+      "area": "cross-module",
+      "tier": 3,
+      "verdict": "confirmed",
+      "reversals": [],
+      "evidence": [
+        {
+          "probe_id": "PRJ-AuxLib",
+          "area": "cross-module",
+          "tier": 3,
+          "file": "AuxLib.x",
+          "kind": "library",
+          "expected": "accept",
+          "real": "reject",
+          "message": "line 17 >>>;<<< after DateCode_ 220100: AliasSym Expected (syntax) - ours rejects identically"
+        }
+      ]
+    },
+    {
+      "id": "PRJ-LoopA",
+      "area": "cross-module",
+      "tier": 3,
+      "verdict": "confirmed",
+      "reversals": [],
+      "evidence": [
+        {
+          "probe_id": "PRJ-LoopA",
+          "area": "cross-module",
+          "tier": 3,
+          "file": "LoopA.x",
+          "kind": "library",
+          "expected": "accept",
+          "real": "reject",
+          "message": "Error on line 17 ) : MODULEDEFINITION DateCode_ 210100>>>;<<< AliasSym Expected - DEFECTIVE TEMPLATE: the invocation uses the inline `) : MODULEDEFINITION DateCode_ N` form, but the tool wants a type symbol after the colon (`) : LeafType;` as in CtrlAcyc.x). Separate observation when loading it: \"Library:LoopA reference removed to avoid loops\", so library cycle detection does fire. Ours rejects identically (SEMICOLON, line 17)"
+        }
+      ]
+    },
+    {
+      "id": "PRJ-LoopB",
+      "area": "cross-module",
+      "tier": 3,
+      "verdict": "confirmed",
+      "reversals": [],
+      "evidence": [
+        {
+          "probe_id": "PRJ-LoopB",
+          "area": "cross-module",
+          "tier": 3,
+          "file": "LoopB.x",
+          "kind": "library",
+          "expected": "accept",
+          "real": "reject",
+          "message": "Error on line 17 ) : MODULEDEFINITION DateCode_ 210100>>>;<<< AliasSym Expected - same DEFECTIVE TEMPLATE as LoopA (inline MODULEDEFINITION form); ours rejects identically"
+        }
+      ]
+    },
+    {
+      "id": "PRJ-Prog",
+      "area": "cross-module",
+      "tier": 3,
+      "verdict": "confirmed",
+      "reversals": [],
+      "evidence": [
+        {
+          "probe_id": "PRJ-Prog",
+          "area": "cross-module",
+          "tier": 3,
+          "file": "Prog.x",
+          "kind": "program",
+          "expected": "reject",
+          "real": "reject",
+          "message": "LoopA not found - DEFECTIVE TEMPLATE: the LoopAInst invocation sits inside LOCALVARIABLES instead of the module's submodule list, and Prog.z depends on the broken LoopA. Ours rejects (INVOCATION, line 13)"
+        }
+      ]
+    },
+    {
+      "id": "PRJ-ProgBadDep",
+      "area": "cross-module",
+      "tier": 3,
+      "verdict": "confirmed",
+      "reversals": [],
+      "evidence": [
+        {
+          "probe_id": "PRJ-ProgBadDep",
+          "area": "cross-module",
+          "tier": 3,
+          "file": "ProgBadDep.x",
+          "kind": "program",
+          "expected": "reject",
+          "real": "reject",
+          "message": "Error on line 13: PumpInst >>>Invocation<<< Incorrect Syntax - Error 76 - DEFECTIVE TEMPLATE: the PumpInst invocation sits inside LOCALVARIABLES; Error 76 also fires for the reserved word `Invocation` used as a name. Ours rejects (INVOCATION, line 13)"
+        }
+      ]
+    },
+    {
+      "id": "PRJ-PumpLib",
+      "area": "cross-module",
+      "tier": 3,
+      "verdict": "pending",
+      "reversals": [],
+      "evidence": [
+        {
+          "probe_id": "PRJ-PumpLib",
+          "area": "cross-module",
+          "tier": 3,
+          "file": "PumpLib.x",
+          "kind": "library",
+          "expected": "accept",
+          "real": "",
+          "message": ""
+        }
+      ]
+    },
+    {
+      "id": "PRJ-UnusedLib",
+      "area": "cross-module",
+      "tier": 3,
+      "verdict": "pending",
+      "reversals": [],
+      "evidence": [
+        {
+          "probe_id": "PRJ-UnusedLib",
+          "area": "cross-module",
+          "tier": 3,
+          "file": "UnusedLib.x",
+          "kind": "library",
+          "expected": "accept",
+          "real": "",
+          "message": ""
+        }
+      ]
+    },
+    {
+      "id": "R-101",
+      "area": "sfc",
+      "tier": 1,
+      "verdict": "surprise-reject",
+      "reversals": [],
+      "evidence": [
+        {
+          "probe_id": "R-101",
+          "area": "sfc",
+          "tier": 1,
+          "file": "CtrlSingleInit.x",
+          "kind": "control",
+          "expected": "accept",
+          "real": "accept",
+          "message": "loads without warnings"
+        },
+        {
+          "probe_id": "R-101",
+          "area": "sfc",
+          "tier": 1,
+          "file": "ViolSecInit.x",
+          "kind": "violation",
+          "expected": "accept",
+          "real": "reject",
+          "message": "Error on line 48: >>>ENDSEQUENCE<<< Incorrect Syntax - Error 32. A second SEQINITSTEP is NOT allowed; R-101 hypothesis disproven. Ours rejects with SL-V022"
+        }
+      ]
+    },
+    {
+      "id": "R-102",
+      "area": "sfc",
+      "tier": 1,
+      "verdict": "pending",
+      "reversals": [],
+      "evidence": [
+        {
+          "probe_id": "R-102",
+          "area": "sfc",
+          "tier": 1,
+          "file": "CtrlInitFirst.x",
+          "kind": "control",
+          "expected": "accept",
+          "real": "accept",
+          "message": "loads without warnings"
+        },
+        {
+          "probe_id": "R-102",
+          "area": "sfc",
+          "tier": 1,
+          "file": "ViolInitAfterStep.x",
+          "kind": "violation",
+          "expected": "accept",
+          "real": "",
+          "message": ""
+        }
+      ]
+    },
+    {
+      "id": "T1-001",
+      "area": "expression-types",
+      "tier": 1,
+      "verdict": "rule-confirmed",
+      "reversals": [],
+      "evidence": [
+        {
+          "probe_id": "T1-001",
+          "area": "expression-types",
+          "tier": 1,
+          "file": "Ctrl.x",
+          "kind": "control",
+          "expected": "accept",
+          "real": "accept",
+          "message": "loads without warnings"
+        },
+        {
+          "probe_id": "T1-001",
+          "area": "expression-types",
+          "tier": 1,
+          "file": "ViolIntFromBool.x",
+          "kind": "violation",
+          "expected": "reject",
+          "real": "reject",
+          "message": "BasePicture: Datatype error in assignment: Output = Flag1; - ours REJECTS: SL-V029 ASSIGNMENT_TYPE_MISMATCH, matches the real message"
+        }
+      ]
+    },
+    {
+      "id": "T1-002",
+      "area": "expression-types",
+      "tier": 1,
+      "verdict": "rule-confirmed",
+      "reversals": [],
+      "evidence": [
+        {
+          "probe_id": "T1-002",
+          "area": "expression-types",
+          "tier": 1,
+          "file": "CtrlB.x",
+          "kind": "control",
+          "expected": "accept",
+          "real": "accept",
+          "message": "loads without warnings"
+        },
+        {
+          "probe_id": "T1-002",
+          "area": "expression-types",
+          "tier": 1,
+          "file": "ViolRealVsBool.x",
+          "kind": "violation",
+          "expected": "reject",
+          "real": "reject",
+          "message": "BasePicture. Only integer and real allowed for this operator X > Flag1 - ours REJECTS: SL-V028 OPERAND_NOT_NUMERIC, matches the real message"
+        }
+      ]
+    },
+    {
+      "id": "T1-003",
+      "area": "expression-types",
+      "tier": 1,
+      "verdict": "rule-confirmed",
+      "reversals": [],
+      "evidence": [
+        {
+          "probe_id": "T1-003",
+          "area": "expression-types",
+          "tier": 1,
+          "file": "CtrlC.x",
+          "kind": "control",
+          "expected": "accept",
+          "real": "accept",
+          "message": "loads without warnings"
+        },
+        {
+          "probe_id": "T1-003",
+          "area": "expression-types",
+          "tier": 1,
+          "file": "ViolIntCond.x",
+          "kind": "violation",
+          "expected": "reject",
+          "real": "reject",
+          "message": "BasePicture: Condition in IF-sentence is not boolean :IF A THEN A = 1; - ours REJECTS: SL-V030 CONDITION_NOT_BOOLEAN, matches the real message"
+        }
+      ]
+    },
+    {
+      "id": "T1-004",
+      "area": "expression-types",
+      "tier": 1,
+      "verdict": "pending",
+      "reversals": [],
+      "evidence": [
+        {
+          "probe_id": "T1-004",
+          "area": "expression-types",
+          "tier": 1,
+          "file": "CtrlD.x",
+          "kind": "control",
+          "expected": "accept",
+          "real": "accept",
+          "message": "loads without warnings"
+        },
+        {
+          "probe_id": "T1-004",
+          "area": "expression-types",
+          "tier": 1,
+          "file": "ViolStrArg.x",
+          "kind": "violation",
+          "expected": "reject",
+          "real": "",
+          "message": ""
+        }
+      ]
+    },
+    {
+      "id": "T1-005",
+      "area": "expression-types",
+      "tier": 1,
+      "verdict": "rule-confirmed",
+      "reversals": [],
+      "evidence": [
+        {
+          "probe_id": "T1-005",
+          "area": "expression-types",
+          "tier": 1,
+          "file": "CtrlE.x",
+          "kind": "control",
+          "expected": "accept",
+          "real": "accept",
+          "message": "loads without warnings"
+        },
+        {
+          "probe_id": "T1-005",
+          "area": "expression-types",
+          "tier": 1,
+          "file": "ViolTooDeep.x",
+          "kind": "violation",
+          "expected": "reject",
+          "real": "reject",
+          "message": "BasePicture: Record component not defined: Sensor.Position.X.Y - ours rejects with SL-V019 at the same construct, so T1-005 is rule-confirmed"
+        }
+      ]
+    },
+    {
+      "id": "T1-006",
+      "area": "context-restricted-types",
+      "tier": 1,
+      "verdict": "template-broken",
+      "reversals": [],
+      "evidence": [
+        {
+          "probe_id": "T1-006",
+          "area": "context-restricted-types",
+          "tier": 1,
+          "file": "AnyTypeParam.x",
+          "kind": "control",
+          "expected": "accept",
+          "real": "reject",
+          "message": "Submodule Controller1, parameter Query not connected. - missing `ControllerType`/`GlobalSetpoint` symbol: rejected before AnyType was ever checked, so the rule is UNTESTED"
+        },
+        {
+          "probe_id": "T1-006",
+          "area": "context-restricted-types",
+          "tier": 1,
+          "file": "AnyTypeLocVar.x",
+          "kind": "violation",
+          "expected": "reject",
+          "real": "reject",
+          "message": "ControllerType GLOBAL GlobalSetpoint not found at BasePicture.Controller2 - missing `ControllerType`/`GlobalSetpoint` symbol: rejected before AnyType was ever checked, so the rule is UNTESTED"
+        }
+      ]
+    },
+    {
+      "id": "T1-006b",
+      "area": "context-restricted-types",
+      "tier": 1,
+      "verdict": "pending",
+      "reversals": [],
+      "evidence": [
+        {
+          "probe_id": "T1-006b",
+          "area": "context-restricted-types",
+          "tier": 1,
+          "file": "CtrlF.x",
+          "kind": "control",
+          "expected": "accept",
+          "real": "accept",
+          "message": "loads without warnings"
+        },
+        {
+          "probe_id": "T1-006b",
+          "area": "context-restricted-types",
+          "tier": 1,
+          "file": "ViolAnyTypeFld.x",
+          "kind": "violation",
+          "expected": "reject",
+          "real": "",
+          "message": ""
+        }
+      ]
+    },
+    {
+      "id": "T1-007",
+      "area": "statement-context",
+      "tier": 1,
+      "verdict": "template-broken",
+      "reversals": [],
+      "evidence": [
+        {
+          "probe_id": "T1-007",
+          "area": "statement-context",
+          "tier": 1,
+          "file": "CtrlDefParam.x",
+          "kind": "control",
+          "expected": "accept",
+          "real": "reject",
+          "message": "Modul:CtrlDefParam:ControllerType GLOBAL GlobalSetpoint not found at BasePicture.Controller2 - missing `ControllerType`/`GlobalSetpoint` symbol; ours accepts clean, so the control is broken, not the rule"
+        },
+        {
+          "probe_id": "T1-007",
+          "area": "statement-context",
+          "tier": 1,
+          "file": "ViolDefScalLocVar.x",
+          "kind": "violation",
+          "expected": "unknown",
+          "real": "reject",
+          "message": "ControllerType GLOBAL GlobalSetpoint not found at BasePicture:Controller2 - missing symbol again, so the intended rule (:= Default on a plain localvar) is still untested"
+        }
+      ]
+    },
+    {
+      "id": "T1-008",
+      "area": "statement-context",
+      "tier": 1,
+      "verdict": "pending",
+      "reversals": [],
+      "evidence": [
+        {
+          "probe_id": "T1-008",
+          "area": "statement-context",
+          "tier": 1,
+          "file": "CtrlWithInit.x",
+          "kind": "control",
+          "expected": "accept",
+          "real": "accept",
+          "message": "loads without warnings"
+        },
+        {
+          "probe_id": "T1-008",
+          "area": "statement-context",
+          "tier": 1,
+          "file": "ViolConstNoInit.x",
+          "kind": "violation",
+          "expected": "accept",
+          "real": "",
+          "message": ""
+        }
+      ]
+    },
+    {
+      "id": "T1-009",
+      "area": "statement-context",
+      "tier": 1,
+      "verdict": "pending",
+      "reversals": [],
+      "evidence": [
+        {
+          "probe_id": "T1-009",
+          "area": "statement-context",
+          "tier": 1,
+          "file": "CtrlG.x",
+          "kind": "control",
+          "expected": "accept",
+          "real": "accept",
+          "message": "loads without warnings"
+        },
+        {
+          "probe_id": "T1-009",
+          "area": "statement-context",
+          "tier": 1,
+          "file": "ViolStateInt.x",
+          "kind": "violation",
+          "expected": "unknown",
+          "real": "",
+          "message": ""
+        },
+        {
+          "probe_id": "T1-009",
+          "area": "statement-context",
+          "tier": 1,
+          "file": "ViolOpSaveStr.x",
+          "kind": "violation",
+          "expected": "unknown",
+          "real": "",
+          "message": ""
+        }
+      ]
+    },
+    {
+      "id": "T1-010",
+      "area": "statement-context",
+      "tier": 1,
+      "verdict": "rule-confirmed",
+      "reversals": [],
+      "evidence": [
+        {
+          "probe_id": "T1-010",
+          "area": "statement-context",
+          "tier": 1,
+          "file": "CtrlH.x",
+          "kind": "control",
+          "expected": "accept",
+          "real": "accept",
+          "message": "loads without warnings"
+        },
+        {
+          "probe_id": "T1-010",
+          "area": "statement-context",
+          "tier": 1,
+          "file": "ViolOldOnNonState.x",
+          "kind": "violation",
+          "expected": "reject",
+          "real": "reject",
+          "message": "BasePicture. No attribute allowed for this variable: Valve.Position:Old - ours rejects with SL-V006, so T1-010 is rule-confirmed"
+        }
+      ]
+    },
+    {
+      "id": "T1-011",
+      "area": "sfc",
+      "tier": 1,
+      "verdict": "pending",
+      "reversals": [],
+      "evidence": [
+        {
+          "probe_id": "T1-011",
+          "area": "sfc",
+          "tier": 1,
+          "file": "CtrlI.x",
+          "kind": "control",
+          "expected": "accept",
+          "real": "accept",
+          "message": "loads without warnings"
+        },
+        {
+          "probe_id": "T1-011",
+          "area": "sfc",
+          "tier": 1,
+          "file": "ViolStepAcc.x",
+          "kind": "violation",
+          "expected": "accept",
+          "real": "",
+          "message": ""
+        },
+        {
+          "probe_id": "T1-011",
+          "area": "sfc",
+          "tier": 1,
+          "file": "ViolSeqReset.x",
+          "kind": "violation",
+          "expected": "accept",
+          "real": "",
+          "message": ""
+        }
+      ]
+    },
+    {
+      "id": "T1-012",
+      "area": "reserved-names",
+      "tier": 1,
+      "verdict": "pending",
+      "reversals": [],
+      "evidence": [
+        {
+          "probe_id": "T1-012",
+          "area": "reserved-names",
+          "tier": 1,
+          "file": "CtrlOrdName.x",
+          "kind": "control",
+          "expected": "accept",
+          "real": "accept",
+          "message": "loads without warnings"
+        },
+        {
+          "probe_id": "T1-012",
+          "area": "reserved-names",
+          "tier": 1,
+          "file": "ViolVarOn.x",
+          "kind": "violation",
+          "expected": "reject",
+          "real": "reject",
+          "message": "Error on line 14: >>>On<<< AliasSym Expected. Ours ACCEPTS - known gap: we never forbid declaring the reserved name On"
+        },
+        {
+          "probe_id": "T1-012",
+          "area": "reserved-names",
+          "tier": 1,
+          "file": "ViolVarOff.x",
+          "kind": "violation",
+          "expected": "reject",
+          "real": "reject",
+          "message": "Error on line 14: >>>Off<<< AliasSym Expected. Ours ACCEPTS - known gap: we never forbid declaring the reserved name Off"
+        },
+        {
+          "probe_id": "T1-012",
+          "area": "reserved-names",
+          "tier": 1,
+          "file": "ViolVarGroup.x",
+          "kind": "violation",
+          "expected": "reject",
+          "real": "",
+          "message": ""
+        }
+      ]
+    }
+  ],
+  "tier0": [
+    {
+      "file": "EdgeArithPrec.x",
+      "kind": "inventory",
+      "expected": "accept",
+      "real": "",
+      "message": "",
+      "verdict": "pending",
+      "gap": "n/a",
+      "reversals": []
+    },
+    {
+      "file": "EdgeBareDurZero.x",
+      "kind": "inventory",
+      "expected": "accept",
+      "real": "reject",
+      "message": "BasePicture Only integer og real allowed for this operator ZeroDur == ZeroFull - ours REJECTS: SL-V028 OPERAND_NOT_NUMERIC, matches the real message",
+      "verdict": "survey-mismatch",
+      "gap": "wrong-both",
+      "reversals": []
+    },
+    {
+      "file": "EdgeCaseInsens.x",
+      "kind": "inventory",
+      "expected": "accept",
+      "real": "",
+      "message": "",
+      "verdict": "pending",
+      "gap": "n/a",
+      "reversals": []
+    },
+    {
+      "file": "EdgeCmtInEq.x",
+      "kind": "inventory",
+      "expected": "accept",
+      "real": "reject",
+      "message": "Error on line 35 SEQTRANSITION TrStart WAIT_FOR>>>(*<<< inline comment. Expression expected. - ours accepts (we allow a comment after WAIT_FOR)",
+      "verdict": "survey-mismatch",
+      "gap": "we-too-lenient",
+      "reversals": []
+    },
+    {
+      "file": "EdgeConstStrSetGet.x",
+      "kind": "inventory",
+      "expected": "accept",
+      "real": "",
+      "message": "",
+      "verdict": "pending",
+      "gap": "n/a",
+      "reversals": []
+    },
+    {
+      "file": "ClippingBoundsRealExpr.x",
+      "kind": "inventory",
+      "expected": "accept",
+      "real": "",
+      "message": "",
+      "verdict": "pending",
+      "gap": "n/a",
+      "reversals": []
+    },
+    {
+      "file": "EdgeCoordInvarTail.x",
+      "kind": "inventory",
+      "expected": "reject",
+      "real": "reject",
+      "message": "BasePicture The expression is of an invalid type Source + 1 - ours rejects (SL-V032). RESOLVED 2026-10-01 by the editor: this is a TYPE error, not a syntax error. Re-declaring the same tail with `Source` as real made the error disappear, so computed corner tails are legal and the tail must simply be REAL-typed. Rule (a) confirmed, rule (b) (literals only) disproven",
+      "verdict": "confirmed",
+      "gap": "agree",
+      "reversals": []
+    },
+    {
+      "file": "EdgeDeepNestCmts.x",
+      "kind": "inventory",
+      "expected": "accept",
+      "real": "",
+      "message": "",
+      "verdict": "pending",
+      "gap": "n/a",
+      "reversals": []
+    },
+    {
+      "file": "EdgeDurInParamMap.x",
+      "kind": "inventory",
+      "expected": "accept",
+      "real": "",
+      "message": "",
+      "verdict": "pending",
+      "gap": "n/a",
+      "reversals": []
+    },
+    {
+      "file": "EdgeDurVarFmt.x",
+      "kind": "inventory",
+      "expected": "accept",
+      "real": "reject",
+      "message": "Error on line 15 >>>(*<<< Duration_Value. AliasSym Expected. - ours rejects on an unrelated construct: this file also compares durations, which is SL-V028. The real tool stopped at the line-15 comment error, so this file is reworked before it can confirm the comment rule",
+      "verdict": "survey-mismatch",
+      "gap": "wrong-both",
+      "reversals": []
+    },
+    {
+      "file": "EdgeElsifExpr.x",
+      "kind": "inventory",
+      "expected": "accept",
+      "real": "",
+      "message": "",
+      "verdict": "pending",
+      "gap": "n/a",
+      "reversals": []
+    },
+    {
+      "file": "EdgeEmptyCodeBlk.x",
+      "kind": "inventory",
+      "expected": "accept",
+      "real": "",
+      "message": "",
+      "verdict": "pending",
+      "gap": "n/a",
+      "reversals": []
+    },
+    {
+      "file": "EdgeEmptyRecType.x",
+      "kind": "inventory",
+      "expected": "accept",
+      "real": "",
+      "message": "",
+      "verdict": "pending",
+      "gap": "n/a",
+      "reversals": []
+    },
+    {
+      "file": "EdgeFrameModInvoc.x",
+      "kind": "inventory",
+      "expected": "accept",
+      "real": "crash",
+      "message": "crashes SattLine - ours accepts. A frame-style module invocation kills the tool outright, so the grammar there is a landmine, not just a rule",
+      "verdict": "crashes-tool",
+      "gap": "n/a",
+      "reversals": []
+    },
+    {
+      "file": "EdgeGlobalParamMap.x",
+      "kind": "inventory",
+      "expected": "accept",
+      "real": "reject",
+      "message": "ControllerType GLOBAL GlobalBias not found at BasePicture:Ctrl - missing symbol (same class as GlobalSetpoint; GlobalBias is declared nowhere in probes/). Ours ACCEPTS",
+      "verdict": "survey-mismatch",
+      "gap": "we-too-lenient",
+      "reversals": []
+    },
+    {
+      "file": "EdgeKwPrefixed.x",
+      "kind": "inventory",
+      "expected": "accept",
+      "real": "",
+      "message": "",
+      "verdict": "pending",
+      "gap": "n/a",
+      "reversals": []
+    },
+    {
+      "file": "EdgeLegacySeqNo.x",
+      "kind": "inventory",
+      "expected": "accept",
+      "real": "",
+      "message": "",
+      "verdict": "pending",
+      "gap": "n/a",
+      "reversals": []
+    },
+    {
+      "file": "EdgeMinSeq.x",
+      "kind": "inventory",
+      "expected": "accept",
+      "real": "",
+      "message": "",
+      "verdict": "pending",
+      "gap": "n/a",
+      "reversals": []
+    },
+    {
+      "file": "EdgeModDefNoTrail.x",
+      "kind": "inventory",
+      "expected": "accept",
+      "real": "reject",
+      "message": "Error on line 15 >>><<< SemicolonSym Expected - ours accepts (we allow a missing ENDDEF terminator)",
+      "verdict": "survey-mismatch",
+      "gap": "we-too-lenient",
+      "reversals": []
+    },
+    {
+      "file": "EdgeModOpt.x",
+      "kind": "inventory",
+      "expected": "accept",
+      "real": "",
+      "message": "",
+      "verdict": "pending",
+      "gap": "n/a",
+      "reversals": []
+    },
+    {
+      "file": "OpSaveConst.x",
+      "kind": "inventory",
+      "expected": "accept",
+      "real": "",
+      "message": "",
+      "verdict": "pending",
+      "gap": "n/a",
+      "reversals": []
+    },
+    {
+      "file": "OpSaveStateReversed.x",
+      "kind": "inventory",
+      "expected": "accept",
+      "real": "",
+      "message": "",
+      "verdict": "pending",
+      "gap": "n/a",
+      "reversals": []
+    },
+    {
+      "file": "EdgeNegDurVal.x",
+      "kind": "inventory",
+      "expected": "accept",
+      "real": "reject",
+      "message": "BasePicture only integer and real allowed for this operator NegFive==NegHour - ours REJECTS: SL-V028 OPERAND_NOT_NUMERIC, matches the real message",
+      "verdict": "survey-mismatch",
+      "gap": "wrong-both",
+      "reversals": []
+    },
+    {
+      "file": "EdgeOldNewOnDotted.x",
+      "kind": "inventory",
+      "expected": "accept",
+      "real": "",
+      "message": "",
+      "verdict": "pending",
+      "gap": "n/a",
+      "reversals": []
+    },
+    {
+      "file": "EdgeOpSaveAndState.x",
+      "kind": "inventory",
+      "expected": "reject",
+      "real": "reject",
+      "message": "Error on line 19 SavedStateVar: integer Opsave >>>State<<< Unknown error - unable to read error message file. - ours rejects (SL-V031). RESOLVED 2026-10-01: the file-load path could not render its message (\"unable to read error message file\"), but the editor gives it verbatim: \"Invalid attribute identifider or invalid combination of attributes\" (sic). So the combination IS invalid, and it is caught as a validation error, not a parse error. Confirmed for both the integer and the boolean declaration A missing message is not a specification, so the grammar keeps allowing the combination. State alone is confirmed-accept (CtrlG.x, CtrlWithInit.x), so OpSave+State is the trigger. Needs disambiguation probes: see PARITY_PLAN.md",
+      "verdict": "confirmed",
+      "gap": "agree",
+      "reversals": []
+    },
+    {
+      "file": "EdgeQuotedIdentMax.x",
+      "kind": "inventory",
+      "expected": "accept",
+      "real": "",
+      "message": "",
+      "verdict": "pending",
+      "gap": "n/a",
+      "reversals": []
+    },
+    {
+      "file": "EdgeScanGrpCl.x",
+      "kind": "inventory",
+      "expected": "accept",
+      "real": "reject",
+      "message": "BasePicture \"ScanGroup\": Variable FastScan not declared - ours ACCEPTS: the ScanGroup clause does not resolve its variable",
+      "verdict": "survey-mismatch",
+      "gap": "we-too-lenient",
+      "reversals": []
+    },
+    {
+      "file": "EdgeSeqBrk.x",
+      "kind": "inventory",
+      "expected": "accept",
+      "real": "reject",
+      "message": "Error on line 25 >>>SEQBREAK<<< Unexpected symbol or end of input - ours accepts (we allow SEQBREAK here)",
+      "verdict": "survey-mismatch",
+      "gap": "we-too-lenient",
+      "reversals": []
+    },
+    {
+      "file": "EdgeSeqForkMulti.x",
+      "kind": "inventory",
+      "expected": "accept",
+      "real": "",
+      "message": "",
+      "verdict": "pending",
+      "gap": "n/a",
+      "reversals": []
+    },
+    {
+      "file": "EdgeSeqAlt.x",
+      "kind": "inventory",
+      "expected": "accept",
+      "real": "reject",
+      "message": "Error on line 21 >>>ALTERNATIVESEQ<<< EndLoopSeqSym Expected - ours accepts",
+      "verdict": "survey-mismatch",
+      "gap": "we-too-lenient",
+      "reversals": []
+    },
+    {
+      "file": "EdgeSeqPar.x",
+      "kind": "inventory",
+      "expected": "reject",
+      "real": "reject",
+      "message": "Error on line 29 >>>ENDSEQUENCE<<< Incorrect Syntax - Error 32 - ours accepts SL-V033 - ours rejects: a closed sequence body must close on a SEQTRANSITION, not a SEQSTEP",
+      "verdict": "confirmed",
+      "gap": "agree",
+      "reversals": []
+    },
+    {
+      "file": "EdgeSimpleModType.x",
+      "kind": "inventory",
+      "expected": "accept",
+      "real": "",
+      "message": "",
+      "verdict": "pending",
+      "gap": "n/a",
+      "reversals": []
+    },
+    {
+      "file": "EdgeSubSeqDef.x",
+      "kind": "inventory",
+      "expected": "reject",
+      "real": "reject",
+      "message": "Error on line 26 >>>ENDSEQUENCE<<< Incorrect Syntax - Error 32 - ours accepts SL-V033 - ours rejects: a closed sequence body must close on a SEQTRANSITION, not a SEQSTEP",
+      "verdict": "confirmed",
+      "gap": "agree",
+      "reversals": []
+    },
+    {
+      "file": "EdgeSubSeqTrans.x",
+      "kind": "inventory",
+      "expected": "accept",
+      "real": "",
+      "message": "",
+      "verdict": "pending",
+      "gap": "n/a",
+      "reversals": []
+    },
+    {
+      "file": "EdgeTermSeqStep.x",
+      "kind": "inventory",
+      "expected": "reject",
+      "real": "reject",
+      "message": "Error on line 22 >>>ENDSEQUENCE<<< Incorrect Syntax - Error 32 - ours accepts SL-V033 - ours rejects: a closed sequence body must close on a SEQTRANSITION, not a SEQSTEP",
+      "verdict": "confirmed",
+      "gap": "agree",
+      "reversals": []
+    },
+    {
+      "file": "EdgeTimeValInit.x",
+      "kind": "inventory",
+      "expected": "accept",
+      "real": "",
+      "message": "",
+      "verdict": "pending",
+      "gap": "n/a",
+      "reversals": []
+    },
+    {
+      "file": "EdgeUnicodeIdents.x",
+      "kind": "inventory",
+      "expected": "accept",
+      "real": "reject",
+      "message": "Error on line 14 D>>>\u00e9<<<bit Incorrect Syntax - Error 76 - ours rejects too (lexer stops on the high byte), so Error 76 = invalid identifier character",
+      "verdict": "survey-mismatch",
+      "gap": "wrong-both",
+      "reversals": []
+    },
+    {
+      "file": "BadBareDurStr.x",
+      "kind": "inventory",
+      "expected": "reject",
+      "real": "accept",
+      "message": "compiles without errors (IDE refuses to create via editors; direct file load accepts) - ours rejects SL-V009. STAGE-SCOPED: the real tool compiles on direct file load; the IDE refuses to *create* the construct. Our parser models file load, so this is stricter than the tool.",
+      "verdict": "survey-surprise",
+      "gap": "we-too-strict",
+      "reversals": []
+    },
+    {
+      "file": "BadBareTimeStr.x",
+      "kind": "inventory",
+      "expected": "reject",
+      "real": "accept",
+      "message": "compiles without errors (IDE refuses to create via editors; direct file load accepts) - ours rejects SL-V010. STAGE-SCOPED: compiles on direct file load, IDE refuses to create. Same divergence as BadBareDurStr.",
+      "verdict": "survey-surprise",
+      "gap": "we-too-strict",
+      "reversals": []
+    },
+    {
+      "file": "BadDurLit.x",
+      "kind": "inventory",
+      "expected": "reject",
+      "real": "accept",
+      "message": "compiles without warnings - ours rejects with SL-V011 (`not-a-duration`)",
+      "verdict": "survey-surprise",
+      "gap": "we-too-strict",
+      "reversals": [
+        {
+          "file": "BadDurLit.x",
+          "rule": "SL-V011",
+          "detail": "real='accept'; our parser behavior=False"
+        }
+      ]
+    },
+    {
+      "file": "BadTimeLit.x",
+      "kind": "inventory",
+      "expected": "reject",
+      "real": "accept",
+      "message": "compiles without warnings - ours rejects with SL-V012",
+      "verdict": "survey-surprise",
+      "gap": "we-too-strict",
+      "reversals": [
+        {
+          "file": "BadTimeLit.x",
+          "rule": "SL-V012",
+          "detail": "real='accept'; our parser behavior=False"
+        }
+      ]
+    },
+    {
+      "file": "BadBuiltinDatatype.x",
+      "kind": "inventory",
+      "expected": "reject",
+      "real": "reject",
+      "message": "\"Datatype intege not found\" (dialog: replace / open new library / delete / abort) - ours rejects SL-V018 BUILTIN_DATATYPE_TYPO, matches the real message",
+      "verdict": "confirmed",
+      "gap": "agree",
+      "reversals": []
+    },
+    {
+      "file": "BadBuiltinOutArg.x",
+      "kind": "inventory",
+      "expected": "reject",
+      "real": "reject",
+      "message": "Type error in if-sentence. If UseA THEN DestinationA ELSE DestinationB ENDIF - ours rejects SL-V014, but MIS-TARGETED probe: the real tool rejected this file for an unrelated reason (\"Type error in if-sentence\"), so SL-V014 is still unconfirmed. The SL-V010 hits are also incidental: this file initialises time variables from bare strings.",
+      "verdict": "confirmed",
+      "gap": "agree",
+      "reversals": []
+    },
+    {
+      "file": "BadBuiltinWrong.x",
+      "kind": "inventory",
+      "expected": "reject",
+      "real": "reject",
+      "message": "Too few parameters EqualString(Name1, Name2) - ours rejects SL-V013 BUILTIN_WRONG_ARITY, matches the real message",
+      "verdict": "confirmed",
+      "gap": "agree",
+      "reversals": []
+    },
+    {
+      "file": "BadConsecSeqSteps.x",
+      "kind": "inventory",
+      "expected": "reject",
+      "real": "reject",
+      "message": "line 28 >>>SEQSTEP<<< Step2. Incorrect syntax - Error 32 - ours rejects SL-V016 CONSECUTIVE_SEQUENCE_STEPS, matches",
+      "verdict": "confirmed",
+      "gap": "agree",
+      "reversals": []
+    },
+    {
+      "file": "BadConstVarAs.x",
+      "kind": "inventory",
+      "expected": "reject",
+      "real": "reject",
+      "message": "out parameter is not a variable: Fixed - ours rejects SL-V007, matches the real message",
+      "verdict": "confirmed",
+      "gap": "agree",
+      "reversals": []
+    },
+    {
+      "file": "HighByteInvalid.x",
+      "kind": "inventory",
+      "expected": "reject",
+      "real": "",
+      "message": "byte 0x81 undefined in cp1252 - ours raises UnicodeDecodeError",
+      "verdict": "pending",
+      "gap": "n/a",
+      "reversals": []
+    },
+    {
+      "file": "BadCrossMod.x",
+      "kind": "inventory",
+      "expected": "reject",
+      "real": "reject",
+      "message": "Submodule Child, parameter EnableFlag: Variable CounterValue is an invalid type - ours rejects SL-V027 PARAM_TRANSFER_TYPE_MISMATCH, matches the real message",
+      "verdict": "confirmed",
+      "gap": "agree",
+      "reversals": []
+    },
+    {
+      "file": "BadDatatypeShadows.x",
+      "kind": "inventory",
+      "expected": "reject",
+      "real": "accept",
+      "message": "compiles without errors (IDE refuses to create via editors; direct file load accepts) - ours rejects SL-V026. STAGE-SCOPED: compiles on direct file load, IDE refuses to create.",
+      "verdict": "survey-surprise",
+      "gap": "we-too-strict",
+      "reversals": []
+    },
+    {
+      "file": "BadDupDatatypeName.x",
+      "kind": "inventory",
+      "expected": "reject",
+      "real": "accept",
+      "message": "compiles without errors (IDE refuses to create via editors; direct file load accepts) - ours rejects SL-V001. STAGE-SCOPED: duplicate datatype names compile on direct file load; the IDE refuses to create them.",
+      "verdict": "survey-surprise",
+      "gap": "we-too-strict",
+      "reversals": []
+    },
+    {
+      "file": "BadDupModTypeName.x",
+      "kind": "inventory",
+      "expected": "reject",
+      "real": "accept",
+      "message": "compiles without errors (IDE refuses to create via editors; direct file load accepts) - ours rejects SL-V002. STAGE-SCOPED: same as BadDupDatatypeName.",
+      "verdict": "survey-surprise",
+      "gap": "we-too-strict",
+      "reversals": []
+    },
+    {
+      "file": "BadDupRecFldName.x",
+      "kind": "inventory",
+      "expected": "reject",
+      "real": "accept",
+      "message": "compiles without errors (IDE refuses to create via editors; direct file load accepts) - ours rejects SL-V025. STAGE-SCOPED: same as BadDupDatatypeName.",
+      "verdict": "survey-surprise",
+      "gap": "we-too-strict",
+      "reversals": []
+    },
+    {
+      "file": "BadDupSfcElemNames.x",
+      "kind": "inventory",
+      "expected": "reject",
+      "real": "reject",
+      "message": "error in sequence block - ours rejects SL-V021, matches",
+      "verdict": "confirmed",
+      "gap": "agree",
+      "reversals": []
+    },
+    {
+      "file": "BadDupSibSubmods.x",
+      "kind": "inventory",
+      "expected": "reject",
+      "real": "reject",
+      "message": "module name is not unique: SensorA - ours rejects SL-V004, matches the real message",
+      "verdict": "confirmed",
+      "gap": "agree",
+      "reversals": []
+    },
+    {
+      "file": "BadDupVariaNames.x",
+      "kind": "inventory",
+      "expected": "reject",
+      "real": "accept",
+      "message": "compiles without errors (IDE refuses to create via editors; direct file load accepts) - ours rejects SL-V003. STAGE-SCOPED: same as BadDupDatatypeName.",
+      "verdict": "survey-surprise",
+      "gap": "we-too-strict",
+      "reversals": []
+    },
+    {
+      "file": "BadEncodingStress.x",
+      "kind": "inventory",
+      "expected": "reject",
+      "real": "crash",
+      "message": "SattLine crashes on open (no diagnostic; file is ASCII, crash is the placeholder header lines + truncated `Var1 = Var2 +`)",
+      "verdict": "crashes-tool",
+      "gap": "n/a",
+      "reversals": []
+    },
+    {
+      "file": "BadFreeCmtInMod.x",
+      "kind": "inventory",
+      "expected": "reject",
+      "real": "reject",
+      "message": "line 21 >>>(*<<< This comment. AliasSym Expected. Error indicated by >>> <<< - ours rejects at the same line (comment not allowed in ModuleCode)",
+      "verdict": "confirmed",
+      "gap": "agree",
+      "reversals": []
+    },
+    {
+      "file": "BadGraphObjDouble.x",
+      "kind": "inventory",
+      "expected": "reject",
+      "real": "reject",
+      "message": "line 15. GraphObjects: >>>Layer_<<< = 2 Layer_ = 3. Error message: AliasSym expected. - ours rejects at the same line",
+      "verdict": "confirmed",
+      "gap": "agree",
+      "reversals": []
+    },
+    {
+      "file": "BadInitValType.x",
+      "kind": "inventory",
+      "expected": "reject",
+      "real": "accept",
+      "message": "compiles without warnings - ours rejects with SL-V008 (str init for integer)",
+      "verdict": "survey-surprise",
+      "gap": "we-too-strict",
+      "reversals": [
+        {
+          "file": "BadInitValType.x",
+          "rule": "SL-V008",
+          "detail": "real='accept'; our parser behavior=False"
+        }
+      ]
+    },
+    {
+      "file": "BadMalformed.x",
+      "kind": "inventory",
+      "expected": "reject",
+      "real": "crash",
+      "message": "SattLine crashes on open (no diagnostic; file has no header line at all - ours rejects at line 1, expected STRING)",
+      "verdict": "crashes-tool",
+      "gap": "n/a",
+      "reversals": []
+    },
+    {
+      "file": "BadModCodeWithMod.x",
+      "kind": "inventory",
+      "expected": "reject",
+      "real": "crash",
+      "message": "SattLine crashes on open (no diagnostic; bare `ModuleCode` without a ModuleDef - ours rejects at line 13)",
+      "verdict": "crashes-tool",
+      "gap": "n/a",
+      "reversals": []
+    },
+    {
+      "file": "BadNotSattLine.x",
+      "kind": "inventory",
+      "expected": "reject",
+      "real": "crash",
+      "message": "SattLine crashes on open (no diagnostic; plain text, no header - ours rejects at line 1, expected STRING)",
+      "verdict": "crashes-tool",
+      "gap": "n/a",
+      "reversals": []
+    },
+    {
+      "file": "BadOldNewOnNon.x",
+      "kind": "inventory",
+      "expected": "reject",
+      "real": "reject",
+      "message": "Modul: BadOldNewOnNon:BasePicture no attributes allowed for this variable: Counter:Old - ours rejects with SL-V005",
+      "verdict": "confirmed",
+      "gap": "agree",
+      "reversals": []
+    },
+    {
+      "file": "BadOldNewOnNonB.x",
+      "kind": "inventory",
+      "expected": "reject",
+      "real": "reject",
+      "message": "same error as BadOldNewOnNon, for CMD.Other:Old - ours rejects with SL-V006",
+      "verdict": "confirmed",
+      "gap": "agree",
+      "reversals": []
+    },
+    {
+      "file": "BadOversizeInput.x",
+      "kind": "inventory",
+      "expected": "reject",
+      "real": "stall",
+      "message": "SattLine stalls when opening the file, never loads (1652 B - not a size limit; ours rejects at line 51, `Real_Value`)",
+      "verdict": "crashes-tool",
+      "gap": "n/a",
+      "reversals": []
+    },
+    {
+      "file": "BadSfcAltBrStart.x",
+      "kind": "inventory",
+      "expected": "reject",
+      "real": "reject",
+      "message": "Error on line 26: >>>ALTERNATIVESEQ<<< EngLoopSeqSym Expected. - ours rejects with SL-V023",
+      "verdict": "confirmed",
+      "gap": "agree",
+      "reversals": []
+    },
+    {
+      "file": "BadSfcInitStepNot.x",
+      "kind": "inventory",
+      "expected": "reject",
+      "real": "accept",
+      "message": "Complies without warnings - ours rejects with SL-V022 (init not first)",
+      "verdict": "survey-surprise",
+      "gap": "we-too-strict",
+      "reversals": [
+        {
+          "file": "BadSfcInitStepNot.x",
+          "rule": "SL-V022",
+          "detail": "real='accept'; our parser behavior=False"
+        }
+      ]
+    },
+    {
+      "file": "BadSfcInitStep.x",
+      "kind": "inventory",
+      "expected": "reject",
+      "real": "",
+      "message": "",
+      "verdict": "pending",
+      "gap": "n/a",
+      "reversals": []
+    },
+    {
+      "file": "BadSfcParBrStart.x",
+      "kind": "inventory",
+      "expected": "reject",
+      "real": "reject",
+      "message": "Error on line 26 >>>SEQTRANSITION<<< Incorrect syntax - Error 29 - ours rejects with SL-V024",
+      "verdict": "confirmed",
+      "gap": "agree",
+      "reversals": []
+    },
+    {
+      "file": "BadSeqForkUnknown.x",
+      "kind": "inventory",
+      "expected": "reject",
+      "real": "reject",
+      "message": "Error on line 30: >>>SEQBREAK<<< Unexpected symbol or end of input. - ours rejects with SL-V017",
+      "verdict": "confirmed",
+      "gap": "agree",
+      "reversals": []
+    },
+    {
+      "file": "BadStrLitInCall.x",
+      "kind": "inventory",
+      "expected": "reject",
+      "real": "reject",
+      "message": "Error on line 23 IsMatch = EqualStrings(Input, \">>>Expected<<<\", True); Expression expected - ours rejects with SL-V015 on the string literal (confirms the literal-call rule)",
+      "verdict": "confirmed",
+      "gap": "agree",
+      "reversals": []
+    },
+    {
+      "file": "BadUndefVariaRef.x",
+      "kind": "inventory",
+      "expected": "reject",
+      "real": "reject",
+      "message": "BasePicture variable not defined: Ghost - ours rejects with SL-V019",
+      "verdict": "confirmed",
+      "gap": "agree",
+      "reversals": []
+    },
+    {
+      "file": "BadUnknownDatatype.x",
+      "kind": "inventory",
+      "expected": "reject",
+      "real": "reject",
+      "message": "SattLine reports Zzzyx as not found; dialog: replace type / open new library / delete object / abort - ours rejects with SL-V020",
+      "verdict": "confirmed",
+      "gap": "agree",
+      "reversals": []
+    },
+    {
+      "file": "BadUntermCmt.x",
+      "kind": "inventory",
+      "expected": "reject",
+      "real": "reject",
+      "message": "Error on line 15: >>><<< AliasSymExpected - ours rejects at line 15 (unterminated comment)",
+      "verdict": "confirmed",
+      "gap": "agree",
+      "reversals": []
+    },
+    {
+      "file": "BadWriteToConst.x",
+      "kind": "inventory",
+      "expected": "reject",
+      "real": "reject",
+      "message": "Modul: BadWriteToConst:BasePicture value cannot be changed: MaxLimit - ours rejects with SL-V007",
+      "verdict": "confirmed",
+      "gap": "agree",
+      "reversals": []
+    },
+    {
+      "file": "ValidAllDatatypes.x",
+      "kind": "inventory",
+      "expected": "accept",
+      "real": "",
+      "message": "",
+      "verdict": "pending",
+      "gap": "n/a",
+      "reversals": []
+    },
+    {
+      "file": "ValidBuiltinCalls.x",
+      "kind": "inventory",
+      "expected": "accept",
+      "real": "",
+      "message": "",
+      "verdict": "pending",
+      "gap": "n/a",
+      "reversals": []
+    },
+    {
+      "file": "ValidComprFull.x",
+      "kind": "inventory",
+      "expected": "accept",
+      "real": "reject",
+      "message": "Error on line 24: form>>>\u00e5<<<l Incorrect Syntax - Error 76 - ours rejects too; non-ASCII identifiers are illegal",
+      "verdict": "survey-mismatch",
+      "gap": "wrong-both",
+      "reversals": []
+    },
+    {
+      "file": "ValidComprSeqBasic.x",
+      "kind": "inventory",
+      "expected": "accept",
+      "real": "reject",
+      "message": "Error on line 24: #22 MainSeq #01 >>>SeqControl<<<, SeqTimer). Incorrect Syntax - Error 33 - ours accepts (step number/order syntax in a sequence header)",
+      "verdict": "survey-mismatch",
+      "gap": "we-too-lenient",
+      "reversals": []
+    },
+    {
+      "file": "ValidCtrlFlow.x",
+      "kind": "inventory",
+      "expected": "accept",
+      "real": "",
+      "message": "",
+      "verdict": "pending",
+      "gap": "n/a",
+      "reversals": []
+    },
+    {
+      "file": "ValidCoordInVar.x",
+      "kind": "inventory",
+      "expected": "reject",
+      "real": "reject",
+      "message": "Error on line 35 ( 0.1 : InVar_ >>>PanelX<<< DefineSym Expected - ours parse-rejects. An InVar_/OutVar_ coordinate tail must name a QUOTED DefineSym; the bare-identifier form is not accepted in this position. The interact `invar`/`invar_tail` contexts still allow it, since the rejection is only evidenced for coordinates",
+      "verdict": "confirmed",
+      "gap": "agree",
+      "reversals": []
+    },
+    {
+      "file": "HighByteValid.x",
+      "kind": "inventory",
+      "expected": "accept",
+      "real": "",
+      "message": "valid cp1252 high bytes (0x92, 0xE4) in a comment - ours parses clean",
+      "verdict": "pending",
+      "gap": "n/a",
+      "reversals": []
+    },
+    {
+      "file": "ValidDefInitOnRec.x",
+      "kind": "inventory",
+      "expected": "accept",
+      "real": "",
+      "message": "",
+      "verdict": "pending",
+      "gap": "n/a",
+      "reversals": []
+    },
+    {
+      "file": "ValidDurAndTime.x",
+      "kind": "inventory",
+      "expected": "accept",
+      "real": "reject",
+      "message": "BasePicture only integer and real allowed for this operator: DurFull == DurBare - ours REJECTS: SL-V028 OPERAND_NOT_NUMERIC, matches the real message",
+      "verdict": "survey-mismatch",
+      "gap": "wrong-both",
+      "reversals": []
+    },
+    {
+      "file": "ValidGraphObjEnabl.x",
+      "kind": "inventory",
+      "expected": "accept",
+      "real": "reject",
+      "message": "Error on line 22 \"DisplayValue\">>>ValueFraction<<< AliasSym Expected - ours accepts (a bare enable token after a property name)",
+      "verdict": "survey-mismatch",
+      "gap": "we-too-lenient",
+      "reversals": []
+    },
+    {
+      "file": "ValidGraphObj.x",
+      "kind": "inventory",
+      "expected": "accept",
+      "real": "",
+      "message": "",
+      "verdict": "pending",
+      "gap": "n/a",
+      "reversals": []
+    },
+    {
+      "file": "ValidGraphObjB.x",
+      "kind": "inventory",
+      "expected": "accept",
+      "real": "reject",
+      "message": "Error on line 16: GraphObjects : >>>Layer_<<< 2 AliasSym Expected - ours parse-rejects, and now there is no section-level layer clause, so `graph_objects` no longer allows layer_info. Matches the real AliasSym error (a layer number in the GraphObjects section)",
+      "verdict": "survey-mismatch",
+      "gap": "wrong-both",
+      "reversals": []
+    },
+    {
+      "file": "ValidGraphicsObj.x",
+      "kind": "inventory",
+      "expected": "accept",
+      "real": "",
+      "message": "",
+      "verdict": "pending",
+      "gap": "n/a",
+      "reversals": []
+    },
+    {
+      "file": "ValidInteractEnabl.x",
+      "kind": "inventory",
+      "expected": "accept",
+      "real": "reject",
+      "message": "Error on line 27: >>>Enable_<<< = True: AliasSym Expected - ours parse-rejects, and now the enable_expression tail is no longer in the grammar for `enable`, so this matches the real AliasSym error",
+      "verdict": "survey-mismatch",
+      "gap": "wrong-both",
+      "reversals": []
+    },
+    {
+      "file": "ValidInteract.x",
+      "kind": "inventory",
+      "expected": "accept",
+      "real": "",
+      "message": "",
+      "verdict": "pending",
+      "gap": "n/a",
+      "reversals": []
+    },
+    {
+      "file": "ValidMinProg.x",
+      "kind": "inventory",
+      "expected": "accept",
+      "real": "",
+      "message": "",
+      "verdict": "pending",
+      "gap": "n/a",
+      "reversals": []
+    },
+    {
+      "file": "ValidMultiEqBlk.x",
+      "kind": "inventory",
+      "expected": "accept",
+      "real": "",
+      "message": "",
+      "verdict": "pending",
+      "gap": "n/a",
+      "reversals": []
+    },
+    {
+      "file": "ValidMultiTypedef.x",
+      "kind": "inventory",
+      "expected": "accept",
+      "real": "",
+      "message": "",
+      "verdict": "pending",
+      "gap": "n/a",
+      "reversals": []
+    },
+    {
+      "file": "ValidMultiModDef.x",
+      "kind": "inventory",
+      "expected": "accept",
+      "real": "",
+      "message": "",
+      "verdict": "pending",
+      "gap": "n/a",
+      "reversals": []
+    },
+    {
+      "file": "ValidNestSubmods.x",
+      "kind": "inventory",
+      "expected": "accept",
+      "real": "",
+      "message": "",
+      "verdict": "pending",
+      "gap": "n/a",
+      "reversals": []
+    },
+    {
+      "file": "ValidOldNewOnState.x",
+      "kind": "inventory",
+      "expected": "accept",
+      "real": "",
+      "message": "",
+      "verdict": "pending",
+      "gap": "n/a",
+      "reversals": []
+    },
+    {
+      "file": "ValidOpenSeqSeq.x",
+      "kind": "inventory",
+      "expected": "accept",
+      "real": "reject",
+      "message": "Error on line 50: >>>ALTERNATIVEBRANCH<<< Incorrect Syntax - Error 32 - ours accepts (nested open sequence in a branch)",
+      "verdict": "survey-mismatch",
+      "gap": "we-too-lenient",
+      "reversals": []
+    },
+    {
+      "file": "ValidQuotedIdents.x",
+      "kind": "inventory",
+      "expected": "accept",
+      "real": "",
+      "message": "",
+      "verdict": "pending",
+      "gap": "n/a",
+      "reversals": []
+    },
+    {
+      "file": "ValidRecTypeAcc.x",
+      "kind": "inventory",
+      "expected": "accept",
+      "real": "",
+      "message": "",
+      "verdict": "pending",
+      "gap": "n/a",
+      "reversals": []
+    },
+    {
+      "file": "ValidSfcUnnamed.x",
+      "kind": "inventory",
+      "expected": "accept",
+      "real": "",
+      "message": "",
+      "verdict": "pending",
+      "gap": "n/a",
+      "reversals": []
+    },
+    {
+      "file": "ValidSeqAlt.x",
+      "kind": "inventory",
+      "expected": "accept",
+      "real": "",
+      "message": "",
+      "verdict": "pending",
+      "gap": "n/a",
+      "reversals": []
+    },
+    {
+      "file": "ValidSeqBasic.x",
+      "kind": "inventory",
+      "expected": "accept",
+      "real": "accept",
+      "message": "`[user]` confirmed compiling without issues in the editor - ours accepts. Establishes that our permissive SEQUENCE grammar agrees with the tool on the basic shape: init step, steps, transitions, body closing on a SEQTRANSITION",
+      "verdict": "confirmed",
+      "gap": "agree",
+      "reversals": []
+    },
+    {
+      "file": "ValidSeqPar.x",
+      "kind": "inventory",
+      "expected": "accept",
+      "real": "",
+      "message": "",
+      "verdict": "pending",
+      "gap": "n/a",
+      "reversals": []
+    },
+    {
+      "file": "ValidSubSeqTrans.x",
+      "kind": "inventory",
+      "expected": "accept",
+      "real": "",
+      "message": "",
+      "verdict": "pending",
+      "gap": "n/a",
+      "reversals": []
+    },
+    {
+      "file": "ValidSubSeqTransB.x",
+      "kind": "inventory",
+      "expected": "accept",
+      "real": "reject",
+      "message": "Error on line 40: >>>ALTERNATIVEBRANCH<<< Incorrect Syntax - Error 32 - ours accepts",
+      "verdict": "survey-mismatch",
+      "gap": "we-too-lenient",
+      "reversals": []
+    },
+    {
+      "file": "ValidSubmodParams.x",
+      "kind": "inventory",
+      "expected": "accept",
+      "real": "reject",
+      "message": "ControllerType GLOBAL GlobalSetpoint not found at basepicture:controller2 - missing symbol; also a `template-broken` control for T1-007. Ours ACCEPTS",
+      "verdict": "survey-mismatch",
+      "gap": "we-too-lenient",
+      "reversals": []
+    },
+    {
+      "file": "ValidSubseqBlk.x",
+      "kind": "inventory",
+      "expected": "accept",
+      "real": "",
+      "message": "",
+      "verdict": "pending",
+      "gap": "n/a",
+      "reversals": []
+    },
+    {
+      "file": "ValidUnComprFull.x",
+      "kind": "inventory",
+      "expected": "accept",
+      "real": "reject",
+      "message": "71 fuldnavn1, brugerident1, kommentar, form>>>\u00e5<<<. Incorrect Syntax - Error 76 - ours rejects too; non-ASCII identifier again",
+      "verdict": "survey-mismatch",
+      "gap": "wrong-both",
+      "reversals": []
+    },
+    {
+      "file": "ValidVariaMods.x",
+      "kind": "inventory",
+      "expected": "accept",
+      "real": "",
+      "message": "",
+      "verdict": "pending",
+      "gap": "n/a",
+      "reversals": []
+    }
+  ]
+}

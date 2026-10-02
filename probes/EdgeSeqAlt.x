@@ -3,7 +3,9 @@
 "Program date: 2026-06-19-12:00:00.000, name: SeqAltEdge"
 (*
 tier 0 sweep: edge_cases/SequenceAlternative.s Edge case: alternative branch with a single step and immediate transition.
-   Grammar rules: seqalternative / ALTERNATIVEBRANCH. *)
+   Grammar rules: seqalternative / ALTERNATIVEBRANCH. *   Added a closing SEQTRANSITION: the body originally ended on SEQSTEP Finish,
+   which is illegal in itself (SL-V033). That was incidental to what this file
+   tests, and it masked the real ALTERNATIVESEQ/ENDLOOPSEQ question. *)
 
 BasePicture Invocation
    ( 0.0 , 0.0 , 0.0 , 1.0 , 1.0
@@ -28,6 +30,7 @@ ModuleCode
          SEQTRANSITION TrDone2 WAIT_FOR True
       ENDALTERNATIVE
       SEQSTEP Finish
+      SEQTRANSITION TrEnd WAIT_FOR True
    ENDSEQUENCE
 
 ENDDEF (*BasePicture*);

@@ -5,7 +5,13 @@
    In SattLine a duration may be initialized with Duration_Value "0" without
    a unit suffix. This is the edge case because "0" could in principle be
    ambiguous with a bare integer, but the Duration_Value keyword makes it clear.
-   Expected: strict syntax-check passes (same as DurZero in DurationAndTime.s). *)
+   Expected: strict syntax-check passes (same as DurZero in DurationAndTime.s).
+
+   Probe 2026-10-01: the real parser accepts both of these declarations, but
+   rejects *comparing* two durations -- it reported
+     Only integer and real allowed for this operator ZeroDur == ZeroFull
+   for exactly the statement below, so the declaration-only form is what this
+   fixture covers. See invalid/NonNumericComparisonOperand.s. *)
 
 BasePicture Invocation
    ( 0.0 , 0.0 , 0.0 , 1.0 , 1.0
@@ -20,6 +26,6 @@ ModuleDef
 ClippingBounds = ( -1.0 , -1.0 ) ( 1.0 , 1.0 )
 ModuleCode
    EQUATIONBLOCK Main COORD 0.0, 0.0 OBJSIZE 1.0, 1.0 :
-      Sink = ZeroDur == ZeroFull;
+      Sink = True;
 
 ENDDEF (*BasePicture*);

@@ -9,6 +9,8 @@ Classification per file:
 
 * ``confirmed``        - real outcome matches the expected one
 * ``pending``          - ``real status`` cell not filled yet
+* ``crashes-tool``     - the real tool crashes/hangs on the file (terminal
+  observation, distinct from accept/reject)
 * ``not-enforced``     - violation expected ``reject`` but real accepted it
 * ``disputed-reject``  - same as not-enforced on a paired probe (strengthen + re-probe)
 * ``disputed-accept``  - file expected ``accept`` but real rejected it
@@ -32,15 +34,38 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import date
 from pathlib import Path
-from typing import TextIO
+from typing import TextIO, cast
 
 REPORTS_DIR = Path("tests/real/reports")
 
 ACCEPT_WORDS = frozenset({"accept", "ok", "valid", "pass", "passes", "true", "yes", "y"})
 REJECT_WORDS = frozenset({"reject", "invalid", "bad", "fail", "failed", "error", "false", "no", "n"})
+
+# A crash / hang is a *terminal* observation, distinct from accept or reject: the
+# tool dies on the file instead of reporting a diagnostic. It must not degrade
+# into ``pending``, which would silently hide a known, reproducible result.
+CRASH_WORDS = frozenset(
+    {
+        "crash",
+        "crashed",
+        "crashes",
+        "hang",
+        "hangs",
+        "stall",
+        "stalls",
+        "unresponsive",
+        "frozen",
+        "freezes",
+        "fatal",
+        "aborts",
+        "aborted",
+        "terminates",
+    }
+)
 
 # Probe id -> implemented rule this probe can contradict (PARITY_PLAN.md s6.4),
 # plus whether our current implementation accepts the probed construct.
@@ -50,7 +75,18 @@ WATCHLIST: dict[str, tuple[str, bool]] = {
     "T1-006": ("SL-V020", False),  # we reject AnyType anywhere
     "T1-006b": ("SL-V020", False),  # we reject AnyType as record field
     "T1-011": ("SFC accessor exemption", True),  # we accept dotted accessors
+    "t0-invalid-BadDurationLiteral": ("SL-V011", False),  # we reject 'not-a-duration'
+    "t0-invalid-BadTimeLiteral": ("SL-V012", False),  # we reject a bad time literal
+    "t0-invalid-InitValueTypeMismatch": ("SL-V008", False),  # we reject str init for integer
+    "t0-invalid-SFCInitStepNotFirst": ("SL-V022", False),  # we reject init not first in a sequence
 }
+
+
+# Free-text markers a human writes in the message cell to record what *our*
+# parser did with the same file. Kept in the transcript rather than a second
+# machine column so the ledger stays the single place a human edits.
+OURS_REJECT_MARKERS = ("ours rejects", "ours parse-rejects", "we reject", "we also reject", "matched")
+OURS_ACCEPT_MARKERS = ("ours accepts", "we accept", "we never", "known gap", "is skipped")
 
 
 @dataclass(frozen=True)
@@ -63,6 +99,11 @@ class Row:
     expected: str
     real: str
     message: str
+
+
+def _is_crash(value: str) -> bool:
+    folded = value.casefold().strip()
+    return bool(folded) and (folded in CRASH_WORDS or "crash" in folded or "hang" in folded)
 
 
 def _parse_bool(value: str) -> bool | None:
@@ -105,7 +146,9 @@ def parse_transcript(path: Path) -> list[Row]:
     return rows
 
 
-def _classify(expected: str, real: bool | None) -> str:
+def _classify(expected: str, real: bool | None, crashed: bool = False) -> str:
+    if crashed:
+        return "crashes-tool"
     if real is None:
         return "pending"
     if expected == "unknown":
@@ -116,8 +159,10 @@ def _classify(expected: str, real: bool | None) -> str:
     return "disputed-accept" if expected_accept else "not-enforced"
 
 
-def _survey_verdict(expected: str, real: bool | None) -> str:
+def _survey_verdict(expected: str, real: bool | None, crashed: bool = False) -> str:
     """Single-row verdict for the tier-0 sweep (no control/violation pairing)."""
+    if crashed:
+        return "crashes-tool"
     if real is None:
         return "pending"
     if real == (expected == "accept"):
@@ -125,7 +170,45 @@ def _survey_verdict(expected: str, real: bool | None) -> str:
     return "survey-mismatch" if expected == "accept" else "survey-surprise"
 
 
+def _ours(row: Row) -> bool | None:
+    """What our own parser did with this file, per the human's message cell.
+
+    ``None`` means the transcript does not say, which is the honest default:
+    a missing marker must not be read as agreement.
+    """
+    text = row.message.lower()
+    if any(m in text for m in OURS_REJECT_MARKERS):
+        return False
+    if any(m in text for m in OURS_ACCEPT_MARKERS):
+        return True
+    return None
+
+
+def _gap(row: Row, real: bool | None, crashed: bool) -> str:
+    """Classify a tier-0 row by what it means for *our* implementation.
+
+    ``survey-mismatch`` alone conflates two very different situations: a file
+    the real tool rejects and we also reject (encoding cases - already correct)
+    versus one the real tool rejects and we happily accept (a real grammar gap).
+    Only the latter is work to do.
+    """
+    if crashed or real is None:
+        return "n/a"
+    ours = _ours(row)
+    if ours is None:
+        return "unknown"
+    if real == ours:
+        return "agree" if real == (row.expected == "accept") else "wrong-both"
+    return "we-too-lenient" if real is False else "we-too-strict"
+
+
 def _rollup(file_rows: list[Row]) -> str:
+    if any(_is_crash(r.real) for r in file_rows):
+        return "crashes-tool"
+    # A rejected control is a known, terminal fact about the probe template: report it
+    # even while the violation is still unanswered, or the broken control stays hidden.
+    if any(r.kind == "control" and _parse_bool(r.real) is False for r in file_rows):
+        return "template-broken"
     if not all(r.real.strip() for r in file_rows):
         return "pending"
     parsed = {r.kind: _parse_bool(r.real) for r in file_rows}
@@ -154,6 +237,10 @@ def _reversal(probe_id: str, file_rows: list[Row]) -> list[dict[str, str]]:
     rule, we_accept = watch
     notes: list[dict[str, str]] = []
     for row in file_rows:
+        # `we_accept` describes our behavior on the *violation* construct; an accepted
+        # control is supposed to be accepted by both sides and is not a contradiction.
+        if row.kind == "control":
+            continue
         real = _parse_bool(row.real)
         if real is None:
             continue
@@ -165,7 +252,7 @@ def _reversal(probe_id: str, file_rows: list[Row]) -> list[dict[str, str]]:
     return notes
 
 
-def _summary_counts(probes: list[dict[str, object]], tier0: list[dict[str, object]]) -> dict[str, int]:
+def _summary_counts(probes: list[Mapping[str, object]], tier0: list[Mapping[str, object]]) -> dict[str, int]:
     counts: dict[str, int] = {}
     for item in [*probes, *tier0]:
         verdict = str(item["verdict"])
@@ -179,7 +266,7 @@ def _manifest_file_count(path: Path) -> int:
     return sum(1 for line in path.read_text(encoding="utf-8").splitlines() if line.lstrip().startswith("- name:"))
 
 
-def _write_json(obj: dict[str, object], dest: Path) -> None:
+def _write_json(obj: Mapping[str, object], dest: Path) -> None:
     dest.parent.mkdir(parents=True, exist_ok=True)
     dest.write_text(json.dumps(obj, indent=2) + "\n", encoding="utf-8")
 
@@ -209,7 +296,7 @@ def analyze(
             tier0_rows.append(row)
         else:
             by_probe.setdefault(row.probe_id, []).append(row)
-    probes = [
+    probes: list[Mapping[str, object]] = [
         {
             "id": pid,
             "area": file_rows[0].area,
@@ -220,24 +307,41 @@ def analyze(
         }
         for pid, file_rows in sorted(by_probe.items())
     ]
-    tier0 = [
+    tier0: list[Mapping[str, object]] = [
         {
             "file": r.file,
             "kind": r.kind,
             "expected": r.expected,
             "real": r.real,
             "message": r.message,
-            "verdict": _survey_verdict(r.expected, _parse_bool(r.real)),
+            "verdict": _survey_verdict(r.expected, _parse_bool(r.real), _is_crash(r.real)),
+            "gap": _gap(r, _parse_bool(r.real), _is_crash(r.real)),
+            "reversals": _reversal(r.probe_id, [r]),
         }
         for r in tier0_rows
     ]
     counts = _summary_counts(probes, tier0)
+    reversals = sum(len(cast("list[dict[str, str]]", p["reversals"])) for p in probes) + sum(
+        len(cast("list[dict[str, str]]", t["reversals"])) for t in tier0
+    )
     manifest_n = _manifest_file_count(manifest) if manifest else -1
     print(
         f"rows: {len(rows)}  probes: {len(probes)}  tier0 files: {len(tier0)}  rule files (manifest): {manifest_n}",
         file=page,
     )
     _print_summary(counts, page)
+    gaps: dict[str, int] = {}
+    for entry in tier0:
+        key = str(entry.get("gap", "n/a"))
+        gaps[key] = gaps.get(key, 0) + 1
+    print(
+        f"tier-0 vs our parser: we-too-lenient {gaps.get('we-too-lenient', 0)}, "
+        f"we-too-strict {gaps.get('we-too-strict', 0)}, "
+        f"wrong-both {gaps.get('wrong-both', 0)}, "
+        f"agree {gaps.get('agree', 0)}, "
+        f"unknown {gaps.get('unknown', 0)}",
+        file=page,
+    )
     filled = sum(1 for r in rows if r.real.strip())
     if filled == 0:
         print("no real statuses filled yet - skipping snapshot write", file=page)
@@ -247,13 +351,13 @@ def analyze(
         return 0
     today = str(date.today())
     label = f"{today}-{gui_version}" if gui_version else today
-    snapshot = {
+    snapshot: dict[str, object] = {
         "schema": 1,
         "date": today,
         "generated": today,
         "gui_version": gui_version,
         "transcript": str(transcript),
-        "summary": {"rev": counts.get("reversals", 0), **counts},
+        "summary": {"rev": reversals, **counts},
         "probes": probes,
         "tier0": tier0,
     }

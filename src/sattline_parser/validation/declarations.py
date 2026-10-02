@@ -114,6 +114,7 @@ def check_variable_declarations(
     for variable in variables:
         _check_init_value(variable, errors)
         _check_datatype_reference(variable, records, errors)
+        _check_attribute_combination(variable, errors)
 
 
 def check_record_fields(records: dict[str, DataType], errors: list[Diagnostic]) -> None:
@@ -121,6 +122,32 @@ def check_record_fields(records: dict[str, DataType], errors: list[Diagnostic]) 
     for record in records.values():
         _check_field_name_uniqueness(record, errors)
         check_variable_declarations(record.var_list, records, errors)
+
+
+_FORBIDDEN_ATTRIBUTE_COMBINATIONS: tuple[frozenset[str], ...] = (frozenset({"opsave", "state"}),)
+
+
+def _check_attribute_combination(variable: Variable, errors: list[Diagnostic]) -> None:
+    """Reject modifier pairs the editor refuses as an invalid combination."""
+    present = {
+        attribute
+        for attribute, flagged in (
+            ("opsave", variable.opsave),
+            ("state", variable.state),
+        )
+        if flagged
+    }
+    for combination in _FORBIDDEN_ATTRIBUTE_COMBINATIONS:
+        if combination <= present:
+            ordered = " ".join(sorted(combination))
+            errors.append(
+                Diagnostic(
+                    code=DiagnosticCode.ATTRIBUTE_COMBINATION_INVALID,
+                    message=(f"Variable {variable.name!r} uses the invalid combination of attributes {ordered}"),
+                    span=variable.declaration_span,
+                )
+            )
+            return
 
 
 def _check_field_name_uniqueness(record: DataType, errors: list[Diagnostic]) -> None:
