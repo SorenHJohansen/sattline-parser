@@ -4,19 +4,19 @@ Deliverable 39 from `PARITY_PLAN.md` §6.3 — research (not a rule): how
 `DateCode_` works and how code/graphics files are paired, so the date-consistency
 (§6.3 #36) and pairing rules rest on understood internals.
 
-Reference material: the real library/unit tree in `Libs/` (read-only; nothing
-here is copied from it). Status of every claim is marked `[observed]` (seen in
-real files) or `[hypothesis]` (inference; probe C-101…C-106 and the `proj/`
-closure exist to confirm).
+Reference material: a reference library/unit tree (read-only; no source text is
+copied from it). Status of every claim is marked `[observed]` (seen in reference
+files) or `[hypothesis]` (inference; probe C-101…C-106 and the `proj/` closure
+exist to confirm).
 
 ## 1. What the token is
 
 A `DateCode_` is a signed decimal hash attached to every type-like definition:
 
 ```text
-TypeA = MODULEDEFINITION DateCode_ 101100          [observed]
-UnitPumpDvType = RECORD DateCode_ 200100        [observed]
-BasePicture Invocation ( ... ) : MODULEDEFINITION DateCode_ 300100   [observed]
+TypeA = MODULEDEFINITION DateCode_ 101100
+ExampleRecord = RECORD DateCode_ 200100
+BasePicture Invocation ( ... ) : MODULEDEFINITION DateCode_ 300100
 ```
 
 It appears on moduletype and record definitions, and as the right-hand reference
@@ -26,7 +26,7 @@ content*, not a hash of its name:
 - the same name maps to many different codes across the tree (e.g. `Frame_Module`
   → 11111111, 22222222, 33333333, 44444444, …) `[observed]`
 - the same library copy maps to the same code wherever it is stored
-  (123456789 shared by four `projectlib` files) `[observed]`
+  (123456789 shared by four library files) `[observed]`
 - Java `String.hashCode` and CRC-32 of the definition text do not reproduce any
   observed code `[observed — negative result]`
 
@@ -41,9 +41,9 @@ Three accepted reference styles, all present in real units:
 
 | Reference | Form | Used for |
 | --- | --- | --- |
-| Same-unit by name | `: ErrorIcon;` | submodule bound to a moduletype defined in the same unit/library file |
+| Same-unit by name | `: ExampleIcon;` | submodule bound to a moduletype defined in the same unit/library file |
 | Cross-unit by code | `: MODULEDEFINITION DateCode_ 123456789` | submodule bound to a moduletype in another library |
-| Code + frame module | `: MODULEDEFINITION DateCode_ 300100 ( Frame_Module )` | unit top-level picture that also carries a frame module |
+| Code + frame module | `: MODULEDEFINITION DateCode_ 234567890 ( Frame_Module )` | unit top-level picture that also carries a frame module |
 
 The parenthesised token after the code is **`Frame_Module`** — a frame-module
 declaration attached to the binding — *not* a name hint used for back-lookup. It
@@ -65,11 +65,11 @@ ExampleUnit.z    dependency list (library names, one per line)
 ```
 
 - The `.x` opens with three header lines; the `.y` has a single header line:
-  `" Syntax version 2.23, date: 2016-06-08-11:25:38.882 N "` (note the leading
+  `" Syntax version 2.23, date: 2000-01-01-00:00:00.000 N "` (note the leading
   and trailing spaces inside the quotes). `[observed]`
-- Across 557 real code/graphics pairs, 553 share an identical value on that
-  first date line; the 4 exceptions are compiled binary libraries (no parseable
-  header). `[observed]`
+- Across many code/graphics pairs surveyed, the vast majority share an identical
+  value on that first date line; the exceptions are compiled binary libraries
+  (no parseable header). `[observed]`
 - The `.y` body is sparse numerics; an empty picture compresses to a ~200-byte
   body in which only the date varies. `[observed]`
 - The `.z` lists the libraries the unit depends on (e.g.

@@ -145,15 +145,15 @@ Previous tokens: [Token('MODULECODE', 'ModuleCode')]
 
 tier0/t0-invalid-GraphObjectsDoubleLayer.s: PARSE FAIL: Unexpected token Token('LAYER_PREFIX', 'Layer_') at line 15, column 27.
 Expected one of:
+	* OVALOBJECT
+	* TEXTOBJECT
+	* POLYGONOBJECT
+	* COMMENT_START
+	* COMPOSITEOBJECT
+	* RECTANGLEOBJECT
 	* SEGMENTOBJECT
 	* CONNECTIONNODE
-	* POLYGONOBJECT
-	* OVALOBJECT
-	* COMPOSITEOBJECT
-	* TEXTOBJECT
 	* LINEOBJECT
-	* RECTANGLEOBJECT
-	* COMMENT_START
 
 tier0/t0-invalid-InitValueTypeMismatch.s: parse ok, validation: SL-V008
 tier0/t0-invalid-Malformed.s: PARSE FAIL: Unexpected token Token('NAME', 'BasePicture') at line 1, column 1.
@@ -163,12 +163,12 @@ Previous tokens: [None]
 
 tier0/t0-invalid-ModuleCodeWithoutModuleDef.s: PARSE FAIL: Unexpected token Token('NAME', 'ModuleCode') at line 13, column 1.
 Expected one of:
-	* MODULEPARAMETERS
+	* LOCALVARIABLES
 	* TYPEDEFINITIONS
-	* SUBMODULES
+	* MODULEPARAMETERS
 	* LPAR
 	* MODULEDEF
-	* LOCALVARIABLES
+	* SUBMODULES
 
 tier0/t0-invalid-NotSattLine.s: PARSE FAIL: Unexpected token Token('NAME', 'This') at line 1, column 1.
 Expected one of:
@@ -179,16 +179,16 @@ tier0/t0-invalid-OldNewOnNonState.s: parse ok, validation: SL-V005
 tier0/t0-invalid-OldNewOnNonStateRecordField.s: parse ok, validation: SL-V006
 tier0/t0-invalid-OversizedInput.s: PARSE FAIL: Unexpected token Token('NAME', 'Real_Value') at line 51, column 13.
 Expected one of:
-	* RIGHTALIGNED
-	* VALUEFRACTION
-	* CONNECTIONNODE
-	* STRING
-	* STRING_NOTAIL
 	* LEFTALIGNED
+	* STRING
 	* STRING_CRLF
-	* WIDTH_KEY
 	* VARNAME
+	* VALUEFRACTION
 	* FORMATSTRING
+	* WIDTH_KEY
+	* STRING_NOTAIL
+	* CONNECTIONNODE
+	* RIGHTALIGNED
 
 tier0/t0-invalid-SFCAlternativeBranchStartsWithStep.s: parse ok, validation: SL-V023
 tier0/t0-invalid-SFCInitStepNotFirst.s: parse ok, validation: SL-V022
@@ -200,52 +200,52 @@ tier0/t0-invalid-UndefinedVariableRef.s: parse ok, validation: SL-V019
 tier0/t0-invalid-UnknownDatatypeName.s: parse ok, validation: SL-V020
 tier0/t0-invalid-UnterminatedComment.s: PARSE FAIL: Unexpected token Token('$END', '') at line 15, column 23.
 Expected one of:
-	* COMMENT_END
 	* COMMENT_TEXT
 	* COMMENT_START
+	* COMMENT_END
 
 tier0/t0-invalid-WriteToConstVariable.s: parse ok, validation: SL-V007
 proj/PumpLib/PumpLib.s: parse ok, validation: clean
 proj/AuxLib/AuxLib.s: PARSE FAIL: Unexpected token Token('SEMICOLON', ';') at line 17, column 48.
 Expected one of:
+	* LOCALVARIABLES
 	* MODULEPARAMETERS
+	* LPAR
 	* MODULEDEF
 	* SUBMODULES
-	* LPAR
-	* LOCALVARIABLES
 Previous tokens: [Token('SL_DATECODE', '220100')]
 
 proj/UnusedLib/UnusedLib.s: parse ok, validation: clean
 proj/LoopA/LoopA.s: PARSE FAIL: Unexpected token Token('SEMICOLON', ';') at line 17, column 48.
 Expected one of:
+	* LOCALVARIABLES
 	* MODULEPARAMETERS
+	* LPAR
 	* MODULEDEF
 	* SUBMODULES
-	* LPAR
-	* LOCALVARIABLES
 Previous tokens: [Token('SL_DATECODE', '210200')]
 
 proj/LoopB/LoopB.s: PARSE FAIL: Unexpected token Token('SEMICOLON', ';') at line 17, column 48.
 Expected one of:
+	* LOCALVARIABLES
 	* MODULEPARAMETERS
+	* LPAR
 	* MODULEDEF
 	* SUBMODULES
-	* LPAR
-	* LOCALVARIABLES
 Previous tokens: [Token('SL_DATECODE', '210100')]
 
 proj/Prog/Prog.s: PARSE FAIL: Unexpected token Token('INVOCATION', 'Invocation') at line 13, column 14.
 Expected one of:
+	* COLON
 	* STRING
 	* STRING_CRLF
 	* COMMA
-	* COLON
 Previous tokens: [Token('NAME', 'LoopAInst')]
 
 proj/ProgBadDep/ProgBadDep.s: PARSE FAIL: Unexpected token Token('INVOCATION', 'Invocation') at line 13, column 13.
 Expected one of:
+	* COLON
 	* STRING
 	* STRING_CRLF
 	* COMMA
-	* COLON
 Previous tokens: [Token('NAME', 'PumpInst')]

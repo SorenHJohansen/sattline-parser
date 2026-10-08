@@ -92,7 +92,7 @@ class Probe:
 
 # ---------------------------------------------------------------------------
 # Moduletype/loop inline templates (C-101 / C-102).
-# Real-style (observed in Libs/): moduletypes are ``Name = MODULEDEFINITION
+# Real-style (observed in reference units): moduletypes are ``Name = MODULEDEFINITION
 # DateCode_ <hash>`` and instances bind by name (same unit) or by
 # ``: MODULEDEFINITION DateCode_ <hash> ( Name )`` (cross-unit). Synthetic
 # hashes use a 9xxxxx / 10x namespace so they are never confused with real

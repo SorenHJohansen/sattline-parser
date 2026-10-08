@@ -2,7 +2,7 @@
 "Original file date: ---"
 "Program date: 2026-08-27-18:41:22.140, name: TestCompress"
 (*
-tier 0 sweep: valid/UnCompressedFullGrammar.s Denne programenhed er oprettet 2026-08-25 11:12 af sqhj. *)
+tier 0 sweep: valid/UnCompressedFullGrammar.s Denne programenhed er oprettet 2026-08-25 11:12. *)
 
 BasePicture
 (* ModuleTypeDescription *)

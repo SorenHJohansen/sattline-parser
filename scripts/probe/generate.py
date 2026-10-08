@@ -6,7 +6,7 @@
 Every probe expands to program/library *units*. A unit is a triple in its own
 subfolder — ``<unit>.s`` source, ``<unit>.y`` graphics, ``<unit>.z`` dependency
 list — because the real tool refuses to parse a program or library unless its
-three files are present (verified against the real Libs/ tree, where
+three files are present (verified against a reference library tree, where
 ``.x``+``.y``+``.z`` triplets ship side by side; the code extension does not
 matter to the tool).
 
@@ -21,7 +21,7 @@ Emitted layout:
   ``probes/README.md``                           GUI operator instructions
 
 The graphics (``.y``) is synthetic — the canonical 200-byte "empty" body taken
-from the real tree (only the date differs) — and its first-line date is copied
+from reference units (only the date differs) — and its first-line date is copied
 from the unit's code by default, so date-parity violations (C-201) shift it and
 composite-count violations (C-202) add an object row. The ``.z`` is a minimal
 dependency list per unit.
@@ -78,7 +78,7 @@ class Row(NamedTuple):
 # Graphics (.y) and dependency-list (.z) generation.
 # ---------------------------------------------------------------------------
 
-# The canonical empty graphics body observed in the real tree (200 bytes, only
+# The canonical empty graphics body observed in reference units (200 bytes, only
 # the date varies). Synthesised, not copied from any specific file.
 _Y_EMPTY = """\
 
