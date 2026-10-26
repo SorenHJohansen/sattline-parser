@@ -22,6 +22,7 @@ TYPEDEFINITIONS
       Gain: real  := 1.0;
       EnableControl: boolean  := False;
    LOCALVARIABLES
+   GlobalSetpoint: integer  := 0;
       Error: real  := 0.0;
       Output: real  := 0.0;
 

@@ -20,15 +20,16 @@ from sattline_parser.models.ast_model import (
     Variable,
 )
 from sattline_parser.validation.diagnostics import Diagnostic, DiagnosticCode
+from sattline_parser.validation.names import fold_identifier
 from sattline_parser.validation.symbols import Scope, resolve_var
 
-_ANYTYPE = "anytype"
+_ANYTYPE = fold_identifier("anytype")
 
 _NUMERIC_TYPES: frozenset[Simple_DataType] = frozenset({Simple_DataType.INTEGER, Simple_DataType.REAL})
 
 
 def _source_type_compatible(source: Variable, formal: Variable) -> bool:
-    if formal.datatype_text.casefold() == _ANYTYPE:
+    if fold_identifier(formal.datatype_text) == _ANYTYPE:
         return True
     source_builtin = isinstance(source.datatype, Simple_DataType)
     formal_builtin = isinstance(formal.datatype, Simple_DataType)
@@ -38,7 +39,7 @@ def _source_type_compatible(source: Variable, formal: Variable) -> bool:
         return source.datatype in _NUMERIC_TYPES and formal.datatype in _NUMERIC_TYPES
     if source_builtin or formal_builtin:
         return False
-    return source.datatype_text.casefold() == formal.datatype_text.casefold()
+    return fold_identifier(source.datatype_text) == fold_identifier(formal.datatype_text)
 
 
 def check_moduletype_transfers(
@@ -49,9 +50,9 @@ def check_moduletype_transfers(
     errors: list[Diagnostic],
 ) -> None:
     """Flag parameter transfers whose variable type mismatches the declared type."""
-    parameters = {parameter.name.casefold(): parameter for parameter in moduletype.moduleparameters}
+    parameters = {fold_identifier(parameter.name): parameter for parameter in moduletype.moduleparameters}
     for mapping in instance.parametermappings:
-        formal = parameters.get(mapping.target.name.casefold())
+        formal = parameters.get(fold_identifier(mapping.target.name))
         if formal is None:
             continue
         if mapping.source is None or mapping.is_source_global:

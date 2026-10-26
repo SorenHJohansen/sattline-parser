@@ -88,6 +88,9 @@ WATCHLIST: dict[str, tuple[str, bool]] = {
 OURS_REJECT_MARKERS = ("ours rejects", "ours parse-rejects", "we reject", "we also reject", "matched")
 OURS_ACCEPT_MARKERS = ("ours accepts", "we accept", "we never", "known gap", "is skipped")
 
+# Rows whose real-tool failure is environmental, not grammatical.
+ENVIRONMENT_BLOCKED_MARKERS = ("environment-blocked",)
+
 
 @dataclass(frozen=True)
 class Row:
@@ -194,6 +197,11 @@ def _gap(row: Row, real: bool | None, crashed: bool) -> str:
     """
     if crashed or real is None:
         return "n/a"
+    # A row can be un-runnable in this environment for reasons that say nothing
+    # about the grammar - e.g. the real tool resolves project-global symbols that
+    # are not installed here. Those must not be counted as parity gaps.
+    if any(m in row.message.lower() for m in ENVIRONMENT_BLOCKED_MARKERS):
+        return "environment-blocked"
     ours = _ours(row)
     if ours is None:
         return "unknown"

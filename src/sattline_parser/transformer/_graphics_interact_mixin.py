@@ -414,7 +414,25 @@ class _GraphicsInteractMixin:
         raise ValueError(f"invar expected a connected_variable child; got: {items}")
 
     def enable(self, items: list[TransformerItem]) -> dict[str, object]:
-        """Grammar enable -> ENABLE_PREFIX '=' BOOL (invar | enable_expression)."""
+        """Grammar enable -> ENABLE_PREFIX '=' BOOL (invar | enable_expression)?
+
+        The tail is optional: `Enable_ = True` is legal on a graph object
+        (EdgePropEnable.x). When present it is either an InVar_/OutVar_ tail
+        or a parenthesised expression, the latter emitted by SattLine's own
+        compressor as `Enable_ = True : ( NOT EnableVar)` (EdgePropParenTail.x).
+        """
+        return self._enable_payload(items)
+
+    def enable_interact(self, items: list[TransformerItem]) -> dict[str, object]:
+        """Grammar enable_interact -> ENABLE_PREFIX '=' BOOL invar.
+
+        Interact objects require the InVar_/OutVar_ tail and reject a
+        parenthesised one with AliasSym Expected (ValidInteractEnabl.x), which
+        is why this is a separate rule from `enable`.
+        """
+        return self._enable_payload(items)
+
+    def _enable_payload(self, items: list[TransformerItem]) -> dict[str, object]:
         val: bool | None = None
         tail: object | None = None
         for it in items:

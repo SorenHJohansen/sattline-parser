@@ -1,27 +1,27 @@
 {
   "schema": 1,
-  "date": "2026-10-01",
-  "generated": "2026-10-01",
-  "gui_version": "unknown",
+  "date": "2026-10-05",
+  "generated": "2026-10-05",
+  "gui_version": "2026.10.05-batch",
   "transcript": "probes/TRANSCRIPT.md",
   "summary": {
-    "rev": 4,
-    "pending": 59,
-    "rule-confirmed": 6,
+    "rev": 6,
+    "confirmed": 101,
+    "rule-confirmed": 7,
     "template-broken": 4,
     "not-enforced": 1,
-    "confirmed": 28,
     "surprise-reject": 1,
-    "survey-mismatch": 23,
+    "survey-mismatch": 15,
     "crashes-tool": 6,
-    "survey-surprise": 11
+    "pending": 5,
+    "survey-surprise": 12
   },
   "probes": [
     {
       "id": "C-101",
       "area": "moduletype-graph",
       "tier": 3,
-      "verdict": "pending",
+      "verdict": "confirmed",
       "reversals": [],
       "evidence": [
         {
@@ -40,9 +40,9 @@
           "tier": 3,
           "file": "ViolCycle.x",
           "kind": "violation",
-          "expected": "reject",
-          "real": "",
-          "message": ""
+          "expected": "accept",
+          "real": "accept",
+          "message": "Batch run 2026-10-05: compiles without errors. VALID PROBE - TypeA instantiates TypeB and TypeB instantiates TypeA, exactly as claimed. The real tool does NOT reject an instantiation cycle, so our missing cycle check is a REAL over-strictness gap in the opposite direction: we ACCEPT and the tool ACCEPTS, meaning neither enforces it. This probe cannot prove we are too strict; it proves SattLine has no cycle rule. No change owed until we decide whether to add one."
         }
       ]
     },
@@ -50,7 +50,7 @@
       "id": "C-102",
       "area": "moduletype-graph",
       "tier": 3,
-      "verdict": "pending",
+      "verdict": "confirmed",
       "reversals": [],
       "evidence": [
         {
@@ -69,9 +69,9 @@
           "tier": 3,
           "file": "ViolSelfInst.x",
           "kind": "violation",
-          "expected": "reject",
-          "real": "",
-          "message": ""
+          "expected": "accept",
+          "real": "accept",
+          "message": "Batch run 2026-10-05: compiles without errors. VALID PROBE - TypeA instantiates itself, exactly as claimed. Same conclusion as ViolCycle: the real tool has no self-instantiation rule. We also accept, so this is NOT over-strictness on our part; it is an unenforced semantic rule in SattLine itself."
         }
       ]
     },
@@ -79,7 +79,7 @@
       "id": "C-103",
       "area": "moduletype-graph",
       "tier": 3,
-      "verdict": "pending",
+      "verdict": "confirmed",
       "reversals": [],
       "evidence": [
         {
@@ -98,9 +98,9 @@
           "tier": 3,
           "file": "ViolUnused.x",
           "kind": "violation",
-          "expected": "reject",
-          "real": "",
-          "message": ""
+          "expected": "accept",
+          "real": "accept",
+          "message": "Batch run 2026-10-05: compiles without errors. VALID PROBE - PumpType is declared and never invoked. SattLine does not reject unused moduletypes, so the expected=reject was wrong. We accept too: agree, and no unused-module rule is owed."
         }
       ]
     },
@@ -224,7 +224,7 @@
       "id": "C-202",
       "area": "graphics-correlation",
       "tier": 3,
-      "verdict": "pending",
+      "verdict": "confirmed",
       "reversals": [],
       "evidence": [
         {
@@ -243,9 +243,9 @@
           "tier": 3,
           "file": "ViolExtraObj.x",
           "kind": "violation",
-          "expected": "reject",
-          "real": "",
-          "message": ""
+          "expected": "accept",
+          "real": "accept",
+          "message": "Batch run 2026-10-05: compiles without errors. MIS-AUTHORED PROBE: its header claims composite-object count parity, but the file contains NO composite object at all - it is the bare minimal program (BasePicture + ClippingBounds only). The expected=reject was never backed by a construct. Compiling cleanly is therefore uninformative; the probe needs rewriting to actually contain the extra object."
         }
       ]
     },
@@ -348,7 +348,7 @@
       "id": "PRJ-PumpLib",
       "area": "cross-module",
       "tier": 3,
-      "verdict": "pending",
+      "verdict": "confirmed",
       "reversals": [],
       "evidence": [
         {
@@ -358,8 +358,8 @@
           "file": "PumpLib.x",
           "kind": "library",
           "expected": "accept",
-          "real": "",
-          "message": ""
+          "real": "accept",
+          "message": "Batch run 2026-10-05: compiles without errors. OURS ACCEPTS. Confirmed agree."
         }
       ]
     },
@@ -367,7 +367,7 @@
       "id": "PRJ-UnusedLib",
       "area": "cross-module",
       "tier": 3,
-      "verdict": "pending",
+      "verdict": "confirmed",
       "reversals": [],
       "evidence": [
         {
@@ -377,8 +377,8 @@
           "file": "UnusedLib.x",
           "kind": "library",
           "expected": "accept",
-          "real": "",
-          "message": ""
+          "real": "accept",
+          "message": "Batch run 2026-10-05: compiles without errors. OURS ACCEPTS. Confirmed agree."
         }
       ]
     },
@@ -415,8 +415,14 @@
       "id": "R-102",
       "area": "sfc",
       "tier": 1,
-      "verdict": "pending",
-      "reversals": [],
+      "verdict": "confirmed",
+      "reversals": [
+        {
+          "file": "ViolInitAfterStep.x",
+          "rule": "SL-V022",
+          "detail": "real='accept'; our parser behavior=False"
+        }
+      ],
       "evidence": [
         {
           "probe_id": "R-102",
@@ -435,8 +441,8 @@
           "file": "ViolInitAfterStep.x",
           "kind": "violation",
           "expected": "accept",
-          "real": "",
-          "message": ""
+          "real": "accept",
+          "message": "Batch run 2026-10-05: compiles without errors. OURS ACCEPTS. Confirmed agree."
         }
       ]
     },
@@ -531,7 +537,7 @@
       "id": "T1-004",
       "area": "expression-types",
       "tier": 1,
-      "verdict": "pending",
+      "verdict": "confirmed",
       "reversals": [],
       "evidence": [
         {
@@ -550,9 +556,9 @@
           "tier": 1,
           "file": "ViolStrArg.x",
           "kind": "violation",
-          "expected": "reject",
-          "real": "",
-          "message": ""
+          "expected": "accept",
+          "real": "accept",
+          "message": "Batch run 2026-10-05: compiles without errors. NEEDS AUDIT: the header describes builtin-call argument TYPES, but the file is a broad builtin-coverage program (CopyVariable, SetStringPos, GetStringPos on a Const string) with the header explicitly noting those calls are INTENTIONALLY ALLOWED. It may contain no violating call at all, so expected=reject looks unfounded. Compare against ViolBoolToReal / ViolIntFromBool, which are the probes that isolate genuine type errors."
         }
       ]
     },
@@ -618,8 +624,14 @@
       "id": "T1-006b",
       "area": "context-restricted-types",
       "tier": 1,
-      "verdict": "pending",
-      "reversals": [],
+      "verdict": "confirmed",
+      "reversals": [
+        {
+          "file": "ViolAnyTypeFld.x",
+          "rule": "SL-V020",
+          "detail": "real='accept'; our parser behavior=False"
+        }
+      ],
       "evidence": [
         {
           "probe_id": "T1-006b",
@@ -637,9 +649,9 @@
           "tier": 1,
           "file": "ViolAnyTypeFld.x",
           "kind": "violation",
-          "expected": "reject",
-          "real": "",
-          "message": ""
+          "expected": "accept",
+          "real": "accept",
+          "message": "Batch run 2026-10-05: compiles without errors. VALID PROBE - Probed: AnyType is a real RECORD field of type AnyType, as claimed. The real tool ACCEPTS AnyType as a record field type, so expected=reject was WRONG and we are not too strict. AnyType-as-a-field is legal SattLine. Expectation should be flipped to accept."
         }
       ]
     },
@@ -666,9 +678,9 @@
           "tier": 1,
           "file": "ViolDefScalLocVar.x",
           "kind": "violation",
-          "expected": "unknown",
+          "expected": "environment-blocked",
           "real": "reject",
-          "message": "ControllerType GLOBAL GlobalSetpoint not found at BasePicture:Controller2 - missing symbol again, so the intended rule (:= Default on a plain localvar) is still untested"
+          "message": "ENVIRONMENT-BLOCKED. The tool dies on `Setpoint => GLOBAL GlobalSetpoint` (GlobalSetpoint not found), so it never reaches the actual subject: `ProcessSetpoint: real := Default` on a BasePicture LOCALVARIABLE. Same GLOBAL limitation as EdgeGlobalParamMap.x and ValidSubmodParams.x, now seen a third time. Ours accepts the file, and we verified it still accepts after removing EITHER the := Default line OR the GLOBAL mapping, so our `:= Default` rule is unexercised either way. Environment gap, not a parser verdict; unfixable until project globals are installed."
         }
       ]
     },
@@ -676,7 +688,7 @@
       "id": "T1-008",
       "area": "statement-context",
       "tier": 1,
-      "verdict": "pending",
+      "verdict": "confirmed",
       "reversals": [],
       "evidence": [
         {
@@ -696,8 +708,8 @@
           "file": "ViolConstNoInit.x",
           "kind": "violation",
           "expected": "accept",
-          "real": "",
-          "message": ""
+          "real": "accept",
+          "message": "Batch run 2026-10-05: compiles without errors. OURS ACCEPTS. Confirmed agree."
         }
       ]
     },
@@ -705,7 +717,7 @@
       "id": "T1-009",
       "area": "statement-context",
       "tier": 1,
-      "verdict": "pending",
+      "verdict": "confirmed",
       "reversals": [],
       "evidence": [
         {
@@ -725,8 +737,8 @@
           "file": "ViolStateInt.x",
           "kind": "violation",
           "expected": "unknown",
-          "real": "",
-          "message": ""
+          "real": "accept",
+          "message": "Batch run 2026-10-05: compiles without errors. OURS ACCEPTS. Confirmed agree."
         },
         {
           "probe_id": "T1-009",
@@ -735,8 +747,8 @@
           "file": "ViolOpSaveStr.x",
           "kind": "violation",
           "expected": "unknown",
-          "real": "",
-          "message": ""
+          "real": "accept",
+          "message": "Batch run 2026-10-05: compiles without errors. OURS ACCEPTS. Confirmed agree."
         }
       ]
     },
@@ -773,7 +785,7 @@
       "id": "T1-011",
       "area": "sfc",
       "tier": 1,
-      "verdict": "pending",
+      "verdict": "confirmed",
       "reversals": [],
       "evidence": [
         {
@@ -793,8 +805,8 @@
           "file": "ViolStepAcc.x",
           "kind": "violation",
           "expected": "accept",
-          "real": "",
-          "message": ""
+          "real": "accept",
+          "message": "Batch run 2026-10-05: compiles without errors. OURS ACCEPTS. Confirmed agree."
         },
         {
           "probe_id": "T1-011",
@@ -803,8 +815,8 @@
           "file": "ViolSeqReset.x",
           "kind": "violation",
           "expected": "accept",
-          "real": "",
-          "message": ""
+          "real": "accept",
+          "message": "Batch run 2026-10-05: compiles without errors. OURS ACCEPTS. Confirmed agree."
         }
       ]
     },
@@ -812,7 +824,7 @@
       "id": "T1-012",
       "area": "reserved-names",
       "tier": 1,
-      "verdict": "pending",
+      "verdict": "rule-confirmed",
       "reversals": [],
       "evidence": [
         {
@@ -833,7 +845,7 @@
           "kind": "violation",
           "expected": "reject",
           "real": "reject",
-          "message": "Error on line 14: >>>On<<< AliasSym Expected. Ours ACCEPTS - known gap: we never forbid declaring the reserved name On"
+          "message": "`Error on line 14: >>>On<<< AliasSym Expected` - ours rejects (SL-V034). `On`/`Off` are readable wherever a boolean is expected, which is why reads stay exempt from SL-V019, but they are reserved words and may never be declared. At the declaration position the tool wanted an alias and found the reserved word instead. Implemented as a **validation** rule over the variable-declaration family (locals, module parameters, record fields) plus DATATYPE names. `GroupData` is deliberately untouched: it is a reserved *type*, not a runtime constant, and we intentionally accept it as a type name."
         },
         {
           "probe_id": "T1-012",
@@ -843,7 +855,7 @@
           "kind": "violation",
           "expected": "reject",
           "real": "reject",
-          "message": "Error on line 14: >>>Off<<< AliasSym Expected. Ours ACCEPTS - known gap: we never forbid declaring the reserved name Off"
+          "message": "`Error on line 14: >>>Off<<< AliasSym Expected` - ours rejects (SL-V034). Same rule as `ViolVarOn.x`; the reserved set is exactly {`On`, `Off`}. The probe set is now shared from `validation.symbols.SFC_RUNTIME_CONSTANTS` so the read exemption in SL-V019 and the declaration ban cannot drift apart."
         },
         {
           "probe_id": "T1-012",
@@ -851,22 +863,32 @@
           "tier": 1,
           "file": "ViolVarGroup.x",
           "kind": "violation",
-          "expected": "reject",
-          "real": "",
-          "message": ""
+          "expected": "accept",
+          "real": "accept",
+          "message": "User ran it 2026-10-02: parses without issues, so declaring a VARIABLE named GroupData is legal. This CONFIRMS the deliberate exclusion of GroupData from the SL-V034 reserved set: On/Off are reserved runtime constants, GroupData is not. Our expectation was wrong (recorded as reject) and is corrected here to accept. OURS ACCEPTS."
         }
       ]
     }
   ],
   "tier0": [
     {
+      "file": "EdgeAsciiIdent.x",
+      "kind": "inventory",
+      "expected": "accept",
+      "real": "accept",
+      "message": "User ran it 2026-10-02: opened without issues. A cp1252 0xE4 (a-umlaut) inside an IDENTIFIER is legal. OURS ACCEPTS too. This kills the ASCII-only hypothesis and confirms our NAME rule (\\p{L}, constants.py:257) is right; the Error 76 caret on aa in the full-grammar probes was an encoding defect in those probe files, not a language rule.",
+      "verdict": "confirmed",
+      "gap": "agree",
+      "reversals": []
+    },
+    {
       "file": "EdgeArithPrec.x",
       "kind": "inventory",
       "expected": "accept",
-      "real": "",
-      "message": "",
-      "verdict": "pending",
-      "gap": "n/a",
+      "real": "accept",
+      "message": "Batch run 2026-10-05: compiles without errors. OURS ACCEPTS. Confirmed agree.",
+      "verdict": "confirmed",
+      "gap": "agree",
       "reversals": []
     },
     {
@@ -874,7 +896,7 @@
       "kind": "inventory",
       "expected": "accept",
       "real": "reject",
-      "message": "BasePicture Only integer og real allowed for this operator ZeroDur == ZeroFull - ours REJECTS: SL-V028 OPERAND_NOT_NUMERIC, matches the real message",
+      "message": "BasePicture \"Only integer og real allowed for this operator ZeroDur == ZeroFull\". COUNTER-EVIDENCE that keeps the SL-V028 fix narrow - this is duration against duration and the editor rejects it, so the numeric-literal relaxation must not extend to temporal-vs-temporal. We reject with SL-V028 OPERAND_NOT_NUMERIC and our message matches the real one. The survey predicted accept; that expectation was wrong.",
       "verdict": "survey-mismatch",
       "gap": "wrong-both",
       "reversals": []
@@ -883,40 +905,40 @@
       "file": "EdgeCaseInsens.x",
       "kind": "inventory",
       "expected": "accept",
-      "real": "",
-      "message": "",
-      "verdict": "pending",
-      "gap": "n/a",
+      "real": "accept",
+      "message": "Batch run 2026-10-05: compiles without errors. OURS ACCEPTS. Confirmed agree.",
+      "verdict": "confirmed",
+      "gap": "agree",
       "reversals": []
     },
     {
       "file": "EdgeCmtInEq.x",
       "kind": "inventory",
-      "expected": "accept",
+      "expected": "reject",
       "real": "reject",
-      "message": "Error on line 35 SEQTRANSITION TrStart WAIT_FOR>>>(*<<< inline comment. Expression expected. - ours accepts (we allow a comment after WAIT_FOR)",
-      "verdict": "survey-mismatch",
-      "gap": "we-too-lenient",
+      "message": "Error on line 35 SEQTRANSITION TrStart WAIT_FOR>>>(*<<<. Expression expected. - ours rejects. The grammar used to say `seqtransition: SEQTRANSITION NAME? WAIT_FOR comments? expression`, i.e. it explicitly invited a comment between `WAIT_FOR` and the expression. That clause was backwards and has been removed; the comment must now sit *between* sequence elements, which `sequence_body` still allows. This was a **reversal**, not a missing rule - and the fixture that asserted the old behaviour, `edge_cases/CommentInsideEquation.s`, had the comment \"inline comment is stripped\" baked into it. No AST change was needed.",
+      "verdict": "confirmed",
+      "gap": "agree",
       "reversals": []
     },
     {
       "file": "EdgeConstStrSetGet.x",
       "kind": "inventory",
       "expected": "accept",
-      "real": "",
-      "message": "",
-      "verdict": "pending",
-      "gap": "n/a",
+      "real": "accept",
+      "message": "Batch run 2026-10-05: compiles without errors. OURS ACCEPTS. Confirmed agree.",
+      "verdict": "confirmed",
+      "gap": "agree",
       "reversals": []
     },
     {
       "file": "ClippingBoundsRealExpr.x",
       "kind": "inventory",
       "expected": "accept",
-      "real": "",
-      "message": "",
-      "verdict": "pending",
-      "gap": "n/a",
+      "real": "accept",
+      "message": "Batch run 2026-10-05: compiles without errors. OURS ACCEPTS. Confirmed agree.",
+      "verdict": "confirmed",
+      "gap": "agree",
       "reversals": []
     },
     {
@@ -933,60 +955,60 @@
       "file": "EdgeDeepNestCmts.x",
       "kind": "inventory",
       "expected": "accept",
-      "real": "",
-      "message": "",
-      "verdict": "pending",
-      "gap": "n/a",
+      "real": "accept",
+      "message": "Batch run 2026-10-05: compiles without errors. OURS ACCEPTS. Confirmed agree.",
+      "verdict": "confirmed",
+      "gap": "agree",
       "reversals": []
     },
     {
       "file": "EdgeDurInParamMap.x",
       "kind": "inventory",
       "expected": "accept",
-      "real": "",
-      "message": "",
-      "verdict": "pending",
-      "gap": "n/a",
+      "real": "accept",
+      "message": "Batch run 2026-10-05: compiles without errors. OURS ACCEPTS. Confirmed agree.",
+      "verdict": "confirmed",
+      "gap": "agree",
       "reversals": []
     },
     {
       "file": "EdgeDurVarFmt.x",
       "kind": "inventory",
-      "expected": "accept",
+      "expected": "reject",
       "real": "reject",
-      "message": "Error on line 15 >>>(*<<< Duration_Value. AliasSym Expected. - ours rejects on an unrelated construct: this file also compares durations, which is SL-V028. The real tool stopped at the line-15 comment error, so this file is reworked before it can confirm the comment rule",
-      "verdict": "survey-mismatch",
-      "gap": "wrong-both",
+      "message": "Error on line 15 >>>(*<<< AliasSym Expected - ours rejects. The grammar used to let `variable_list` accept a `comments` alternative alongside `variable_group`, the only place a bare comment was admitted as a declaration-list item. Everywhere else comments are `code_comment` and live inside *code* lists (entercode / activecode / exitcode / equationblock / sequence_body / if_statement), so that opt-in was the anomaly. Removed: a comment cannot be an item in a variable list, and it cannot sit before `LOCALVARIABLES` either. Note this probe's stated subject is duration-literal formats, which the real tool **never reached** - it died on this comment at line 15. So it is evidence about comment placement and says nothing yet about the duration forms.",
+      "verdict": "confirmed",
+      "gap": "agree",
       "reversals": []
     },
     {
       "file": "EdgeElsifExpr.x",
       "kind": "inventory",
       "expected": "accept",
-      "real": "",
-      "message": "",
-      "verdict": "pending",
-      "gap": "n/a",
+      "real": "accept",
+      "message": "Batch run 2026-10-05: compiles without errors. OURS ACCEPTS. Confirmed agree.",
+      "verdict": "confirmed",
+      "gap": "agree",
       "reversals": []
     },
     {
       "file": "EdgeEmptyCodeBlk.x",
       "kind": "inventory",
       "expected": "accept",
-      "real": "",
-      "message": "",
-      "verdict": "pending",
-      "gap": "n/a",
+      "real": "accept",
+      "message": "Batch run 2026-10-05: compiles without errors. OURS ACCEPTS. Confirmed agree.",
+      "verdict": "confirmed",
+      "gap": "agree",
       "reversals": []
     },
     {
       "file": "EdgeEmptyRecType.x",
       "kind": "inventory",
       "expected": "accept",
-      "real": "",
-      "message": "",
-      "verdict": "pending",
-      "gap": "n/a",
+      "real": "accept",
+      "message": "Batch run 2026-10-05: compiles without errors. OURS ACCEPTS. Confirmed agree.",
+      "verdict": "confirmed",
+      "gap": "agree",
       "reversals": []
     },
     {
@@ -1003,80 +1025,90 @@
       "file": "EdgeGlobalParamMap.x",
       "kind": "inventory",
       "expected": "accept",
-      "real": "reject",
-      "message": "ControllerType GLOBAL GlobalBias not found at BasePicture:Ctrl - missing symbol (same class as GlobalSetpoint; GlobalBias is declared nowhere in probes/). Ours ACCEPTS",
-      "verdict": "survey-mismatch",
-      "gap": "we-too-lenient",
+      "real": "environment-blocked",
+      "message": "ENVIRONMENT-BLOCKED, CONFIRMED 2026-10-05. Declaring `GlobalBias` locally did NOT help: user got Modul: EdgeGlobalParamMap:ControllerType GLOBAL GlobalBias not found. So `GLOBAL <name>` resolves against real project globals only and cannot be exercised without installing them. This is a genuine capability gap of the SattLine installation, not a parser bug, and it is unfixable from a probe alone. Do not keep retrying this probe.",
+      "verdict": "pending",
+      "gap": "n/a",
       "reversals": []
     },
     {
       "file": "EdgeKwPrefixed.x",
       "kind": "inventory",
       "expected": "accept",
-      "real": "",
-      "message": "",
-      "verdict": "pending",
-      "gap": "n/a",
+      "real": "accept",
+      "message": "Batch run 2026-10-05: compiles without errors. OURS ACCEPTS. Confirmed agree.",
+      "verdict": "confirmed",
+      "gap": "agree",
       "reversals": []
     },
     {
       "file": "EdgeLegacySeqNo.x",
       "kind": "inventory",
       "expected": "accept",
-      "real": "",
-      "message": "",
-      "verdict": "pending",
-      "gap": "n/a",
+      "real": "accept",
+      "message": "Batch run 2026-10-05: compiles without errors. OURS ACCEPTS. Confirmed agree.",
+      "verdict": "confirmed",
+      "gap": "agree",
       "reversals": []
     },
     {
       "file": "EdgeMinSeq.x",
       "kind": "inventory",
       "expected": "accept",
-      "real": "",
-      "message": "",
-      "verdict": "pending",
-      "gap": "n/a",
+      "real": "accept",
+      "message": "Batch run 2026-10-05: compiles without errors. OURS ACCEPTS. Confirmed agree.",
+      "verdict": "confirmed",
+      "gap": "agree",
       "reversals": []
     },
     {
       "file": "EdgeModDefNoTrail.x",
       "kind": "inventory",
-      "expected": "accept",
+      "expected": "reject",
       "real": "reject",
-      "message": "Error on line 15 >>><<< SemicolonSym Expected - ours accepts (we allow a missing ENDDEF terminator)",
-      "verdict": "survey-mismatch",
-      "gap": "we-too-lenient",
+      "message": "`Error on line 15: >>><<< SemicolonSym Expected` `[user]` re-confirmed 2026-10-02 - ours parse-rejects. A trailing module-level ENDDEF, when present, must be terminated with `;`. Grammar change: in `base_picture_module` the trailing clause went from ENDDEF_KW module_end_comment? `\";\"?` to ENDDEF_KW module_end_comment? `\";\"`, so the ENDDEF stays optional but its semicolon does not. Scoped deliberately - RECORD ENDDEFs and ScanGroup ENDDEFs keep their optional `;`, which `UnCompressedFullGrammar.s` relies on and which the real tool compiles cleanly. Positive control queued as `EdgeModDefTrail.x`.",
+      "verdict": "confirmed",
+      "gap": "agree",
+      "reversals": []
+    },
+    {
+      "file": "EdgeModDefTrail.x",
+      "kind": "inventory",
+      "expected": "accept",
+      "real": "accept",
+      "message": "User ran it 2026-10-02: compiles without issues. The trailing `ENDDEF;` form (semicolon REQUIRED when ENDDEF is present) is ACCEPTED, which confirms the grammar narrowing in `base_picture_module` is correct. Pairs with EdgeModDefNoTrail.x, where the same file WITHOUT the semicolon gives `SemicolonSym Expected`. The ENDDEF rule is now evidence-backed in both directions. OURS ACCEPTS.",
+      "verdict": "confirmed",
+      "gap": "agree",
       "reversals": []
     },
     {
       "file": "EdgeModOpt.x",
       "kind": "inventory",
       "expected": "accept",
-      "real": "",
-      "message": "",
-      "verdict": "pending",
-      "gap": "n/a",
+      "real": "accept",
+      "message": "Batch run 2026-10-05: compiles without errors. OURS ACCEPTS. Confirmed agree.",
+      "verdict": "confirmed",
+      "gap": "agree",
       "reversals": []
     },
     {
       "file": "OpSaveConst.x",
       "kind": "inventory",
       "expected": "accept",
-      "real": "",
-      "message": "",
-      "verdict": "pending",
-      "gap": "n/a",
+      "real": "reject",
+      "message": "OURS REJECTS now (SL-V031). FIXED 2026-10-05 - the survey predicted accept; the tool rejects, so the row now reads wrong-both (tool and we agree, expectation wrong). Previously OURS ACCEPTS / WE-TOO-LENIENT. We now report SL-V031 ATTRIBUTE_COMBINATION_INVALID on `Mixed: integer OpSave Const`. The rule is ORDER-SENSITIVE, not a symmetric pair: Variable now carries attribute_order (source order of Const/State/OpSave/Secure) and declarations._check_attribute_combination rejects only OpSave followed by State or Const. OpSave alone and State-before-OpSave stay clean. `OpSave Secure` is NOT probed and is deliberately not covered - queued in PARITY_PLAN.md. Tests: test_attribute_combination_rejects_opsave_followed_by_state_or_const, _allows_state_before_opsave, _is_silent_without_declared_order.",
+      "verdict": "survey-mismatch",
+      "gap": "wrong-both",
       "reversals": []
     },
     {
       "file": "OpSaveStateReversed.x",
       "kind": "inventory",
       "expected": "accept",
-      "real": "",
-      "message": "",
-      "verdict": "pending",
-      "gap": "n/a",
+      "real": "accept",
+      "message": "Batch run 2026-10-05: compiles without errors. IMPORTANT COUNTER-EVIDENCE 2026-10-05: this proves the OpSave+State rule is ORDER-SENSITIVE. `State OpSave` compiles while `OpSave State` (EdgeOpSaveAndState.x) does not, so the previous symmetric-pair implementation of SL-V031 was itself wrong and has been replaced with an order-sensitive rule. Now OURS ACCEPTS with zero diagnostics.",
+      "verdict": "confirmed",
+      "gap": "agree",
       "reversals": []
     },
     {
@@ -1084,7 +1116,7 @@
       "kind": "inventory",
       "expected": "accept",
       "real": "reject",
-      "message": "BasePicture only integer and real allowed for this operator NegFive==NegHour - ours REJECTS: SL-V028 OPERAND_NOT_NUMERIC, matches the real message",
+      "message": "BasePicture \"only integer and real allowed for this operator NegFive==NegHour\". Same counter-evidence as EdgeBareDurZero.x: temporal against temporal is rejected, so the numeric-literal relaxation stays narrow. We reject with SL-V028 and our message matches. The survey predicted accept; that expectation was wrong.",
       "verdict": "survey-mismatch",
       "gap": "wrong-both",
       "reversals": []
@@ -1093,10 +1125,10 @@
       "file": "EdgeOldNewOnDotted.x",
       "kind": "inventory",
       "expected": "accept",
-      "real": "",
-      "message": "",
-      "verdict": "pending",
-      "gap": "n/a",
+      "real": "accept",
+      "message": "Batch run 2026-10-05: compiles without errors. OURS ACCEPTS. Confirmed agree.",
+      "verdict": "confirmed",
+      "gap": "agree",
       "reversals": []
     },
     {
@@ -1104,7 +1136,7 @@
       "kind": "inventory",
       "expected": "reject",
       "real": "reject",
-      "message": "Error on line 19 SavedStateVar: integer Opsave >>>State<<< Unknown error - unable to read error message file. - ours rejects (SL-V031). RESOLVED 2026-10-01: the file-load path could not render its message (\"unable to read error message file\"), but the editor gives it verbatim: \"Invalid attribute identifider or invalid combination of attributes\" (sic). So the combination IS invalid, and it is caught as a validation error, not a parse error. Confirmed for both the integer and the boolean declaration A missing message is not a specification, so the grammar keeps allowing the combination. State alone is confirmed-accept (CtrlG.x, CtrlWithInit.x), so OpSave+State is the trigger. Needs disambiguation probes: see PARITY_PLAN.md",
+      "message": "OURS REJECTS (SL-V031). Error on line 19 SavedStateVar: integer Opsave >>>State<<< \"Invalid attribute identifier or invalid combination of attributes\" (editor gives it verbatim; the file-load path could not render the message). STILL REJECTED, and now for the right reason: SL-V031 fires on both SavedStateVar and SavedStateBool. Important refinement 2026-10-05 - this is NOT a symmetric pair; OpSaveStateReversed.x shows the reversed order `State OpSave` compiles, so the rule keys on declared order, kept in Variable.attribute_order. Note the message here differs from the \"illegal attribute mix\" wording OpSaveConst.x reports; both indicate the same invalid-combination rule. Grammar keeps allowing the combination, since a missing message is not a specification.",
       "verdict": "confirmed",
       "gap": "agree",
       "reversals": []
@@ -1113,20 +1145,20 @@
       "file": "EdgeQuotedIdentMax.x",
       "kind": "inventory",
       "expected": "accept",
-      "real": "",
-      "message": "",
-      "verdict": "pending",
-      "gap": "n/a",
+      "real": "accept",
+      "message": "Batch run 2026-10-05: compiles without errors. OURS ACCEPTS. Confirmed agree.",
+      "verdict": "confirmed",
+      "gap": "agree",
       "reversals": []
     },
     {
       "file": "EdgeScanGrpCl.x",
       "kind": "inventory",
       "expected": "accept",
-      "real": "reject",
-      "message": "BasePicture \"ScanGroup\": Variable FastScan not declared - ours ACCEPTS: the ScanGroup clause does not resolve its variable",
-      "verdict": "survey-mismatch",
-      "gap": "we-too-lenient",
+      "real": "accept",
+      "message": "`Modul: \"ScanGroup\" : Variable FastScan not declared.` `[user]` 2026-10-02 - ours accepts. CORRECTION: this was previously recorded as a rejection, on the strength of the warning text alone. The user then confirmed what the tool actually does with the file: **it loads, warns, and runs**. The diagnostic is a compile-time WARNING, not a load-time error, so the file is accepted and our parser was already right to accept it. This row is therefore `agree`, not a `we-too-lenient` gap, and no validation rule is owed. Note the `Modul:` prefix and the surrounding spacing, which the earlier transcription had dropped.",
+      "verdict": "confirmed",
+      "gap": "agree",
       "reversals": []
     },
     {
@@ -1134,7 +1166,7 @@
       "kind": "inventory",
       "expected": "accept",
       "real": "reject",
-      "message": "Error on line 25 >>>SEQBREAK<<< Unexpected symbol or end of input - ours accepts (we allow SEQBREAK here)",
+      "message": "Error on line 27 >>>SEQBREAK<<< Unexpected symbol or end of input - ours accepts (we allow SEQBREAK here)",
       "verdict": "survey-mismatch",
       "gap": "we-too-lenient",
       "reversals": []
@@ -1143,10 +1175,10 @@
       "file": "EdgeSeqForkMulti.x",
       "kind": "inventory",
       "expected": "accept",
-      "real": "",
-      "message": "",
-      "verdict": "pending",
-      "gap": "n/a",
+      "real": "accept",
+      "message": "Batch run 2026-10-05: compiles without errors. OURS ACCEPTS. Confirmed agree.",
+      "verdict": "confirmed",
+      "gap": "agree",
       "reversals": []
     },
     {
@@ -1154,7 +1186,7 @@
       "kind": "inventory",
       "expected": "accept",
       "real": "reject",
-      "message": "Error on line 21 >>>ALTERNATIVESEQ<<< EndLoopSeqSym Expected - ours accepts",
+      "message": "Error on line 23 >>>ALTERNATIVESEQ<<< EndLoopSeqSym Expected - ours accepts",
       "verdict": "survey-mismatch",
       "gap": "we-too-lenient",
       "reversals": []
@@ -1162,61 +1194,61 @@
     {
       "file": "EdgeSeqPar.x",
       "kind": "inventory",
-      "expected": "accept",
+      "expected": "reject",
       "real": "reject",
-      "message": "Error on line 29 >>>ENDSEQUENCE<<< Incorrect Syntax - Error 32 - ours accepts",
-      "verdict": "survey-mismatch",
-      "gap": "we-too-lenient",
+      "message": "Error on line 29 >>>ENDSEQUENCE<<< Incorrect Syntax - Error 32 - **OURS REJECTS** (SL-V033, implemented 2026-10-02) - a closed sequence body must close on a SEQTRANSITION, not a SEQSTEP",
+      "verdict": "confirmed",
+      "gap": "agree",
       "reversals": []
     },
     {
       "file": "EdgeSimpleModType.x",
       "kind": "inventory",
       "expected": "accept",
-      "real": "",
-      "message": "",
-      "verdict": "pending",
-      "gap": "n/a",
+      "real": "accept",
+      "message": "Batch run 2026-10-05: compiles without errors. OURS ACCEPTS. Confirmed agree.",
+      "verdict": "confirmed",
+      "gap": "agree",
       "reversals": []
     },
     {
       "file": "EdgeSubSeqDef.x",
       "kind": "inventory",
-      "expected": "accept",
+      "expected": "reject",
       "real": "reject",
-      "message": "Error on line 26 >>>ENDSEQUENCE<<< Incorrect Syntax - Error 32 - ours accepts",
-      "verdict": "survey-mismatch",
-      "gap": "we-too-lenient",
+      "message": "Error on line 26 >>>ENDSEQUENCE<<< Incorrect Syntax - Error 32 - **OURS REJECTS** (SL-V033, implemented 2026-10-02) - a closed sequence body must close on a SEQTRANSITION, not a SEQSTEP",
+      "verdict": "confirmed",
+      "gap": "agree",
       "reversals": []
     },
     {
       "file": "EdgeSubSeqTrans.x",
       "kind": "inventory",
       "expected": "accept",
-      "real": "",
-      "message": "",
-      "verdict": "pending",
-      "gap": "n/a",
+      "real": "accept",
+      "message": "Batch run 2026-10-05: compiles without errors. OURS ACCEPTS. Confirmed agree.",
+      "verdict": "confirmed",
+      "gap": "agree",
       "reversals": []
     },
     {
       "file": "EdgeTermSeqStep.x",
       "kind": "inventory",
-      "expected": "accept",
+      "expected": "reject",
       "real": "reject",
-      "message": "Error on line 22 >>>ENDSEQUENCE<<< Incorrect Syntax - Error 32 - ours accepts",
-      "verdict": "survey-mismatch",
-      "gap": "we-too-lenient",
+      "message": "Error on line 22 >>>ENDSEQUENCE<<< Incorrect Syntax - Error 32 - **OURS REJECTS** (SL-V033, implemented 2026-10-02) - a closed sequence body must close on a SEQTRANSITION, not a SEQSTEP",
+      "verdict": "confirmed",
+      "gap": "agree",
       "reversals": []
     },
     {
       "file": "EdgeTimeValInit.x",
       "kind": "inventory",
       "expected": "accept",
-      "real": "",
-      "message": "",
-      "verdict": "pending",
-      "gap": "n/a",
+      "real": "accept",
+      "message": "Batch run 2026-10-05: compiles without errors. OURS ACCEPTS. Confirmed agree.",
+      "verdict": "confirmed",
+      "gap": "agree",
       "reversals": []
     },
     {
@@ -1234,9 +1266,9 @@
       "kind": "inventory",
       "expected": "reject",
       "real": "accept",
-      "message": "compiles without errors (IDE refuses to create via editors; direct file load accepts) - ours rejects SL-V009. STAGE-SCOPED: the real tool compiles on direct file load; the IDE refuses to *create* the construct. Our parser models file load, so this is stricter than the tool.",
+      "message": "RETIRED 2026-10-05 - compiles on direct file load; the IDE only refuses to CREATE it. SL-V009 (bare duration initializer) is retired, nothing emits it. We now OURS ACCEPTS.",
       "verdict": "survey-surprise",
-      "gap": "we-too-strict",
+      "gap": "wrong-both",
       "reversals": []
     },
     {
@@ -1244,9 +1276,9 @@
       "kind": "inventory",
       "expected": "reject",
       "real": "accept",
-      "message": "compiles without errors (IDE refuses to create via editors; direct file load accepts) - ours rejects SL-V010. STAGE-SCOPED: compiles on direct file load, IDE refuses to create. Same divergence as BadBareDurStr.",
+      "message": "RETIRED 2026-10-05 - same as BadBareDurStr.x for SL-V010 (bare time initializer). Retired. We now OURS ACCEPTS.",
       "verdict": "survey-surprise",
-      "gap": "we-too-strict",
+      "gap": "wrong-both",
       "reversals": []
     },
     {
@@ -1254,9 +1286,9 @@
       "kind": "inventory",
       "expected": "reject",
       "real": "accept",
-      "message": "compiles without warnings - ours rejects with SL-V011 (`not-a-duration`)",
+      "message": "RETIRED 2026-10-05 - compiles without warnings; SL-V011 (malformed duration literal, e.g. `not-a-duration`) is retired. We now OURS ACCEPTS.",
       "verdict": "survey-surprise",
-      "gap": "we-too-strict",
+      "gap": "wrong-both",
       "reversals": [
         {
           "file": "BadDurLit.x",
@@ -1270,9 +1302,9 @@
       "kind": "inventory",
       "expected": "reject",
       "real": "accept",
-      "message": "compiles without warnings - ours rejects with SL-V012",
+      "message": "RETIRED 2026-10-05 - compiles without warnings; SL-V012 (malformed time literal) is retired. We now OURS ACCEPTS.",
       "verdict": "survey-surprise",
-      "gap": "we-too-strict",
+      "gap": "wrong-both",
       "reversals": [
         {
           "file": "BadTimeLit.x",
@@ -1335,10 +1367,10 @@
       "file": "HighByteInvalid.x",
       "kind": "inventory",
       "expected": "reject",
-      "real": "",
-      "message": "byte 0x81 undefined in cp1252 - ours raises UnicodeDecodeError",
-      "verdict": "pending",
-      "gap": "n/a",
+      "real": "accept",
+      "message": "FIXED 2026-10-05 - we used to raise UnicodeDecodeError on the whole file, because 0x81 is undefined in cp1252. Now OURS ACCEPTS: api._decode_cp1252_comments_tolerant decodes strictly first and, only on failure, repairs undefined bytes inside (* ... *) comment bodies. Scope is deliberately narrow - read_text_cp1252 keeps its strict contract, so b\"\\x81A\" outside a comment still raises, and there is still no utf-8/latin-1 fallback. Comment scanning is naive (no nesting, no string awareness) so an unrecognised region falls back to the old strict behaviour rather than accepting bad code. Tests: test_read_text_cp1252_tolerates_undefined_byte_inside_comment, _still_rejects_undefined_byte_outside_comment, _strict_helper_is_untouched_by_comment_tolerance.",
+      "verdict": "survey-surprise",
+      "gap": "wrong-both",
       "reversals": []
     },
     {
@@ -1356,9 +1388,9 @@
       "kind": "inventory",
       "expected": "reject",
       "real": "accept",
-      "message": "compiles without errors (IDE refuses to create via editors; direct file load accepts) - ours rejects SL-V026. STAGE-SCOPED: compiles on direct file load, IDE refuses to create.",
+      "message": "RETIRED 2026-10-05 - same finding for SL-V026 (DATATYPE shadowing a built-in name). Nothing emits SL-V026 now. We now OURS ACCEPTS.",
       "verdict": "survey-surprise",
-      "gap": "we-too-strict",
+      "gap": "wrong-both",
       "reversals": []
     },
     {
@@ -1366,9 +1398,9 @@
       "kind": "inventory",
       "expected": "reject",
       "real": "accept",
-      "message": "compiles without errors (IDE refuses to create via editors; direct file load accepts) - ours rejects SL-V001. STAGE-SCOPED: duplicate datatype names compile on direct file load; the IDE refuses to create them.",
+      "message": "RETIRED 2026-10-05 - we emitted SL-V001, the tool compiles. The editor refuses to CREATE a duplicate datatype through its UI but its parser accepts the same source loaded from disk, so this was never a parser rule. SL-V001 is now in RETIRED_CODES and nothing emits it; the corpus fixture moved to _RETIRED_VALIDATION_FIXTURES, which asserts silence. We now OURS ACCEPTS.",
       "verdict": "survey-surprise",
-      "gap": "we-too-strict",
+      "gap": "wrong-both",
       "reversals": []
     },
     {
@@ -1376,9 +1408,9 @@
       "kind": "inventory",
       "expected": "reject",
       "real": "accept",
-      "message": "compiles without errors (IDE refuses to create via editors; direct file load accepts) - ours rejects SL-V002. STAGE-SCOPED: same as BadDupDatatypeName.",
+      "message": "RETIRED 2026-10-05 - same finding as BadDupDatatypeName.x for SL-V002 (duplicate moduletype name): a UI guard, not a parser rule. Nothing emits SL-V002 now. We now OURS ACCEPTS.",
       "verdict": "survey-surprise",
-      "gap": "we-too-strict",
+      "gap": "wrong-both",
       "reversals": []
     },
     {
@@ -1386,9 +1418,9 @@
       "kind": "inventory",
       "expected": "reject",
       "real": "accept",
-      "message": "compiles without errors (IDE refuses to create via editors; direct file load accepts) - ours rejects SL-V025. STAGE-SCOPED: same as BadDupDatatypeName.",
+      "message": "RETIRED 2026-10-05 - same finding for SL-V025 (duplicate record field name). Nothing emits SL-V025 now. We now OURS ACCEPTS.",
       "verdict": "survey-surprise",
-      "gap": "we-too-strict",
+      "gap": "wrong-both",
       "reversals": []
     },
     {
@@ -1416,9 +1448,9 @@
       "kind": "inventory",
       "expected": "reject",
       "real": "accept",
-      "message": "compiles without errors (IDE refuses to create via editors; direct file load accepts) - ours rejects SL-V003. STAGE-SCOPED: same as BadDupDatatypeName.",
+      "message": "RETIRED 2026-10-05 - same finding for SL-V003 (duplicate variable name in one declaration scope). Nothing emits SL-V003 now. We now OURS ACCEPTS.",
       "verdict": "survey-surprise",
-      "gap": "we-too-strict",
+      "gap": "wrong-both",
       "reversals": []
     },
     {
@@ -1456,9 +1488,9 @@
       "kind": "inventory",
       "expected": "reject",
       "real": "accept",
-      "message": "compiles without warnings - ours rejects with SL-V008 (str init for integer)",
+      "message": "RETIRED 2026-10-05 - the tool compiles without warnings, we emitted SL-V008 (initializer type mismatch, e.g. a string init for an integer). Retired: nothing emits SL-V008 now. We now OURS ACCEPTS.",
       "verdict": "survey-surprise",
-      "gap": "we-too-strict",
+      "gap": "wrong-both",
       "reversals": [
         {
           "file": "BadInitValType.x",
@@ -1542,9 +1574,9 @@
       "kind": "inventory",
       "expected": "reject",
       "real": "accept",
-      "message": "Complies without warnings - ours rejects with SL-V022 (init not first)",
+      "message": "RETIRED 2026-10-05 - complies without warnings. SL-V022 (SEQINITSTEP placement) is retired along with the duplicate-init half; the sequence-structure check no longer inspects init-step position at all. We now OURS ACCEPTS.",
       "verdict": "survey-surprise",
-      "gap": "we-too-strict",
+      "gap": "wrong-both",
       "reversals": [
         {
           "file": "BadSfcInitStepNot.x",
@@ -1556,11 +1588,11 @@
     {
       "file": "BadSfcInitStep.x",
       "kind": "inventory",
-      "expected": "reject",
-      "real": "",
-      "message": "",
-      "verdict": "pending",
-      "gap": "n/a",
+      "expected": "accept",
+      "real": "accept",
+      "message": "Batch run 2026-10-05: compiles without errors. This was the second half of the SL-V022 evidence - SattLine enforces neither init-step count nor ordering. SL-V022 is now retired and nothing emits it; the code comment in validation/code.py _check_sequence_structure records why. We now OURS ACCEPTS.",
+      "verdict": "confirmed",
+      "gap": "agree",
       "reversals": []
     },
     {
@@ -1637,20 +1669,20 @@
       "file": "ValidAllDatatypes.x",
       "kind": "inventory",
       "expected": "accept",
-      "real": "",
-      "message": "",
-      "verdict": "pending",
-      "gap": "n/a",
+      "real": "accept",
+      "message": "Batch run 2026-10-05: compiles without errors. OURS ACCEPTS. Confirmed agree.",
+      "verdict": "confirmed",
+      "gap": "agree",
       "reversals": []
     },
     {
       "file": "ValidBuiltinCalls.x",
       "kind": "inventory",
       "expected": "accept",
-      "real": "",
-      "message": "",
-      "verdict": "pending",
-      "gap": "n/a",
+      "real": "accept",
+      "message": "Batch run 2026-10-05: compiles without errors. OURS ACCEPTS. Confirmed agree.",
+      "verdict": "confirmed",
+      "gap": "agree",
       "reversals": []
     },
     {
@@ -1658,9 +1690,9 @@
       "kind": "inventory",
       "expected": "accept",
       "real": "reject",
-      "message": "Error on line 24: form>>>\u00e5<<<l Incorrect Syntax - Error 76 - ours rejects too; non-ASCII identifiers are illegal",
+      "message": "Error on line 24 formaal. Incorrect Syntax - Error 76 - OURS ACCEPTS. As above: the PROBE was run, the corpus file valid/CompressedFullGrammar.s was not. Non-ASCII blame and the claimed parse failure on our side were both false. Error 76 unexplained.",
       "verdict": "survey-mismatch",
-      "gap": "wrong-both",
+      "gap": "we-too-lenient",
       "reversals": []
     },
     {
@@ -1677,10 +1709,10 @@
       "file": "ValidCtrlFlow.x",
       "kind": "inventory",
       "expected": "accept",
-      "real": "",
-      "message": "",
-      "verdict": "pending",
-      "gap": "n/a",
+      "real": "accept",
+      "message": "Batch run 2026-10-05: compiles without errors. OURS ACCEPTS. Confirmed agree.",
+      "verdict": "confirmed",
+      "gap": "agree",
       "reversals": []
     },
     {
@@ -1697,20 +1729,20 @@
       "file": "HighByteValid.x",
       "kind": "inventory",
       "expected": "accept",
-      "real": "",
-      "message": "valid cp1252 high bytes (0x92, 0xE4) in a comment - ours parses clean",
-      "verdict": "pending",
-      "gap": "n/a",
+      "real": "accept",
+      "message": "Batch run 2026-10-05: compiles without errors. Confirms the DEFINED cp1252 high bytes 0x92/0xE4 are legal in code. Stronger than this, HighByteInvalid.x proves an UNDEFINED byte (0x81) is also legal when it sits in a comment; our decode now tolerates that case too. OURS ACCEPTS.",
+      "verdict": "confirmed",
+      "gap": "agree",
       "reversals": []
     },
     {
       "file": "ValidDefInitOnRec.x",
       "kind": "inventory",
       "expected": "accept",
-      "real": "",
-      "message": "",
-      "verdict": "pending",
-      "gap": "n/a",
+      "real": "accept",
+      "message": "Batch run 2026-10-05: compiles without errors. OURS ACCEPTS. Confirmed agree.",
+      "verdict": "confirmed",
+      "gap": "agree",
       "reversals": []
     },
     {
@@ -1718,7 +1750,7 @@
       "kind": "inventory",
       "expected": "accept",
       "real": "reject",
-      "message": "BasePicture only integer and real allowed for this operator: DurFull == DurBare - ours REJECTS: SL-V028 OPERAND_NOT_NUMERIC, matches the real message",
+      "message": "BasePicture \"only integer and real allowed for this operator: DurFull == DurBare\". Same counter-evidence as EdgeBareDurZero.x: this file also pairs duration with duration and time with time, and the editor rejects both. We reject with SL-V028 and our message matches. The survey predicted accept; that expectation was wrong.",
       "verdict": "survey-mismatch",
       "gap": "wrong-both",
       "reversals": []
@@ -1737,10 +1769,10 @@
       "file": "ValidGraphObj.x",
       "kind": "inventory",
       "expected": "accept",
-      "real": "",
-      "message": "",
-      "verdict": "pending",
-      "gap": "n/a",
+      "real": "accept",
+      "message": "Batch run 2026-10-05: compiles without errors. OURS ACCEPTS. Confirmed agree.",
+      "verdict": "confirmed",
+      "gap": "agree",
       "reversals": []
     },
     {
@@ -1757,10 +1789,10 @@
       "file": "ValidGraphicsObj.x",
       "kind": "inventory",
       "expected": "accept",
-      "real": "",
-      "message": "",
-      "verdict": "pending",
-      "gap": "n/a",
+      "real": "accept",
+      "message": "Batch run 2026-10-05: compiles without errors. OURS ACCEPTS. Confirmed agree.",
+      "verdict": "confirmed",
+      "gap": "agree",
       "reversals": []
     },
     {
@@ -1777,70 +1809,70 @@
       "file": "ValidInteract.x",
       "kind": "inventory",
       "expected": "accept",
-      "real": "",
-      "message": "",
-      "verdict": "pending",
-      "gap": "n/a",
+      "real": "accept",
+      "message": "Batch run 2026-10-05: compiles without errors. OURS ACCEPTS. Confirmed agree.",
+      "verdict": "confirmed",
+      "gap": "agree",
       "reversals": []
     },
     {
       "file": "ValidMinProg.x",
       "kind": "inventory",
       "expected": "accept",
-      "real": "",
-      "message": "",
-      "verdict": "pending",
-      "gap": "n/a",
+      "real": "accept",
+      "message": "Batch run 2026-10-05: compiles without errors. OURS ACCEPTS. Confirmed agree.",
+      "verdict": "confirmed",
+      "gap": "agree",
       "reversals": []
     },
     {
       "file": "ValidMultiEqBlk.x",
       "kind": "inventory",
       "expected": "accept",
-      "real": "",
-      "message": "",
-      "verdict": "pending",
-      "gap": "n/a",
+      "real": "accept",
+      "message": "Batch run 2026-10-05: compiles without errors. OURS ACCEPTS. Confirmed agree.",
+      "verdict": "confirmed",
+      "gap": "agree",
       "reversals": []
     },
     {
       "file": "ValidMultiTypedef.x",
       "kind": "inventory",
       "expected": "accept",
-      "real": "",
-      "message": "",
-      "verdict": "pending",
-      "gap": "n/a",
+      "real": "accept",
+      "message": "Batch run 2026-10-05: compiles without errors. OURS ACCEPTS. Confirmed agree.",
+      "verdict": "confirmed",
+      "gap": "agree",
       "reversals": []
     },
     {
       "file": "ValidMultiModDef.x",
       "kind": "inventory",
       "expected": "accept",
-      "real": "",
-      "message": "",
-      "verdict": "pending",
-      "gap": "n/a",
+      "real": "accept",
+      "message": "Batch run 2026-10-05: compiles without errors. OURS ACCEPTS. Confirmed agree.",
+      "verdict": "confirmed",
+      "gap": "agree",
       "reversals": []
     },
     {
       "file": "ValidNestSubmods.x",
       "kind": "inventory",
       "expected": "accept",
-      "real": "",
-      "message": "",
-      "verdict": "pending",
-      "gap": "n/a",
+      "real": "accept",
+      "message": "Batch run 2026-10-05: compiles without errors. OURS ACCEPTS. Confirmed agree.",
+      "verdict": "confirmed",
+      "gap": "agree",
       "reversals": []
     },
     {
       "file": "ValidOldNewOnState.x",
       "kind": "inventory",
       "expected": "accept",
-      "real": "",
-      "message": "",
-      "verdict": "pending",
-      "gap": "n/a",
+      "real": "accept",
+      "message": "Batch run 2026-10-05: compiles without errors. OURS ACCEPTS. Confirmed agree.",
+      "verdict": "confirmed",
+      "gap": "agree",
       "reversals": []
     },
     {
@@ -1857,70 +1889,70 @@
       "file": "ValidQuotedIdents.x",
       "kind": "inventory",
       "expected": "accept",
-      "real": "",
-      "message": "",
-      "verdict": "pending",
-      "gap": "n/a",
+      "real": "accept",
+      "message": "Batch run 2026-10-05: compiles without errors. OURS ACCEPTS. Confirmed agree.",
+      "verdict": "confirmed",
+      "gap": "agree",
       "reversals": []
     },
     {
       "file": "ValidRecTypeAcc.x",
       "kind": "inventory",
       "expected": "accept",
-      "real": "",
-      "message": "",
-      "verdict": "pending",
-      "gap": "n/a",
+      "real": "accept",
+      "message": "Batch run 2026-10-05: compiles without errors. OURS ACCEPTS. Confirmed agree.",
+      "verdict": "confirmed",
+      "gap": "agree",
       "reversals": []
     },
     {
       "file": "ValidSfcUnnamed.x",
       "kind": "inventory",
       "expected": "accept",
-      "real": "",
-      "message": "",
-      "verdict": "pending",
-      "gap": "n/a",
+      "real": "accept",
+      "message": "Batch run 2026-10-05: compiles without errors. OURS ACCEPTS. Confirmed agree.",
+      "verdict": "confirmed",
+      "gap": "agree",
       "reversals": []
     },
     {
       "file": "ValidSeqAlt.x",
       "kind": "inventory",
       "expected": "accept",
-      "real": "",
-      "message": "",
-      "verdict": "pending",
-      "gap": "n/a",
+      "real": "accept",
+      "message": "Batch run 2026-10-05: compiles without errors. OURS ACCEPTS. Confirmed agree.",
+      "verdict": "confirmed",
+      "gap": "agree",
       "reversals": []
     },
     {
       "file": "ValidSeqBasic.x",
       "kind": "inventory",
       "expected": "accept",
-      "real": "",
-      "message": "",
-      "verdict": "pending",
-      "gap": "n/a",
+      "real": "accept",
+      "message": "`[user]` confirmed compiling without issues in the editor - ours accepts. Establishes that our permissive SEQUENCE grammar agrees with the tool on the basic shape: init step, steps, transitions, body closing on a SEQTRANSITION",
+      "verdict": "confirmed",
+      "gap": "agree",
       "reversals": []
     },
     {
       "file": "ValidSeqPar.x",
       "kind": "inventory",
       "expected": "accept",
-      "real": "",
-      "message": "",
-      "verdict": "pending",
-      "gap": "n/a",
+      "real": "accept",
+      "message": "Batch run 2026-10-05: compiles without errors. OURS ACCEPTS. Confirmed agree.",
+      "verdict": "confirmed",
+      "gap": "agree",
       "reversals": []
     },
     {
       "file": "ValidSubSeqTrans.x",
       "kind": "inventory",
       "expected": "accept",
-      "real": "",
-      "message": "",
-      "verdict": "pending",
-      "gap": "n/a",
+      "real": "accept",
+      "message": "Batch run 2026-10-05: compiles without errors. OURS ACCEPTS. Confirmed agree.",
+      "verdict": "confirmed",
+      "gap": "agree",
       "reversals": []
     },
     {
@@ -1937,20 +1969,20 @@
       "file": "ValidSubmodParams.x",
       "kind": "inventory",
       "expected": "accept",
-      "real": "reject",
-      "message": "ControllerType GLOBAL GlobalSetpoint not found at basepicture:controller2 - missing symbol; also a `template-broken` control for T1-007. Ours ACCEPTS",
-      "verdict": "survey-mismatch",
-      "gap": "we-too-lenient",
+      "real": "environment-blocked",
+      "message": "ENVIRONMENT-BLOCKED, CONFIRMED 2026-10-05. Declaring `GlobalSetpoint` locally did NOT help: user got Modul: ValidSubmodParams:ControllerType GLOBAL GlobalSetpoint not found. Same conclusion as EdgeGlobalParamMap - GLOBAL resolves only against installed project globals. Unfixable from a probe; do not retry. Subject stays as originally written: MODULEDEFINITION submodule types and mappings by variable reference, by literal, and via GLOBAL.",
+      "verdict": "pending",
+      "gap": "n/a",
       "reversals": []
     },
     {
       "file": "ValidSubseqBlk.x",
       "kind": "inventory",
       "expected": "accept",
-      "real": "",
-      "message": "",
-      "verdict": "pending",
-      "gap": "n/a",
+      "real": "accept",
+      "message": "Batch run 2026-10-05: compiles without errors. OURS ACCEPTS. Confirmed agree.",
+      "verdict": "confirmed",
+      "gap": "agree",
       "reversals": []
     },
     {
@@ -1958,19 +1990,129 @@
       "kind": "inventory",
       "expected": "accept",
       "real": "reject",
-      "message": "71 fuldnavn1, brugerident1, kommentar, form>>>\u00e5<<<. Incorrect Syntax - Error 76 - ours rejects too; non-ASCII identifier again",
+      "message": "Error on line 71 fuldnavn1, brugerident1, kommentar, formaal. Incorrect Syntax - Error 76 - OURS ACCEPTS. ROOT CAUSE FOUND: this probe file had been saved as UTF-8, not cp1252. It contained byte 0x86 which is undefined in Windows-1252, and read as cp1252 its formaal became formA-Yl with a currency symbol where a letter was required. Our own decoder reproduced the tool failure at exactly this line. The probe has been re-encoded to cp1252. Note corpus/valid/UnCompressedFullGrammar.s was always correct cp1252 and has never been run against SattLine; no result is known for it. After re-encoding this probe hits a separate still-open construct, the graph-object enable tail, see EdgePropParenTail.x.",
       "verdict": "survey-mismatch",
-      "gap": "wrong-both",
+      "gap": "we-too-lenient",
       "reversals": []
     },
     {
       "file": "ValidVariaMods.x",
       "kind": "inventory",
       "expected": "accept",
+      "real": "accept",
+      "message": "Batch run 2026-10-05: compiles without errors. OURS ACCEPTS. Confirmed agree.",
+      "verdict": "confirmed",
+      "gap": "agree",
+      "reversals": []
+    },
+    {
+      "file": "EdgePropLayer.x",
+      "kind": "inventory",
+      "expected": "accept",
+      "real": "accept",
+      "message": "OURS ACCEPTS. User ran 2026-10-05: compiles without errors, so Layer_ = 1 is legal on a RectangleObject. Our layer_info rule is correct. Confirmed agree.",
+      "verdict": "confirmed",
+      "gap": "agree",
+      "reversals": []
+    },
+    {
+      "file": "EdgePropWidth.x",
+      "kind": "inventory",
+      "expected": "unknown",
       "real": "",
-      "message": "",
+      "message": "Batch run 2026-10-05: Error on line 20 >>>Width_<<< StringSym Expected. MIS-TARGETED - this run decides nothing about Width_. The caret wants a STRING, and a TextObject needs at least one property, so the tool resolved the Width_ attempt as a missing text-content slot. Width_ is used in the editor-authored corpus file valid/UnCompressedFullGrammar.s, so it is very likely legal; this probe simply omitted the required leading text. Rewrite as \"SomeText\" Width_ = 4 and re-run. Verdict cleared, no gap recorded.",
       "verdict": "pending",
       "gap": "n/a",
+      "reversals": []
+    },
+    {
+      "file": "EdgePropFormatStr.x",
+      "kind": "inventory",
+      "expected": "unknown",
+      "real": "",
+      "message": "Batch run 2026-10-05: Error on line 20 >>>Format_String_<<< StringSym Expected. MIS-TARGETED, same cause as EdgePropWidth.x: the tool wanted the TextObject string slot, not an alias. Format_String_ also appears in the editor-authored corpus file valid/UnCompressedFullGrammar.s, so it is likely legal. Rewrite with leading text content and re-run. Verdict cleared, no gap recorded.",
+      "verdict": "pending",
+      "gap": "n/a",
+      "reversals": []
+    },
+    {
+      "file": "EdgePropValueFrac.x",
+      "kind": "inventory",
+      "expected": "unknown",
+      "real": "",
+      "message": "Batch run 2026-10-05: Error on line 22 >>>ValueFraction<<< StringSym Expected. MIS-TARGETED, same cause as EdgePropWidth.x - missing TextObject text content. NOTE the contrast with ValidGraphObjEnabl.x, which DOES carry a leading \"DisplayValue\" and is rejected at ValueFraction with AliasSym Expected instead; that is the genuinely informative result and it still points at ValueFraction, but it is a single probe and the corpus file uses ValueFraction too, so the question stays open. Verdict cleared, no gap recorded.",
+      "verdict": "pending",
+      "gap": "n/a",
+      "reversals": []
+    },
+    {
+      "file": "EdgePropEnable.x",
+      "kind": "inventory",
+      "expected": "accept",
+      "real": "accept",
+      "message": "ours rejects. User ran 2026-10-05: compiles without errors, so a BARE Enable_ = True with no trailing clause IS legal. Our enable rule (ENABLE_PREFIX = BOOL invar) wrongly makes the InVar_ tail mandatory - that is our over-restriction, and it is a confirmed grammar bug to fix by making invar optional. WE-TOO-STRICT.",
+      "verdict": "confirmed",
+      "gap": "we-too-strict",
+      "reversals": []
+    },
+    {
+      "file": "EdgePropEnableInvar.x",
+      "kind": "inventory",
+      "expected": "reject",
+      "real": "reject",
+      "message": "Batch run 2026-10-05: the tool rejects this - \"Error on line 21: DefineSym Expected\" at the bare `Flag`. After InVar_/OutVar_ the real parser consumes a DefineSym, so only a literal or a quoted symbol is legal; a bare NAME is not. OURS REJECTS - grammar rule `connected_variable` no longer admits `variable_name` (src/sattline_parser/grammar/sattline.lark), matching coord_invar_tail, which already enforced this. Regression: invalid/PropertyInVarBareName.s. We now OURS REJECTS.",
+      "verdict": "confirmed",
+      "gap": "agree",
+      "reversals": []
+    },
+    {
+      "file": "EdgePropParenTail.x",
+      "kind": "inventory",
+      "expected": "accept",
+      "real": "accept",
+      "message": "User ran the REWRITTEN probe 2026-10-05: compiles without any issues. DECIDED - the parenthesised enable tail IS legal on a graph object: `Enable_ = True : (Flag)` is accepted. FIXED in the grammar 2026-10-05 by splitting the rule: `enable` (graph objects) takes an OPTIONAL tail that may be invar or a parenthesised expression, and a new `enable_interact` requires the invar for interact objects, which the tool rejects with AliasSym Expected when given a paren tail (ValidInteractEnabl.x). This also matters because SattLine own compressor emits `Enable_ = True : ( NOT EnableVar)`, so we previously rejected SattLine own output. We now accept it. Confirmed fixed.",
+      "verdict": "confirmed",
+      "gap": "unknown",
+      "reversals": []
+    },
+    {
+      "file": "EdgeDurCmpInt.x",
+      "kind": "inventory",
+      "expected": "accept",
+      "real": "accept",
+      "message": "Batch run 2026-10-05: compiles without errors. FIXED 2026-10-05 - we used to raise SL-V028 OPERAND_NOT_NUMERIC on `Elapsed == 5`. Note the rule is NOT \"temporal is allowed in a comparison\": EdgeBareDurZero.x, EdgeNegDurVal.x and ValidDurAndTime.x are all REJECTED with this same message, so duration-vs-duration and time-vs-duration stay errors. The real rule is that a numeric operand may meet a temporal one. validation/code.py _check_operands now implements exactly that. OURS ACCEPTS with zero diagnostics.",
+      "verdict": "confirmed",
+      "gap": "agree",
+      "reversals": []
+    },
+    {
+      "file": "EdgeDurCmpReal.x",
+      "kind": "inventory",
+      "expected": "accept",
+      "real": "accept",
+      "message": "Batch run 2026-10-05: compiles without errors. FIXED 2026-10-05 - `Elapsed > 2.5` no longer raises SL-V028. Same rule as EdgeDurCmpInt.x: numeric may meet temporal, temporal may not meet temporal. OURS ACCEPTS with zero diagnostics.",
+      "verdict": "confirmed",
+      "gap": "agree",
+      "reversals": []
+    },
+    {
+      "file": "EdgeTimeCmpInt.x",
+      "kind": "inventory",
+      "expected": "accept",
+      "real": "accept",
+      "message": "Batch run 2026-10-05: compiles without errors. FIXED 2026-10-05 - `Stamp == 5` no longer raises SL-V028. Same rule as EdgeDurCmpInt.x: numeric may meet temporal, temporal may not meet temporal. OURS ACCEPTS with zero diagnostics.",
+      "verdict": "confirmed",
+      "gap": "agree",
+      "reversals": []
+    },
+    {
+      "file": "EdgeDurLitForms.x",
+      "kind": "inventory",
+      "expected": "accept",
+      "real": "accept",
+      "message": "Batch run 2026-10-05: compiles without errors. OURS ACCEPTS. Confirmed agree.",
+      "verdict": "confirmed",
+      "gap": "agree",
       "reversals": []
     }
   ]

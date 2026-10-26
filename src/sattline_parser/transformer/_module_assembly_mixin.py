@@ -36,6 +36,35 @@ from ._module_shared import (
     v_args,
 )
 
+_VARIABLE_MODIFIER_KEYWORDS: dict[str, str] = {
+    const.GRAMMAR_VALUE_CONST_KW: "const",
+    const.GRAMMAR_VALUE_STATE_KW: "state",
+    const.GRAMMAR_VALUE_OPSAVE_KW: "opsave",
+    const.GRAMMAR_VALUE_SECURE_KW: "secure",
+}
+
+
+def _scan_variable_modifiers(items: list[TransformerItem], idx: int) -> tuple[dict[str, bool], tuple[str, ...], int]:
+    """Consume the Const/State/OpSave/Secure run after a datatype.
+
+    Returns the per-attribute flags, the modifiers in SOURCE ORDER (the editor
+    rejects ``OpSave State`` but compiles ``State OpSave``, so order carries
+    information the flags cannot), and the index just past the run.
+    """
+    flags = dict.fromkeys(_VARIABLE_MODIFIER_KEYWORDS.values(), False)
+    order: list[str] = []
+    while idx < len(items):
+        item = items[idx]
+        if not isinstance(item, str):
+            break
+        attribute = _VARIABLE_MODIFIER_KEYWORDS.get(item)
+        if attribute is None:
+            break
+        flags[attribute] = True
+        order.append(attribute)
+        idx += 1
+    return flags, tuple(order), idx
+
 
 class ModuleAssemblyMixin:
     """Mixin providing module body normalization and AST assembly methods."""
@@ -69,6 +98,7 @@ class ModuleAssemblyMixin:
         modulecodes: list[ModuleCode] = []
         scan_group_info: GroupConnInfo | None = None
         trailing_comments: list[CodeComment] = []
+        datecode: int | None = None
 
         for it in flatten_items(items[1:]):
             if isinstance(it, DataType):
@@ -83,6 +113,8 @@ class ModuleAssemblyMixin:
                 trailing_comments.append(it)
             elif isinstance(it, GroupConnInfo):
                 scan_group_info = it
+            elif isinstance(it, int):
+                datecode = it
             elif isinstance(it, Tree):
                 tree = cast(TransformerTree, it)
                 if tree.data == const.TREE_TAG_DATATYPE_LIST:
@@ -111,6 +143,7 @@ class ModuleAssemblyMixin:
             moduledefs=moduledefs,
             modulecodes=modulecodes,
             trailing_comments=trailing_comments,
+            datecode=datecode,
         )
 
     def invocation_new_module(self, items: list[TransformerItem]) -> FrameModule | SingleModule:
@@ -125,6 +158,7 @@ class ModuleAssemblyMixin:
         param_mappings: list[ParameterMapping] = []
         scan_group_info: GroupConnInfo | None = None
         trailing_comments: list[CodeComment] = []
+        datecode: int | None = None
         is_frame_module = any(it is True for it in items)
 
         for item in flatten_items(items):
@@ -467,32 +501,7 @@ class ModuleAssemblyMixin:
         datatype = cast(str, items[idx])
         idx += 1
 
-        is_const = False
-        is_state = False
-        is_opsave = False
-        is_secure = False
-
-        while (
-            idx < len(items)
-            and isinstance(items[idx], str)
-            and items[idx]
-            in (
-                const.GRAMMAR_VALUE_CONST_KW,
-                const.GRAMMAR_VALUE_STATE_KW,
-                const.GRAMMAR_VALUE_OPSAVE_KW,
-                const.GRAMMAR_VALUE_SECURE_KW,
-            )
-        ):
-            modifier = items[idx]
-            if modifier == const.GRAMMAR_VALUE_CONST_KW:
-                is_const = True
-            elif modifier == const.GRAMMAR_VALUE_STATE_KW:
-                is_state = True
-            elif modifier == const.GRAMMAR_VALUE_OPSAVE_KW:
-                is_opsave = True
-            elif modifier == const.GRAMMAR_VALUE_SECURE_KW:
-                is_secure = True
-            idx += 1
+        modifier_flags, attribute_order, idx = _scan_variable_modifiers(items, idx)
 
         init_value: object | None = None
         init_is_duration = False
@@ -518,15 +527,16 @@ class ModuleAssemblyMixin:
                     name=name,
                     datatype=datatype,
                     global_var=global_flag,
-                    const=is_const,
-                    state=is_state,
-                    opsave=is_opsave,
-                    secure=is_secure,
+                    const=modifier_flags["const"],
+                    state=modifier_flags["state"],
+                    opsave=modifier_flags["opsave"],
+                    secure=modifier_flags["secure"],
                     init_value=resolved_init_value,
                     has_explicit_default=has_explicit_default,
                     description=desc,
                     declaration_span=declaration_span,
                     init_is_duration=(init_is_duration and resolved_init_value is not None),
+                    attribute_order=tuple(attribute_order),
                 )
             )
         return variables

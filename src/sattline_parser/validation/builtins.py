@@ -14,6 +14,7 @@ from dataclasses import dataclass
 from typing import Final
 
 from sattline_parser.models.ast_model import Simple_DataType
+from sattline_parser.validation.names import fold_identifier
 
 #: Canonical (casefolded) names of all primitive datatypes. ``Variable`` normalises
 #: recognised names to ``Simple_DataType`` at init; anything left as ``str`` after
@@ -55,16 +56,22 @@ def _build_builtin_functions() -> dict[str, BuiltinFunction]:
     return {name: BuiltinFunction(name, *arity) for name, arity in spec.items()}
 
 
-#: Casefolded name -> signature. Function names are case-insensitive in SattLine.
+#: Lower-case canonical name -> signature.
 BUILTIN_FUNCTIONS: Final[dict[str, BuiltinFunction]] = _build_builtin_functions()
+
+#: Native identity key (folded) -> signature. Function names are case-insensitive.
+_FOLDED_FUNCTIONS: Final[dict[str, BuiltinFunction]] = {
+    fold_identifier(name): signature for name, signature in BUILTIN_FUNCTIONS.items()
+}
+_FOLDED_DATATYPE_NAMES: Final[dict[str, str]] = {fold_identifier(name): name for name in BUILTIN_DATATYPE_NAMES}
 
 
 def is_builtin_function(name: str) -> bool:
-    return name.casefold() in BUILTIN_FUNCTIONS
+    return fold_identifier(name) in _FOLDED_FUNCTIONS
 
 
 def builtin_function_signature(name: str) -> BuiltinFunction | None:
-    return BUILTIN_FUNCTIONS.get(name.casefold())
+    return _FOLDED_FUNCTIONS.get(fold_identifier(name))
 
 
 def builtin_datatype_typo(datatype: str) -> str | None:
@@ -75,6 +82,6 @@ def builtin_datatype_typo(datatype: str) -> str | None:
     cutoff of exactly one built-in; otherwise ``None``.
     """
     matches = difflib.get_close_matches(
-        datatype.casefold(), sorted(BUILTIN_DATATYPE_NAMES), n=1, cutoff=_BUILTIN_TYPO_CUTOFF
+        fold_identifier(datatype), sorted(_FOLDED_DATATYPE_NAMES), n=1, cutoff=_BUILTIN_TYPO_CUTOFF
     )
-    return next(iter(matches), None)
+    return _FOLDED_DATATYPE_NAMES[matches[0]] if matches else None

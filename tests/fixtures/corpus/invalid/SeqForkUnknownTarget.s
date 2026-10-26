@@ -26,10 +26,9 @@ ModuleCode
             JumpCmd = False;
       ALTERNATIVESEQ
          SEQTRANSITION TrDone WAIT_FOR NOT JumpCmd
-            SEQBREAK
       ALTERNATIVEBRANCH
          SEQTRANSITION TrJump WAIT_FOR JumpCmd
-            SEQFORK MissingTarget
+            SEQFORK MissingTarget SEQBREAK
       ENDALTERNATIVE
    ENDOPENSEQUENCE
 

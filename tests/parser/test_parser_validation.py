@@ -18,9 +18,14 @@ from sattline_parser.validation.builtins import (
     builtin_function_signature,
     is_builtin_function,
 )
-from sattline_parser.validation.diagnostics import Diagnostic, DiagnosticCode, DiagnosticSeverity
+from sattline_parser.validation.diagnostics import (
+    RETIRED_CODES,
+    Diagnostic,
+    DiagnosticCode,
+    DiagnosticSeverity,
+)
 from sattline_parser.validation.literals import is_valid_duration, is_valid_time
-from sattline_parser.validation.symbols import build_scope, resolve_var
+from sattline_parser.validation.symbols import SFC_RUNTIME_CONSTANTS, build_scope, resolve_var
 from sattline_parser.validation.typing import (
     TypeFamily,
     assignment_is_compatible,
@@ -34,24 +39,19 @@ from sattline_parser.validation.typing import (
 
 from ._parser_core_test_support import *
 
+#: Fixtures for rules the real parser ENFORCES.
 _INVALID_VALIDATION_FIXTURES: dict[str, str] = {
     "OpSaveAndStateCombined": "SL-V031",
     "CoordinateInvarTail": "SL-V032",
+    "ReservedNameVarOff": "SL-V034",
+    "ReservedNameVarOn": "SL-V034",
     "SequenceParallel": "SL-V033",
     "SubSequenceDefinition": "SL-V033",
     "TerminalSeqStep": "SL-V033",
-    "DuplicateDatatypeName": "SL-V001",
-    "DuplicateModuletypeName": "SL-V002",
-    "DuplicateVariableNames": "SL-V003",
     "DuplicateSiblingSubmodules": "SL-V004",
     "OldNewOnNonState": "SL-V005",
     "OldNewOnNonStateRecordField": "SL-V006",
     "WriteToConstVariable": "SL-V007",
-    "InitValueTypeMismatch": "SL-V008",
-    "BadBareDurationString": "SL-V009",
-    "BadBareTimeString": "SL-V010",
-    "BadDurationLiteral": "SL-V011",
-    "BadTimeLiteral": "SL-V012",
     "BuiltinWrongArity": "SL-V013",
     "BuiltinOutArgNotVariable": "SL-V014",
     "StringLiteralInCallArgument": "SL-V015",
@@ -61,21 +61,40 @@ _INVALID_VALIDATION_FIXTURES: dict[str, str] = {
     "UndefinedVariableRef": "SL-V019",
     "UnknownDatatypeName": "SL-V020",
     "DuplicateSFCElementNames": "SL-V021",
-    "SFCInitStepNotFirst": "SL-V022",
-    "SFCInitStepRepeated": "SL-V022",
     "SFCAlternativeBranchStartsWithStep": "SL-V023",
     "SFCParallelBranchStartsWithTransition": "SL-V024",
     "ConstVarAsBuiltinOutArg": "SL-V007",
-    "DuplicateRecordFieldName": "SL-V025",
-    "DatatypeShadowsBuiltinName": "SL-V026",
     "CrossModuleContractMismatch": "SL-V027",
     "NonNumericComparisonOperand": "SL-V028",
+    "TemporalVsTemporalCompare": "SL-V028",
+    "OpSaveConstCombined": "SL-V031",
+    "WriteToOldState": "SL-V035",
     "AssignmentFamilyMismatch": "SL-V029",
     "IfConditionNotBoolean": "SL-V030",
 }
 
+#: Fixtures for rules the real parser does NOT enforce. Kept as files so the
+#: retirement stays visible and re-testable: the code must emit nothing for
+#: these, because the editor refuses to CREATE such a declaration but its
+#: parser ACCEPTS the same source loaded from disk (2026-10-05 batch run).
+_RETIRED_VALIDATION_FIXTURES: dict[str, str] = {
+    "DuplicateDatatypeName": "SL-V001",
+    "DuplicateModuletypeName": "SL-V002",
+    "DuplicateVariableNames": "SL-V003",
+    "InitValueTypeMismatch": "SL-V008",
+    "BadBareDurationString": "SL-V009",
+    "BadBareTimeString": "SL-V010",
+    "BadDurationLiteral": "SL-V011",
+    "BadTimeLiteral": "SL-V012",
+    "SFCInitStepNotFirst": "SL-V022",
+    "SFCInitStepRepeated": "SL-V022",
+    "DuplicateRecordFieldName": "SL-V025",
+    "DatatypeShadowsBuiltinName": "SL-V026",
+}
+
 _PARSE_REJECTED_FIXTURES = [
     "CoordInVarTail",
+    "ModuleDefNoTrailingEnddef",
     "EnableExpressionTail",
     "EncodingStress",
     "FreestandingCommentInModuleCode",
@@ -135,6 +154,41 @@ def test_invalid_validation_fixtures_report_expected_codes():
         assert bp is not None
 
 
+def test_retired_validation_fixtures_report_nothing():
+    """The real parser accepts these, so we must not reject them either.
+
+    Each was implemented because the editor's UI refuses to CREATE the
+    declaration, then disproved by loading the same source from disk. See
+    ``RETIRED_CODES``.
+    """
+    for stem, expected_code in _RETIRED_VALIDATION_FIXTURES.items():
+        bp, diagnostics = parse_and_validate(_raw(_corpus(f"invalid/{stem}.s")))
+        codes = sorted({d.code.value for d in diagnostics})
+        assert expected_code not in codes, f"{stem}: still reports {expected_code} (all: {codes})"
+        assert bp is not None
+
+
+def test_every_retired_code_is_documented_and_actually_unemitted():
+    """No retired code may be emitted anywhere in the corpus.
+
+    Guards against a retirement that only removed the fixture mapping while the
+    check itself kept firing.
+    """
+    retired_values = {code.value for code in RETIRED_CODES}
+    assert retired_values, "RETIRED_CODES must not be empty"
+
+    for subdir in ("valid", "edge_cases", "invalid"):
+        for path in sorted(_corpus(subdir).glob("*.s")):
+            try:
+                _bp, diagnostics = parse_and_validate(_raw(path))
+            except UnexpectedInput:
+                # Parse-rejected files never reach validation, so they cannot
+                # leak a retired code either.
+                continue
+            leaked = retired_values & {d.code.value for d in diagnostics}
+            assert not leaked, f"{subdir}/{path.name} still emits {sorted(leaked)}"
+
+
 def test_cross_module_contract_mismatch_flagged():
     _bp, diagnostics = parse_and_validate(_raw(_corpus("invalid/CrossModuleContractMismatch.s")))
     assert "SL-V027" in {d.code.value for d in diagnostics}
@@ -153,6 +207,43 @@ def test_valid_and_edge_corpus_have_no_validation_diagnostics():
             bp, diagnostics = parse_and_validate(_raw(path))
             assert diagnostics == (), f"{subdir}/{path.name}: {[(d.code.value, d.message) for d in diagnostics]}"
             assert bp is not None
+
+
+# These pairings were previously pinned by reading probes/*.x straight out of
+# the probe tree. The evidence now travels in each fixture's header comment, so
+# CI has no dependency on probes/. Every case asserts BOTH sides: relaxing one
+# half of a rule without its counter-case fails here even though the generic
+# valid-corpus loop and the _INVALID_VALIDATION_FIXTURES table would still pass.
+
+
+def _codes(subdir: str, stem: str) -> set[str]:
+    return {d.code.value for d in parse_and_validate(_raw(_corpus(f"{subdir}/{stem}.s")))[1]}
+
+
+def test_temporal_comparison_keeps_both_sides():
+    """A duration/time against a NUMERIC LITERAL is clean (EdgeDurCmpInt,
+    EdgeDurCmpReal, EdgeTimeCmpInt); against another temporal operand it is
+    still SL-V028 (EdgeBareDurZero, EdgeNegDurVal, ValidDurAndTime)."""
+    assert _codes("valid", "TemporalVsNumericCompare") == set()
+    assert _codes("invalid", "TemporalVsTemporalCompare") == {"SL-V028"}
+
+
+def test_opsave_modifier_order_keeps_both_sides():
+    """`State OpSave` compiles (OpSaveStateReversed); the `OpSave State` and
+    `OpSave Const` spellings are both an illegal attribute mix
+    (EdgeOpSaveAndState, OpSaveConst)."""
+    assert _codes("valid", "VariableModifiers") == set()
+    assert _codes("invalid", "OpSaveAndStateCombined") == {"SL-V031"}
+    assert _codes("invalid", "OpSaveConstCombined") == {"SL-V031"}
+
+
+def test_graph_enable_allows_bare_and_paren_but_interact_paren_does_not():
+    """Graph objects take Enable_ bare and with a paren tail (EdgePropEnable,
+    EdgePropParenTail); the same paren tail on an interact object is rejected
+    (ValidInteractEnabl / EnableExpressionTail)."""
+    assert _codes("valid", "GraphObjectEnableVariants") == set()
+    with pytest.raises(UnexpectedInput):
+        parser_core_parse_source_text(_raw(_corpus("invalid/EnableExpressionTail.s")))
 
 
 def test_duration_literal_format_table():
@@ -222,13 +313,6 @@ def test_qualification_resolves_record_fields():
     assert resolve_var(VarRef(name="Pos"), scope, records) is not None
     diagnostics = validate_basepicture(bp)
     assert diagnostics == ()
-
-
-def test_duplicate_variable_names_in_scope_flagged():
-    bp = _base_picture()
-    bp.localvariables = [_var("Counter", "integer"), _var("counter", "integer")]
-    codes = {d.code.value for d in validate_basepicture(bp)}
-    assert "SL-V003" in codes
 
 
 def test_write_to_const_variable_flagged():
@@ -307,18 +391,6 @@ def test_old_new_on_state_symbols_not_flagged():
     assert validate_basepicture(bp) == ()
 
 
-def test_init_value_type_mismatch_flagged_for_scalars():
-    bp = _base_picture()
-    bp.localvariables = [
-        _var("BadInt", "integer", init_value="not a number"),
-        _var("BadReal", "real", init_value=True),
-        _var("BadBool", "boolean", init_value="yes"),
-        _var("BadFloatInt", "integer", init_value=1.5),
-    ]
-    diagnostics = validate_basepicture(bp)
-    assert sum(1 for d in diagnostics if d.code.value == "SL-V008") == 4
-
-
 def test_scalar_init_types_accepted():
     bp = _base_picture()
     bp.datatype_defs = [DataType(name="Point", description=None, datecode=1, var_list=[_var("X", "real")])]
@@ -334,39 +406,75 @@ def test_scalar_init_types_accepted():
     assert validate_basepicture(bp) == ()
 
 
-def test_bare_duration_and_time_init_flagged():
-    bp = _base_picture()
-    bp.localvariables = [
-        _var("D1", "duration", init_value="5xyz"),
-        _var("D2", "duration", init_value=7),
-        _var("D3", "duration", init_value={"Time_Value": "30s"}),
-        _var("T1", "time", init_value="2026/04/23 12:00:00"),
-        _var("T2", "time", init_value=0),
+def test_retired_rules_stay_silent_on_hand_built_asts():
+    """Direct AST coverage for the retired rules, independent of the fixtures.
+
+    Mirrors the deleted per-rule tests: every shape that used to be reported is
+    now built explicitly and must produce nothing. If a check is ever
+    reintroduced, this fails even if the fixture files are edited.
+    """
+    duplicate_variable = _base_picture()
+    duplicate_variable.localvariables = [_var("Counter", "integer"), _var("counter", "integer")]
+    assert validate_basepicture(duplicate_variable) == ()
+
+    scalar_inits = _base_picture()
+    scalar_inits.localvariables = [
+        _var("BadInt", "integer", init_value="not a number"),
+        _var("BadReal", "real", init_value=True),
+        _var("BadFloatInt", "integer", init_value=1.5),
     ]
-    diagnostics = validate_basepicture(bp)
-    assert sum(1 for d in diagnostics if d.code.value in ("SL-V009", "SL-V010")) == 5
+    assert validate_basepicture(scalar_inits) == ()
 
-
-def test_keyworded_duration_and_time_init_checks():
-    valid = _base_picture()
-    valid.localvariables = [
-        _var("D", "duration", init_is_duration=True, init_value="30s"),
-    ]
-    time_valid = _base_picture()
-    time_valid.localvariables = [_var("T", "time", init_value={"Time_Value": "2026-01-01-00:00:00.000"})]
-    assert validate_basepicture(valid) == ()
-    assert validate_basepicture(time_valid) == ()
-
-    bad = _base_picture()
-    bad.localvariables = [
+    keyworded_inits = _base_picture()
+    keyworded_inits.localvariables = [
         _var("D", "duration", init_is_duration=True, init_value="not-a-duration"),
-        _var("T", "time", init_value={"Time_Value": None}),
-        _var("T2", "time", init_value={"Time_Value": "bad"}),
+        _var("D2", "duration", init_value=7),
+        _var("T", "time", init_value={"Time_Value": "2026/04/23 12:00:00"}),
+        _var("T2", "time", init_value={"Time_Value": None}),
     ]
-    codes = {d.code.value for d in validate_basepicture(bad)}
-    assert "SL-V011" in codes
-    assert "SL-V010" in codes
-    assert "SL-V012" in codes
+    assert validate_basepicture(keyworded_inits) == ()
+
+    duplicate_definitions = _base_picture()
+    duplicate_definitions.datatype_defs = [
+        DataType(name="SensorType", description=None, datecode=1, var_list=[]),
+        DataType(name="SensorType", description=None, datecode=2, var_list=[]),
+    ]
+    duplicate_definitions.moduletype_defs = [
+        ModuleTypeDef(name="Controller", datecode=1),
+        ModuleTypeDef(name="controller", datecode=2),
+    ]
+    assert validate_basepicture(duplicate_definitions) == ()
+
+    shadowing = _base_picture()
+    shadowing.datatype_defs = [DataType(name="Integer", description=None, datecode=1, var_list=[])]
+    assert validate_basepicture(shadowing) == ()
+
+    duplicate_field = _base_picture()
+    duplicate_field.datatype_defs = [
+        DataType(
+            name="Pair",
+            description=None,
+            datecode=1,
+            var_list=[_var("Left", "real"), _var("left", "boolean")],
+        )
+    ]
+    assert validate_basepicture(duplicate_field) == ()
+
+    repeated_init = _base_picture()
+    repeated_init.modulecodes = [
+        ModuleCode(
+            sequences=[
+                _sequence(
+                    SFCStep(kind="init", name="First", code=SFCCodeBlocks()),
+                    SFCTransition(name="TrA", condition=True),
+                    SFCStep(kind="init", name="Second", code=SFCCodeBlocks()),
+                    SFCTransition(name="TrB", condition=True),
+                )
+            ]
+        )
+    ]
+    # Ends on a transition, so the only rule left is the one we retired.
+    assert validate_basepicture(repeated_init) == ()
 
 
 def test_datatype_typo_flagged_and_declared_records_exempt():
@@ -376,19 +484,6 @@ def test_datatype_typo_flagged_and_declared_records_exempt():
     bp.localvariables = [_var("Counter", "intege"), _var("Sensor", "SensorType"), _var("Other", "duration")]
     codes = {d.code.value for d in validate_basepicture(bp)}
     assert "SL-V018" in codes
-
-
-def test_duplicate_definition_names_flagged():
-    first = DataType(name="SensorType", description=None, datecode=1, var_list=[])
-    second = DataType(name="SensorType", description=None, datecode=2, var_list=[])
-    mt_first = ModuleTypeDef(name="Controller", datecode=1)
-    mt_second = ModuleTypeDef(name="controller", datecode=2)
-    bp = _base_picture()
-    bp.datatype_defs = [first, second]
-    bp.moduletype_defs = [mt_first, mt_second]
-    codes = {d.code.value for d in validate_basepicture(bp)}
-    assert "SL-V001" in codes
-    assert "SL-V002" in codes
 
 
 def test_duplicate_sibling_submodules_flagged():
@@ -461,17 +556,17 @@ def test_sfc_structural_rules_flagged():
 
 
 def test_sfc_fork_target_checks():
-    known = SFCTransition(name="TrGo", condition=True)
-    fork_unknown = SFCFork(targets=("Nope",))
-    fork_known = SFCFork(targets=("TrGo",))
-
+    # SEQFORK is a suffix of its host step/transition, never a body element.
+    bad_step = SFCStep(kind="init", name="Init", code=SFCCodeBlocks(), fork=SFCFork(targets=("Nope",)))
     bad = _base_picture()
-    bad.modulecodes = [ModuleCode(sequences=[_sequence(known, fork_unknown)])]
+    bad.modulecodes = [ModuleCode(sequences=[_sequence(bad_step)])]
     codes = {d.code.value for d in validate_basepicture(bad)}
     assert "SL-V017" in codes
 
+    good_step = SFCStep(kind="init", name="Init", code=SFCCodeBlocks())
+    good_transition = SFCTransition(name="TrGo", condition=True, fork=SFCFork(targets=("Init",)))
     good = _base_picture()
-    good.modulecodes = [ModuleCode(sequences=[_sequence(known, fork_known)])]
+    good.modulecodes = [ModuleCode(sequences=[_sequence(good_step, good_transition)])]
     assert validate_basepicture(good) == ()
 
 
@@ -480,32 +575,71 @@ def test_sfc_walk_covers_all_body_item_kinds():
     bp.localvariables = [_var("V", "integer", init_value=0)]
     step = SFCStep(kind="init", name="Init", code=SFCCodeBlocks(enter=[Assignment(VarRef("V"), 1)], exit=[]))
     transition = SFCTransition(name="TrMatch", condition=Compare(VarRef("V"), ">", 0))
-    transition_sub = SFCTransitionSub(name="TSub", body=[SFCStep(kind="step", name="SubStep", code=SFCCodeBlocks())])
-    alterni = SFCAlternative(branches=[[SFCTransition(name="TrAlt", condition=True)]])
+    # A SUBSEQTRANSITION body is a transition_body: T (S T | M)*, so it opens with
+    # a transition and closes on one after its step.
+    transition_sub = SFCTransitionSub(
+        name="TSub",
+        body=[
+            SFCTransition(name="TrSubOpen", condition=True),
+            SFCStep(kind="step", name="SubStep", code=SFCCodeBlocks()),
+            SFCTransition(name="TrSubClose", condition=True),
+        ],
+    )
+    # An ALTERNATIVEBRANCH body is a transition_body as well.
+    alterni = SFCAlternative(
+        branches=[
+            [
+                SFCTransition(name="TrAlt", condition=True),
+                SFCStep(kind="step", name="AltStep", code=SFCCodeBlocks()),
+                SFCTransition(name="TrAltClose", condition=True),
+            ]
+        ]
+    )
+    # A PARALLELBRANCH body is a step_body: M* S (T M* S)*.
     parallel = SFCParallel(
         branches=[
             [
                 SFCStep(kind="step", name="ParStep", code=SFCCodeBlocks()),
                 SFCTransition(name="TrPar", condition=True),
+                SFCStep(kind="step", name="ParStep2", code=SFCCodeBlocks()),
             ]
         ]
     )
-    subsequence = SFCSubsequence(name="SubSeq", body=[SFCTransition(name="TrInner", condition=True)])
-    break_node = SFCBreak()
+    # A SUBSEQUENCE body is a closed_body: (S T | M)+.
+    subsequence = SFCSubsequence(
+        name="SubSeq",
+        body=[
+            SFCStep(kind="step", name="SubInner", code=SFCCodeBlocks()),
+            SFCTransition(name="TrInner", condition=True),
+        ],
+    )
     comment = CodeComment(text="(* hi *)")
+    second_step = SFCStep(kind="step", name="AfterSub", code=SFCCodeBlocks())
+    trailing = SFCTransition(name="TrTail", condition=True)
+    after_transition = SFCStep(kind="step", name="AfterTr", code=SFCCodeBlocks())
+    after_sub = SFCStep(kind="step", name="AfterTSub", code=SFCCodeBlocks())
+    transition.fork = SFCFork(
+        targets=("TrMatch", "TSub", "TrAlt", "SubStep", "ParStep", "TrInner"),
+        has_break=True,
+    )
+    # Positions: Init(S) TrMatch(T) ... every step is followed by a transition
+    # and every transition by a step, with the SUBSEQUENCE as a structural unit.
     bp.modulecodes = [
         ModuleCode(
             sequences=[
                 _sequence(
                     step,
                     transition,
+                    after_transition,
                     transition_sub,
+                    after_sub,
                     alterni,
                     parallel,
+                    trailing,
                     subsequence,
-                    break_node,
                     comment,
-                    SFCFork(targets=("TrMatch", "TSub", "TrAlt", "SubStep", "ParStep", "TrPar", "TrInner")),
+                    second_step,
+                    SFCTransition(name="TrFinal", condition=True),
                 )
             ]
         )
@@ -520,20 +654,41 @@ def test_sfc_step_and_transition_names_collected_for_fork():
     transitions = [
         SFCTransition(name="T0", condition=True),
         SFCTransition(name="T1", condition=True),
-        SFCTransitionSub(name="TSub", body=[]),
     ]
+    mid_step = SFCStep(kind="step", name="Mid", code=SFCCodeBlocks())
+    transition_sub = SFCTransitionSub(
+        name="TSub",
+        body=[
+            SFCTransition(name="TrSubOpen", condition=True),
+            SFCStep(kind="step", name="Nested", code=SFCCodeBlocks()),
+            SFCTransition(name="TrSubClose", condition=True),
+        ],
+    )
     alt_transition = SFCTransition(name="TrAlt", condition=True)
-    branch = SFCAlternative(branches=[[alt_transition, SFCStep(kind="step", name="Nested", code=SFCCodeBlocks())]])
+    branch = SFCAlternative(
+        branches=[
+            [
+                alt_transition,
+                SFCStep(kind="step", name="NestedAlt", code=SFCCodeBlocks()),
+                SFCTransition(name="TrAltClose", condition=True),
+            ]
+        ]
+    )
+    transitions[0].fork = SFCFork(targets=("Run", "T1", "TSub", "TrAlt", "Nested", "NestedAlt", "Mid"))
     bp.modulecodes = [
         ModuleCode(
             sequences=[
                 _sequence(
                     init_step,
-                    *transitions[:1],
+                    transitions[0],
                     run_step,
-                    *transitions[1:],
+                    transitions[1],
+                    mid_step,
+                    transition_sub,
+                    SFCStep(kind="step", name="AfterSub", code=SFCCodeBlocks()),
                     branch,
-                    SFCFork(targets=("Run", "T1", "TSub", "TrAlt", "Nested")),
+                    SFCStep(kind="step", name="Tail", code=SFCCodeBlocks()),
+                    SFCTransition(name="TrEnd", condition=True),
                 )
             ]
         )
@@ -560,35 +715,6 @@ def test_duplicate_sfc_element_names_flagged():
     ]
     codes = {d.code.value for d in validate_basepicture(bp)}
     assert "SL-V021" in codes
-
-
-def test_sfc_init_step_placement_flagged():
-    repeated = _base_picture()
-    repeated.modulecodes = [
-        ModuleCode(
-            sequences=[
-                _sequence(
-                    SFCStep(kind="init", name="First", code=SFCCodeBlocks()),
-                    SFCTransition(name="TrA", condition=True),
-                    SFCStep(kind="init", name="Second", code=SFCCodeBlocks()),
-                )
-            ]
-        )
-    ]
-    not_first = _base_picture()
-    not_first.modulecodes = [
-        ModuleCode(
-            sequences=[
-                _sequence(
-                    SFCStep(kind="step", name="StepA", code=SFCCodeBlocks()),
-                    SFCTransition(name="TrA", condition=True),
-                    SFCStep(kind="init", name="Late", code=SFCCodeBlocks()),
-                )
-            ]
-        )
-    ]
-    assert "SL-V022" in {d.code.value for d in validate_basepicture(repeated)}
-    assert "SL-V022" in {d.code.value for d in validate_basepicture(not_first)}
 
 
 def test_sfc_branch_start_checks_skip_leading_comments():
@@ -635,26 +761,6 @@ def test_unknown_datatype_name_flagged_and_groupdata_exempt():
     codes = {d.code.value for d in validate_basepicture(bp)}
     assert "SL-V020" in codes
     assert "SL-V018" not in codes
-
-
-def test_datatype_shadows_builtin_name_flagged():
-    bp = _base_picture()
-    bp.datatype_defs = [DataType(name="Integer", description=None, datecode=1, var_list=[])]
-    codes = {d.code.value for d in validate_basepicture(bp)}
-    assert "SL-V026" in codes
-
-
-def test_duplicate_record_field_name_flagged():
-    record = DataType(
-        name="Pair",
-        description=None,
-        datecode=1,
-        var_list=[_var("Left", "real"), _var("left", "boolean")],
-    )
-    bp = _base_picture()
-    bp.datatype_defs = [record]
-    codes = {d.code.value for d in validate_basepicture(bp)}
-    assert "SL-V025" in codes
 
 
 def test_modulecode_without_sequences_or_equations_is_clean():
@@ -834,13 +940,42 @@ def test_operand_rule_skips_call_results_and_record_fields():
     assert [d.code.value for d in validate_basepicture(bp) if d.code.value.startswith("SL-V02")] == []
 
 
-def test_operand_rule_flags_duration_equality_once_per_operand():
-    bp = _typed_bp(
-        [_var("DurFull", "duration"), _var("Sink", "boolean")],
-        Assignment(VarRef("Sink"), Compare(VarRef("DurFull"), "==", VarRef("DurFull"))),
+def test_operand_rule_allows_temporal_against_numeric_literal_only():
+    """Proved 2026-10-05 by six probes, and the rule is narrower than "temporal ok".
+
+    ACCEPTED: ``Elapsed == 5``, ``Elapsed > 2.5``, ``Stamp == 5`` - a duration or
+    time compared against an integer/real LITERAL (EdgeDurCmpInt/Real,
+    EdgeTimeCmpInt).
+    REJECTED with this same code: ``ZeroDur == ZeroFull``, ``NegFive == NegHour``,
+    ``DurFull == DurBare`` - temporal against temporal (EdgeBareDurZero,
+    EdgeNegDurVal, ValidDurAndTime).
+
+    So a numeric operand may meet a temporal one; two temporal operands may not.
+    """
+    numeric_side = _typed_bp(
+        [_var("Elapsed", "duration"), _var("Stamp", "time"), _var("Sink", "boolean")],
+        Assignment(VarRef("Sink"), Compare(VarRef("Elapsed"), "==", 5)),
+        Assignment(VarRef("Sink"), Compare(VarRef("Elapsed"), ">", 2.5)),
+        Assignment(VarRef("Sink"), Compare(VarRef("Stamp"), "==", 5)),
     )
-    diagnostics = validate_basepicture(bp)
-    assert [d.code.value for d in diagnostics] == ["SL-V028", "SL-V028"]
+    assert [d.code.value for d in validate_basepicture(numeric_side)] == []
+
+    temporal_side = _typed_bp(
+        [_var("DurFull", "duration"), _var("Stamp", "time"), _var("Sink", "boolean")],
+        Assignment(VarRef("Sink"), Compare(VarRef("DurFull"), "==", VarRef("DurFull"))),
+        Assignment(VarRef("Sink"), Compare(VarRef("Stamp"), ">", VarRef("DurFull"))),
+    )
+    # Both operands of each comparison are temporal, and the rule reports once
+    # per offending operand, so two comparisons yield four diagnostics.
+    assert [d.code.value for d in validate_basepicture(temporal_side)] == ["SL-V028"] * 4
+
+
+def test_operand_rule_still_flags_boolean_operands():
+    boolean = _typed_bp(
+        [_var("Run", "boolean"), _var("Sink", "boolean")],
+        Assignment(VarRef("Sink"), Compare(VarRef("Run"), "==", VarRef("Run"))),
+    )
+    assert [d.code.value for d in validate_basepicture(boolean)] == ["SL-V028", "SL-V028"]
 
 
 def test_assignment_rule_allows_numeric_widening_and_same_family():
@@ -947,20 +1082,43 @@ def test_assignment_between_custom_types_is_left_permissive():
     assert assignment_is_compatible("integer", "real") is True
 
 
-def test_attribute_combination_rejects_opsave_with_state_in_either_order():
-    """The editor refuses the pair, so modifier order must not rescue it."""
-    forward = Variable(name="Forward", datatype="integer", opsave=True, state=True)
-    reverse = Variable(name="Reverse", datatype="boolean", opsave=True, state=True)
-    for variable in (forward, reverse):
+def test_attribute_combination_rejects_opsave_followed_by_state_or_const():
+    """ORDER-SENSITIVE, corrected 2026-10-05 by OpSaveStateReversed.x.
+
+    `OpSave State` is rejected (EdgeOpSaveAndState.x) but `State OpSave`
+    COMPILES, so the earlier belief that the pair was invalid "in either order"
+    was wrong. `OpSave Const` is rejected (OpSaveConst.x).
+    """
+    opsave_state = Variable(
+        name="SavedStateVar", datatype="integer", opsave=True, state=True, attribute_order=("opsave", "state")
+    )
+    opsave_const = Variable(
+        name="Mixed", datatype="integer", opsave=True, const=True, attribute_order=("opsave", "const")
+    )
+    for variable in (opsave_state, opsave_const):
         codes = [d.code.value for d in validate_basepicture(_typed_bp([variable]))]
         assert "SL-V031" in codes, f"{variable.name}: {codes}"
 
 
+def test_attribute_combination_allows_state_before_opsave():
+    """OpSaveStateReversed.x compiles, so reversed order must stay clean."""
+    reversed_order = Variable(
+        name="Mixed", datatype="integer", state=True, opsave=True, attribute_order=("state", "opsave")
+    )
+    assert [d.code.value for d in validate_basepicture(_typed_bp([reversed_order]))] == []
+
+
+def test_attribute_combination_is_silent_without_declared_order():
+    """No recorded order means no evidence of sequence, so stay silent."""
+    unknown_order = Variable(name="SavedStateVar", datatype="integer", opsave=True, state=True)
+    assert [d.code.value for d in validate_basepicture(_typed_bp([unknown_order]))] == []
+
+
 def test_attribute_combination_leaves_single_modifiers_clean():
     """Opsave alone and State alone are both editor-accepted controls."""
-    saved = Variable(name="SavedOnly", datatype="integer", opsave=True)
-    live = Variable(name="LiveOnly", datatype="integer", state=True)
-    guarded = Variable(name="ConstOnly", datatype="integer", const=True)
+    saved = Variable(name="SavedOnly", datatype="integer", opsave=True, attribute_order=("opsave",))
+    live = Variable(name="LiveOnly", datatype="integer", state=True, attribute_order=("state",))
+    guarded = Variable(name="ConstOnly", datatype="integer", const=True, attribute_order=("const",))
     codes = [d.code.value for d in validate_basepicture(_typed_bp([saved, live, guarded]))]
     assert codes == []
 
@@ -1024,3 +1182,175 @@ def test_sequence_ends_with_step_skips_open_sequences():
             )
         ]
         assert [d.code.value for d in validate_basepicture(picture)] == expected, seq_type
+
+
+def test_trailing_enddef_requires_a_semicolon():
+    """A trailing module-level ENDDEF is optional, but its `;` is mandatory.
+
+    The real tool rejects `... ModuleDef ... ENDDEF` (no `;`) with
+    `Error on line 15: >>><<< SemicolonSym Expected`, while ENDDEF absent
+    entirely is fine. Only `base_picture_module` is tightened: RECORD ENDDEFs and
+    ScanGroup ENDDEFs keep their optional `;` (UnCompressedFullGrammar.s uses both
+    and the real tool compiles it cleanly).
+    """
+    header = (
+        '"Syntax version 2.23, date: 2026-08-19-12:00:00.000 N"\n'
+        '"Original file date: ---"\n'
+        '"Program date: 2026-08-19-12:00:00.000, name: TrailingEnddefSemicolon"\n'
+    )
+    good = header + (
+        "BasePicture Invocation\n"
+        "   ( 0.0 , 0.0 , 0.0 , 1.0 , 1.0\n"
+        "    ) : MODULEDEFINITION DateCode_ 1\n\n"
+        "ModuleDef\n"
+        "ClippingBounds = ( -1.0 , -1.0 ) ( 1.0 , 1.0 )\n"
+    )
+    # no trailing ENDDEF at all -> accepted
+    assert parser_core_parse_source_text(good) is not None
+    # trailing ENDDEF with its `;` -> accepted
+    assert parser_core_parse_source_text(good + "ENDDEF;\n") is not None
+    # trailing ENDDEF without `;` -> rejected
+    with pytest.raises(UnexpectedInput):
+        parser_core_parse_source_text(good + "ENDDEF\n")
+
+
+def test_reserved_runtime_names_cannot_be_declared():
+    """SL-V034: `On`/`Off` are readable but never declarable.
+
+    The real parser rejects `On: boolean := False;` with `>>>On<<< AliasSym
+    Expected`. Reads stay exempt from SL-V019, so the same names must still be
+    usable in expressions - only the declaration is illegal.
+    """
+    reserved = SFC_RUNTIME_CONSTANTS
+    assert reserved == {"on", "off"}, "reserved set changed - re-check the probes"
+
+    header = (
+        '"Syntax version 2.23, date: 2026-08-19-12:00:00.000 N"\n'
+        '"Original file date: ---"\n'
+        '"Program date: 2026-08-19-12:00:00.000, name: ReservedName"\n'
+    )
+    picture = "BasePicture Invocation\n   ( 0.0 , 0.0 , 0.0 , 1.0 , 1.0\n    ) : MODULEDEFINITION DateCode_ 1\n\n"
+    tail = (
+        "\nModuleDef\nClippingBounds = ( -1.0 , -1.0 ) ( 1.0 , 1.0 )\n"
+        "ModuleCode\n"
+        "   EQUATIONBLOCK E COORD 0.0,0.0 OBJSIZE 1.0,1.0 :\n"
+        "      Flag = On;\n"
+        "\nENDDEF (*BasePicture*);\n"
+    )
+
+    def codes(decls: str, typedefs: str = "") -> list[str]:
+        # TYPEDEFINITIONS precedes LOCALVARIABLES in a SattLine module body.
+        src = header + picture + typedefs + "LOCALVARIABLES\n" + decls + tail
+        return [d.code.value for d in parse_and_validate(src)[1]]
+
+    # declaring either reserved name is rejected
+    assert "SL-V034" in codes("   On: boolean := False;\n   Flag: boolean := False;\n")
+    assert "SL-V034" in codes("   Off: boolean := False;\n   Flag: boolean := False;\n")
+    # a record field counts as a variable declaration
+    assert "SL-V034" in codes(
+        "   Flag: boolean := False;\n",
+        typedefs="TYPEDEFINITIONS\n   Rec = RECORD DateCode_ 2\n      On: boolean;\n   ENDDEF\n",
+    )
+    # ...and so does a datatype name
+    assert "SL-V034" in codes(
+        "   Flag: boolean := False;\n",
+        typedefs="TYPEDEFINITIONS\n   Off = RECORD DateCode_ 2\n      F: boolean;\n   ENDDEF\n",
+    )
+    # GroupData stays legal: it is a reserved *type*, not a runtime constant
+    assert "SL-V034" not in codes("   GroupData: boolean := False;\n   Flag: boolean := False;\n")
+    # reading a reserved name is still fine - SL-V019 must not fire
+    assert "SL-V019" not in codes("   Flag: boolean := False;\n")
+
+
+def test_identifier_folding_uses_the_native_byte_table():
+    from sattline_parser.validation.names import fold_identifier, identifiers_equal  # noqa: PLC0415
+
+    # ASCII folds to upper case
+    assert fold_identifier("count") == "COUNT"
+    assert identifiers_equal("Count", "COUNT")
+    # CP1252 high bytes fold through the native table, one byte at a time
+    assert fold_identifier("é") == "É"
+    assert identifiers_equal("Straße", "STRAßE")
+    assert identifiers_equal("Œuvre", "œuvre")
+    assert fold_identifier("ÿ") == "Ÿ"
+    # ...but full Unicode case folding is NOT applied
+    assert not identifiers_equal("Straße", "STRASSE")  # casefold would equate these
+    assert not identifiers_equal("ﬁle", "FILE")  # ligature is not a case pair
+    assert not identifiers_equal("µ", "\u039c")  # micro sign vs Greek mu
+
+
+def test_identifier_identity_rejects_a_unicode_casefold_match():
+    header = (
+        '"Syntax version 2.23, date: 2026-10-26-12:00:00.000 N"\n'
+        '"Original file date: ---"\n'
+        '"Program date: 2026-10-26-12:00:00.000, name: NameIdentity"\n'
+    )
+    picture = (
+        "BasePicture Invocation (0.0,0.0,0.0,1.0,1.0) : MODULEDEFINITION DateCode_ 1\n"
+        "LOCALVARIABLES\n"
+        "   Straße: integer := 0;\n"
+        "ModuleDef\n"
+        "ClippingBounds = ( -1.0 , -1.0 ) ( 1.0 , 1.0 )\n"
+        "ModuleCode\n"
+        "   EQUATIONBLOCK E COORD 0.0,0.0 OBJSIZE 1.0,1.0 :\n"
+    )
+    tail = "\nENDDEF (*BasePicture*);\n"
+
+    def codes(reference: str) -> set[str]:
+        source = header + picture + f"      Straße = {reference};\n" + tail
+        return {diagnostic.code.value for diagnostic in parse_and_validate(source)[1]}
+
+    # same spelling and byte-case variants resolve
+    assert codes("Straße") == set()
+    assert codes("STRAßE") == set()
+    # a full-Unicode casefold match must NOT resolve
+    assert "SL-V019" in codes("STRASSE")
+
+
+def test_old_state_is_not_a_write_target():
+    header = (
+        '"Syntax version 2.23, date: 2026-10-26-12:00:00.000 N"\n'
+        '"Original file date: ---"\n'
+        '"Program date: 2026-10-26-12:00:00.000, name: OldStateWrite"\n'
+    )
+    picture = (
+        "BasePicture Invocation (0.0,0.0,0.0,1.0,1.0) : MODULEDEFINITION DateCode_ 1\n"
+        "LOCALVARIABLES\n"
+        "   Counter: integer State := 0;\n"
+        "   Mirror: integer := 0;\n"
+        "ModuleDef\n"
+        "ClippingBounds = ( -1.0 , -1.0 ) ( 1.0 , 1.0 )\n"
+        "ModuleCode\n"
+        "   EQUATIONBLOCK E COORD 0.0,0.0 OBJSIZE 1.0,1.0 :\n"
+    )
+    tail = "\nENDDEF (*BasePicture*);\n"
+
+    def codes(statement: str) -> set[str]:
+        source = header + picture + f"      {statement}\n" + tail
+        return {diagnostic.code.value for diagnostic in parse_and_validate(source)[1]}
+
+    assert "SL-V035" in codes("Counter:Old = Mirror;")
+    assert "SL-V035" in codes("CopyVariable(Mirror, Counter:Old, Mirror);")
+    # reads and New writes stay legal
+    assert "SL-V035" not in codes("Mirror = Counter:Old;")
+    assert "SL-V035" not in codes("Counter:New = Mirror;")
+    # a suffix on a non-State variable is the older SL-V005 finding, not SL-V035
+    assert codes("Mirror:Old = 1;") == {"SL-V005"}
+
+
+def test_datecode_normalisation_and_generation():
+    from sattline_parser.validation.datecode import (  # noqa: PLC0415
+        compute_datecode,
+        normalized_datecode,
+    )
+
+    # declared stamps: non-negative values reduce modulo 2 000 000 000
+    assert normalized_datecode(0) == 0
+    assert normalized_datecode(123456) == 123456
+    assert normalized_datecode(2_000_000_007) == 7
+    # a negative literal is refused rather than given Python's modulo sign
+    with pytest.raises(ValueError, match="negative"):
+        normalized_datecode(-1)
+    # generated stamps follow the native clock formula
+    assert compute_datecode(123, 1000) == 2400
+    assert compute_datecode(123, 0) == 0

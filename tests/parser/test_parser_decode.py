@@ -2,31 +2,74 @@ from __future__ import annotations
 
 import json as _json
 import pathlib
+import re
+
+import pytest
 
 from sattline_parser.preprocessing.compressed import (
     _MARKER_RE,  # pyright: ignore[reportPrivateUsage]
+    SCANNER_TOKENS,
     SEED_MAPPING,
+    PreprocessError,
     decode_compressed,
     is_compressed,
     preprocess_sl_text,
 )
 
+_REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
+_CORPUS = _REPO_ROOT / "tests" / "fixtures" / "corpus" / "valid"
+_TOKEN_DATA = _REPO_ROOT / "src" / "sattline_parser" / "preprocessing" / "scanner_tokens.json"
+_HANDOFF_TOKENS = (
+    _REPO_ROOT / "SattLine_Parser_AI_Handoff" / "references" / "simulator_v0_8" / "sattlint_sim" / "tokens.json"
+)
 
-def test_decode_compressed_normalizes_marker_prefixes() -> None:
-    decoded = decode_compressed(
-        " ".join(
-            [
-                "#01Tail",
-                "#0<",
-                "#0<Remark",
-            ]
-        ),
-        SEED_MAPPING,
-    )
+#: Source hash of the recovered `.SCANNER` table. Changing this means re-pinning
+#: the evidence, not editing the JSON by hand.
+_TOKENS_SHA256 = "edf254ac3e39093ae56e8fa91fc68d7fee88291386fb1ea4103c29d941bb4b8a"
 
-    assert "(Tail" in decoded
-    assert "*" in decoded
-    assert "* Remark" in decoded
+
+def test_scanner_token_table_is_the_recovered_scanner_enum() -> None:
+    rows = _json.loads(_TOKEN_DATA.read_text(encoding="utf-8"))
+    assert len(rows) == 206
+    # Scanner ordinals are dense: id = ordinal + 8, ordinal 1..206 maps to a
+    # three-character `#` code over the contiguous ASCII run '0'..'?'.
+    assert [row["id"] for row in rows] == list(range(9, 215))
+    for row in rows:
+        ordinal = row["id"] - 8
+        assert row["code"] == "#" + chr(48 + ordinal // 16) + chr(48 + ordinal % 16)
+    assert {row["code"] for row in rows} == set(SCANNER_TOKENS)
+    assert SEED_MAPPING is SCANNER_TOKENS
+
+
+def test_scanner_token_table_matches_extracted_handoff_evidence() -> None:
+    if not _HANDOFF_TOKENS.exists():  # pragma: no cover — evidence is vendored locally
+        pytest.skip("handoff evidence not present")
+    assert _HANDOFF_TOKENS.read_bytes() == _TOKEN_DATA.read_bytes()
+
+
+def test_scanner_token_table_pins_words_the_old_seed_table_got_wrong() -> None:
+    # Recovered codes #1=, #1>, #9<, #:=: the earlier sample-derived table
+    # conflated the On/Off literals with True/False and shifted two property
+    # keywords.
+    assert SCANNER_TOKENS["#1="] == "On"
+    assert SCANNER_TOKENS["#1>"] == "Off"
+    assert SCANNER_TOKENS["#1;"] == "True"
+    assert SCANNER_TOKENS["#1<"] == "False"
+    assert SCANNER_TOKENS["#9<"] == "Module_In_View"
+    assert SCANNER_TOKENS["#:="] == "Relative_"
+    assert SCANNER_TOKENS["#:<"] == "Abs_"
+    assert SCANNER_TOKENS["#64"] == "Enable_"
+
+
+def test_decode_compressed_expands_markers_without_prefix_repair() -> None:
+    decoded = decode_compressed(" ".join(["#01Tail", "#0<", "#0<Remark", "#1="]), SCANNER_TOKENS)
+
+    assert decoded == "(Tail * *Remark On"
+
+
+def test_decode_compressed_rejects_unknown_marker() -> None:
+    with pytest.raises(PreprocessError, match="Unknown compressed marker '#02'"):
+        decode_compressed("#02", {"#01": "("})
 
 
 def test_preprocess_sl_text_preserves_existing_modulecode() -> None:
@@ -37,16 +80,52 @@ def test_preprocess_sl_text_preserves_existing_modulecode() -> None:
     assert decoded.count("ModuleCode EQUATIONBLOCK") == 1
 
 
-def test_decode_compressed_covers_marker_and_cleanup_quirks() -> None:
-    decoded = decode_compressed(
-        "#01Tail #0< #0<Flag #99",
-        {"#99": "Token"},
-    )
+def test_every_marker_used_by_the_corpus_is_tabled() -> None:
+    corpus_text = "\n".join(path.read_text(encoding="cp1252", errors="replace") for path in sorted(_CORPUS.glob("*.s")))
+    present = set(_MARKER_RE.findall(corpus_text))
+    assert present, "the corpus should exercise the compact form"
+    missing = sorted(present - set(SCANNER_TOKENS))
+    assert not missing, f"corpus uses compact codes absent from the scanner table: {missing}"
 
-    assert "(Tail" in decoded
-    assert "*" in decoded
-    assert "* Flag" in decoded
-    assert "Token" in decoded
+
+def _strip_comments(text: str) -> str:
+    out: list[str] = []
+    depth = 0
+    index = 0
+    while index < len(text):
+        if text.startswith("(*", index):
+            depth += 1
+            index += 2
+            continue
+        if text.startswith("*)", index) and depth:
+            depth -= 1
+            index += 2
+            continue
+        if depth == 0:
+            out.append(text[index])
+        index += 1
+    return "".join(out)
+
+
+def _normalize(text: str) -> str:
+    """Drop comments, layout and the compression flag: those legitimately differ."""
+    text = _strip_comments(text)
+    text = re.sub(r'"Syntax version [^"]*"', '"header"', text)
+    return re.sub(r"\s+", "", text)
+
+
+def test_compressed_and_uncompressed_full_grammar_twins_are_equivalent() -> None:
+    """The compact golden must decode to its plain twin, token for token.
+
+    This is the regression guard for the scanner table: with the sample-derived
+    seed mapping it drifted at `On`/`Off`, `Module_In_View` and `Relative_`.
+    """
+    compressed = (_CORPUS / "CompressedFullGrammar.s").read_text(encoding="cp1252")
+    uncompressed = (_CORPUS / "UnCompressedFullGrammar.s").read_text(encoding="cp1252")
+
+    decoded = decode_compressed(compressed, SCANNER_TOKENS)
+
+    assert _normalize(decoded) == _normalize(uncompressed)
 
 
 def test_is_compressed_covers_false_and_true_heuristics() -> None:
@@ -54,26 +133,15 @@ def test_is_compressed_covers_false_and_true_heuristics() -> None:
     assert is_compressed(" ".join(["#01X"] * 10)) is True
 
 
-def test_seed_mapping_markers_all_exercised_by_corpus() -> None:
-    corpus_dir = pathlib.Path(__file__).resolve().parents[2] / "tests" / "fixtures"
-    corpus_text = "\n".join(
-        f.read_text(encoding="utf-8", errors="replace") for f in sorted(corpus_dir.glob("CompressedFullGrammar.s"))
-    )
-    present = set(_MARKER_RE.findall(corpus_text))
-    missing = sorted(set(SEED_MAPPING) - present)
-    assert not missing, f"SEED_MAPPING markers not found in corpus: {missing}"
+def test_undefined_byte_inside_an_unterminated_comment_still_fails(tmp_path: pathlib.Path) -> None:
+    """Tolerant decoding is scoped to *closed* comments (HighByteInvalid.x).
 
+    An undefined CP1252 byte inside an unterminated comment cannot be repaired,
+    so the strict decode error survives instead of the file being guessed at.
+    """
+    from sattline_parser.api import parse_source_file  # noqa: PLC0415
 
-def test_seed_mapping_decoded_matches_uncompressed_golden() -> None:
-    snapshot_path = pathlib.Path(__file__).resolve().parents[2] / "tests" / "fixtures" / "seed_mapping_snapshot.json"
-    current = dict(sorted(SEED_MAPPING.items()))
-    if snapshot_path.exists():
-        stored = _json.loads(snapshot_path.read_text())
-        assert current == stored, (
-            "SEED_MAPPING has changed since the snapshot was taken.\n"
-            "If the change is intentional, update the snapshot by running:\n"
-            '  python -c "import json; from sattline_parser.preprocessing.compressed import SEED_MAPPING; '
-            "json.dump(dict(sorted(SEED_MAPPING.items())), open('tests/fixtures/seed_mapping_snapshot.json', 'w'), indent=2)\""
-        )
-    else:
-        snapshot_path.write_text(_json.dumps(current, indent=2) + "\n")
+    source = tmp_path / "Broken.s"
+    source.write_bytes(b'"Syntax version 2.23, date: 2026-10-26-12:00:00.000 N"\n(* \x81')
+    with pytest.raises(UnicodeDecodeError):
+        parse_source_file(source)

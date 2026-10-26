@@ -7,6 +7,68 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **Compressed-source marker table replaced by the recovered scanner token
+  table.** `preprocessing/compressed.py` no longer carries the 172-entry
+  sample-derived `SEED_MAPPING`. The compact-code table now ships as
+  `preprocessing/scanner_tokens.json` — the 206-entry `.SCANNER` enum extracted
+  from the workstation's 3.1 configuration container (scanner ordinal `n` encoded
+  as `'#' + chr(48 + n // 16) + chr(48 + n % 16)`, ids 9–214, dense). Four
+  entries the old table got wrong are corrected: `#1=` is `On` (was `True`),
+  `#1>` is `Off` (was `False`), `#9<` is `Module_In_View` (was `Enable_`, which
+  collided with `#64`), `#:=` is `Relative_` (was `Abs_`). 34 codes that used to
+  raise `PreprocessError` now decode, including `PUBLIC_`, `EQUATIONS`,
+  `Invisible_`, `Non_Expandable_`, `Disable_`, `Der`, `Der2`, `RealVar`,
+  `xCoord`, `yCoord`, `AutoMan`, `SeqTimerCheck` and `**`. The special-case
+  `#01…`/`#0<…` prefix rewrite is gone; `SCANNER_TOKENS` is the canonical name,
+  `SEED_MAPPING` remains as an alias. New test proves
+  `CompressedFullGrammar.s` decodes to `UnCompressedFullGrammar.s` token for
+  token, which the old table could not.
+
+### Changed
+
+- **Sequence syntax aligned with the native readers.** `SEQFORK` is no longer a
+  sequence element: it is a suffix of its host `SEQSTEP`/`SEQTRANSITION`, reads
+  one or more comma-separated targets and may end with `SEQBREAK`
+  (`006f9850`, `0070a100`, `0070d180`). `SFCFork` now carries `has_break`, lives
+  on `SFCStep.fork` / `SFCTransition.fork`, and `SFCBreak` is gone — a standalone
+  `SEQBREAK` is rejected at parse time, like the real tool. Sequence bodies must
+  be non-empty, `SEQTRANSITION` may omit both its name and `WAIT_FOR`
+  (`condition is None` preserves the omission), `SUBSEQUENCE`/`SUBSEQSTEP` names
+  are optional, and `SFCSubsequence` distinguishes `kind="sequence"` (structural
+  position) from `kind="substep"` (step position).
+- **Statement semicolons are optional** in code blocks (`0072b660`), so
+  `Flag = True` followed by a newline terminates a statement.
+
+### Added
+
+- **SL-V036 `SEQUENCE_POSITION_INVALID`** with the native S/T/M position model in
+  `validation/sequences.py`: closed bodies are `(S T | M)+`, alternative branches
+  and `SUBSEQTRANSITION` bodies are `T (S T | M)*`, parallel branches and
+  `SUBSEQSTEP` bodies are `M* S (T M* S)*`, and `OPENSEQUENCE` uses the open
+  variant. `SL-V016`/`SL-V023`/`SL-V024`/`SL-V033` now all come from that single
+  walk. This reproduces the probe verdicts for `EdgeSeqAlt`,
+  `ValidSubSeqTransB` and `ValidOpenSeqSeq`; those corpus fixtures had encoded
+  the rejected shapes and were corrected.
+- **SL-V035 `OLD_STATE_NOT_WRITABLE`**: writing to `:Old` is a compiler check
+  (native `00485470`, expression error `0x14`) for assignment targets and for
+  reference-required built-in arguments (`004748b0`); reads and `:New` writes
+  stay legal.
+- **`DateCode_` is a fixed keyword** (`005ab1b0`, scanner token 0x89/137) instead
+  of `NAME` + integer, so `Bogus_ 5` is rejected; the attribute is optional on
+  records, module definitions and module types (`005d6170`, `005ccaa0`,
+  `005dc3f0`), and `BasePicture.datecode` now preserves the root stamp.
+- **`validation/datecode.py`**: `normalized_datecode` (non-negative
+  `n % 2 000 000 000`; negatives refused rather than given Python's modulo sign)
+  and `compute_datecode` (the `005cb910` clock formula), deliberately separate
+  from parsing.
+- **`validation/names.py`**: identifier identity now uses the recovered CP1252
+  upper-byte table from `00806168` (a–z→A–Z, `9A→8A`, `9C→8C`, `E0–F6→C0–D6`,
+  `F8–FE→D8–DE`, `FF→9F`) instead of `str.casefold`, so `Straße`/`STRASSE` and
+  `ﬁle`/`FILE` no longer resolve to the same symbol. Filesystem identity in the
+  project layer keeps `casefold`.
+
 ### Changed
 
 - **Source files are now decoded strictly as Windows-1252 (cp1252)** — the only

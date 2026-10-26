@@ -68,7 +68,7 @@ LOCALVARIABLES
    signafbrudt, aktiver2: boolean ;
    afbrydkommentar: string ;
    aktiverdobbelt: boolean ;
-   fuldnavn1, brugerident1, kommentar, formÃ¥l: string ;
+   fuldnavn1, brugerident1, kommentar, formål: string ;
    aktiverenkelt: boolean ;
    realVar2, RealVar1: real ;
    IntVar2, IntVar, nooforws: integer ;
@@ -79,7 +79,7 @@ LOCALVARIABLES
    Fortryd, OK: boolean ;
    klasse, vigtighedsgrad: integer ;
    beskrivelse: string ;
-   Ã¦ndret, hroot: boolean ;
+   ændret, hroot: boolean ;
    synlig: boolean  := True;
    tekst: string ;
    windowdisplayed: boolean ;
@@ -519,7 +519,7 @@ InteractObjects :
    CheckBox_ ( 1.02 , 1.42 ) ( 1.46 , 1.32 )
       Bool_Value
       Enable_ = True : InVar_ "aktiver" Value_Changed = False : OutVar_
-      "Ã¦ndret" Variable = False : OutVar_ "synlig" Key_ = "" : InVar_ "tast"
+      "ændret" Variable = False : OutVar_ "synlig" Key_ = "" : InVar_ "tast"
       GLOBAL = False : InVar_ "tast_global" Event_Text_ = "" : InVar_
       "Description" Event_Tag_ = "" : InVar_ "Tag" Event_Severity_ = 0 : InVar_
       "Importance" Event_Class_ = 0 : InVar_ "Class" Visible_ = True : InVar_
@@ -532,7 +532,7 @@ InteractObjects :
    TextBox_ ( 1.7 , 1.34 ) ( 2.26 , 1.2 )
       Int_Value
       Enable_ = True : InVar_ "Aktiver" Value_Changed = False : OutVar_
-      "Ã†ndret" Variable = 0 : OutVar_ "timeout" OpMin = 0 : InVar_ "min" OpMax
+      "Ændret" Variable = 0 : OutVar_ "timeout" OpMin = 0 : InVar_ "min" OpMax
       = 2147483647 : InVar_ "max" OpStep = 1 : InVar_ "absoluttrin" Key_ = "" :
       InVar_ "Tast" GLOBAL = False : InVar_ "Tag_Global" Event_Text_ = "" :
       InVar_ "beskrivelse" Event_Tag_ = "" : InVar_ "tag" Event_Severity_ = 0 :
@@ -554,7 +554,7 @@ InteractObjects :
       "selectclass" 0 : InVar_ "timeout" False : OutVar_ "windowdisplayed" 0 :
       OutVar_ "status"
       Enable_ = True : InVar_ "aktiver" Value_Changed = False : OutVar_
-      "Ã¦ndret" Variable = 0.0 Key_ = "" : InVar_ "tast" GLOBAL = False : InVar_
+      "ændret" Variable = 0.0 Key_ = "" : InVar_ "tast" GLOBAL = False : InVar_
       "tast_global" Visible_ = True : InVar_ "synlig" TextObject = "" : InVar_
       "tekst"
 
@@ -604,7 +604,7 @@ InteractObjects :
       InVar_ "noofcolumns" 0 : InVar_ "fontkind" 0 : InVar_ "fontsize" 0 :
       OutVar_ "status"
       Enable_ = True : InVar_ "aktiver" Value_Changed = False : OutVar_
-      "Ã¦ndret" Variable = 0.0 Key_ = "" : InVar_ "tast" GLOBAL = False : InVar_
+      "ændret" Variable = 0.0 Key_ = "" : InVar_ "tast" GLOBAL = False : InVar_
       "tast_global" Visible_ = True : InVar_ "synlig" TextObject = "" : InVar_
       "tekst"
 
@@ -612,7 +612,7 @@ InteractObjects :
       DeleteEditFile
       "" : InVar_ "filename" 0 : OutVar_ "status"
       Enable_ = True : InVar_ "aktiver" Value_Changed = False : OutVar_
-      "Ã¦ndret" Variable = 0.0 Key_ = "" : InVar_ "tast" GLOBAL = False : InVar_
+      "ændret" Variable = 0.0 Key_ = "" : InVar_ "tast" GLOBAL = False : InVar_
       "tast_global" Visible_ = True : InVar_ "synlig" TextObject = "" : InVar_
       "tekst"
 
@@ -644,7 +644,7 @@ InteractObjects :
    MenuInteract ( 0.22 , 0.26 ) ( 0.58 , 0.12 )
       Int_Value
       Enable_ = True : InVar_ "Aktiver" SelectVariable = False : OutVar_
-      "Markeret" Value_Changed = False : OutVar_ "Ã†ndret" Variable = 0 :
+      "Markeret" Value_Changed = False : OutVar_ "Ændret" Variable = 0 :
       OutVar_ "absoluttrin" OpMin = 0 : InVar_ "min" OpMax = 2147483647 :
       InVar_ "max" OpStep = 1 : InVar_ "vigtighedsgrad" Key_ = "" : InVar_
       "Tast" GLOBAL = False : InVar_ "Tast_Global" Event_Text_ = "" : InVar_
@@ -654,7 +654,7 @@ InteractObjects :
    MenuInteract ( 0.7 , 0.46 ) ( 1.06 , 0.34 )
       Real_Value
       Enable_ = True : InVar_ "Aktiver" SelectVariable = False : OutVar_
-      "Markeret" Value_Changed = False : OutVar_ "Ã†ndret" Variable = 0.0 :
+      "Markeret" Value_Changed = False : OutVar_ "Ændret" Variable = 0.0 :
       OutVar_ "xsize" OpMin = 0.0 : InVar_ "RotationMax" OpMax = 100.0 : InVar_
       "RotationVar" OpStep = 1.0 : InVar_ "YScaleMax" Key_ = "" : InVar_ "Tast"
       GLOBAL = False : InVar_ "Tast_Global" Event_Text_ = "" : InVar_
@@ -664,7 +664,7 @@ InteractObjects :
    MenuInteract ( 0.7 , 0.3 ) ( 1.08 , 0.14 )
       String_Value
       Enable_ = True : InVar_ "aktiver" SelectVariable = False : OutVar_
-      "markeret" Value_Changed = False : OutVar_ "Ã¦ndret" Variable = "" :
+      "markeret" Value_Changed = False : OutVar_ "ændret" Variable = "" :
       OutVar_ "JourTag" Key_ = "" : InVar_ "tast" GLOBAL = False : InVar_
       "tast_global" Event_Text_ = "" : InVar_ "Beskrivelse" Event_Tag_ = "" :
       InVar_ "Tag" Event_Severity_ = 0 : InVar_ "Vigtighedsgrad" Event_Class_ =
@@ -673,7 +673,7 @@ InteractObjects :
    MenuInteract ( 0.24 , 0.04 ) ( 0.58 , -0.12 )
       Time_Value
       Enable_ = True : InVar_ "Aktiver" SelectVariable = False : OutVar_
-      "Markeret" Value_Changed = False : OutVar_ "Ã†ndret" Variable = "" :
+      "Markeret" Value_Changed = False : OutVar_ "Ændret" Variable = "" :
       OutVar_ "FirstPoint" Format_String_ = "" : InVar_ "WindowTitle" Key_ = ""
       : InVar_ "Tast" GLOBAL = False : InVar_ "Tag_Global" Event_Text_ = "" :
       InVar_ "Beskrivelse" Event_Tag_ = "" : InVar_ "Tag" Event_Severity_ = 0 :
@@ -682,7 +682,7 @@ InteractObjects :
    MenuInteract ( 0.72 , 0.1 ) ( 1.12 , -0.08 )
       Duration_Value
       Enable_ = True : InVar_ "Aktiver" SelectVariable = False : OutVar_
-      "markeret" Value_Changed = False : OutVar_ "Ã¦ndret" Variable = "" :
+      "markeret" Value_Changed = False : OutVar_ "ændret" Variable = "" :
       OutVar_ "TimeShift" Format_String_ = "" : InVar_ "ModulePath" Key_ = "" :
       InVar_ "tast" GLOBAL = False : InVar_ "tast_global" Event_Text_ = "" :
       InVar_ "Beskrivelse" Event_Tag_ = "" : InVar_ "Tag" Event_Severity_ = 0 :
@@ -692,12 +692,12 @@ InteractObjects :
       DeleteEditFile
       "" : InVar_ "FileName" 0 : OutVar_ "Status"
       Enable_ = True : InVar_ "Aktiver" Value_Changed = False : OutVar_
-      "Ã†ndret" Variable = 0.0 Key_ = "" : InVar_ "Tast" GLOBAL = False : InVar_
+      "Ændret" Variable = 0.0 Key_ = "" : InVar_ "Tast" GLOBAL = False : InVar_
       "Tast_Global"
    TextBox_ ( 2.42 , 1.34 ) ( 2.98 , 1.2 )
       Time_Value
       Enable_ = True : InVar_ "Aktiver" Value_Changed = False : OutVar_
-      "Ã†ndret" Variable = "" : OutVar_ "StartTime" Format_String_ = "" : InVar_
+      "Ændret" Variable = "" : OutVar_ "StartTime" Format_String_ = "" : InVar_
       "tekst" Key_ = "" : InVar_ "Tast" GLOBAL = False : InVar_ "Tag_Global"
       Event_Text_ = "" : InVar_ "beskrivelse" Event_Tag_ = "" : InVar_ "tag"
       Event_Severity_ = 0 : InVar_ "vigtighedsgrad" Event_Class_ = 0 : InVar_
@@ -713,7 +713,7 @@ InteractObjects :
    TextBox_ ( 3.1 , 1.34 ) ( 3.66 , 1.2 )
       Duration_Value
       Enable_ = True : InVar_ "Aktiver" Value_Changed = False : OutVar_
-      "Ã†ndret" Variable = "" : OutVar_ "DurationVar" Format_String_ = "" :
+      "Ændret" Variable = "" : OutVar_ "DurationVar" Format_String_ = "" :
       InVar_ "tekst" Key_ = "" : InVar_ "Tast" GLOBAL = False : InVar_
       "Tag_Global" Event_Text_ = "" : InVar_ "beskrivelse" Event_Tag_ = "" :
       InVar_ "tag" Event_Severity_ = 0 : InVar_ "vigtighedsgrad" Event_Class_ =
@@ -730,7 +730,7 @@ InteractObjects :
    SimpleInteract ( -0.18 , 0.26 ) ( 0.18 , 0.12 )
       Int_Value
       Enable_ = True : InVar_ "Aktiver" SelectVariable = False : OutVar_
-      "Markeret" Value_Changed = False : OutVar_ "Ã†ndret" Variable = 0 :
+      "Markeret" Value_Changed = False : OutVar_ "Ændret" Variable = 0 :
       OutVar_ "absoluttrin" OpMin = 0 : InVar_ "min" OpMax = 2147483647 :
       InVar_ "max" OpStep = 1 : InVar_ "vigtighedsgrad" Key_ = "" : InVar_
       "Tast" GLOBAL = False : InVar_ "Tast_Global" Event_Text_ = "" : InVar_
@@ -819,7 +819,7 @@ InteractObjects :
       : InVar_ "ysize" False : InVar_ "hroot" 0 : InVar_ "selectclass" 0 :
       InVar_ "timeout" False : OutVar_ "windowdisplayed" 0 : OutVar_ "status"
       Enable_ = True : InVar_ "aktiver" Value_Changed = False : OutVar_
-      "Ã¦ndret" Variable = 0.0 Key_ = "" : InVar_ "tast" GLOBAL = False : InVar_
+      "ændret" Variable = 0.0 Key_ = "" : InVar_ "tast" GLOBAL = False : InVar_
       "tag_global"
    ProcedureInteract ( 0.48 , -0.96 ) ( 1.0 , -1.08 )
       ToggleWindow
@@ -828,19 +828,19 @@ InteractObjects :
       "ysize" False : InVar_ "hroot" 0 : InVar_ "selectclass" 0 : InVar_
       "timeout" False : OutVar_ "wdisplayed" 0 : OutVar_ "status"
       Enable_ = True : InVar_ "aktiver" Value_Changed = False : OutVar_
-      "Ã¦ndret" Variable = 0.0 Key_ = "" : InVar_ "tast" GLOBAL = False : InVar_
+      "ændret" Variable = 0.0 Key_ = "" : InVar_ "tast" GLOBAL = False : InVar_
       "tast_global"
    ProcedureInteract ( 0.44 , -1.16 ) ( 1.0 , -1.32 )
       DeleteWindow
       "" : InVar_ "mpath" 0 : InVar_ "selectclass" 0 : OutVar_ "status"
       Enable_ = True : InVar_ "aktiver" Value_Changed = False : OutVar_
-      "Ã¦ndret" Variable = 0.0 Key_ = "" : InVar_ "tast" GLOBAL = False : InVar_
+      "ændret" Variable = 0.0 Key_ = "" : InVar_ "tast" GLOBAL = False : InVar_
       "tast_global"
    ProcedureInteract ( 0.44 , -1.44 ) ( 0.96 , -1.56 )
       WindowContent
       "" : InVar_ "mpath" 0 : OutVar_ "status"
       Enable_ = True : InVar_ "aktiver" Value_Changed = False : OutVar_
-      "Ã¦ndret" Variable = 0.0 Key_ = "" : InVar_ "tast" GLOBAL = False : InVar_
+      "ændret" Variable = 0.0 Key_ = "" : InVar_ "tast" GLOBAL = False : InVar_
       "tast_global"
    ProcedureInteract ( 0.4 , -1.68 ) ( 1.0 , -1.8 )
       NewEditFile
@@ -849,7 +849,7 @@ InteractObjects :
       "noofcolumns" 0 : InVar_ "fontkind" 0 : InVar_ "fontsize" 0 : OutVar_
       "status"
       Enable_ = True : InVar_ "aktiver" Value_Changed = False : OutVar_
-      "Ã¦ndret" Variable = 0.0 Key_ = "" : InVar_ "tast" GLOBAL = False : InVar_
+      "ændret" Variable = 0.0 Key_ = "" : InVar_ "tast" GLOBAL = False : InVar_
       "tast_global"
    ProcedureInteract ( 0.4 , -1.88 ) ( 1.08 , -2.04 )
       ToggleEditFile
@@ -858,12 +858,12 @@ InteractObjects :
       "noofcolumns" 0 : InVar_ "fontkind" 0 : InVar_ "fontsize" 0 : OutVar_
       "status"
       Enable_ = True : InVar_ "aktiver" Value_Changed = False : OutVar_
-      "Ã¦ndret" Variable = 0.0 Key_ = "" : InVar_ "tast" GLOBAL = False : InVar_
+      "ændret" Variable = 0.0 Key_ = "" : InVar_ "tast" GLOBAL = False : InVar_
       "tast_global"
    TextBox_ ( 1.92 , -1.0 ) ( 2.64 , -1.24 )
       Int_Value
       Enable_ = True : InVar_ "Aktiver" Value_Changed = False : OutVar_
-      "Ã†ndret" Variable = 0 : OutVar_ "max" OpMin = 0 : InVar_ "min" OpMax =
+      "Ændret" Variable = 0 : OutVar_ "max" OpMin = 0 : InVar_ "min" OpMax =
       2147483647 : InVar_ "max" OpStep = 1 : InVar_ "vigtighedsgrad" Key_ = ""
       : InVar_ "Tast" GLOBAL = False : InVar_ "Tast_Global" Event_Text_ = "" :
       InVar_ "Beskrivelse" Event_Tag_ = "" : InVar_ "Tag" Event_Severity_ = 0 :
@@ -877,7 +877,7 @@ InteractObjects :
    TextBox_ ( 3.64 , -0.96 ) ( 4.36 , -1.2 )
       Int_Value
       Enable_ = True : InVar_ "Aktiver" Value_Changed = False : OutVar_
-      "Ã†ndret" Variable = 0 : OutVar_ "max" OpMin = 0 : InVar_ "min" OpMax =
+      "Ændret" Variable = 0 : OutVar_ "max" OpMin = 0 : InVar_ "min" OpMax =
       2147483647 : InVar_ "max" OpStep = 1 : InVar_ "vigtighedsgrad" Key_ = ""
       : InVar_ "Tast" GLOBAL = False : InVar_ "Tast_Global" Event_Text_ = "" :
       InVar_ "Beskrivelse" Event_Tag_ = "" : InVar_ "Tag" Event_Severity_ = 0 :
@@ -891,7 +891,7 @@ InteractObjects :
    TextBox_ ( 2.88 , -1.04 ) ( 3.6 , -1.28 )
       Int_Value
       Enable_ = True : InVar_ "Aktiver" Value_Changed = False : OutVar_
-      "Ã†ndret" Variable = 0 : OutVar_ "max" OpMin = 0 : InVar_ "min" OpMax =
+      "Ændret" Variable = 0 : OutVar_ "max" OpMin = 0 : InVar_ "min" OpMax =
       2147483647 : InVar_ "max" OpStep = 1 : InVar_ "vigtighedsgrad" Key_ = ""
       : InVar_ "Tast" GLOBAL = False : InVar_ "Tast_Global" Event_Text_ = "" :
       InVar_ "Beskrivelse" Event_Tag_ = "" : InVar_ "Tag" Event_Severity_ = 0 :
@@ -905,7 +905,7 @@ InteractObjects :
    TextBox_ ( 1.96 , -1.4 ) ( 2.68 , -1.64 )
       Real_Value
       Enable_ = True : InVar_ "Aktiver" Value_Changed = False : OutVar_
-      "Ã†ndret" Variable = 0.0 : OutVar_ "RotateionMin" OpMin = 0.0 : InVar_
+      "Ændret" Variable = 0.0 : OutVar_ "RotateionMin" OpMin = 0.0 : InVar_
       "RotateionMin" OpMax = 0.0 : InVar_ "YScaleMax" OpStep = 0.0 : InVar_
       "YScaleMax" Key_ = "" : InVar_ "Tast" GLOBAL = False : InVar_
       "Tast_Global" Event_Text_ = "" : InVar_ "Beskrivelse" Event_Tag_ = "" :
@@ -921,7 +921,7 @@ InteractObjects :
    TextBox_ ( 2.8 , -1.4 ) ( 3.52 , -1.64 )
       Real_Value
       Enable_ = True : InVar_ "Aktiver" Value_Changed = False : OutVar_
-      "Ã†ndret" Variable = 0.0 : OutVar_ "RotateionMin" OpMin = 0.0 : InVar_
+      "Ændret" Variable = 0.0 : OutVar_ "RotateionMin" OpMin = 0.0 : InVar_
       "RotateionMin" OpMax = 0.0 : InVar_ "YScaleMax" OpStep = 0.0 : InVar_
       "YScaleMax" Key_ = "" : InVar_ "Tast" GLOBAL = False : InVar_
       "Tast_Global" Event_Text_ = "" : InVar_ "Beskrivelse" Event_Tag_ = "" :
@@ -937,7 +937,7 @@ InteractObjects :
    ComBut_ ( -1.4 , 1.28 ) ( -1.04 , 1.16 )
       Bool_Value
       Enable_ = True : InVar_ "aktiver" Value_Changed = False : OutVar_
-      "Ã¦ndret" Variable = False : OutVar_ "var1" Key_ = "" : InVar_ "tast"
+      "ændret" Variable = False : OutVar_ "var1" Key_ = "" : InVar_ "tast"
       GLOBAL = False : InVar_ "tast_global" Event_Text_ = "" : InVar_
       "beskrivelse" Event_Tag_ = "" : InVar_ "tag" Event_Severity_ = 0 : InVar_
       "vigtighedsgrad" Event_Class_ = 0 : InVar_ "klasse" Visible_ = True :
@@ -947,7 +947,7 @@ InteractObjects :
       SetApp_
       SnglSgn
       SnglSgnEna = False : InVar_ "aktiverenkelt"
-      Purpose_ = "" : OutVar_ "formÃ¥l"
+      Purpose_ = "" : OutVar_ "formål"
       PurposeChng
       SgnrCom = "" : OutVar_ "kommentar"
       CommentChng
@@ -965,7 +965,7 @@ InteractObjects :
    ComBut_ ( -1.4 , 0.96 ) ( -1.04 , 0.84 )
       Int_Value
       Enable_ = True : InVar_ "aktiver" Value_Changed = False : OutVar_
-      "Ã¦ndret" Variable = 0 : OutVar_ "var2" OpMin = 0 : InVar_ "min" OpMax = 0
+      "ændret" Variable = 0 : OutVar_ "var2" OpMin = 0 : InVar_ "min" OpMax = 0
       : InVar_ "max" OpStep = 1 : InVar_ "abstrin" Key_ = "" : InVar_ "tast"
       GLOBAL = False : InVar_ "tast_global" Event_Text_ = "" : InVar_
       "beskrivelse" Event_Tag_ = "" : InVar_ "tag" Event_Severity_ = 0 : InVar_
@@ -974,7 +974,7 @@ InteractObjects :
       Alt_Text = "" : InVar_ "alttekst"
       SnglSgn
       SnglSgnEna = False : InVar_ "aktiverenkelt"
-      Purpose_ = "" : OutVar_ "formÃ¥l"
+      Purpose_ = "" : OutVar_ "formål"
       PurposeChng
       SgnrCom = "" : OutVar_ "kommentar"
       CommentChng
@@ -992,7 +992,7 @@ InteractObjects :
    ComBut_ ( -1.0 , 0.96 ) ( -0.64 , 0.84 )
       Int_Value
       Enable_ = True : InVar_ "aktiver" Value_Changed = False : OutVar_
-      "Ã¦ndret" Variable = 0 : OutVar_ "var2" Key_ = "" : InVar_ "tast" GLOBAL =
+      "ændret" Variable = 0 : OutVar_ "var2" Key_ = "" : InVar_ "tast" GLOBAL =
       False : InVar_ "tast_global" Event_Text_ = "" : InVar_ "beskrivelse"
       Event_Tag_ = "" : InVar_ "tag" Event_Severity_ = 0 : InVar_
       "vigtighedsgrad" Event_Class_ = 0 : InVar_ "klasse" Visible_ = True :
@@ -1003,7 +1003,7 @@ InteractObjects :
       Value_ = 0 : InVar_ "intvar"
       SnglSgn
       SnglSgnEna = False : InVar_ "aktiverenkelt"
-      Purpose_ = "" : OutVar_ "formÃ¥l"
+      Purpose_ = "" : OutVar_ "formål"
       PurposeChng
       SgnrCom = "" : OutVar_ "kommentar"
       CommentChng
@@ -1021,7 +1021,7 @@ InteractObjects :
    ComBut_ ( -1.0 , 1.28 ) ( -0.64 , 1.16 )
       Bool_Value
       Enable_ = True : InVar_ "aktiver" Value_Changed = False : OutVar_
-      "Ã¦ndret" Variable = False : OutVar_ "var1" Key_ = "" : InVar_ "tast"
+      "ændret" Variable = False : OutVar_ "var1" Key_ = "" : InVar_ "tast"
       GLOBAL = False : InVar_ "tast_global" Event_Text_ = "" : InVar_
       "beskrivelse" Event_Tag_ = "" : InVar_ "tag" Event_Severity_ = 0 : InVar_
       "vigtighedsgrad" Event_Class_ = 0 : InVar_ "klasse" Visible_ = True :
@@ -1031,7 +1031,7 @@ InteractObjects :
       SetApp_
       SnglSgn
       SnglSgnEna = False : InVar_ "aktiverenkelt"
-      Purpose_ = "" : OutVar_ "formÃ¥l"
+      Purpose_ = "" : OutVar_ "formål"
       PurposeChng
       SgnrCom = "" : OutVar_ "kommentar"
       CommentChng
@@ -1049,7 +1049,7 @@ InteractObjects :
    ComBut_ ( -0.76 , 1.28 ) ( -0.4 , 1.16 )
       Bool_Value
       Enable_ = True : InVar_ "aktiver" Value_Changed = False : OutVar_
-      "Ã¦ndret" Variable = False : OutVar_ "var1" Key_ = "" : InVar_ "tast"
+      "ændret" Variable = False : OutVar_ "var1" Key_ = "" : InVar_ "tast"
       GLOBAL = False : InVar_ "tast_global" Event_Text_ = "" : InVar_
       "beskrivelse" Event_Tag_ = "" : InVar_ "tag" Event_Severity_ = 0 : InVar_
       "vigtighedsgrad" Event_Class_ = 0 : InVar_ "klasse" Visible_ = True :
@@ -1059,7 +1059,7 @@ InteractObjects :
       SetApp_
       SnglSgn
       SnglSgnEna = False : InVar_ "aktiverenkelt"
-      Purpose_ = "" : OutVar_ "formÃ¥l"
+      Purpose_ = "" : OutVar_ "formål"
       PurposeChng
       SgnrCom = "" : OutVar_ "kommentar"
       CommentChng
@@ -1077,7 +1077,7 @@ InteractObjects :
    ComBut_ ( -1.4 , 0.68 ) ( -1.04 , 0.56 )
       Real_Value
       Enable_ = True : InVar_ "aktiver" Value_Changed = False : OutVar_
-      "Ã¦ndret" Variable = 0.0 : OutVar_ "var3" OpMin = 0.0 : InVar_ "minreal"
+      "ændret" Variable = 0.0 : OutVar_ "var3" OpMin = 0.0 : InVar_ "minreal"
       OpMax = 0.0 : InVar_ "maxreal" OpStep = 0.0 : InVar_ "abstrinreal" Key_ =
       "" : InVar_ "tast" GLOBAL = False : InVar_ "tast_global" Event_Text_ = ""
       : InVar_ "beskrivelse" Event_Tag_ = "" : InVar_ "tag" Event_Severity_ = 0
@@ -1086,7 +1086,7 @@ InteractObjects :
       Alt_Text = "" : InVar_ "alttekst"
       SnglSgn
       SnglSgnEna = False : InVar_ "aktiverenkelt"
-      Purpose_ = "" : OutVar_ "formÃ¥l"
+      Purpose_ = "" : OutVar_ "formål"
       PurposeChng
       SgnrCom = "" : OutVar_ "kommentar"
       CommentChng
@@ -1104,7 +1104,7 @@ InteractObjects :
    ComBut_ ( -0.96 , 0.68 ) ( -0.6 , 0.56 )
       Real_Value
       Enable_ = True : InVar_ "aktiver" Value_Changed = False : OutVar_
-      "Ã¦ndret" Variable = 0.0 : OutVar_ "var3" OpMin = 0.0 : InVar_ "minreal"
+      "ændret" Variable = 0.0 : OutVar_ "var3" OpMin = 0.0 : InVar_ "minreal"
       OpMax = 0.0 : InVar_ "maxreal" Key_ = "" : InVar_ "tast" GLOBAL = False :
       InVar_ "tast_global" Event_Text_ = "" : InVar_ "beskrivelse" Event_Tag_ =
       "" : InVar_ "tag" Event_Severity_ = 0 : InVar_ "vigtighedsgrad"
@@ -1113,7 +1113,7 @@ InteractObjects :
       Alt_Text = "" : InVar_ "alttekst"
       SnglSgn
       SnglSgnEna = False : InVar_ "aktiverenkelt"
-      Purpose_ = "" : OutVar_ "formÃ¥l"
+      Purpose_ = "" : OutVar_ "formål"
       PurposeChng
       SgnrCom = "" : OutVar_ "kommentar"
       CommentChng
@@ -1131,7 +1131,7 @@ InteractObjects :
    ComBut_ ( -0.76 , 1.44 ) ( -0.4 , 1.32 )
       Bool_Value
       Enable_ = True : InVar_ "aktiver" Value_Changed = False : OutVar_
-      "Ã¦ndret" Variable = False : OutVar_ "var1" Key_ = "" : InVar_ "tast"
+      "ændret" Variable = False : OutVar_ "var1" Key_ = "" : InVar_ "tast"
       GLOBAL = False : InVar_ "tast_global" Event_Text_ = "" : InVar_
       "beskrivelse" Event_Tag_ = "" : InVar_ "tag" Event_Severity_ = 0 : InVar_
       "vigtighedsgrad" Event_Class_ = 0 : InVar_ "klasse" Visible_ = True :
@@ -1141,7 +1141,7 @@ InteractObjects :
       SetApp_
       SnglSgn
       SnglSgnEna = False : InVar_ "aktiverenkelt"
-      Purpose_ = "" : OutVar_ "formÃ¥l"
+      Purpose_ = "" : OutVar_ "formål"
       PurposeChng
       SgnrCom = "" : OutVar_ "kommentar"
       CommentChng
@@ -1159,7 +1159,7 @@ InteractObjects :
    ComBut_ ( -1.0 , 1.44 ) ( -0.64 , 1.32 )
       Bool_Value
       Enable_ = True : InVar_ "aktiver" Value_Changed = False : OutVar_
-      "Ã¦ndret" Variable = False : OutVar_ "var1" Key_ = "" : InVar_ "tast"
+      "ændret" Variable = False : OutVar_ "var1" Key_ = "" : InVar_ "tast"
       GLOBAL = False : InVar_ "tast_global" Event_Text_ = "" : InVar_
       "beskrivelse" Event_Tag_ = "" : InVar_ "tag" Event_Severity_ = 0 : InVar_
       "vigtighedsgrad" Event_Class_ = 0 : InVar_ "klasse" Visible_ = True :
@@ -1169,7 +1169,7 @@ InteractObjects :
       SetApp_
       SnglSgn
       SnglSgnEna = False : InVar_ "aktiverenkelt"
-      Purpose_ = "" : OutVar_ "formÃ¥l"
+      Purpose_ = "" : OutVar_ "formål"
       PurposeChng
       SgnrCom = "" : OutVar_ "kommentar"
       CommentChng

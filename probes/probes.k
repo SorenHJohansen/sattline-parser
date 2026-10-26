@@ -12,9 +12,6 @@ ProgramUnits
     ( Name "AnyTypeParam"
       Directory "probes"
       MainProgram False )
-   Library
-    ( Name "AuxLib"
-      Directory "probes" )
    Program
     ( Name "BadBareDurStr"
       Directory "probes"
@@ -164,6 +161,10 @@ ProgramUnits
       Directory "probes"
       MainProgram False )
    Program
+    ( Name "ClippingBoundsRealExpr"
+      Directory "probes"
+      MainProgram False )
+   Program
     ( Name "Ctrl"
       Directory "probes"
       MainProgram False )
@@ -256,10 +257,6 @@ ProgramUnits
       Directory "probes"
       MainProgram False )
    Program
-    ( Name "ClippingBoundsRealExpr"
-      Directory "probes"
-      MainProgram False )
-   Program
     ( Name "EdgeBareDurZero"
       Directory "probes"
       MainProgram False )
@@ -284,7 +281,19 @@ ProgramUnits
       Directory "probes"
       MainProgram False )
    Program
+    ( Name "EdgeDurCmpInt"
+      Directory "probes"
+      MainProgram False )
+   Program
+    ( Name "EdgeDurCmpReal"
+      Directory "probes"
+      MainProgram False )
+   Program
     ( Name "EdgeDurInParamMap"
+      Directory "probes"
+      MainProgram False )
+   Program
+    ( Name "EdgeDurLitForms"
       Directory "probes"
       MainProgram False )
    Program
@@ -328,6 +337,10 @@ ProgramUnits
       Directory "probes"
       MainProgram False )
    Program
+    ( Name "EdgeModDefTrail"
+      Directory "probes"
+      MainProgram False )
+   Program
     ( Name "EdgeModOpt"
       Directory "probes"
       MainProgram False )
@@ -344,11 +357,31 @@ ProgramUnits
       Directory "probes"
       MainProgram False )
    Program
-    ( Name "OpSaveConst"
+    ( Name "EdgePropEnable"
       Directory "probes"
       MainProgram False )
    Program
-    ( Name "OpSaveStateReversed"
+    ( Name "EdgePropEnableInvar"
+      Directory "probes"
+      MainProgram False )
+   Program
+    ( Name "EdgePropFormatStr"
+      Directory "probes"
+      MainProgram False )
+   Program
+    ( Name "EdgePropLayer"
+      Directory "probes"
+      MainProgram False )
+   Program
+    ( Name "EdgePropParenTail"
+      Directory "probes"
+      MainProgram False )
+   Program
+    ( Name "EdgePropValueFrac"
+      Directory "probes"
+      MainProgram False )
+   Program
+    ( Name "EdgePropWidth"
       Directory "probes"
       MainProgram False )
    Program
@@ -392,6 +425,10 @@ ProgramUnits
       Directory "probes"
       MainProgram False )
    Program
+    ( Name "EdgeTimeCmpInt"
+      Directory "probes"
+      MainProgram False )
+   Program
     ( Name "EdgeTimeValInit"
       Directory "probes"
       MainProgram False )
@@ -404,10 +441,6 @@ ProgramUnits
       Directory "probes"
       MainProgram False )
    Program
-    ( Name "HighByteValid"
-      Directory "probes"
-      MainProgram False )
-   Program
     ( Name "LoopA"
       Directory "probes"
       MainProgram False )
@@ -416,19 +449,17 @@ ProgramUnits
       Directory "probes"
       MainProgram False )
    Program
-    ( Name "Prog"
+    ( Name "OpSaveConst"
       Directory "probes"
-      MainProgram True )
+      MainProgram False )
+   Program
+    ( Name "OpSaveStateReversed"
+      Directory "probes"
+      MainProgram False )
    Program
     ( Name "ProgBadDep"
       Directory "probes"
       MainProgram False )
-   Library
-    ( Name "PumpLib"
-      Directory "probes" )
-   Library
-    ( Name "UnusedLib"
-      Directory "probes" )
    Program
     ( Name "ValidAllDatatypes"
       Directory "probes"
@@ -462,10 +493,6 @@ ProgramUnits
       Directory "probes"
       MainProgram False )
    Program
-    ( Name "ValidGraphicsObj"
-      Directory "probes"
-      MainProgram False )
-   Program
     ( Name "ValidGraphObj"
       Directory "probes"
       MainProgram False )
@@ -475,6 +502,10 @@ ProgramUnits
       MainProgram False )
    Program
     ( Name "ValidGraphObjEnabl"
+      Directory "probes"
+      MainProgram False )
+   Program
+    ( Name "ValidGraphicsObj"
       Directory "probes"
       MainProgram False )
    Program
@@ -538,19 +569,19 @@ ProgramUnits
       Directory "probes"
       MainProgram False )
    Program
-    ( Name "ValidSubmodParams"
-      Directory "probes"
-      MainProgram False )
-   Program
-    ( Name "ValidSubseqBlk"
-      Directory "probes"
-      MainProgram False )
-   Program
     ( Name "ValidSubSeqTrans"
       Directory "probes"
       MainProgram False )
    Program
     ( Name "ValidSubSeqTransB"
+      Directory "probes"
+      MainProgram False )
+   Program
+    ( Name "ValidSubmodParams"
+      Directory "probes"
+      MainProgram False )
+   Program
+    ( Name "ValidSubseqBlk"
       Directory "probes"
       MainProgram False )
    Program
@@ -674,7 +705,7 @@ Screen
        ( WindowState Normal
          ShowTools On
          Visible True
-         
+
          FixPosition False )
       Content "AnyTypeLocVar"
       Position ( 0.050000 0.050000 0.102000 0.133000 )
@@ -684,7 +715,7 @@ Screen
        ( WindowState Normal
          ShowTools On
          Visible True
-         
+
          FixPosition False )
       Content "AnyTypeParam"
       Position ( 0.106000 0.050000 0.158000 0.133000 )
@@ -694,7 +725,7 @@ Screen
        ( WindowState Normal
          ShowTools On
          Visible True
-         
+
          FixPosition False )
       Content "BadBareDurStr"
       Position ( 0.162000 0.050000 0.214000 0.133000 )
@@ -704,7 +735,7 @@ Screen
        ( WindowState Normal
          ShowTools On
          Visible True
-         
+
          FixPosition False )
       Content "BadBareTimeStr"
       Position ( 0.218000 0.050000 0.270000 0.133000 )
@@ -714,7 +745,7 @@ Screen
        ( WindowState Normal
          ShowTools On
          Visible True
-         
+
          FixPosition False )
       Content "BadBuiltinDatatype"
       Position ( 0.274000 0.050000 0.326000 0.133000 )
@@ -724,7 +755,7 @@ Screen
        ( WindowState Normal
          ShowTools On
          Visible True
-         
+
          FixPosition False )
       Content "BadBuiltinOutArg"
       Position ( 0.330000 0.050000 0.382000 0.133000 )
@@ -734,7 +765,7 @@ Screen
        ( WindowState Normal
          ShowTools On
          Visible True
-         
+
          FixPosition False )
       Content "BadBuiltinWrong"
       Position ( 0.386000 0.050000 0.438000 0.133000 )
@@ -744,7 +775,7 @@ Screen
        ( WindowState Normal
          ShowTools On
          Visible True
-         
+
          FixPosition False )
       Content "BadConsecSeqSteps"
       Position ( 0.442000 0.050000 0.494000 0.133000 )
@@ -754,7 +785,7 @@ Screen
        ( WindowState Normal
          ShowTools On
          Visible True
-         
+
          FixPosition False )
       Content "BadConstVarAs"
       Position ( 0.498000 0.050000 0.550000 0.133000 )
@@ -764,7 +795,7 @@ Screen
        ( WindowState Normal
          ShowTools On
          Visible True
-         
+
          FixPosition False )
       Content "BadCrossMod"
       Position ( 0.554000 0.050000 0.606000 0.133000 )
@@ -774,7 +805,7 @@ Screen
        ( WindowState Normal
          ShowTools On
          Visible True
-         
+
          FixPosition False )
       Content "BadDatatypeShadows"
       Position ( 0.610000 0.050000 0.662000 0.133000 )
@@ -784,7 +815,7 @@ Screen
        ( WindowState Normal
          ShowTools On
          Visible True
-         
+
          FixPosition False )
       Content "BadDupDatatypeName"
       Position ( 0.666000 0.050000 0.718000 0.133000 )
@@ -794,7 +825,7 @@ Screen
        ( WindowState Normal
          ShowTools On
          Visible True
-         
+
          FixPosition False )
       Content "BadDupModTypeName"
       Position ( 0.722000 0.050000 0.774000 0.133000 )
@@ -804,7 +835,7 @@ Screen
        ( WindowState Normal
          ShowTools On
          Visible True
-         
+
          FixPosition False )
       Content "BadDupRecFldName"
       Position ( 0.778000 0.050000 0.830000 0.133000 )
@@ -814,7 +845,7 @@ Screen
        ( WindowState Normal
          ShowTools On
          Visible True
-         
+
          FixPosition False )
       Content "BadDupSfcElemNames"
       Position ( 0.834000 0.050000 0.886000 0.133000 )
@@ -824,7 +855,7 @@ Screen
        ( WindowState Normal
          ShowTools On
          Visible True
-         
+
          FixPosition False )
       Content "BadDupSibSubmods"
       Position ( 0.890000 0.050000 0.942000 0.133000 )
@@ -834,7 +865,7 @@ Screen
        ( WindowState Normal
          ShowTools On
          Visible True
-         
+
          FixPosition False )
       Content "BadDupVariaNames"
       Position ( 0.050000 0.138000 0.102000 0.221000 )
@@ -844,7 +875,7 @@ Screen
        ( WindowState Normal
          ShowTools On
          Visible True
-         
+
          FixPosition False )
       Content "BadDurLit"
       Position ( 0.106000 0.138000 0.158000 0.221000 )
@@ -854,7 +885,7 @@ Screen
        ( WindowState Normal
          ShowTools On
          Visible True
-         
+
          FixPosition False )
       Content "BadEncodingStress"
       Position ( 0.162000 0.138000 0.214000 0.221000 )
@@ -864,7 +895,7 @@ Screen
        ( WindowState Normal
          ShowTools On
          Visible True
-         
+
          FixPosition False )
       Content "BadFreeCmtInMod"
       Position ( 0.218000 0.138000 0.270000 0.221000 )
@@ -874,7 +905,7 @@ Screen
        ( WindowState Normal
          ShowTools On
          Visible True
-         
+
          FixPosition False )
       Content "BadGraphObjDouble"
       Position ( 0.274000 0.138000 0.326000 0.221000 )
@@ -884,7 +915,7 @@ Screen
        ( WindowState Normal
          ShowTools On
          Visible True
-         
+
          FixPosition False )
       Content "BadInitValType"
       Position ( 0.330000 0.138000 0.382000 0.221000 )
@@ -894,7 +925,7 @@ Screen
        ( WindowState Normal
          ShowTools On
          Visible True
-         
+
          FixPosition False )
       Content "BadMalformed"
       Position ( 0.386000 0.138000 0.438000 0.221000 )
@@ -904,7 +935,7 @@ Screen
        ( WindowState Normal
          ShowTools On
          Visible True
-         
+
          FixPosition False )
       Content "BadModCodeWithMod"
       Position ( 0.442000 0.138000 0.494000 0.221000 )
@@ -914,7 +945,7 @@ Screen
        ( WindowState Normal
          ShowTools On
          Visible True
-         
+
          FixPosition False )
       Content "BadNotSattLine"
       Position ( 0.498000 0.138000 0.550000 0.221000 )
@@ -924,7 +955,7 @@ Screen
        ( WindowState Normal
          ShowTools On
          Visible True
-         
+
          FixPosition False )
       Content "BadOldNewOnNon"
       Position ( 0.554000 0.138000 0.606000 0.221000 )
@@ -934,7 +965,7 @@ Screen
        ( WindowState Normal
          ShowTools On
          Visible True
-         
+
          FixPosition False )
       Content "BadOldNewOnNonB"
       Position ( 0.610000 0.138000 0.662000 0.221000 )
@@ -944,7 +975,7 @@ Screen
        ( WindowState Normal
          ShowTools On
          Visible True
-         
+
          FixPosition False )
       Content "BadOversizeInput"
       Position ( 0.666000 0.138000 0.718000 0.221000 )
@@ -954,7 +985,7 @@ Screen
        ( WindowState Normal
          ShowTools On
          Visible True
-         
+
          FixPosition False )
       Content "BadSeqForkUnknown"
       Position ( 0.722000 0.138000 0.774000 0.221000 )
@@ -964,7 +995,7 @@ Screen
        ( WindowState Normal
          ShowTools On
          Visible True
-         
+
          FixPosition False )
       Content "BadSfcAltBrStart"
       Position ( 0.778000 0.138000 0.830000 0.221000 )
@@ -974,7 +1005,7 @@ Screen
        ( WindowState Normal
          ShowTools On
          Visible True
-         
+
          FixPosition False )
       Content "BadSfcInitStep"
       Position ( 0.834000 0.138000 0.886000 0.221000 )
@@ -984,7 +1015,7 @@ Screen
        ( WindowState Normal
          ShowTools On
          Visible True
-         
+
          FixPosition False )
       Content "BadSfcInitStepNot"
       Position ( 0.890000 0.138000 0.942000 0.221000 )
@@ -994,7 +1025,7 @@ Screen
        ( WindowState Normal
          ShowTools On
          Visible True
-         
+
          FixPosition False )
       Content "BadSfcParBrStart"
       Position ( 0.050000 0.226000 0.102000 0.309000 )
@@ -1004,7 +1035,7 @@ Screen
        ( WindowState Normal
          ShowTools On
          Visible True
-         
+
          FixPosition False )
       Content "BadStrLitInCall"
       Position ( 0.106000 0.226000 0.158000 0.309000 )
@@ -1014,7 +1045,7 @@ Screen
        ( WindowState Normal
          ShowTools On
          Visible True
-         
+
          FixPosition False )
       Content "BadTimeLit"
       Position ( 0.162000 0.226000 0.214000 0.309000 )
@@ -1024,7 +1055,7 @@ Screen
        ( WindowState Normal
          ShowTools On
          Visible True
-         
+
          FixPosition False )
       Content "BadUndefVariaRef"
       Position ( 0.218000 0.226000 0.270000 0.309000 )
@@ -1034,7 +1065,7 @@ Screen
        ( WindowState Normal
          ShowTools On
          Visible True
-         
+
          FixPosition False )
       Content "BadUnknownDatatype"
       Position ( 0.274000 0.226000 0.326000 0.309000 )
@@ -1044,7 +1075,7 @@ Screen
        ( WindowState Normal
          ShowTools On
          Visible True
-         
+
          FixPosition False )
       Content "BadUntermCmt"
       Position ( 0.330000 0.226000 0.382000 0.309000 )
@@ -1054,7 +1085,7 @@ Screen
        ( WindowState Normal
          ShowTools On
          Visible True
-         
+
          FixPosition False )
       Content "BadWriteToConst"
       Position ( 0.386000 0.226000 0.438000 0.309000 )
@@ -1064,7 +1095,7 @@ Screen
        ( WindowState Normal
          ShowTools On
          Visible True
-         
+
          FixPosition False )
       Content "Ctrl"
       Position ( 0.442000 0.226000 0.494000 0.309000 )
@@ -1074,7 +1105,7 @@ Screen
        ( WindowState Normal
          ShowTools On
          Visible True
-         
+
          FixPosition False )
       Content "CtrlAcyc"
       Position ( 0.498000 0.226000 0.550000 0.309000 )
@@ -1084,7 +1115,7 @@ Screen
        ( WindowState Normal
          ShowTools On
          Visible True
-         
+
          FixPosition False )
       Content "CtrlAcycB"
       Position ( 0.554000 0.226000 0.606000 0.309000 )
@@ -1094,7 +1125,7 @@ Screen
        ( WindowState Normal
          ShowTools On
          Visible True
-         
+
          FixPosition False )
       Content "CtrlB"
       Position ( 0.610000 0.226000 0.662000 0.309000 )
@@ -1104,7 +1135,7 @@ Screen
        ( WindowState Normal
          ShowTools On
          Visible True
-         
+
          FixPosition False )
       Content "CtrlC"
       Position ( 0.666000 0.226000 0.718000 0.309000 )
@@ -1114,7 +1145,7 @@ Screen
        ( WindowState Normal
          ShowTools On
          Visible True
-         
+
          FixPosition False )
       Content "CtrlCountMatch"
       Position ( 0.722000 0.226000 0.774000 0.309000 )
@@ -1124,7 +1155,7 @@ Screen
        ( WindowState Normal
          ShowTools On
          Visible True
-         
+
          FixPosition False )
       Content "CtrlD"
       Position ( 0.778000 0.226000 0.830000 0.309000 )
@@ -1134,7 +1165,7 @@ Screen
        ( WindowState Normal
          ShowTools On
          Visible True
-         
+
          FixPosition False )
       Content "CtrlDateMatch"
       Position ( 0.834000 0.226000 0.886000 0.309000 )
@@ -1144,7 +1175,7 @@ Screen
        ( WindowState Normal
          ShowTools On
          Visible True
-         
+
          FixPosition False )
       Content "CtrlDef"
       Position ( 0.890000 0.226000 0.942000 0.309000 )
@@ -1154,7 +1185,7 @@ Screen
        ( WindowState Normal
          ShowTools On
          Visible True
-         
+
          FixPosition False )
       Content "CtrlDefParam"
       Position ( 0.050000 0.314000 0.102000 0.397000 )
@@ -1164,7 +1195,7 @@ Screen
        ( WindowState Normal
          ShowTools On
          Visible True
-         
+
          FixPosition False )
       Content "CtrlE"
       Position ( 0.106000 0.314000 0.158000 0.397000 )
@@ -1174,7 +1205,7 @@ Screen
        ( WindowState Normal
          ShowTools On
          Visible True
-         
+
          FixPosition False )
       Content "CtrlF"
       Position ( 0.162000 0.314000 0.214000 0.397000 )
@@ -1184,7 +1215,7 @@ Screen
        ( WindowState Normal
          ShowTools On
          Visible True
-         
+
          FixPosition False )
       Content "CtrlFullArity"
       Position ( 0.218000 0.314000 0.270000 0.397000 )
@@ -1194,7 +1225,7 @@ Screen
        ( WindowState Normal
          ShowTools On
          Visible True
-         
+
          FixPosition False )
       Content "CtrlG"
       Position ( 0.274000 0.314000 0.326000 0.397000 )
@@ -1204,7 +1235,7 @@ Screen
        ( WindowState Normal
          ShowTools On
          Visible True
-         
+
          FixPosition False )
       Content "CtrlH"
       Position ( 0.330000 0.314000 0.382000 0.397000 )
@@ -1214,7 +1245,7 @@ Screen
        ( WindowState Normal
          ShowTools On
          Visible True
-         
+
          FixPosition False )
       Content "CtrlI"
       Position ( 0.386000 0.314000 0.438000 0.397000 )
@@ -1224,7 +1255,7 @@ Screen
        ( WindowState Normal
          ShowTools On
          Visible True
-         
+
          FixPosition False )
       Content "CtrlInitFirst"
       Position ( 0.442000 0.314000 0.494000 0.397000 )
@@ -1234,7 +1265,7 @@ Screen
        ( WindowState Normal
          ShowTools On
          Visible True
-         
+
          FixPosition False )
       Content "CtrlInst"
       Position ( 0.498000 0.314000 0.550000 0.397000 )
@@ -1244,7 +1275,7 @@ Screen
        ( WindowState Normal
          ShowTools On
          Visible True
-         
+
          FixPosition False )
       Content "CtrlOrdName"
       Position ( 0.554000 0.314000 0.606000 0.397000 )
@@ -1254,7 +1285,7 @@ Screen
        ( WindowState Normal
          ShowTools On
          Visible True
-         
+
          FixPosition False )
       Content "CtrlSingleInit"
       Position ( 0.610000 0.314000 0.662000 0.397000 )
@@ -1264,7 +1295,7 @@ Screen
        ( WindowState Normal
          ShowTools On
          Visible True
-         
+
          FixPosition False )
       Content "CtrlTypedXfer"
       Position ( 0.666000 0.314000 0.718000 0.397000 )
@@ -1274,7 +1305,7 @@ Screen
        ( WindowState Normal
          ShowTools On
          Visible True
-         
+
          FixPosition False )
       Content "CtrlWithInit"
       Position ( 0.722000 0.314000 0.774000 0.397000 )
@@ -1284,7 +1315,7 @@ Screen
        ( WindowState Normal
          ShowTools On
          Visible True
-         
+
          FixPosition False )
       Content "EdgeArithPrec"
       Position ( 0.778000 0.314000 0.830000 0.397000 )
@@ -1294,7 +1325,7 @@ Screen
        ( WindowState Normal
          ShowTools On
          Visible True
-         
+
          FixPosition False )
       Content "EdgeBareDurZero"
       Position ( 0.834000 0.314000 0.886000 0.397000 )
@@ -1304,7 +1335,7 @@ Screen
        ( WindowState Normal
          ShowTools On
          Visible True
-         
+
          FixPosition False )
       Content "EdgeCaseInsens"
       Position ( 0.890000 0.314000 0.942000 0.397000 )
@@ -1314,7 +1345,7 @@ Screen
        ( WindowState Normal
          ShowTools On
          Visible True
-         
+
          FixPosition False )
       Content "EdgeCmtInEq"
       Position ( 0.050000 0.402000 0.102000 0.485000 )
@@ -1324,7 +1355,7 @@ Screen
        ( WindowState Normal
          ShowTools On
          Visible True
-         
+
          FixPosition False )
       Content "EdgeConstStrSetGet"
       Position ( 0.106000 0.402000 0.158000 0.485000 )
@@ -1334,7 +1365,7 @@ Screen
        ( WindowState Normal
          ShowTools On
          Visible True
-         
+
          FixPosition False )
       Content "EdgeCoordInvarTail"
       Position ( 0.162000 0.402000 0.214000 0.485000 )
@@ -1344,7 +1375,7 @@ Screen
        ( WindowState Normal
          ShowTools On
          Visible True
-         
+
          FixPosition False )
       Content "EdgeDeepNestCmts"
       Position ( 0.218000 0.402000 0.270000 0.485000 )
@@ -1354,7 +1385,7 @@ Screen
        ( WindowState Normal
          ShowTools On
          Visible True
-         
+
          FixPosition False )
       Content "EdgeDurInParamMap"
       Position ( 0.274000 0.402000 0.326000 0.485000 )
@@ -1364,7 +1395,7 @@ Screen
        ( WindowState Normal
          ShowTools On
          Visible True
-         
+
          FixPosition False )
       Content "EdgeDurVarFmt"
       Position ( 0.330000 0.402000 0.382000 0.485000 )
@@ -1374,7 +1405,7 @@ Screen
        ( WindowState Normal
          ShowTools On
          Visible True
-         
+
          FixPosition False )
       Content "EdgeElsifExpr"
       Position ( 0.386000 0.402000 0.438000 0.485000 )
@@ -1384,7 +1415,7 @@ Screen
        ( WindowState Normal
          ShowTools On
          Visible True
-         
+
          FixPosition False )
       Content "EdgeEmptyCodeBlk"
       Position ( 0.442000 0.402000 0.494000 0.485000 )
@@ -1394,7 +1425,7 @@ Screen
        ( WindowState Normal
          ShowTools On
          Visible True
-         
+
          FixPosition False )
       Content "EdgeEmptyRecType"
       Position ( 0.498000 0.402000 0.550000 0.485000 )
@@ -1404,7 +1435,7 @@ Screen
        ( WindowState Normal
          ShowTools On
          Visible True
-         
+
          FixPosition False )
       Content "EdgeFrameModInvoc"
       Position ( 0.554000 0.402000 0.606000 0.485000 )
@@ -1414,7 +1445,7 @@ Screen
        ( WindowState Normal
          ShowTools On
          Visible True
-         
+
          FixPosition False )
       Content "EdgeGlobalParamMap"
       Position ( 0.610000 0.402000 0.662000 0.485000 )
@@ -1424,7 +1455,7 @@ Screen
        ( WindowState Normal
          ShowTools On
          Visible True
-         
+
          FixPosition False )
       Content "EdgeKwPrefixed"
       Position ( 0.666000 0.402000 0.718000 0.485000 )
@@ -1434,7 +1465,7 @@ Screen
        ( WindowState Normal
          ShowTools On
          Visible True
-         
+
          FixPosition False )
       Content "EdgeLegacySeqNo"
       Position ( 0.722000 0.402000 0.774000 0.485000 )
@@ -1444,7 +1475,7 @@ Screen
        ( WindowState Normal
          ShowTools On
          Visible True
-         
+
          FixPosition False )
       Content "EdgeMinSeq"
       Position ( 0.778000 0.402000 0.830000 0.485000 )
@@ -1454,17 +1485,20 @@ Screen
        ( WindowState Normal
          ShowTools On
          Visible True
-         
+
          FixPosition False )
       Content "EdgeModDefNoTrail"
       Position ( 0.834000 0.402000 0.886000 0.485000 )
       Transform ( 0.86 0.4435 0.107073138871261 ) )
+      Content "EdgeModDefTrail"
+      Position ( 0.834000 0.490000 0.886000 0.573000 )
+      Transform ( 0.86 0.5315 0.107073138871261 ) )
    Window
     ( Attributes
        ( WindowState Normal
          ShowTools On
          Visible True
-         
+
          FixPosition False )
       Content "EdgeModOpt"
       Position ( 0.890000 0.402000 0.942000 0.485000 )
@@ -1474,7 +1508,7 @@ Screen
        ( WindowState Normal
          ShowTools On
          Visible True
-         
+
          FixPosition False )
       Content "EdgeNegDurVal"
       Position ( 0.050000 0.490000 0.102000 0.573000 )
@@ -1484,7 +1518,7 @@ Screen
        ( WindowState Normal
          ShowTools On
          Visible True
-         
+
          FixPosition False )
       Content "EdgeOldNewOnDotted"
       Position ( 0.106000 0.490000 0.158000 0.573000 )
@@ -1494,7 +1528,7 @@ Screen
        ( WindowState Normal
          ShowTools On
          Visible True
-         
+
          FixPosition False )
       Content "EdgeOpSaveAndState"
       Position ( 0.162000 0.490000 0.214000 0.573000 )
@@ -1504,7 +1538,7 @@ Screen
        ( WindowState Normal
          ShowTools On
          Visible True
-         
+
          FixPosition False )
       Content "EdgeQuotedIdentMax"
       Position ( 0.218000 0.490000 0.270000 0.573000 )
@@ -1514,7 +1548,7 @@ Screen
        ( WindowState Normal
          ShowTools On
          Visible True
-         
+
          FixPosition False )
       Content "EdgeScanGrpCl"
       Position ( 0.274000 0.490000 0.326000 0.573000 )
@@ -1524,7 +1558,7 @@ Screen
        ( WindowState Normal
          ShowTools On
          Visible True
-         
+
          FixPosition False )
       Content "EdgeSeqAlt"
       Position ( 0.330000 0.490000 0.382000 0.573000 )
@@ -1534,7 +1568,7 @@ Screen
        ( WindowState Normal
          ShowTools On
          Visible True
-         
+
          FixPosition False )
       Content "EdgeSeqBrk"
       Position ( 0.386000 0.490000 0.438000 0.573000 )
@@ -1544,7 +1578,7 @@ Screen
        ( WindowState Normal
          ShowTools On
          Visible True
-         
+
          FixPosition False )
       Content "EdgeSeqForkMulti"
       Position ( 0.442000 0.490000 0.494000 0.573000 )
@@ -1554,7 +1588,7 @@ Screen
        ( WindowState Normal
          ShowTools On
          Visible True
-         
+
          FixPosition False )
       Content "EdgeSeqPar"
       Position ( 0.498000 0.490000 0.550000 0.573000 )
@@ -1564,7 +1598,7 @@ Screen
        ( WindowState Normal
          ShowTools On
          Visible True
-         
+
          FixPosition False )
       Content "EdgeSimpleModType"
       Position ( 0.554000 0.490000 0.606000 0.573000 )
@@ -1574,7 +1608,7 @@ Screen
        ( WindowState Normal
          ShowTools On
          Visible True
-         
+
          FixPosition False )
       Content "EdgeSubSeqDef"
       Position ( 0.610000 0.490000 0.662000 0.573000 )
@@ -1584,7 +1618,7 @@ Screen
        ( WindowState Normal
          ShowTools On
          Visible True
-         
+
          FixPosition False )
       Content "EdgeSubSeqTrans"
       Position ( 0.666000 0.490000 0.718000 0.573000 )
@@ -1594,7 +1628,7 @@ Screen
        ( WindowState Normal
          ShowTools On
          Visible True
-         
+
          FixPosition False )
       Content "EdgeTermSeqStep"
       Position ( 0.722000 0.490000 0.774000 0.573000 )
@@ -1604,7 +1638,7 @@ Screen
        ( WindowState Normal
          ShowTools On
          Visible True
-         
+
          FixPosition False )
       Content "EdgeTimeValInit"
       Position ( 0.778000 0.490000 0.830000 0.573000 )
@@ -1614,7 +1648,7 @@ Screen
        ( WindowState Normal
          ShowTools On
          Visible True
-         
+
          FixPosition False )
       Content "EdgeUnicodeIdents"
       Position ( 0.834000 0.490000 0.886000 0.573000 )
@@ -1624,7 +1658,7 @@ Screen
        ( WindowState Normal
          ShowTools On
          Visible True
-         
+
          FixPosition False )
       Content "LoopA"
       Position ( 0.890000 0.490000 0.942000 0.573000 )
@@ -1634,7 +1668,7 @@ Screen
        ( WindowState Normal
          ShowTools On
          Visible True
-         
+
          FixPosition False )
       Content "LoopB"
       Position ( 0.050000 0.578000 0.102000 0.661000 )
@@ -1644,7 +1678,7 @@ Screen
        ( WindowState Normal
          ShowTools On
          Visible True
-         
+
          FixPosition False )
       Content "Prog"
       Position ( 0.106000 0.578000 0.158000 0.661000 )
@@ -1654,7 +1688,7 @@ Screen
        ( WindowState Normal
          ShowTools On
          Visible True
-         
+
          FixPosition False )
       Content "ProgBadDep"
       Position ( 0.162000 0.578000 0.214000 0.661000 )
@@ -1664,7 +1698,7 @@ Screen
        ( WindowState Normal
          ShowTools On
          Visible True
-         
+
          FixPosition False )
       Content "ValidAllDatatypes"
       Position ( 0.218000 0.578000 0.270000 0.661000 )
@@ -1674,7 +1708,7 @@ Screen
        ( WindowState Normal
          ShowTools On
          Visible True
-         
+
          FixPosition False )
       Content "ValidBuiltinCalls"
       Position ( 0.274000 0.578000 0.326000 0.661000 )
@@ -1684,7 +1718,7 @@ Screen
        ( WindowState Normal
          ShowTools On
          Visible True
-         
+
          FixPosition False )
       Content "ValidComprFull"
       Position ( 0.330000 0.578000 0.382000 0.661000 )
@@ -1694,7 +1728,7 @@ Screen
        ( WindowState Normal
          ShowTools On
          Visible True
-         
+
          FixPosition False )
       Content "ValidComprSeqBasic"
       Position ( 0.386000 0.578000 0.438000 0.661000 )
@@ -1704,7 +1738,7 @@ Screen
        ( WindowState Normal
          ShowTools On
          Visible True
-         
+
          FixPosition False )
       Content "ValidCoordInVar"
       Position ( 0.442000 0.578000 0.494000 0.661000 )
@@ -1714,7 +1748,7 @@ Screen
        ( WindowState Normal
          ShowTools On
          Visible True
-         
+
          FixPosition False )
       Content "ValidCtrlFlow"
       Position ( 0.498000 0.578000 0.550000 0.661000 )
@@ -1724,7 +1758,7 @@ Screen
        ( WindowState Normal
          ShowTools On
          Visible True
-         
+
          FixPosition False )
       Content "ValidDefInitOnRec"
       Position ( 0.554000 0.578000 0.606000 0.661000 )
@@ -1734,7 +1768,7 @@ Screen
        ( WindowState Normal
          ShowTools On
          Visible True
-         
+
          FixPosition False )
       Content "ValidDurAndTime"
       Position ( 0.610000 0.578000 0.662000 0.661000 )
@@ -1744,7 +1778,7 @@ Screen
        ( WindowState Normal
          ShowTools On
          Visible True
-         
+
          FixPosition False )
       Content "ValidGraphicsObj"
       Position ( 0.666000 0.578000 0.718000 0.661000 )
@@ -1754,7 +1788,7 @@ Screen
        ( WindowState Normal
          ShowTools On
          Visible True
-         
+
          FixPosition False )
       Content "ValidGraphObj"
       Position ( 0.722000 0.578000 0.774000 0.661000 )
@@ -1764,7 +1798,7 @@ Screen
        ( WindowState Normal
          ShowTools On
          Visible True
-         
+
          FixPosition False )
       Content "ValidGraphObjB"
       Position ( 0.778000 0.578000 0.830000 0.661000 )
@@ -1774,7 +1808,7 @@ Screen
        ( WindowState Normal
          ShowTools On
          Visible True
-         
+
          FixPosition False )
       Content "ValidGraphObjEnabl"
       Position ( 0.834000 0.578000 0.886000 0.661000 )
@@ -1784,7 +1818,7 @@ Screen
        ( WindowState Normal
          ShowTools On
          Visible True
-         
+
          FixPosition False )
       Content "ValidInteract"
       Position ( 0.890000 0.578000 0.942000 0.661000 )
@@ -1794,7 +1828,7 @@ Screen
        ( WindowState Normal
          ShowTools On
          Visible True
-         
+
          FixPosition False )
       Content "ValidInteractEnabl"
       Position ( 0.050000 0.666000 0.102000 0.749000 )
@@ -1804,7 +1838,7 @@ Screen
        ( WindowState Normal
          ShowTools On
          Visible True
-         
+
          FixPosition False )
       Content "ValidMinProg"
       Position ( 0.106000 0.666000 0.158000 0.749000 )
@@ -1814,7 +1848,7 @@ Screen
        ( WindowState Normal
          ShowTools On
          Visible True
-         
+
          FixPosition False )
       Content "ValidMultiEqBlk"
       Position ( 0.162000 0.666000 0.214000 0.749000 )
@@ -1824,7 +1858,7 @@ Screen
        ( WindowState Normal
          ShowTools On
          Visible True
-         
+
          FixPosition False )
       Content "ValidMultiModDef"
       Position ( 0.218000 0.666000 0.270000 0.749000 )
@@ -1834,7 +1868,7 @@ Screen
        ( WindowState Normal
          ShowTools On
          Visible True
-         
+
          FixPosition False )
       Content "ValidMultiTypedef"
       Position ( 0.274000 0.666000 0.326000 0.749000 )
@@ -1844,7 +1878,7 @@ Screen
        ( WindowState Normal
          ShowTools On
          Visible True
-         
+
          FixPosition False )
       Content "ValidNestSubmods"
       Position ( 0.330000 0.666000 0.382000 0.749000 )
@@ -1854,7 +1888,7 @@ Screen
        ( WindowState Normal
          ShowTools On
          Visible True
-         
+
          FixPosition False )
       Content "ValidOldNewOnState"
       Position ( 0.386000 0.666000 0.438000 0.749000 )
@@ -1864,7 +1898,7 @@ Screen
        ( WindowState Normal
          ShowTools On
          Visible True
-         
+
          FixPosition False )
       Content "ValidOpenSeqSeq"
       Position ( 0.442000 0.666000 0.494000 0.749000 )
@@ -1874,7 +1908,7 @@ Screen
        ( WindowState Normal
          ShowTools On
          Visible True
-         
+
          FixPosition False )
       Content "ValidQuotedIdents"
       Position ( 0.498000 0.666000 0.550000 0.749000 )
@@ -1884,7 +1918,7 @@ Screen
        ( WindowState Normal
          ShowTools On
          Visible True
-         
+
          FixPosition False )
       Content "ValidRecTypeAcc"
       Position ( 0.554000 0.666000 0.606000 0.749000 )
@@ -1894,7 +1928,7 @@ Screen
        ( WindowState Normal
          ShowTools On
          Visible True
-         
+
          FixPosition False )
       Content "ValidSeqAlt"
       Position ( 0.610000 0.666000 0.662000 0.749000 )
@@ -1904,7 +1938,7 @@ Screen
        ( WindowState Normal
          ShowTools On
          Visible True
-         
+
          FixPosition False )
       Content "ValidSeqBasic"
       Position ( 0.666000 0.666000 0.718000 0.749000 )
@@ -1914,7 +1948,7 @@ Screen
        ( WindowState Normal
          ShowTools On
          Visible True
-         
+
          FixPosition False )
       Content "ValidSeqPar"
       Position ( 0.722000 0.666000 0.774000 0.749000 )
@@ -1924,7 +1958,7 @@ Screen
        ( WindowState Normal
          ShowTools On
          Visible True
-         
+
          FixPosition False )
       Content "ValidSfcUnnamed"
       Position ( 0.778000 0.666000 0.830000 0.749000 )
@@ -1934,7 +1968,7 @@ Screen
        ( WindowState Normal
          ShowTools On
          Visible True
-         
+
          FixPosition False )
       Content "ValidSubmodParams"
       Position ( 0.834000 0.666000 0.886000 0.749000 )
@@ -1944,7 +1978,7 @@ Screen
        ( WindowState Normal
          ShowTools On
          Visible True
-         
+
          FixPosition False )
       Content "ValidSubseqBlk"
       Position ( 0.890000 0.666000 0.942000 0.749000 )
@@ -1954,7 +1988,7 @@ Screen
        ( WindowState Normal
          ShowTools On
          Visible True
-         
+
          FixPosition False )
       Content "ValidSubSeqTrans"
       Position ( 0.050000 0.754000 0.102000 0.837000 )
@@ -1964,7 +1998,7 @@ Screen
        ( WindowState Normal
          ShowTools On
          Visible True
-         
+
          FixPosition False )
       Content "ValidSubSeqTransB"
       Position ( 0.106000 0.754000 0.158000 0.837000 )
@@ -1974,7 +2008,7 @@ Screen
        ( WindowState Normal
          ShowTools On
          Visible True
-         
+
          FixPosition False )
       Content "ValidUnComprFull"
       Position ( 0.162000 0.754000 0.214000 0.837000 )
@@ -1984,7 +2018,7 @@ Screen
        ( WindowState Normal
          ShowTools On
          Visible True
-         
+
          FixPosition False )
       Content "ValidVariaMods"
       Position ( 0.218000 0.754000 0.270000 0.837000 )
@@ -1994,7 +2028,7 @@ Screen
        ( WindowState Normal
          ShowTools On
          Visible True
-         
+
          FixPosition False )
       Content "ViolAnyTypeFld"
       Position ( 0.274000 0.754000 0.326000 0.837000 )
@@ -2004,7 +2038,7 @@ Screen
        ( WindowState Normal
          ShowTools On
          Visible True
-         
+
          FixPosition False )
       Content "ViolBoolToReal"
       Position ( 0.330000 0.754000 0.382000 0.837000 )
@@ -2014,7 +2048,7 @@ Screen
        ( WindowState Normal
          ShowTools On
          Visible True
-         
+
          FixPosition False )
       Content "ViolConstNoInit"
       Position ( 0.386000 0.754000 0.438000 0.837000 )
@@ -2024,7 +2058,7 @@ Screen
        ( WindowState Normal
          ShowTools On
          Visible True
-         
+
          FixPosition False )
       Content "ViolCycle"
       Position ( 0.442000 0.754000 0.494000 0.837000 )
@@ -2034,7 +2068,7 @@ Screen
        ( WindowState Normal
          ShowTools On
          Visible True
-         
+
          FixPosition False )
       Content "ViolDateShift"
       Position ( 0.498000 0.754000 0.550000 0.837000 )
@@ -2044,7 +2078,7 @@ Screen
        ( WindowState Normal
          ShowTools On
          Visible True
-         
+
          FixPosition False )
       Content "ViolDefScalLocVar"
       Position ( 0.554000 0.754000 0.606000 0.837000 )
@@ -2054,7 +2088,7 @@ Screen
        ( WindowState Normal
          ShowTools On
          Visible True
-         
+
          FixPosition False )
       Content "ViolExtraObj"
       Position ( 0.610000 0.754000 0.662000 0.837000 )
@@ -2064,7 +2098,7 @@ Screen
        ( WindowState Normal
          ShowTools On
          Visible True
-         
+
          FixPosition False )
       Content "ViolInitAfterStep"
       Position ( 0.666000 0.754000 0.718000 0.837000 )
@@ -2074,7 +2108,7 @@ Screen
        ( WindowState Normal
          ShowTools On
          Visible True
-         
+
          FixPosition False )
       Content "ViolIntCond"
       Position ( 0.722000 0.754000 0.774000 0.837000 )
@@ -2084,7 +2118,7 @@ Screen
        ( WindowState Normal
          ShowTools On
          Visible True
-         
+
          FixPosition False )
       Content "ViolIntFromBool"
       Position ( 0.778000 0.754000 0.830000 0.837000 )
@@ -2094,7 +2128,7 @@ Screen
        ( WindowState Normal
          ShowTools On
          Visible True
-         
+
          FixPosition False )
       Content "ViolMissMap"
       Position ( 0.834000 0.754000 0.886000 0.837000 )
@@ -2104,7 +2138,7 @@ Screen
        ( WindowState Normal
          ShowTools On
          Visible True
-         
+
          FixPosition False )
       Content "ViolOldOnNonState"
       Position ( 0.890000 0.754000 0.942000 0.837000 )
@@ -2114,7 +2148,7 @@ Screen
        ( WindowState Normal
          ShowTools On
          Visible True
-         
+
          FixPosition False )
       Content "ViolOpSaveStr"
       Position ( 0.050000 0.842000 0.102000 0.925000 )
@@ -2124,7 +2158,7 @@ Screen
        ( WindowState Normal
          ShowTools On
          Visible True
-         
+
          FixPosition False )
       Content "ViolRealVsBool"
       Position ( 0.106000 0.842000 0.158000 0.925000 )
@@ -2134,7 +2168,7 @@ Screen
        ( WindowState Normal
          ShowTools On
          Visible True
-         
+
          FixPosition False )
       Content "ViolSecInit"
       Position ( 0.162000 0.842000 0.214000 0.925000 )
@@ -2144,7 +2178,7 @@ Screen
        ( WindowState Normal
          ShowTools On
          Visible True
-         
+
          FixPosition False )
       Content "ViolSelfInst"
       Position ( 0.218000 0.842000 0.270000 0.925000 )
@@ -2154,7 +2188,7 @@ Screen
        ( WindowState Normal
          ShowTools On
          Visible True
-         
+
          FixPosition False )
       Content "ViolSeqReset"
       Position ( 0.274000 0.842000 0.326000 0.925000 )
@@ -2164,7 +2198,7 @@ Screen
        ( WindowState Normal
          ShowTools On
          Visible True
-         
+
          FixPosition False )
       Content "ViolStateInt"
       Position ( 0.330000 0.842000 0.382000 0.925000 )
@@ -2174,7 +2208,7 @@ Screen
        ( WindowState Normal
          ShowTools On
          Visible True
-         
+
          FixPosition False )
       Content "ViolStepAcc"
       Position ( 0.386000 0.842000 0.438000 0.925000 )
@@ -2184,7 +2218,7 @@ Screen
        ( WindowState Normal
          ShowTools On
          Visible True
-         
+
          FixPosition False )
       Content "ViolStrArg"
       Position ( 0.442000 0.842000 0.494000 0.925000 )
@@ -2194,7 +2228,7 @@ Screen
        ( WindowState Normal
          ShowTools On
          Visible True
-         
+
          FixPosition False )
       Content "ViolTooDeep"
       Position ( 0.498000 0.842000 0.550000 0.925000 )
@@ -2204,7 +2238,7 @@ Screen
        ( WindowState Normal
          ShowTools On
          Visible True
-         
+
          FixPosition False )
       Content "ViolUndefBind"
       Position ( 0.554000 0.842000 0.606000 0.925000 )
@@ -2214,7 +2248,7 @@ Screen
        ( WindowState Normal
          ShowTools On
          Visible True
-         
+
          FixPosition False )
       Content "ViolUnused"
       Position ( 0.610000 0.842000 0.662000 0.925000 )
@@ -2224,7 +2258,7 @@ Screen
        ( WindowState Normal
          ShowTools On
          Visible True
-         
+
          FixPosition False )
       Content "ViolVarGroup"
       Position ( 0.666000 0.842000 0.718000 0.925000 )
@@ -2234,7 +2268,7 @@ Screen
        ( WindowState Normal
          ShowTools On
          Visible True
-         
+
          FixPosition False )
       Content "ViolVarOff"
       Position ( 0.722000 0.842000 0.774000 0.925000 )
@@ -2244,7 +2278,7 @@ Screen
        ( WindowState Normal
          ShowTools On
          Visible True
-         
+
          FixPosition False )
       Content "ViolVarOn"
       Position ( 0.778000 0.842000 0.830000 0.925000 )
@@ -2254,7 +2288,7 @@ Screen
        ( WindowState Normal
          ShowTools On
          Visible True
-         
+
          FixPosition False )
       Position ( 0.218000 0.050000 0.270000 0.133000 )
       Transform ( 0.244 0.0915 1.30917024612427 ) )
@@ -2263,7 +2297,7 @@ Screen
        ( WindowState Normal
          ShowTools On
          Visible True
-         
+
          FixPosition False )
       Content "HighByteInvalid"
       Position ( 0.274000 0.050000 0.326000 0.133000 )
@@ -2273,7 +2307,7 @@ Screen
        ( WindowState Normal
          ShowTools On
          Visible True
-         
+
          FixPosition False )
       Content "HighByteValid"
       Position ( 0.330000 0.050000 0.382000 0.133000 )

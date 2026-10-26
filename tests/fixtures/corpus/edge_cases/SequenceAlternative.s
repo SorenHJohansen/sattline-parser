@@ -1,10 +1,13 @@
 "Syntax version 2.23, date: 2026-06-19-12:00:00.000 N"
 "Original file date: ---"
 "Program date: 2026-06-19-12:00:00.000, name: SeqAltEdge"
-(* Edge case: alternative branch with a single step and immediate transition.
-   Grammar rules: seqalternative / ALTERNATIVEBRANCH. *   Added a closing SEQTRANSITION: the body originally ended on SEQSTEP Finish,
-   which is illegal in itself (SL-V033). That was incidental to what this file
-   tests, and it masked the real ALTERNATIVESEQ/ENDLOOPSEQ question. *)
+(* Edge case: alternative group between two steps.
+   Grammar rules: seqalternative / ALTERNATIVEBRANCH.
+   Corrected 2026-10-26: ALTERNATIVESEQ is a transition-position construct
+   (native 00625d20), so it must sit where a transition may sit - directly after
+   a step, never directly after another transition. The previous version put it
+   right after SEQTRANSITION TrGo, which is the shape the real tool rejected in
+   probe EdgeSeqAlt.x with ">>>ALTERNATIVESEQ<<< EndLoopSeqSym Expected". *)
 
 BasePicture Invocation
    ( 0.0 , 0.0 , 0.0 , 1.0 , 1.0
@@ -19,6 +22,7 @@ ModuleCode
    SEQUENCE Alt (SeqControl, SeqTimer) COORD 0.0, 0.0 OBJSIZE 1.0, 1.0
       SEQINITSTEP Init
       SEQTRANSITION TrGo WAIT_FOR Sel > 0
+      SEQSTEP Choose
       ALTERNATIVESEQ
          SEQTRANSITION TrA WAIT_FOR Sel == 1
          SEQSTEP OptA

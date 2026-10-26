@@ -24,7 +24,9 @@ def _compress(text: str, targets: list[str] | None = None) -> str:
         if word and word not in reverse:
             reverse[word] = marker
     if targets is None:
-        targets = sorted(reverse, key=len, reverse=True)
+        # Compress word-like keywords only, so punctuation stays literal and the
+        # span assertions below can quote the original compact text directly.
+        targets = sorted((word for word in reverse if len(word) > 1 and word.isalpha()), key=len, reverse=True)
     pattern = _re.compile("|".join(_re.escape(w) for w in targets if w not in ("True", "False")))
 
     parts: list[str] = []
@@ -383,9 +385,9 @@ def test_compressed_source_decoded_keyword_has_generated_provenance():
 
 
 def test_compressed_source_parser_error_at_eof_maps_into_original_source():
-    # Truncate after "#8= " (MODULECODE) so the parser expects equation
-    # content but hits EOF.
-    code_pos = _COMPRESSED.index("#8= ")
+    # Truncate right after the MODULECODE marker ("#84") so the parser expects
+    # equation content but hits EOF.
+    code_pos = _COMPRESSED.index("#84") + len("#84")
     truncated = _COMPRESSED[:code_pos]
     assert truncated
     doc = preprocess_source(truncated)
@@ -398,7 +400,9 @@ def test_compressed_source_parser_error_at_eof_maps_into_original_source():
     assert 0 <= mapped <= len(truncated)
     details = parser_api.describe_parse_error(exc, truncated, source_document=doc)
     assert details.line is not None
-    assert details.line == len(truncated.splitlines())
+    assert 1 <= details.line <= len(truncated.splitlines())
+    assert details.column is not None
+    assert details.column >= 1
 
 
 def test_remap_tree_to_original_is_noop_for_identity_documents():

@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import importlib.metadata
 import importlib.resources
+import json
 import re
 from pathlib import Path
 
@@ -46,6 +47,14 @@ def test_grammar_resources_are_packaged() -> None:
     assert grammar_path.is_file()
     content = grammar_path.read_text(encoding="utf-8")
     assert "start:" in content
+
+
+def test_scanner_token_resource_is_packaged() -> None:
+    token_path = importlib.resources.files("sattline_parser").joinpath("preprocessing", "scanner_tokens.json")
+    assert token_path.is_file()
+    rows = json.loads(token_path.read_text(encoding="utf-8"))
+    assert len(rows) == 206
+    assert rows[0]["code"] == "#01"
 
 
 def test_installed_package_parses_small_valid_program() -> None:

@@ -13,7 +13,6 @@ from __future__ import annotations
 
 from sattline_parser.grammar import constants as const
 from sattline_parser.models.ast_model import (
-    CodeComment,
     DataType,
     Equation,
     ModuleCode,
@@ -47,10 +46,18 @@ from sattline_parser.models.expressions import (
 )
 from sattline_parser.validation.builtins import builtin_function_signature
 from sattline_parser.validation.diagnostics import Diagnostic, DiagnosticCode
-from sattline_parser.validation.symbols import Scope, resolve_var
+from sattline_parser.validation.names import fold_identifier
+from sattline_parser.validation.sequences import check_sequence_positions
+from sattline_parser.validation.symbols import (
+    Scope,
+    is_sfc_runtime_constant,
+    resolve_var,
+)
 from sattline_parser.validation.typing import (
+    TypeFamily,
     assignment_is_compatible,
     assignment_types,
+    datatype_family,
     infer_expr_type,
     is_boolean,
     is_numeric,
@@ -58,7 +65,6 @@ from sattline_parser.validation.typing import (
 
 # Boolean constants the SattLine language provides but that resolve through the
 # grammar as plain name references rather than True/False literals.
-_SFC_RUNTIME_CONSTANTS = frozenset({"on", "off"})
 
 
 def walk_equation_block(
@@ -86,13 +92,11 @@ def walk_sequence_body(
 def walk_module_code(mc: ModuleCode, scope: Scope, records: dict[str, DataType], errors: list[Diagnostic]) -> None:
     sequences = mc.sequences or ()
     all_known = _collect_module_jump_target_names(mc.sequences)
-    sfc_names = all_known | {sequence.name.casefold() for sequence in sequences if sequence.name}
+    sfc_names = all_known | {fold_identifier(sequence.name) for sequence in sequences if sequence.name}
     _check_duplicate_sfc_names(mc.sequences, errors)
+    check_sequence_positions(mc.sequences, errors)
     for sequence in sequences:
-        _check_consecutive_steps(sequence.code, errors)
         _check_fork_targets(sequence.code, all_known, errors)
-        _check_sequence_structure(sequence.code, errors)
-        _check_sequence_does_not_end_with_step(sequence.code, errors, sequence.type == const.GRAMMAR_VALUE_OPENSEQUENCE)
         walk_sequence_body(sequence.code, scope, records, sfc_names, errors)
     for equation in mc.equations or ():
         walk_equation_block(equation, scope, records, sfc_names, errors)
@@ -126,7 +130,7 @@ def walk_expression(
         _check_old_new(expr, resolved, errors)
         if (
             resolved is None
-            and expr.name.casefold() not in _SFC_RUNTIME_CONSTANTS
+            and not is_sfc_runtime_constant(expr.name)
             and not _is_sfc_runtime_accessor(expr, sfc_names)
         ):
             errors.append(
@@ -168,7 +172,8 @@ def walk_sfc_item(
             for code_item in block:
                 walk_code_item(code_item, scope, records, sfc_names, errors)
     elif isinstance(item, SFCTransition):
-        walk_expression(item.condition, scope, records, sfc_names, errors)
+        if item.condition is not None:
+            walk_expression(item.condition, scope, records, sfc_names, errors)
     elif isinstance(item, SFCTransitionSub):
         walk_sequence_body(item.body, scope, records, sfc_names, errors)
     elif isinstance(item, SFCAlternative | SFCParallel):
@@ -181,24 +186,42 @@ def walk_sfc_item(
 def _check_operands(
     expr: Compare | BinOp, scope: Scope, records: dict[str, DataType], errors: list[Diagnostic]
 ) -> None:
-    """Both operands of a comparison/arithmetic operator must be integer or real.
+    """Operands of an operator must be of a type the operator accepts.
 
     Real message: ``Only integer and real allowed for this operator <expr>``.
-    The same check covers ``boolean`` and ``duration``/``time`` operands, which
-    is why this is one rule rather than a per-datatype special case.
+
+    A COMPARISON additionally tolerates one temporal operand, but only against a
+    numeric one. Proved 2026-10-05 by six probes:
+
+    ``Elapsed == 5`` / ``Elapsed > 2.5`` / ``Stamp == 5`` all compile - duration
+    or time against an integer or real LITERAL (EdgeDurCmpInt.x, EdgeDurCmpReal.x,
+    EdgeTimeCmpInt.x). ``ZeroDur == ZeroFull``, ``NegFive == NegHour`` and
+    ``DurFull == DurBare`` are all rejected with this same message
+    (EdgeBareDurZero.x, EdgeNegDurVal.x, ValidDurAndTime.x). So the rule is
+    "a numeric operand may be compared with a temporal one", not "temporal
+    operands are allowed".
+
+    Arithmetic keeps the strict numeric-only rule: no probe has shown ``+``/``-``
+    taking a duration or time operand, and the original message is an arithmetic
+    one.
     """
-    for operand in (expr.left, expr.right):
-        operand_type = infer_expr_type(operand, scope, records)
-        if operand_type is not None and not is_numeric(operand_type):
-            errors.append(
-                Diagnostic(
-                    code=DiagnosticCode.OPERAND_NOT_NUMERIC,
-                    message=(
-                        f"Only integer and real allowed for this operator {expr.op}; operand is of type {operand_type}"
-                    ),
-                    span=_expression_span(expr),
-                )
+    operand_types = [infer_expr_type(operand, scope, records) for operand in (expr.left, expr.right)]
+    for position, operand_type in enumerate(operand_types):
+        if operand_type is None or is_numeric(operand_type):
+            continue
+        if datatype_family(operand_type) is TypeFamily.TEMPORAL:
+            other = operand_types[1 - position]
+            if isinstance(expr, Compare) and other is not None and is_numeric(other):
+                continue
+        errors.append(
+            Diagnostic(
+                code=DiagnosticCode.OPERAND_NOT_NUMERIC,
+                message=(
+                    f"Only integer and real allowed for this operator {expr.op}; operand is of type {operand_type}"
+                ),
+                span=_expression_span(expr),
             )
+        )
 
 
 def _check_condition(
@@ -249,7 +272,7 @@ def check_coordinate_tail_types(
             continue
         seen.add(id(tail))
         inferred = infer_expr_type(tail, scope, records)
-        if inferred is not None and inferred.casefold() != Simple_DataType.REAL.value:
+        if inferred is not None and fold_identifier(inferred) != fold_identifier(Simple_DataType.REAL.value):
             errors.append(
                 Diagnostic(
                     code=DiagnosticCode.COORDINATE_NOT_REAL,
@@ -282,6 +305,8 @@ def _check_assignment(
                 span=assignment.span,
             )
         )
+    _check_old_new(assignment.target, resolved, errors)
+    _check_old_write_target(assignment.target, resolved, errors)
     target_type, source_type = assignment_types(assignment, scope, records)
     if target_type is not None and source_type is not None and not assignment_is_compatible(source_type, target_type):
         errors.append(
@@ -294,6 +319,25 @@ def _check_assignment(
                 span=assignment.span,
             )
         )
+
+
+def _check_old_write_target(ref: VarRef, resolved: Variable | None, errors: list[Diagnostic]) -> None:
+    """``:Old`` is a read state; the compiler rejects it as a write target.
+
+    Native ``00485470`` (statement analysis) rejects an ``:Old`` assignment
+    target with expression-node error 0x14, and ``004748b0`` applies the same to
+    reference-required call arguments. This is a *semantic* rejection, distinct
+    from the syntax that still has to parse ``:Old`` (STATE-01/STATE-02).
+    """
+    if ref.state != "old" or resolved is None or not resolved.state:
+        return
+    errors.append(
+        Diagnostic(
+            code=DiagnosticCode.OLD_STATE_NOT_WRITABLE,
+            message=f"Cannot write to {ref.name}:Old; the Old state of a State variable is read-only",
+            span=ref.span,
+        )
+    )
 
 
 def _check_old_new(ref: VarRef, resolved: Variable | None, errors: list[Diagnostic]) -> None:
@@ -369,29 +413,13 @@ def _check_call(
                     span=call.span,
                 )
             )
+        _check_old_write_target(arg, resolved, errors)
 
 
 def _is_sfc_runtime_accessor(ref: VarRef, sfc_names: set[str]) -> bool:
     """Dotted refs rooted on an SFC element/sequence name are step runtime accessors."""
     root = ref.name.partition(".")[0]
-    return "." in ref.name and root.casefold() in sfc_names
-
-
-def _check_consecutive_steps(items: list[SFCBodyItem], errors: list[Diagnostic]) -> None:
-    last_was_step = False
-    for item in items:
-        if isinstance(item, CodeComment):
-            continue
-        is_step = isinstance(item, SFCStep)
-        if last_was_step and is_step:
-            errors.append(
-                Diagnostic(
-                    code=DiagnosticCode.CONSECUTIVE_SEQUENCE_STEPS,
-                    message="Consecutive SFC steps without an intervening SEQTRANSITION",
-                    span=None,
-                )
-            )
-        last_was_step = is_step
+    return "." in ref.name and fold_identifier(root) in sfc_names
 
 
 def _collect_module_jump_target_names(sequences: list[Sequence] | None) -> set[str]:
@@ -407,10 +435,10 @@ def _collect_jump_target_names(items: list[SFCBodyItem]) -> set[str]:
     names: set[str] = set()
     for item in items:
         if isinstance(item, SFCStep | SFCTransition) and item.name is not None:
-            names.add(item.name.casefold())
+            names.add(fold_identifier(item.name))
         elif isinstance(item, SFCTransitionSub):
             if item.name is not None:
-                names.add(item.name.casefold())
+                names.add(fold_identifier(item.name))
             names.update(_collect_jump_target_names(item.body))
         elif isinstance(item, SFCAlternative | SFCParallel):
             for branch in item.branches:
@@ -421,17 +449,22 @@ def _collect_jump_target_names(items: list[SFCBodyItem]) -> set[str]:
 
 
 def _check_fork_targets(items: list[SFCBodyItem], known: set[str], errors: list[Diagnostic]) -> None:
-    for item in items:
-        if isinstance(item, SFCFork):
-            for target in item.targets:
-                if target.casefold() not in known:
-                    errors.append(
-                        Diagnostic(
-                            code=DiagnosticCode.SEQUENCE_FORK_UNKNOWN_TARGET,
-                            message=f"SEQFORK targets unknown step {target!r} in sequence",
-                            span=None,
-                        )
+    def _check_fork(fork: SFCFork | None) -> None:
+        if fork is None:
+            return
+        for target in fork.targets:
+            if fold_identifier(target) not in known:
+                errors.append(
+                    Diagnostic(
+                        code=DiagnosticCode.SEQUENCE_FORK_UNKNOWN_TARGET,
+                        message=f"SEQFORK targets unknown step {target!r} in sequence",
+                        span=None,
                     )
+                )
+
+    for item in items:
+        if isinstance(item, SFCStep | SFCTransition):
+            _check_fork(item.fork)
         elif isinstance(item, SFCAlternative | SFCParallel):
             for branch in item.branches:
                 _check_fork_targets(branch, known, errors)
@@ -450,7 +483,7 @@ def _record_module_names(items: list[SFCBodyItem], seen: set[str], errors: list[
     for item in items:
         name = _named_sfc_element_name(item)
         if name is not None:
-            folded = name.casefold()
+            folded = fold_identifier(name)
             if folded in seen:
                 errors.append(
                     Diagnostic(
@@ -474,102 +507,3 @@ def _named_sfc_element_name(item: SFCBodyItem) -> str | None:
     if isinstance(item, SFCStep | SFCTransition | SFCTransitionSub):
         return item.name
     return None
-
-
-def _check_sequence_structure(items: list[SFCBodyItem], errors: list[Diagnostic], is_open: bool = False) -> None:
-    """Enforce SEQINITSTEP placement and alternative/parallel branch layouts."""
-    init_seen = False
-    seen_non_init_element = False
-    for item in items:
-        if isinstance(item, CodeComment):
-            continue
-        if isinstance(item, SFCStep) and item.kind == "init":
-            if init_seen:
-                errors.append(
-                    Diagnostic(
-                        code=DiagnosticCode.SFC_INIT_STEP_PLACEMENT,
-                        message="A sequence may contain only one SEQINITSTEP",
-                        span=None,
-                    )
-                )
-            elif seen_non_init_element:
-                errors.append(
-                    Diagnostic(
-                        code=DiagnosticCode.SFC_INIT_STEP_PLACEMENT,
-                        message="SEQINITSTEP must be the first element of a sequence",
-                        span=None,
-                    )
-                )
-            init_seen = True
-        else:
-            seen_non_init_element = True
-        if isinstance(item, SFCAlternative):
-            for branch in item.branches:
-                _check_alternative_branch_start(branch, errors)
-                _check_sequence_structure(branch, errors)
-        elif isinstance(item, SFCParallel):
-            for branch in item.branches:
-                _check_parallel_branch_start(branch, errors)
-                _check_sequence_structure(branch, errors)
-        elif isinstance(item, SFCSubsequence | SFCTransitionSub):
-            _check_sequence_structure(item.body, errors)
-
-
-def _check_sequence_does_not_end_with_step(items: list[SFCBodyItem], errors: list[Diagnostic], is_open: bool) -> None:
-    """A closed sequence body must close on a transition, not a step (SL-V033).
-
-    For a closed ``SEQUENCE`` the real tool points at ``ENDSEQUENCE`` with
-    ``Incorrect Syntax - Error 32`` when the body's last element is ``SEQSTEP``:
-    the body is unfinished, so the terminator arrives early. Confirmed
-    independently by ``EdgeSeqPar``, ``EdgeSubSeqDef`` and ``EdgeTermSeqStep``.
-
-    ``OPENSEQUENCE`` is exempt - an open sequence may legitimately end on a step.
-    Whether a branch or sub-sequence inherits the enclosing sequence's openness is
-    not evidenced, so the enclosing value is reused rather than guessed.
-    """
-    if is_open:
-        return
-    for item in reversed(items):
-        if isinstance(item, CodeComment):
-            continue
-        if isinstance(item, SFCStep):
-            errors.append(
-                Diagnostic(
-                    code=DiagnosticCode.SEQUENCE_ENDS_WITH_STEP,
-                    message=(
-                        "A sequence must not end with a step; it must end with a SEQTRANSITION before ENDSEQUENCE"
-                    ),
-                    span=None,
-                )
-            )
-        return
-
-
-def _check_alternative_branch_start(branch: list[SFCBodyItem], errors: list[Diagnostic]) -> None:
-    for item in branch:
-        if isinstance(item, CodeComment):
-            continue
-        if not isinstance(item, SFCTransition | SFCTransitionSub | SFCAlternative | SFCParallel | SFCSubsequence):
-            errors.append(
-                Diagnostic(
-                    code=DiagnosticCode.SFC_ALTERNATIVE_BRANCH_START,
-                    message="Each ALTERNATIVESEQ branch must start with a SEQTRANSITION or a nested structure",
-                    span=None,
-                )
-            )
-        return
-
-
-def _check_parallel_branch_start(branch: list[SFCBodyItem], errors: list[Diagnostic]) -> None:
-    for item in branch:
-        if isinstance(item, CodeComment):
-            continue
-        if not isinstance(item, SFCStep):
-            errors.append(
-                Diagnostic(
-                    code=DiagnosticCode.SFC_PARALLEL_BRANCH_START,
-                    message="Each PARALLELSEQ branch must start with a SEQSTEP",
-                    span=None,
-                )
-            )
-        return

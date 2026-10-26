@@ -20,7 +20,6 @@ from sattline_parser.models.ast_model import (
     Sequence,
     SFCAlternative,
     SFCBodyItem,
-    SFCBreak,
     SFCCodeBlocks,
     SFCFork,
     SFCParallel,
@@ -138,57 +137,67 @@ class SFCMixin:
         return SFCStep(kind="init", name=name, code=code)
 
     def seqstep(self, items: list[TransformerItem]) -> SFCStep:
-        """Grammar seqstep -> SEQSTEP NAME? code_blocks.
+        """Grammar seqstep -> SEQSTEP NAME? code_blocks seqfork?.
 
         Ordinary steps may be unnamed in real SattLine, mirroring the already
-        optional ``seqinitstep`` name.
+        optional ``seqinitstep`` name, and may carry a ``SEQFORK`` suffix.
         """
-        if len(items) not in (2, 3):
-            raise ValueError(f"seqstep expected (SEQSTEP, NAME?, code_blocks); got: {items!r}")
-        if len(items) == 3:
-            if not isinstance(items[1], str) or not isinstance(items[2], SFCCodeBlocks):
-                raise ValueError(f"seqstep expected (SEQSTEP, NAME?, code_blocks); got: {items!r}")
-            return SFCStep(kind="step", name=items[1], code=items[2])
-        if not isinstance(items[1], SFCCodeBlocks):
-            raise ValueError(f"seqstep expected (SEQSTEP, NAME?, code_blocks); got: {items!r}")
-        return SFCStep(kind="step", name=None, code=items[1])
+        name: str | None = None
+        code: SFCCodeBlocks | None = None
+        fork: SFCFork | None = None
+        for item in items:
+            if isinstance(item, Token):
+                if item.type == "NAME" and name is None:
+                    name = str(item)
+                continue
+            if isinstance(item, SFCFork):
+                fork = item
+            elif isinstance(item, SFCCodeBlocks):
+                code = item
+            elif isinstance(item, str) and name is None:
+                name = item
+            else:
+                raise ValueError(f"seqstep expected (SEQSTEP, NAME?, code_blocks, SEQFORK?); got: {items!r}")
+        if code is None:
+            raise ValueError(f"seqstep expected code_blocks; got: {items!r}")
+        return SFCStep(kind="step", name=name, code=code, fork=fork)
 
     def seqtransition(self, items: list[TransformerItem]) -> SFCTransition:
-        """Grammar seqtransition -> SEQTRANSITION NAME? WAIT_FOR expression."""
-        items = [it for it in items if not is_comment_tree(it)]
-        wait_index = -1
-        for index, item in enumerate(items):
-            if isinstance(item, Token) and item.type == "WAIT_FOR":
-                wait_index = index
-                break
-        if wait_index < 0:
-            if any(isinstance(item, Token) and item.type == "NAME" for item in items):
-                raise ValueError(f"seqtransition expected WAIT_FOR; got: {items!r}")
-            raise ValueError(f"seqtransition expected (SEQTRANSITION, NAME?, WAIT_FOR, expr); got: {items!r}")
+        """Grammar seqtransition -> SEQTRANSITION NAME? (WAIT_FOR expression)? seqfork?.
 
+        Both the name and the guard are optional in the native reader; an absent
+        guard is kept as ``None`` because the compiler lowers it to true
+        (0070d180, 006fad30) and a round-trip must not invent a ``WAIT_FOR True``.
+        """
+        items = [item for item in items if not is_comment_tree(item)]
         name: str | None = None
-        for item in items[:wait_index]:
-            if isinstance(item, Token):
-                if item.type == "NAME":
-                    name = item.value
-                    break
-            elif isinstance(item, str):
-                name = item
-                break
-
         condition: SLExpression | None = None
-        for item in reversed(items[wait_index + 1 :]):
-            if not isinstance(item, Token):
+        fork: SFCFork | None = None
+        wait_seen = False
+        for item in items:
+            if isinstance(item, Token):
+                if item.type == "WAIT_FOR":
+                    wait_seen = True
+                elif item.type == "NAME" and name is None and not wait_seen:
+                    name = str(item)
+                continue
+            if isinstance(item, SFCFork):
+                fork = item
+                continue
+            if wait_seen and condition is None:
                 if not isinstance(
                     item, (VarRef, BoolOp, NotOp, Compare, BinOp, UnaryOp, FuncCall, TernaryOp, bool, int, float, str)
                 ):
                     raise ValueError(f"seqtransition expected an expression; got: {type(item).__name__}: {item!r}")
                 condition = item
-                break
-        if condition is None:
+                continue
+            if isinstance(item, str) and name is None and not wait_seen:
+                name = item
+                continue
+            raise ValueError(f"seqtransition unexpected item: {type(item).__name__}: {item!r}")
+        if wait_seen and condition is None:
             raise ValueError(f"seqtransition expected an expression after WAIT_FOR; got: {items!r}")
-
-        return SFCTransition(name=name, condition=condition)
+        return SFCTransition(name=name, condition=condition, fork=fork)
 
     def seqtransitionsub(self, items: list[TransformerItem]) -> SFCTransitionSub:
         """Grammar seqtransitionsub -> SUBSEQTRANSITION NAME? sequence_body ENDSUBSEQTRANSITION."""
@@ -212,27 +221,35 @@ class SFCMixin:
             )  # pragma: no cover
         return SFCTransitionSub(name=name, body=cast(SfcBody, tree_children(tree)))
 
+    def _subsequence_body(self, items: list[TransformerItem], rule: str) -> tuple[str | None, SfcBody]:
+        """Shared SUBSEQUENCE / SUBSEQSTEP shape: optional name plus a body."""
+        name: str | None = None
+        body: SfcBody | None = None
+        for item in items:
+            if isinstance(item, Token):
+                if item.type == "NAME" and name is None:
+                    name = str(item)
+                continue
+            if isinstance(item, str) and name is None:
+                name = item
+                continue
+            if isinstance(item, Tree) and item.data == const.KEY_SEQUENCE_BODY:
+                body = cast(SfcBody, tree_children(cast(TransformerTree, item)))
+                continue
+            raise ValueError(f"{rule} unexpected item in the sub-sequence shape")
+        if body is None:
+            raise ValueError(f"{rule} expected a sequence_body; got: {items!r}")
+        return name, body
+
     def seqsub(self, items: list[TransformerItem]) -> SFCSubsequence:
-        """Grammar seqsub -> SUBSEQUENCE NAME sequence_body ENDSUBSEQUENCE."""
-        if (
-            len(items) != 4
-            or not isinstance(items[1], str)
-            or not (isinstance(items[2], Tree) and items[2].data == const.KEY_SEQUENCE_BODY)
-        ):
-            raise ValueError(f"seqsub expected (SUBSEQUENCE, NAME, sequence_body, ENDSUBSEQUENCE); got: {items!r}")
-        tree = cast(TransformerTree, items[2])
-        return SFCSubsequence(name=items[1], body=cast(SfcBody, tree_children(tree)))
+        """Grammar seqsub -> SUBSEQUENCE NAME? sequence_body ENDSUBSEQUENCE."""
+        name, body = self._subsequence_body(items, "seqsub")
+        return SFCSubsequence(name=name, body=body, kind="sequence")
 
     def seqsubstep(self, items: list[TransformerItem]) -> SFCSubsequence:
-        """Grammar seqsubstep -> SUBSEQSTEP NAME sequence_body ENDSUBSEQSTEP."""
-        if (
-            len(items) != 4
-            or not isinstance(items[1], str)
-            or not (isinstance(items[2], Tree) and items[2].data == const.KEY_SEQUENCE_BODY)
-        ):
-            raise ValueError(f"seqsubstep expected (SUBSEQSTEP, NAME, sequence_body, ENDSUBSEQSTEP); got: {items!r}")
-        tree = cast(TransformerTree, items[2])
-        return SFCSubsequence(name=items[1], body=cast(SfcBody, tree_children(tree)))
+        """Grammar seqsubstep -> SUBSEQSTEP NAME? sequence_body ENDSUBSEQSTEP."""
+        name, body = self._subsequence_body(items, "seqsubstep")
+        return SFCSubsequence(name=name, body=body, kind="substep")
 
     def _collect_sequence_branches(self, items: list[TransformerItem], rule: str) -> list[SfcBody]:
         branches: list[SfcBody] = []
@@ -261,11 +278,14 @@ class SFCMixin:
         return SFCParallel(branches=branches)
 
     def seqfork(self, items: list[TransformerItem]) -> SFCFork:
-        """Grammar seqfork -> SEQFORK NAME ("," NAME)*."""
+        """Grammar seqfork -> SEQFORK NAME ("," NAME)* SEQBREAK?."""
         targets: list[str] = []
+        has_break = False
         for item in items:
             if isinstance(item, Token):
-                if item.type == "NAME":
+                if item.type == "SEQBREAK":
+                    has_break = True
+                elif item.type == "NAME":
                     targets.append(str(item))
                 continue
             if type(item) is str:
@@ -273,11 +293,7 @@ class SFCMixin:
         targets_tuple = tuple(targets)
         if not targets_tuple:
             raise ValueError(f"seqfork expected at least one NAME target; got: {items!r}")
-        return SFCFork(targets=targets_tuple)
-
-    def seqbreak(self, _items: list[TransformerItem]) -> SFCBreak:
-        """Grammar seqbreak -> SEQBREAK."""
-        return SFCBreak()
+        return SFCFork(targets=targets_tuple, has_break=has_break)
 
     def seq_element(self, items: list[TransformerItem]) -> TransformerItem:
         """Grammar seq_element -> passthrough SFC node."""
@@ -350,8 +366,6 @@ class SFCMixin:
                             SFCAlternative,
                             SFCParallel,
                             SFCSubsequence,
-                            SFCFork,
-                            SFCBreak,
                             CodeComment,
                         ),
                     ):

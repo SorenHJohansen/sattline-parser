@@ -12,14 +12,18 @@ against the original source (:class:`sattline_parser.source_document.SourceDocum
 
 from __future__ import annotations
 
+import json
 import re
 from collections.abc import Callable
 from dataclasses import dataclass
 from enum import StrEnum
+from pathlib import Path
+from typing import cast
 
 from sattline_parser.source_document import GENERATED, SourceDocument
 
 __all__ = [
+    "SCANNER_TOKENS",
     "SEED_MAPPING",
     "CompatTransform",
     "NormalizationKind",
@@ -30,184 +34,24 @@ __all__ = [
     "preprocess_source",
 ]
 
-# Seed mappings from sample files (kept explicit for traceability).
-SEED_MAPPING: dict[str, str] = {
-    "#6?": "Invocation",
-    "#6=": "IgnoreMaxModule",
-    "#8=": ":",
-    "#71": "MODULEDEFINITION",
-    "#81": "DateCode_",
-    "#78": "TYPEDEFINITIONS",
-    "#72": "RECORD",
-    "#85": "ENDDEF",
-    "#7:": "OpSave",
-    "#01": "(",
-    "#8?": "=",
-    "#8:": "=>",
-    "#8;": ":=",
-    "#1<": "False",
-    "#1>": "False",
-    "#1=": "True",
-    "#1;": "True",
-    "#79": "SUBMODULES",
-    "#73": "MODULEPARAMETERS",
-    "#7<": "LOCALVARIABLES",
-    "#74": "GLOBAL",
-    "#80": "State",
-    "#17": "New",
-    "#18": "Old",
-    "#87": "Frame_Module",
-    "#6<": "LayerModule",
-    "#6>": "ModuleDef",
-    "#65": "ClippingBounds",
-    "#66": "Dim_",
-    "#40": "InteractObjects",
-    "#41": "SimpleInteract",
-    "#42": "MenuInteract",
-    "#::": "TextBox_",
-    "#4?": "GraphObjects",
-    "#56": "TextObject",
-    "#70": "CompositeObject",
-    "#52": "RectangleObject",
-    "#50": "LineObject",
-    "#51": "OvalObject",
-    "#53": "SegmentObject",
-    "#54": "PolygonObject",
-    "#55": "Spline",
-    "#57": "Polyline",
-    "#58": "LeftAligned",
-    "#5<": "OutlineColour",
-    "#5;": "FillColour",
-    "#5:": "RightAligned",
-    "#59": "CenterAligned",
-    "#5=": "ColourStyle",
-    "#5?": "VarName",
-    "#5>": "Width_",
-    "#95": "ProcedureInteract",
-    "#61": "Colour0",
-    "#62": "Colour1",
-    "#63": "ZoomLimits",
-    "#6:": "Zoomable",
-    "#68": "Connection",
-    "#69": "ConnectionNode",
-    "#43": "SelectVariable",
-    "#84": "ModuleCode",
-    "#86": "GroupConn",
-    "#77": "Secure",
-    "#20": "EQUATIONBLOCK",
-    "#22": "SEQUENCE",
-    "#23": "ENDSEQUENCE",
-    "#88": "COORD",
-    "#89": "OBJSIZE",
-    "#26": "SEQINITSTEP",
-    "#27": "SEQSTEP",
-    "#28": "ENTERCODE",
-    "#29": "ACTIVECODE",
-    "#30": "SEQTRANSITION",
-    "#31": "WAIT_FOR",
-    "#34": "ALTERNATIVESEQ",
-    "#35": "ALTERNATIVEBRANCH",
-    "#36": "ENDALTERNATIVE",
-    "#24": "OPENSEQUENCE",
-    "#25": "ENDOPENSEQUENCE",
-    "#2=": "PARALLELSEQ",
-    "#2>": "PARALLELBRANCH",
-    "#2?": "ENDPARALLEL",
-    "#2;": "SUBSEQSTEP",
-    "#2<": "ENDSUBSEQSTEP",
-    "#32": "SUBSEQTRANSITION",
-    "#33": "ENDSUBSEQTRANSITION",
-    "#3:": "SUBSEQUENCE",
-    "#3;": "ENDSUBSEQUENCE",
-    "#99": "SeqControl",
-    "#97": "SeqTimer",
-    "#2:": "EXITCODE",
-    "#94": "Default",
-    "#7;": "Const",
-    "#76": "PRIVATE_",
-    "#64": "Enable_",
-    "#3>": "InVar_",
-    "#3?": "OutVar_",
-    "#3<": "SEQFORK",
-    "#3=": "SEQBREAK",
-    "#47": "Variable",
-    "#48": "OpMin",
-    "#49": "OpMax",
-    "#4:": "OpStep",
-    "#4=": "ToggleAction",
-    "#4;": "SetAction",
-    "#4<": "ResetAction",
-    "#60": "ValueFraction",
-    "#6;": "SymbolModule",
-    "#9>": "Event_Text_",
-    "#9?": "Event_Tag_",
-    "#9=": "Value_Changed",
-    "#9<": "Enable_",
-    "#9;": "Time_Value",
-    "#9:": "Duration_Value",
-    "#96": "LitString",
-    "#:0": "Event_Severity_",
-    "#:1": "Event_Class_",
-    "#:6": "ComBut_",
-    "#:7": "ComButProc_",
-    "#:8": "OptBut_",
-    "#:>": "Value_",
-    "#:9": "CheckBox_",
-    "#:3": "Format_String_",
-    "#:5": "Key_",
-    "#:4": "Grid",
-    "#:?": "Decimal_",
-    "#:;": "Visible_",
-    "#:<": "Abs_",
-    "#:=": "Abs_",
-    "#;0": "Digits_",
-    "#;1": "NoOf_",
-    "#;2": "SetVal_",
-    "#;3": "SetApp_",
-    "#;4": "Two_Layers_",
-    "#;5": "Layer_",
-    "#;6": "Bool_Value",
-    "#;7": "Int_Value",
-    "#;8": "Real_Value",
-    "#;9": "String_Value",
-    "#;:": "Alt_Text",
-    "#;?": "LayerLimit_",
-    "#;=": "Cancel_Variable",
-    "#;;": "Enable_Delay",
-    "#;<": "OK_Variable",
-    "#16": "NOT",
-    "#14": "AND",
-    "#0?": "IF",
-    "#11": "ELSIF",
-    "#10": "THEN",
-    "#15": "OR",
-    "#12": "ELSE",
-    "#13": "ENDIF",
-    "#05": ">",
-    "#04": "<",
-    "#07": ">=",
-    "#06": "<=",
-    "#08": "==",
-    "#09": "<>",
-    "#<0": "SnglSgn",
-    "#<1": "SnglSgnEna",
-    "#<2": "Purpose_",
-    "#<3": "PurposeChng",
-    "#<4": "SgnrCom",
-    "#<5": "CommentChng",
-    "#<6": "CommentMand",
-    "#<7": "Signer1_",
-    "#<8": "Signer1Name_",
-    "#<9": "DblSgn",
-    "#<:": "DblSgnEna",
-    "#<;": "CansCom",
-    "#<<": "SgnCans",
-    "#<=": "Signer2_",
-    "#<>": "Signer2Name_",
+#: Recovered SattLine scanner token table: compact code (``#`` + two chars from
+#: the ASCII run ``0…?``) -> source spelling. Extracted from the ``.SCANNER``
+#: section of the workstation's 3.1 configuration container by
+#: ``sattlint_sim.tokens.scanner_tokens()`` (scanner ordinal ``n`` is encoded as
+#: ``'#' + chr(48 + n // 16) + chr(48 + n % 16)``), pinned in
+#: ``scanner_tokens.json`` and verified against the compressed/uncompressed
+#: full-grammar twins. The table covers keywords and operators only; literal
+#: source text is emitted unencoded by the compressor.
+_TOKEN_DATA_PATH = Path(__file__).with_name("scanner_tokens.json")
+SCANNER_TOKENS: dict[str, str] = {
+    row["code"]: row["text"]
+    for row in cast("list[dict[str, str]]", json.loads(_TOKEN_DATA_PATH.read_text(encoding="utf-8")))
 }
 
+#: Historical name for :data:`SCANNER_TOKENS`, kept for API compatibility.
+SEED_MAPPING: dict[str, str] = SCANNER_TOKENS
+
 _MARKER_RE = re.compile(r"#[0-9A-Za-z;:=><?]{1,2}")
-_MARKER_PREFIX_RE = re.compile(r"#0[1<][A-Za-z0-9]*")
 _WHITESPACE_RE = re.compile(r"\s+")
 
 
@@ -574,15 +418,6 @@ def _decode_markers(text: str, mapping: dict[str, str]) -> tuple[_OpaqueRegistry
             raise PreprocessError(f"Unknown compressed marker {tok!r} at character offset {m.start()}")
         return value
 
-    def _prefix_subst(m: re.Match[str]) -> str:
-        tok = m.group(0)
-        if tok.startswith("#01"):
-            return "(" + tok[3:]
-        if tok.startswith("#0<"):
-            return "* " + tok[3:] if len(tok) > 3 else "*"
-        return tok  # pragma: no cover — regex only matches #01 and #0< prefixes
-
-    decoded, char_map = _regex_sub(decoded, char_map, _MARKER_PREFIX_RE, _prefix_subst)
     decoded, char_map = _regex_sub(decoded, char_map, _MARKER_RE, _subst)
     return registry, decoded, char_map
 

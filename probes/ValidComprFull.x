@@ -21,11 +21,11 @@ StateVar "Test"#8= boolean #80 #8; #1<; abstrinreal, maxreal, minreal, var3#8=
 real ; abstrin, var2#8= integer ; alttekst#8= string ; var1#8= boolean ;
 fuldnavn2, brugerident2#8= string ; signafbrudt, aktiver2#8= boolean ;
 afbrydkommentar#8= string ; aktiverdobbelt#8= boolean ; fuldnavn1, brugerident1
-, kommentar, formÃ¥l#8= string ; aktiverenkelt#8= boolean ; realVar2, RealVar1
+, kommentar, formål#8= string ; aktiverenkelt#8= boolean ; realVar2, RealVar1
 #8= real ; IntVar2, IntVar, nooforws#8= integer ; readolny, wdisplayed#8=
 boolean ; wtitle, Mpath#8= string ; RelPos, markeret, Tag_Global#8= boolean ;
 absoluttrin, max, min#8= integer ; Fortryd, OK#8= boolean ; klasse,
-vigtighedsgrad#8= integer ; beskrivelse#8= string ; Ã¦ndret, hroot#8= boolean ;
+vigtighedsgrad#8= integer ; beskrivelse#8= string ; ændret, hroot#8= boolean ;
 synlig#8= boolean  #8; #1;; tekst#8= string ; windowdisplayed#8= boolean ;
 timeout#8= integer ; hierarchicroot#8= boolean ; ysize, xsize#8= real ;
 WindowTitle#8= string ; SelectClass#8= integer ; ModulePath#8= string ;
@@ -157,13 +157,13 @@ TestModuleType;  SM4 #6? #01 2.32 , -0.64 , 0.0 , 0.4 , 0.4  #6< ) #8= #71 #81
 #8? 14 #8= #3> "TextColor" #62 #8? 24 #8= #3> "AltTextColor" #5= #8? #1; #8=
 #3> "ColorChoice"  #5; #8= #61 #8? -1 #8= #3> "BGColor" #62 #8? -1 #8= #3>
 "AltBGColor" #5= #8? #1; #8= #3> "ColorChoice2"  #:9  #01 1.02 , 1.42 )  #01
-1.46 , 1.32 )  #;6 #64 #8? #1; #8= #3> "aktiver" #9= #8? #1< #8= #3? "Ã¦ndret"
+1.46 , 1.32 )  #;6 #64 #8? #1; #8= #3> "aktiver" #9= #8? #1< #8= #3? "ændret"
 #47 #8? #1< #8= #3? "synlig" #:5 #8? "" #8= #3> "tast" #74 #8? #1< #8= #3>
 "tast_global" #9> #8? "" #8= #3> "Description" #9? #8? "" #8= #3> "Tag" #:0 #8?
 0 #8= #3> "Importance" #:1 #8? 0 #8= #3> "Class" #:; #8? #1; #8= #3> "synlig"
 #56 #8? "" #8= #3> "tekst"  #;; #8? #1; #8= #3> #1;  #;< #8? #1< #8= #3> "OK"
 #;= #8? #1< #8= #3> "Fortryd"   #5; #8= #62 #8? -1  #::  #01 1.7 , 1.34 )  #01
-2.26 , 1.2 )  #;7 #64 #8? #1; #8= #3> "Aktiver" #9= #8? #1< #8= #3? "Ã†ndret"
+2.26 , 1.2 )  #;7 #64 #8? #1; #8= #3> "Aktiver" #9= #8? #1< #8= #3? "Ændret"
 #47 #8? 0 #8= #3? "timeout" #48 #8? 0 #8= #3> "min" #49 #8? 2147483647 #8= #3>
 "max" #4: #8? 1 #8= #3> "absoluttrin" #:5 #8? "" #8= #3> "Tast" #74 #8? #1< #8=
 #3> "Tag_Global" #9> #8? "" #8= #3> "beskrivelse" #9? #8? "" #8= #3> "tag" #:0
@@ -176,7 +176,7 @@ TestModuleType;  SM4 #6? #01 2.32 , -0.64 , 0.0 , 0.4 , 0.4  #6< ) #8= #71 #81
 #8= #3> "windowtitle" #1< #8= #3> "relativepos" 0.0 #8= #3> "xpos" 0.0 #8= #3>
 "ypos" 0.0 #8= #3> "xsize" 0.0 #8= #3> "ysize" #1< #8= #3> "hroot" 0 #8= #3>
 "selectclass" 0 #8= #3> "timeout" #1< #8= #3? "windowdisplayed" 0 #8= #3?
-"status"  #64 #8? #1; #8= #3> "aktiver" #9= #8? #1< #8= #3? "Ã¦ndret" #47 #8?
+"status"  #64 #8? #1; #8= #3> "aktiver" #9= #8? #1< #8= #3? "ændret" #47 #8?
 0.0 #:5 #8? "" #8= #3> "tast" #74 #8? #1< #8= #3> "tast_global" #:; #8? #1; #8=
 #3> "synlig" #56 #8? "" #8= #3> "tekst"   #:7 #01 -0.46 , 1.54 )  #01 -0.1 ,
 1.42 )  ToggleWindow "" #8= #3> "ModulePath" "" #8= #3> "WindowTitle" #1< #8=
@@ -203,10 +203,10 @@ TestModuleType;  SM4 #6? #01 2.32 , -0.64 , 0.0 , 0.4 , 0.4  #6< ) #8= #71 #81
 #8= #3> "ReadOnly" 0.0 #8= #3> "xpos" 0.0 #8= #3> "ypos" #1< #8= #3>
 "relativepos" 0 #8= #3> "noofrows" 0 #8= #3> "noofcolumns" 0 #8= #3> "fontkind"
 0 #8= #3> "fontsize" 0 #8= #3? "status"  #64 #8? #1; #8= #3> "aktiver" #9= #8?
-#1< #8= #3? "Ã¦ndret" #47 #8? 0.0 #:5 #8? "" #8= #3> "tast" #74 #8? #1< #8= #3>
+#1< #8= #3? "ændret" #47 #8? 0.0 #:5 #8? "" #8= #3> "tast" #74 #8? #1< #8= #3>
 "tast_global" #:; #8? #1; #8= #3> "synlig" #56 #8? "" #8= #3> "tekst"   #:7
 #01 -0.48 , 0.5 ) #01 -0.1 , 0.36 )  DeleteEditFile "" #8= #3> "filename" 0 #8=
-#3? "status"  #64 #8? #1; #8= #3> "aktiver" #9= #8? #1< #8= #3? "Ã¦ndret" #47
+#3? "status"  #64 #8? #1; #8= #3> "aktiver" #9= #8? #1< #8= #3? "ændret" #47
 #8? 0.0 #:5 #8? "" #8= #3> "tast" #74 #8? #1< #8= #3> "tast_global" #:; #8? #1;
 #8= #3> "synlig" #56 #8? "" #8= #3> "tekst"   #41  #01 0.22 , 0.46 )  #01 0.58
 , 0.34 )  #;6 #64 #8? #1; #8= #3> "Aktiver" #43 #8? #1< #8= #3? "Marked" #9=
@@ -219,35 +219,35 @@ TestModuleType;  SM4 #6? #01 2.32 , -0.64 , 0.0 , 0.4 , 0.4  #6< ) #8= #71 #81
 #8? #1< #8= #3> "ActivateNr2"  #<; #8? "" #8= #3? "AbortComment"  #<< #8? #1<
 #8= #3? "SignAborted"  #<= #8? "" #8= #3? "UserIdentity2"  #<> #8? "" #8= #3?
 "UserName2"   #42 #01 0.22 , 0.26 ) #01 0.58 , 0.12 )  #;7 #64 #8? #1; #8= #3>
-"Aktiver" #43 #8? #1< #8= #3? "Markeret" #9= #8? #1< #8= #3? "Ã†ndret" #47 #8? 0
+"Aktiver" #43 #8? #1< #8= #3? "Markeret" #9= #8? #1< #8= #3? "Ændret" #47 #8? 0
 #8= #3? "absoluttrin" #48 #8? 0 #8= #3> "min" #49 #8? 2147483647 #8= #3> "max"
 #4: #8? 1 #8= #3> "vigtighedsgrad" #:5 #8? "" #8= #3> "Tast" #74 #8? #1< #8=
 #3> "Tast_Global" #9> #8? "" #8= #3> "Beskrivelse" #9? #8? "" #8= #3> "Tag" #:0
 #8? 0 #8= #3> "Vigtighedsgrad" #:1 #8? 0 #8= #3> "Klasse"   #42  #01 0.7 , 0.46
 ) #01 1.06 , 0.34 )  #;8 #64 #8? #1; #8= #3> "Aktiver" #43 #8? #1< #8= #3?
-"Markeret" #9= #8? #1< #8= #3? "Ã†ndret" #47 #8? 0.0 #8= #3? "xsize" #48 #8? 0.0
+"Markeret" #9= #8? #1< #8= #3? "Ændret" #47 #8? 0.0 #8= #3? "xsize" #48 #8? 0.0
 #8= #3> "RotationMax" #49 #8? 100.0 #8= #3> "RotationVar" #4: #8? 1.0 #8= #3>
 "YScaleMax" #:5 #8? "" #8= #3> "Tast" #74 #8? #1< #8= #3> "Tast_Global" #9> #8?
 "" #8= #3> "Beskrivelse" #9? #8? "" #8= #3> "Tag" #:0 #8? 0 #8= #3>
 "Vigtighedsgrad" #:1 #8? 0 #8= #3> "Klasse"   #42  #01 0.7 , 0.3 )  #01 1.08 ,
 0.14 )  #;9 #64 #8? #1; #8= #3> "aktiver" #43 #8? #1< #8= #3? "markeret" #9=
-#8? #1< #8= #3? "Ã¦ndret" #47 #8? "" #8= #3? "JourTag" #:5 #8? "" #8= #3> "tast"
+#8? #1< #8= #3? "ændret" #47 #8? "" #8= #3? "JourTag" #:5 #8? "" #8= #3> "tast"
 #74 #8? #1< #8= #3> "tast_global" #9> #8? "" #8= #3> "Beskrivelse" #9? #8? ""
 #8= #3> "Tag" #:0 #8? 0 #8= #3> "Vigtighedsgrad" #:1 #8? 0 #8= #3> "Klasse"
 #42 #01 0.24 , 0.04 ) #01 0.58 , -0.12 )  #9; #64 #8? #1; #8= #3> "Aktiver" #43
-#8? #1< #8= #3? "Markeret" #9= #8? #1< #8= #3? "Ã†ndret" #47 #8? "" #8= #3?
+#8? #1< #8= #3? "Markeret" #9= #8? #1< #8= #3? "Ændret" #47 #8? "" #8= #3?
 "FirstPoint" #:3 #8? "" #8= #3> "WindowTitle" #:5 #8? "" #8= #3> "Tast" #74 #8?
 #1< #8= #3> "Tag_Global" #9> #8? "" #8= #3> "Beskrivelse" #9? #8? "" #8= #3>
 "Tag" #:0 #8? 0 #8= #3> "Vigtighedsgrad" #:1 #8? 0 #8= #3> "Klasse"   #42  #01
 0.72 , 0.1 ) #01 1.12 , -0.08 )  #9: #64 #8? #1; #8= #3> "Aktiver" #43 #8? #1<
-#8= #3? "markeret" #9= #8? #1< #8= #3? "Ã¦ndret" #47 #8? "" #8= #3? "TimeShift"
+#8= #3? "markeret" #9= #8? #1< #8= #3? "ændret" #47 #8? "" #8= #3? "TimeShift"
 #:3 #8? "" #8= #3> "ModulePath" #:5 #8? "" #8= #3> "tast" #74 #8? #1< #8= #3>
 "tast_global" #9> #8? "" #8= #3> "Beskrivelse" #9? #8? "" #8= #3> "Tag" #:0 #8?
 0 #8= #3> "Vigtighedsgrad" #:1 #8? 0 #8= #3> "Klasse"   #95  #01 1.38 , 0.36 )
 #01 1.86 , 0.18 )  DeleteEditFile "" #8= #3> "FileName" 0 #8= #3? "Status"  #64
-#8? #1; #8= #3> "Aktiver" #9= #8? #1< #8= #3? "Ã†ndret" #47 #8? 0.0 #:5 #8? ""
+#8? #1; #8= #3> "Aktiver" #9= #8? #1< #8= #3? "Ændret" #47 #8? 0.0 #:5 #8? ""
 #8= #3> "Tast" #74 #8? #1< #8= #3> "Tast_Global"  #::  #01 2.42 , 1.34 )  #01
-2.98 , 1.2 )  #9; #64 #8? #1; #8= #3> "Aktiver" #9= #8? #1< #8= #3? "Ã†ndret"
+2.98 , 1.2 )  #9; #64 #8? #1; #8= #3> "Aktiver" #9= #8? #1< #8= #3? "Ændret"
 #47 #8? "" #8= #3? "StartTime" #:3 #8? "" #8= #3> "tekst" #:5 #8? "" #8= #3>
 "Tast" #74 #8? #1< #8= #3> "Tag_Global" #9> #8? "" #8= #3> "beskrivelse" #9?
 #8? "" #8= #3> "tag" #:0 #8? 0 #8= #3> "vigtighedsgrad" #:1 #8? 0 #8= #3>
@@ -256,7 +256,7 @@ TestModuleType;  SM4 #6? #01 2.32 , -0.64 , 0.0 , 0.4 , 0.4  #6< ) #8= #71 #81
 "TextColor" #62 #8? -1 #8= #3> "AltTextColor" #5= #8? #1< #8= #3> "ColorChoice"
 #5; #8= #61 #8? 9 #8= #3> "BGColor" #62 #8? -1 #8= #3> "AltBGColor" #5= #8? #1;
 #8= #3> "ColorChoice2"  #:: #01 3.1 , 1.34 ) #01 3.66 , 1.2 )  #9: #64 #8? #1;
-#8= #3> "Aktiver" #9= #8? #1< #8= #3? "Ã†ndret" #47 #8? "" #8= #3? "DurationVar"
+#8= #3> "Aktiver" #9= #8? #1< #8= #3? "Ændret" #47 #8? "" #8= #3? "DurationVar"
 #:3 #8? "" #8= #3> "tekst" #:5 #8? "" #8= #3> "Tast" #74 #8? #1< #8= #3>
 "Tag_Global" #9> #8? "" #8= #3> "beskrivelse" #9? #8? "" #8= #3> "tag" #:0 #8?
 0 #8= #3> "vigtighedsgrad" #:1 #8? 0 #8= #3> "klasse" #:; #8? #1; #8= #3>
@@ -265,7 +265,7 @@ TestModuleType;  SM4 #6? #01 2.32 , -0.64 , 0.0 , 0.4 , 0.4  #6< ) #8= #71 #81
 #3> "AltTextColor" #5= #8? #1< #8= #3> "ColorChoice"  #5; #8= #61 #8? 9 #8= #3>
 "BGColor" #62 #8? -1 #8= #3> "AltBGColor" #5= #8? #1; #8= #3> "ColorChoice2"
 #41 #01 -0.18 , 0.26 ) #01 0.18 , 0.12 )  #;7 #64 #8? #1; #8= #3> "Aktiver" #43
-#8? #1< #8= #3? "Markeret" #9= #8? #1< #8= #3? "Ã†ndret" #47 #8? 0 #8= #3?
+#8? #1< #8= #3? "Markeret" #9= #8? #1< #8= #3? "Ændret" #47 #8? 0 #8= #3?
 "absoluttrin" #48 #8? 0 #8= #3> "min" #49 #8? 2147483647 #8= #3> "max" #4: #8?
 1 #8= #3> "vigtighedsgrad" #:5 #8? "" #8= #3> "Tast" #74 #8? #1< #8= #3>
 "Tast_Global" #9> #8? "" #8= #3> "Beskrivelse" #9? #8? "" #8= #3> "Tag" #:0 #8?
@@ -303,53 +303,53 @@ TestModuleType;  SM4 #6? #01 2.32 , -0.64 , 0.0 , 0.4 , 0.4  #6< ) #8= #71 #81
 "ModulePath" "" #8= #3> "WindowTitle" #1< #8= #3> "RelPos" 0.0 #8= #3> "Xpos"
 0.0 #8= #3> "ypos" 0.0 #8= #3> "xsize" 0.0 #8= #3> "ysize" #1< #8= #3> "hroot"
 0 #8= #3> "selectclass" 0 #8= #3> "timeout" #1< #8= #3? "windowdisplayed" 0 #8=
-#3? "status"  #64 #8? #1; #8= #3> "aktiver" #9= #8? #1< #8= #3? "Ã¦ndret" #47
+#3? "status"  #64 #8? #1; #8= #3> "aktiver" #9= #8? #1< #8= #3? "ændret" #47
 #8? 0.0 #:5 #8? "" #8= #3> "tast" #74 #8? #1< #8= #3> "tag_global"  #95  #01
 0.48 , -0.96 ) #01 1.0 , -1.08 )  ToggleWindow "" #8= #3> "Mpath" "" #8= #3>
 "wtitle" #1< #8= #3> "relpos" 0.0 #8= #3> "xpos" 0.0 #8= #3> "ypos" 0.0 #8= #3>
 "xsize" 0.0 #8= #3> "ysize" #1< #8= #3> "hroot" 0 #8= #3> "selectclass" 0 #8=
 #3> "timeout" #1< #8= #3? "wdisplayed" 0 #8= #3? "status"  #64 #8? #1; #8= #3>
-"aktiver" #9= #8? #1< #8= #3? "Ã¦ndret" #47 #8? 0.0 #:5 #8? "" #8= #3> "tast"
+"aktiver" #9= #8? #1< #8= #3? "ændret" #47 #8? 0.0 #:5 #8? "" #8= #3> "tast"
 #74 #8? #1< #8= #3> "tast_global"  #95 #01 0.44 , -1.16 )  #01 1.0 , -1.32 )
 DeleteWindow "" #8= #3> "mpath" 0 #8= #3> "selectclass" 0 #8= #3? "status"  #64
-#8? #1; #8= #3> "aktiver" #9= #8? #1< #8= #3? "Ã¦ndret" #47 #8? 0.0 #:5 #8? ""
+#8? #1; #8= #3> "aktiver" #9= #8? #1< #8= #3? "ændret" #47 #8? 0.0 #:5 #8? ""
 #8= #3> "tast" #74 #8? #1< #8= #3> "tast_global"  #95  #01 0.44 , -1.44 )  #01
 0.96 , -1.56 )  WindowContent "" #8= #3> "mpath" 0 #8= #3? "status"  #64 #8?
-#1; #8= #3> "aktiver" #9= #8? #1< #8= #3? "Ã¦ndret" #47 #8? 0.0 #:5 #8? "" #8=
+#1; #8= #3> "aktiver" #9= #8? #1< #8= #3? "ændret" #47 #8? 0.0 #:5 #8? "" #8=
 #3> "tast" #74 #8? #1< #8= #3> "tast_global"  #95  #01 0.4 , -1.68 )  #01 1.0 ,
 -1.8 )  NewEditFile "" #8= #3> "filename" #1< #8= #3> "readonly" 0.0 #8= #3>
 "xpos" 0.0 #8= #3> "ypos" #1< #8= #3> "relpos" 0 #8= #3> "noofrows" 0 #8= #3>
 "noofcolumns" 0 #8= #3> "fontkind" 0 #8= #3> "fontsize" 0 #8= #3? "status"  #64
-#8? #1; #8= #3> "aktiver" #9= #8? #1< #8= #3? "Ã¦ndret" #47 #8? 0.0 #:5 #8? ""
+#8? #1; #8= #3> "aktiver" #9= #8? #1< #8= #3? "ændret" #47 #8? 0.0 #:5 #8? ""
 #8= #3> "tast" #74 #8? #1< #8= #3> "tast_global"  #95  #01 0.4 , -1.88 )  #01
 1.08 , -2.04 )  ToggleEditFile "" #8= #3> "filename" #1< #8= #3> "readolny" 0.0
 #8= #3> "xpos" 0.0 #8= #3> "ypos" #1< #8= #3> "relpos" 0 #8= #3> "nooforws" 0
 #8= #3> "noofcolumns" 0 #8= #3> "fontkind" 0 #8= #3> "fontsize" 0 #8= #3?
-"status"  #64 #8? #1; #8= #3> "aktiver" #9= #8? #1< #8= #3? "Ã¦ndret" #47 #8?
+"status"  #64 #8? #1; #8= #3> "aktiver" #9= #8? #1< #8= #3? "ændret" #47 #8?
 0.0 #:5 #8? "" #8= #3> "tast" #74 #8? #1< #8= #3> "tast_global"  #::  #01 1.92
 , -1.0 ) #01 2.64 , -1.24 )  #;7 #64 #8? #1; #8= #3> "Aktiver" #9= #8? #1< #8=
-#3? "Ã†ndret" #47 #8? 0 #8= #3? "max" #48 #8? 0 #8= #3> "min" #49 #8? 2147483647
+#3? "Ændret" #47 #8? 0 #8= #3? "max" #48 #8? 0 #8= #3> "min" #49 #8? 2147483647
 #8= #3> "max" #4: #8? 1 #8= #3> "vigtighedsgrad" #:5 #8? "" #8= #3> "Tast" #74
 #8? #1< #8= #3> "Tast_Global" #9> #8? "" #8= #3> "Beskrivelse" #9? #8? "" #8=
 #3> "Tag" #:0 #8? 0 #8= #3> "Vigtighedsgrad" #:1 #8? 0 #8= #3> "Klasse" #:; #8?
 #1; #8= #3> "Synlig" #58 #:< #;0 #;; #8? #1; #8= #3> #1;  #;< #8? #1< #8= #3>
 "OK"  #;= #8? #1< #8= #3> "Fortryd"   #5; #8= #61 #8? 9 #62 #8? -1  #::  #01
 3.64 , -0.96 ) #01 4.36 , -1.2 )  #;7 #64 #8? #1; #8= #3> "Aktiver" #9= #8? #1<
-#8= #3? "Ã†ndret" #47 #8? 0 #8= #3? "max" #48 #8? 0 #8= #3> "min" #49 #8?
+#8= #3? "Ændret" #47 #8? 0 #8= #3? "max" #48 #8? 0 #8= #3> "min" #49 #8?
 2147483647 #8= #3> "max" #4: #8? 1 #8= #3> "vigtighedsgrad" #:5 #8? "" #8= #3>
 "Tast" #74 #8? #1< #8= #3> "Tast_Global" #9> #8? "" #8= #3> "Beskrivelse" #9?
 #8? "" #8= #3> "Tag" #:0 #8? 0 #8= #3> "Vigtighedsgrad" #:1 #8? 0 #8= #3>
 "Klasse" #:; #8? #1; #8= #3> "Synlig" #5: #:< #;0 #;; #8? #1; #8= #3> #1;  #;<
 #8? #1< #8= #3> "OK"  #;= #8? #1< #8= #3> "Fortryd"   #5; #8= #61 #8? 9 #62 #8?
 -1  #:: #01 2.88 , -1.04 ) #01 3.6 , -1.28 )  #;7 #64 #8? #1; #8= #3> "Aktiver"
-#9= #8? #1< #8= #3? "Ã†ndret" #47 #8? 0 #8= #3? "max" #48 #8? 0 #8= #3> "min"
+#9= #8? #1< #8= #3? "Ændret" #47 #8? 0 #8= #3? "max" #48 #8? 0 #8= #3> "min"
 #49 #8? 2147483647 #8= #3> "max" #4: #8? 1 #8= #3> "vigtighedsgrad" #:5 #8? ""
 #8= #3> "Tast" #74 #8? #1< #8= #3> "Tast_Global" #9> #8? "" #8= #3>
 "Beskrivelse" #9? #8? "" #8= #3> "Tag" #:0 #8? 0 #8= #3> "Vigtighedsgrad" #:1
 #8? 0 #8= #3> "Klasse" #:; #8? #1; #8= #3> "Synlig" #59 #:< #;0 #;; #8? #1; #8=
 #3> #1;  #;< #8? #1< #8= #3> "OK"  #;= #8? #1< #8= #3> "Fortryd"   #5; #8= #61
 #8? 9 #62 #8? -1  #:: #01 1.96 , -1.4 ) #01 2.68 , -1.64 )  #;8 #64 #8? #1; #8=
-#3> "Aktiver" #9= #8? #1< #8= #3? "Ã†ndret" #47 #8? 0.0 #8= #3? "RotateionMin"
+#3> "Aktiver" #9= #8? #1< #8= #3? "Ændret" #47 #8? 0.0 #8= #3? "RotateionMin"
 #48 #8? 0.0 #8= #3> "RotateionMin" #49 #8? 0.0 #8= #3> "YScaleMax" #4: #8? 0.0
 #8= #3> "YScaleMax" #:5 #8? "" #8= #3> "Tast" #74 #8? #1< #8= #3> "Tast_Global"
 #9> #8? "" #8= #3> "Beskrivelse" #9? #8? "" #8= #3> "Tag" #:0 #8? 0 #8= #3>
@@ -357,7 +357,7 @@ DeleteWindow "" #8= #3> "mpath" 0 #8= #3> "selectclass" 0 #8= #3? "status"  #64
 #:= #:? #;1 #8? 2 #8= #3> "absoluttrin"  #;; #8? #1; #8= #3> #1;  #;< #8? #1<
 #8= #3> "OK"  #;= #8? #1< #8= #3> "Fortryd"   #5; #8= #61 #8? 9 #62 #8? -1  #::
 #01 2.8 , -1.4 ) #01 3.52 , -1.64 )  #;8 #64 #8? #1; #8= #3> "Aktiver" #9= #8?
-#1< #8= #3? "Ã†ndret" #47 #8? 0.0 #8= #3? "RotateionMin" #48 #8? 0.0 #8= #3>
+#1< #8= #3? "Ændret" #47 #8? 0.0 #8= #3? "RotateionMin" #48 #8? 0.0 #8= #3>
 "RotateionMin" #49 #8? 0.0 #8= #3> "YScaleMax" #4: #8? 0.0 #8= #3> "YScaleMax"
 #:5 #8? "" #8= #3> "Tast" #74 #8? #1< #8= #3> "Tast_Global" #9> #8? "" #8= #3>
 "Beskrivelse" #9? #8? "" #8= #3> "Tag" #:0 #8? 0 #8= #3> "Vigtighedsgrad" #:1
@@ -365,100 +365,100 @@ DeleteWindow "" #8= #3> "mpath" 0 #8= #3> "selectclass" 0 #8= #3? "status"  #64
 #3> "AltLineColor"  #;; #8? #1; #8= #3> #1;  #;< #8? #1< #8= #3> "OK"  #;= #8?
 #1< #8= #3> "Fortryd"   #5; #8= #61 #8? 9 #62 #8? -1  #:6  #01 -1.4 , 1.28 )
 #01 -1.04 , 1.16 )  #;6 #64 #8? #1; #8= #3> "aktiver" #9= #8? #1< #8= #3?
-"Ã¦ndret" #47 #8? #1< #8= #3? "var1" #:5 #8? "" #8= #3> "tast" #74 #8? #1< #8=
+"ændret" #47 #8? #1< #8= #3? "var1" #:5 #8? "" #8= #3> "tast" #74 #8? #1< #8=
 #3> "tast_global" #9> #8? "" #8= #3> "beskrivelse" #9? #8? "" #8= #3> "tag" #:0
 #8? 0 #8= #3> "vigtighedsgrad" #:1 #8? 0 #8= #3> "klasse" #:; #8? #1; #8= #3>
 "synlig" #4; #:< #56 #8? "" #8= #3> "tekst"  #;: #8? "" #8= #3> "alttekst"  #;3
-#<0 #<1 #8? #1< #8= #3> "aktiverenkelt"  #<2 #8? "" #8= #3? "formÃ¥l"  #<3 #<4
+#<0 #<1 #8? #1< #8= #3> "aktiverenkelt"  #<2 #8? "" #8= #3? "formål"  #<3 #<4
 #8? "" #8= #3? "kommentar"  #<5 #<6 #<7 #8? "" #8= #3? "brugerident1"  #<8 #8?
 "" #8= #3? "fuldnavn1"  #<9 #<: #8? #1< #8= #3> "aktiverdobbelt"  #64 #8? #1<
 #8= #3> "aktiver2"  #<; #8? "" #8= #3? "afbrydkommentar"  #<< #8? #1< #8= #3?
 "signafbrudt"  #<= #8? "" #8= #3? "brugerident2"  #<> #8? "" #8= #3?
 "fuldnavn2"   #:6 #01 -1.4 , 0.96 ) #01 -1.04 , 0.84 )  #;7 #64 #8? #1; #8= #3>
-"aktiver" #9= #8? #1< #8= #3? "Ã¦ndret" #47 #8? 0 #8= #3? "var2" #48 #8? 0 #8=
+"aktiver" #9= #8? #1< #8= #3? "ændret" #47 #8? 0 #8= #3? "var2" #48 #8? 0 #8=
 #3> "min" #49 #8? 0 #8= #3> "max" #4: #8? 1 #8= #3> "abstrin" #:5 #8? "" #8=
 #3> "tast" #74 #8? #1< #8= #3> "tast_global" #9> #8? "" #8= #3> "beskrivelse"
 #9? #8? "" #8= #3> "tag" #:0 #8? 0 #8= #3> "vigtighedsgrad" #:1 #8? 0 #8= #3>
 "klasse" #:; #8? #1; #8= #3> "synlig" #:< #56 #8? "" #8= #3> "tekst"  #;: #8?
 "" #8= #3> "alttekst"  #<0 #<1 #8? #1< #8= #3> "aktiverenkelt"  #<2 #8? "" #8=
-#3? "formÃ¥l"  #<3 #<4 #8? "" #8= #3? "kommentar"  #<5 #<6 #<7 #8? "" #8= #3?
+#3? "formål"  #<3 #<4 #8? "" #8= #3? "kommentar"  #<5 #<6 #<7 #8? "" #8= #3?
 "brugerident1"  #<8 #8? "" #8= #3? "fuldnavn1"  #<9 #<: #8? #1< #8= #3>
 "aktiverdobbelt"  #64 #8? #1< #8= #3> "aktiver2"  #<; #8? "" #8= #3?
 "afbrydkommentar"  #<< #8? #1< #8= #3? "signafbrudt"  #<= #8? "" #8= #3?
 "brugerident2"  #<> #8? "" #8= #3? "fuldnavn2"   #:6  #01 -1.0 , 0.96 )  #01
--0.64 , 0.84 )  #;7 #64 #8? #1; #8= #3> "aktiver" #9= #8? #1< #8= #3? "Ã¦ndret"
+-0.64 , 0.84 )  #;7 #64 #8? #1; #8= #3> "aktiver" #9= #8? #1< #8= #3? "ændret"
 #47 #8? 0 #8= #3? "var2" #:5 #8? "" #8= #3> "tast" #74 #8? #1< #8= #3>
 "tast_global" #9> #8? "" #8= #3> "beskrivelse" #9? #8? "" #8= #3> "tag" #:0 #8?
 0 #8= #3> "vigtighedsgrad" #:1 #8? 0 #8= #3> "klasse" #:; #8? #1; #8= #3>
 "synlig" #:< #56 #8? "" #8= #3> "tekst"  #;: #8? "" #8= #3> "alttekst"  #;2 #;3
 #:> #8? 0 #8= #3> "intvar"  #<0 #<1 #8? #1< #8= #3> "aktiverenkelt"  #<2 #8? ""
-#8= #3? "formÃ¥l"  #<3 #<4 #8? "" #8= #3? "kommentar"  #<5 #<6 #<7 #8? "" #8=
+#8= #3? "formål"  #<3 #<4 #8? "" #8= #3? "kommentar"  #<5 #<6 #<7 #8? "" #8=
 #3? "brugerident1"  #<8 #8? "" #8= #3? "fuldnavn1"  #<9 #<: #8? #1< #8= #3>
 "aktiverdobbelt"  #64 #8? #1< #8= #3> "aktiver2"  #<; #8? "" #8= #3?
 "afbrydkommentar"  #<< #8? #1< #8= #3? "signafbrudt"  #<= #8? "" #8= #3?
 "brugerident2"  #<> #8? "" #8= #3? "fuldnavn2"   #:6  #01 -1.0 , 1.28 )  #01
--0.64 , 1.16 )  #;6 #64 #8? #1; #8= #3> "aktiver" #9= #8? #1< #8= #3? "Ã¦ndret"
+-0.64 , 1.16 )  #;6 #64 #8? #1; #8= #3> "aktiver" #9= #8? #1< #8= #3? "ændret"
 #47 #8? #1< #8= #3? "var1" #:5 #8? "" #8= #3> "tast" #74 #8? #1< #8= #3>
 "tast_global" #9> #8? "" #8= #3> "beskrivelse" #9? #8? "" #8= #3> "tag" #:0 #8?
 0 #8= #3> "vigtighedsgrad" #:1 #8? 0 #8= #3> "klasse" #:; #8? #1; #8= #3>
 "synlig" #4< #:< #56 #8? "" #8= #3> "tekst"  #;: #8? "" #8= #3> "alttekst"  #;3
-#<0 #<1 #8? #1< #8= #3> "aktiverenkelt"  #<2 #8? "" #8= #3? "formÃ¥l"  #<3 #<4
+#<0 #<1 #8? #1< #8= #3> "aktiverenkelt"  #<2 #8? "" #8= #3? "formål"  #<3 #<4
 #8? "" #8= #3? "kommentar"  #<5 #<6 #<7 #8? "" #8= #3? "brugerident1"  #<8 #8?
 "" #8= #3? "fuldnavn1"  #<9 #<: #8? #1< #8= #3> "aktiverdobbelt"  #64 #8? #1<
 #8= #3> "aktiver2"  #<; #8? "" #8= #3? "afbrydkommentar"  #<< #8? #1< #8= #3?
 "signafbrudt"  #<= #8? "" #8= #3? "brugerident2"  #<> #8? "" #8= #3?
 "fuldnavn2"   #:6 #01 -0.76 , 1.28 ) #01 -0.4 , 1.16 )  #;6 #64 #8? #1; #8= #3>
-"aktiver" #9= #8? #1< #8= #3? "Ã¦ndret" #47 #8? #1< #8= #3? "var1" #:5 #8? ""
+"aktiver" #9= #8? #1< #8= #3? "ændret" #47 #8? #1< #8= #3? "var1" #:5 #8? ""
 #8= #3> "tast" #74 #8? #1< #8= #3> "tast_global" #9> #8? "" #8= #3>
 "beskrivelse" #9? #8? "" #8= #3> "tag" #:0 #8? 0 #8= #3> "vigtighedsgrad" #:1
 #8? 0 #8= #3> "klasse" #:; #8? #1; #8= #3> "synlig" #4= #:< #56 #8? "" #8= #3>
 "tekst"  #;: #8? "" #8= #3> "alttekst"  #;3 #<0 #<1 #8? #1< #8= #3>
-"aktiverenkelt"  #<2 #8? "" #8= #3? "formÃ¥l"  #<3 #<4 #8? "" #8= #3?
+"aktiverenkelt"  #<2 #8? "" #8= #3? "formål"  #<3 #<4 #8? "" #8= #3?
 "kommentar"  #<5 #<6 #<7 #8? "" #8= #3? "brugerident1"  #<8 #8? "" #8= #3?
 "fuldnavn1"  #<9 #<: #8? #1< #8= #3> "aktiverdobbelt"  #64 #8? #1< #8= #3>
 "aktiver2"  #<; #8? "" #8= #3? "afbrydkommentar"  #<< #8? #1< #8= #3?
 "signafbrudt"  #<= #8? "" #8= #3? "brugerident2"  #<> #8? "" #8= #3?
 "fuldnavn2"   #:6 #01 -1.4 , 0.68 ) #01 -1.04 , 0.56 )  #;8 #64 #8? #1; #8= #3>
-"aktiver" #9= #8? #1< #8= #3? "Ã¦ndret" #47 #8? 0.0 #8= #3? "var3" #48 #8? 0.0
+"aktiver" #9= #8? #1< #8= #3? "ændret" #47 #8? 0.0 #8= #3? "var3" #48 #8? 0.0
 #8= #3> "minreal" #49 #8? 0.0 #8= #3> "maxreal" #4: #8? 0.0 #8= #3>
 "abstrinreal" #:5 #8? "" #8= #3> "tast" #74 #8? #1< #8= #3> "tast_global" #9>
 #8? "" #8= #3> "beskrivelse" #9? #8? "" #8= #3> "tag" #:0 #8? 0 #8= #3>
 "vigtighedsgrad" #:1 #8? 0 #8= #3> "klasse" #:; #8? #1; #8= #3> "synlig" #:<
 #56 #8? "" #8= #3> "tekst"  #;: #8? "" #8= #3> "alttekst"  #<0 #<1 #8? #1< #8=
-#3> "aktiverenkelt"  #<2 #8? "" #8= #3? "formÃ¥l"  #<3 #<4 #8? "" #8= #3?
+#3> "aktiverenkelt"  #<2 #8? "" #8= #3? "formål"  #<3 #<4 #8? "" #8= #3?
 "kommentar"  #<5 #<6 #<7 #8? "" #8= #3? "brugerident1"  #<8 #8? "" #8= #3?
 "fuldnavn1"  #<9 #<: #8? #1< #8= #3> "aktiverdobbelt"  #64 #8? #1< #8= #3>
 "aktiver2"  #<; #8? "" #8= #3? "afbrydkommentar"  #<< #8? #1< #8= #3?
 "signafbrudt"  #<= #8? "" #8= #3? "brugerident2"  #<> #8? "" #8= #3?
 "fuldnavn2"   #:6 #01 -0.96 , 0.68 ) #01 -0.6 , 0.56 )  #;8 #64 #8? #1; #8= #3>
-"aktiver" #9= #8? #1< #8= #3? "Ã¦ndret" #47 #8? 0.0 #8= #3? "var3" #48 #8? 0.0
+"aktiver" #9= #8? #1< #8= #3? "ændret" #47 #8? 0.0 #8= #3? "var3" #48 #8? 0.0
 #8= #3> "minreal" #49 #8? 0.0 #8= #3> "maxreal" #:5 #8? "" #8= #3> "tast" #74
 #8? #1< #8= #3> "tast_global" #9> #8? "" #8= #3> "beskrivelse" #9? #8? "" #8=
 #3> "tag" #:0 #8? 0 #8= #3> "vigtighedsgrad" #:1 #8? 0 #8= #3> "klasse" #:; #8?
 #1; #8= #3> "synlig" #:= #56 #8? "" #8= #3> "tekst"  #;: #8? "" #8= #3>
 "alttekst"  #<0 #<1 #8? #1< #8= #3> "aktiverenkelt"  #<2 #8? "" #8= #3?
-"formÃ¥l"  #<3 #<4 #8? "" #8= #3? "kommentar"  #<5 #<6 #<7 #8? "" #8= #3?
+"formål"  #<3 #<4 #8? "" #8= #3? "kommentar"  #<5 #<6 #<7 #8? "" #8= #3?
 "brugerident1"  #<8 #8? "" #8= #3? "fuldnavn1"  #<9 #<: #8? #1< #8= #3>
 "aktiverdobbelt"  #64 #8? #1< #8= #3> "aktiver2"  #<; #8? "" #8= #3?
 "afbrydkommentar"  #<< #8? #1< #8= #3? "signafbrudt"  #<= #8? "" #8= #3?
 "brugerident2"  #<> #8? "" #8= #3? "fuldnavn2"   #:6  #01 -0.76 , 1.44 )  #01
--0.4 , 1.32 )  #;6 #64 #8? #1; #8= #3> "aktiver" #9= #8? #1< #8= #3? "Ã¦ndret"
+-0.4 , 1.32 )  #;6 #64 #8? #1; #8= #3> "aktiver" #9= #8? #1< #8= #3? "ændret"
 #47 #8? #1< #8= #3? "var1" #:5 #8? "" #8= #3> "tast" #74 #8? #1< #8= #3>
 "tast_global" #9> #8? "" #8= #3> "beskrivelse" #9? #8? "" #8= #3> "tag" #:0 #8?
 0 #8= #3> "vigtighedsgrad" #:1 #8? 0 #8= #3> "klasse" #:; #8? #1; #8= #3>
 "synlig" #4= #:< #56 #8? "" #8= #3> #96 "tekst"  #;: #8? "" #8= #3> #96
 "alttekst"  #;3 #<0 #<1 #8? #1< #8= #3> "aktiverenkelt"  #<2 #8? "" #8= #3?
-"formÃ¥l"  #<3 #<4 #8? "" #8= #3? "kommentar"  #<5 #<6 #<7 #8? "" #8= #3?
+"formål"  #<3 #<4 #8? "" #8= #3? "kommentar"  #<5 #<6 #<7 #8? "" #8= #3?
 "brugerident1"  #<8 #8? "" #8= #3? "fuldnavn1"  #<9 #<: #8? #1< #8= #3>
 "aktiverdobbelt"  #64 #8? #1< #8= #3> "aktiver2"  #<; #8? "" #8= #3?
 "afbrydkommentar"  #<< #8? #1< #8= #3? "signafbrudt"  #<= #8? "" #8= #3?
 "brugerident2"  #<> #8? "" #8= #3? "fuldnavn2"   #:6  #01 -1.0 , 1.44 )  #01
--0.64 , 1.32 )  #;6 #64 #8? #1; #8= #3> "aktiver" #9= #8? #1< #8= #3? "Ã¦ndret"
+-0.64 , 1.32 )  #;6 #64 #8? #1; #8= #3> "aktiver" #9= #8? #1< #8= #3? "ændret"
 #47 #8? #1< #8= #3? "var1" #:5 #8? "" #8= #3> "tast" #74 #8? #1< #8= #3>
 "tast_global" #9> #8? "" #8= #3> "beskrivelse" #9? #8? "" #8= #3> "tag" #:0 #8?
 0 #8= #3> "vigtighedsgrad" #:1 #8? 0 #8= #3> "klasse" #:; #8? #1; #8= #3>
 "synlig" #4< #:< #56 #8? "" #8= #3> "tekst"  #;: #8? "" #8= #3> "alttekst"  #;3
-#<0 #<1 #8? #1< #8= #3> "aktiverenkelt"  #<2 #8? "" #8= #3? "formÃ¥l"  #<3 #<4
+#<0 #<1 #8? #1< #8= #3> "aktiverenkelt"  #<2 #8? "" #8= #3? "formål"  #<3 #<4
 #8? "" #8= #3? "kommentar"  #<5 #<6 #<7 #8? "" #8= #3? "brugerident1"  #<8 #8?
 "" #8= #3? "fuldnavn1"  #<9 #<: #8? #1< #8= #3> "aktiverdobbelt"  #64 #8? #1<
 #8= #3> "aktiver2"  #<; #8? "" #8= #3? "afbrydkommentar"  #<< #8? #1< #8= #3?

@@ -20,6 +20,7 @@ TYPEDEFINITIONS
       SharedBias: real  := 0.0;
       EnableControl: boolean  := False;
    LOCALVARIABLES
+   GlobalBias: integer  := 0;
       Error: real  := 0.0;
       Output: real  := 0.0;
 
