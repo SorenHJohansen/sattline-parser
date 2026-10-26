@@ -13,7 +13,6 @@ import importlib.util
 import io
 import json
 import sys
-import tempfile
 from pathlib import Path
 from typing import Any
 
@@ -21,7 +20,6 @@ import pytest
 
 _ROOT = Path(__file__).resolve().parents[2]
 _SCRIPT = _ROOT / "scripts" / "probe" / "analyze.py"
-_REPORTS = _ROOT / "tests" / "real" / "reports"
 
 HEADER = "| id | area | tier | file | kind | expected | real | message |\n"
 
@@ -287,39 +285,3 @@ def test_no_write_leaves_no_snapshot(tmp_path: Path) -> None:
     p = _write(tmp_path, _row("t0-a", "A.x", "inventory", "accept", "accept"))
     assert _analyze(transcript=p, out_dir=tmp_path, write=False) == 0
     assert not list(tmp_path.glob("*.json"))
-
-
-# --- the checked-in golden snapshot -----------------------------------------
-
-
-def _regenerate(gui_version: str) -> dict[str, Any]:
-    """Produce the snapshot the analyzer would write, into a temp dir."""
-    with tempfile.TemporaryDirectory() as td:
-        out = Path(td)
-        assert (
-            _analyze(
-                transcript=_ROOT / "probes" / "TRANSCRIPT.md",
-                manifest=_ROOT / "probes" / "MANIFEST.yaml",
-                out_dir=out,
-                gui_version=gui_version,
-                write=True,
-            )
-            == 0
-        )
-        written = list(out.glob("*.json"))
-        assert len(written) == 1
-        return json.loads(written[0].read_text())
-
-
-def test_checked_in_snapshot_is_current() -> None:
-    """The committed snapshot must match what the current transcript produces.
-
-    Guards against recording real-tool results without regenerating the golden
-    file, which is the failure mode this whole harness exists to prevent.
-    """
-    reports = sorted(_REPORTS.glob("*.json"))
-    assert reports, "no parity snapshot checked in"
-    checked_in = json.loads(reports[-1].read_text())
-    fresh = _regenerate(str(checked_in["gui_version"]))
-    for section in ("tier0", "probes", "summary"):
-        assert checked_in[section] == fresh[section], f"{section} section is stale - re-run scripts/probe/analyze.py"

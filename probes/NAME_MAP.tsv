@@ -75,6 +75,7 @@ t0-edge-KeywordPrefixedIdentifiers	EdgeKwPrefixed
 t0-edge-LegacySequenceNoInitStep	EdgeLegacySeqNo
 t0-edge-MinimalSequence	EdgeMinSeq
 t0-edge-ModuleDefNoTrailingEnddef	EdgeModDefNoTrail
+t0-edge-ModuleDefTrailingEnddef	EdgeModDefTrail
 t0-edge-ModuleOptions	EdgeModOpt
 t0-edge-NegativeDurationValue	EdgeNegDurVal
 t0-edge-OldNewOnDottedStateField	EdgeOldNewOnDotted
@@ -163,3 +164,16 @@ t0-valid-SubmoduleParams	ValidSubmodParams
 t0-valid-SubsequenceBlock	ValidSubseqBlk
 t0-valid-UnCompressedFullGrammar	ValidUnComprFull
 t0-valid-VariableModifiers	ValidVariaMods
+EdgeAsciiIdent	encoding-ascii-ident
+
+t0-edge-GraphObjectLayerProperty	EdgePropLayer.x
+t0-edge-GraphObjectWidthProperty	EdgePropWidth.x
+t0-edge-GraphObjectFormatStringProperty	EdgePropFormatStr.x
+t0-edge-GraphObjectValueFractionProperty	EdgePropValueFrac.x
+t0-edge-GraphObjectEnableBare	EdgePropEnable.x
+t0-edge-GraphObjectEnableInvar	EdgePropEnableInvar.x
+t0-edge-GraphObjectParenTail	EdgePropParenTail.x
+t0-edge-DurationCompareInteger	EdgeDurCmpInt.x
+t0-edge-DurationCompareReal	EdgeDurCmpReal.x
+t0-edge-TimeCompareInteger	EdgeTimeCmpInt.x
+t0-edge-DurationLiteralForms	EdgeDurLitForms.x

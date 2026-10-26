@@ -213,6 +213,58 @@ def read_text_cp1252(path: Path) -> str:
 _read_text_simple = read_text_cp1252
 
 
+def _decode_cp1252_comments_tolerant(raw: bytes) -> str:
+    """Decode Windows-1252, tolerating undefined bytes **inside comments only**.
+
+    Proved 2026-10-05 by ``HighByteInvalid.x``: the byte ``0x81`` is undefined in
+    Windows-1252, yet the real editor compiles the file because the byte sits
+    inside a ``(* ... *)`` comment. So an undefined byte in a comment body is
+    legal and must not fail the decode.
+
+    Everywhere else the decode stays strict. Code, string literals and the
+    undefined bytes themselves are unchanged, so ``b"\\x81A"`` still raises
+    :class:`UnicodeDecodeError` exactly as before - this only widens what is
+    accepted inside a comment body, and never re-reads anything as utf-8 or
+    latin-1.
+
+    Comment scanning is deliberately naive (no nesting, no string awareness).
+    That errs toward the previous strict behaviour: an unrecognised comment
+    region simply fails to decode as it did before, rather than silently
+    accepting bad code.
+    """
+    # Fast path: a file that decodes strictly needs no scanning at all.
+    try:
+        return raw.decode("cp1252")
+    except UnicodeDecodeError:
+        pass
+
+    parts: list[str] = []
+    pos = 0
+    while True:
+        start = raw.find(b"(*", pos)
+        if start < 0:
+            parts.append(raw[pos:].decode("cp1252"))
+            break
+        parts.append(raw[pos:start].decode("cp1252"))
+        end = raw.find(b"*)", start + 2)
+        if end < 0:
+            # Unterminated comment: the lexer would reject this anyway, so keep
+            # the strict behaviour rather than guessing where the comment ends.
+            parts.append(raw[start:].decode("cp1252"))
+            break
+        parts.append(raw[start : end + 2].decode("cp1252", errors="replace"))
+        pos = end + 2
+    return "".join(parts)
+
+
+def _decode_source_bytes_for_parse(path: Path) -> str:
+    """Read a source file for the parse path, allowing undefined comment bytes."""
+    try:
+        return _read_text_simple(path)
+    except UnicodeDecodeError:
+        return _decode_cp1252_comments_tolerant(path.read_bytes())
+
+
 def load_source_text(
     code_path: Path,
     *,
@@ -225,7 +277,7 @@ def load_source_text(
     raw_bytes = source_path.read_bytes()
     if is_coded(raw_bytes):
         return _decode_coded_file_bytes(raw_bytes, debug=debug, source_path=source_path)
-    src = _read_text_simple(source_path)
+    src = _decode_source_bytes_for_parse(source_path)
     return _decode_compressed_source(src, debug=debug, source_path=source_path)
 
 
@@ -347,7 +399,7 @@ def parse_source_file(
             log_failures=log_failures,
         )
     else:
-        raw = _read_text_simple(source_path)
+        raw = _decode_source_bytes_for_parse(source_path)
     return parse_source_text(
         raw,
         parser=parser,

@@ -5,7 +5,15 @@
    The alternative group inside a transition sub uses a single
    ALTERNATIVESEQ marker, matching the strict SattLine syntax.
    A redundant double ALTERNATIVESEQ marker would be rejected.
-   Expected: strict syntax-check passes. *)
+
+   Corrected 2026-10-26: each branch closes on its own transition and a step
+   follows the sub-transition before the next transition. The native readers
+   require alternative branches of the form T (S T | M)* and treat
+   SUBSEQTRANSITION as a transition-position construct, so the earlier version
+   (branches ending on a step, two transitions in a row) is the shape the real
+   tool rejected in probe ValidSubSeqTransB.x with "ALTERNATIVEBRANCH ...
+   Incorrect Syntax - Error 32". *)
+
 
 BasePicture Invocation
    ( 0.0 , 0.0 , 0.0 , 1.0 , 1.0
@@ -36,13 +44,16 @@ ModuleCode
             SEQSTEP ModeA
                ACTIVECODE
                   OutputA = OutputA + 1;
+            SEQTRANSITION TrModeADone WAIT_FOR True
          ALTERNATIVEBRANCH
             SEQTRANSITION TrModeB WAIT_FOR Mode == 2
             SEQSTEP ModeB
                ACTIVECODE
                   OutputB = OutputB + 1;
+            SEQTRANSITION TrModeBDone WAIT_FOR True
          ENDALTERNATIVE
       ENDSUBSEQTRANSITION
+      SEQSTEP PhaseDone
       SEQTRANSITION TrDone WAIT_FOR NOT StartCmd
    ENDSEQUENCE
 

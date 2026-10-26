@@ -46,15 +46,18 @@ def test_sfc_mixin_builds_modulecode_sequences_and_equations():
         name="SubA",
         body=[init_step, transition],
     )
-    assert mixin.seqalternative([Token("ALT", "ALT"), body_tree, mixin.sequence_body([SFCBreak()])]) == SFCAlternative(
-        branches=[[init_step, transition], [SFCBreak()]]
+    other_step = SFCStep(kind="step", name="Other", code=SFCCodeBlocks())
+    assert mixin.seqalternative([Token("ALT", "ALT"), body_tree, mixin.sequence_body([other_step])]) == SFCAlternative(
+        branches=[[init_step, transition], [other_step]]
     )
-    assert mixin.seqparallel(
-        [Token("PAR", "PAR"), body_tree, mixin.sequence_body([SFCFork(targets=("Other",))])]
-    ) == SFCParallel(branches=[[init_step, transition], [SFCFork(targets=("Other",))]])
+    assert mixin.seqparallel([Token("PAR", "PAR"), body_tree, mixin.sequence_body([other_step])]) == SFCParallel(
+        branches=[[init_step, transition], [other_step]]
+    )
     assert mixin.seqfork([Token("SEQFORK", "SEQFORK"), "NextStep"]) == SFCFork(targets=("NextStep",))
     assert mixin.seqfork([Token("SEQFORK", "SEQFORK"), "PathA", "PathB"]) == SFCFork(targets=("PathA", "PathB"))
-    assert isinstance(mixin.seqbreak([]), SFCBreak)
+    assert mixin.seqfork([Token("SEQFORK", "SEQFORK"), "PathA", Token("SEQBREAK", "SEQBREAK")]) == SFCFork(
+        targets=("PathA",), has_break=True
+    )
     assert mixin.seq_element([step]) is step
     with pytest.raises(ValueError, match="seq_element expected"):
         mixin.seq_element([])
@@ -285,20 +288,22 @@ def test_sfc_mixin_rejects_malformed_shapes_and_missing_required_fields():
         mixin.seqstep([Token("SEQSTEP", "SEQSTEP")])
     with pytest.raises(ValueError, match="seqstep expected"):
         mixin.seqstep([Token("SEQSTEP", "SEQSTEP"), "not-code-blocks"])
-    with pytest.raises(ValueError, match="seqtransition expected WAIT_FOR"):
-        mixin.seqtransition([Token("SEQTRANSITION", "SEQTRANSITION"), "Gate", Token("NAME", "NAME"), True])
-    with pytest.raises(ValueError, match="seqtransition expected WAIT_FOR"):
-        mixin.seqtransition([Token("SEQTRANSITION", "SEQTRANSITION"), Token("NAME", "NAME"), True])
-    with pytest.raises(ValueError, match=r"seqtransition expected \(SEQTRANSITION"):
-        mixin.seqtransition([Token("SEQTRANSITION", "SEQTRANSITION")])
+    with pytest.raises(ValueError, match="seqtransition unexpected item"):
+        mixin.seqtransition([Token("SEQTRANSITION", "SEQTRANSITION"), 1.5])
+    with pytest.raises(ValueError, match="seqtransition expected an expression after WAIT_FOR"):
+        mixin.seqtransition(
+            [Token("SEQTRANSITION", "SEQTRANSITION"), Token("WAIT_FOR", "WAIT_FOR"), Token("WAIT_FOR", "WAIT_FOR")]
+        )
     with pytest.raises(ValueError, match="seqtransition expected an expression after WAIT_FOR"):
         mixin.seqtransition([Token("SEQTRANSITION", "SEQTRANSITION"), Token("WAIT_FOR", "WAIT_FOR")])
     with pytest.raises(ValueError, match="seqtransitionsub expected"):
         mixin.seqtransitionsub(
             [Token("SUBSEQTRANSITION", "SUBSEQTRANSITION"), "Sub", Tree("wrong", []), Token("END", "END")]
         )
-    with pytest.raises(ValueError, match="seqsub expected"):
+    with pytest.raises(ValueError, match="seqsub unexpected item"):
         mixin.seqsub([Token("SUBSEQUENCE", "SUBSEQUENCE"), "Sub", Tree("wrong", []), Token("END", "END")])
+    with pytest.raises(ValueError, match="seqsub expected a sequence_body"):
+        mixin.seqsub([Token("SUBSEQUENCE", "SUBSEQUENCE"), "Sub"])
     with pytest.raises(ValueError, match="seqfork expected"):
         mixin.seqfork([Token("SEQFORK", "SEQFORK")])
     with pytest.raises(ValueError, match="Position can't be None"):

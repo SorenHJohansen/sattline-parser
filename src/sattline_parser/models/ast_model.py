@@ -81,7 +81,6 @@ __all__ = [
     "ParameterMapping",
     "SFCAlternative",
     "SFCBodyItem",
-    "SFCBreak",
     "SFCCodeBlocks",
     "SFCFork",
     "SFCParallel",
@@ -150,15 +149,7 @@ class CodeComment:
 # SFCBodyItem: the element type of Sequence.code (SFC structure nodes + comments).
 type CodeItem = Assignment | FuncCallStmt | IfStmt | CodeComment
 type SFCBodyItem = (
-    SFCStep
-    | SFCTransition
-    | SFCTransitionSub
-    | SFCAlternative
-    | SFCParallel
-    | SFCSubsequence
-    | SFCFork
-    | SFCBreak
-    | CodeComment
+    SFCStep | SFCTransition | SFCTransitionSub | SFCAlternative | SFCParallel | SFCSubsequence | CodeComment
 )
 
 
@@ -223,6 +214,11 @@ class Variable:
     description: str | None = None
     declaration_span: SourceSpan | None = None
     init_is_duration: bool = False
+    # Declaration modifiers in SOURCE ORDER, lowercased. The order matters to
+    # the editor: `OpSave State` is an invalid combination while `State OpSave`
+    # compiles (EdgeOpSaveAndState.x vs OpSaveStateReversed.x, both 2026-10-05),
+    # so the flags above cannot express the rule and the order has to be kept.
+    attribute_order: tuple[str, ...] = ()
 
     @property
     def datatype_text(self) -> str:
@@ -514,6 +510,10 @@ class BasePicture:
     graphics_picture_display_occurrences: list[Any] = field(default_factory=any_list)
     library_dependencies: dict[str, list[str]] = field(default_factory=library_dependency_map)
     trailing_comments: list[CodeComment] = field(default_factory=code_comment_list)
+    #: Explicit DateCode_ attribute of the root module definition, when present.
+    #: Absent is preserved as ``None``; the native import-stamp path (DATE-03) is
+    #: a separate operation and must never be faked during parsing.
+    datecode: int | None = None
     #: The original Lark parse tree, attached by ``parse_source_text`` /
     #: ``parse_source_file`` only when ``retain_parse_tree=True`` is passed, as a
     #: debugging/tooling convenience. It is deliberately *not* part of the
@@ -558,12 +558,19 @@ class SFCStep:
     kind: str  # 'init' or 'step'
     name: str | None
     code: SFCCodeBlocks
+    #: ``SEQFORK`` suffix attached to this step, if any (native 0070a100).
+    fork: SFCFork | None = None
 
 
 @dataclass
 class SFCTransition:
     name: str | None
-    condition: SLExpression
+    #: Guard expression; ``None`` when the source omits ``WAIT_FOR`` entirely.
+    #: The native parser accepts the omission and the compiler lowers it to true
+    #: (0070d180, 006fad30), so absence is preserved rather than synthesized.
+    condition: SLExpression | None
+    #: ``SEQFORK`` suffix attached to this transition, if any (0070d180).
+    fork: SFCFork | None = None
 
 
 @dataclass
@@ -578,8 +585,14 @@ class SFCParallel:
 
 @dataclass
 class SFCSubsequence:
-    name: str
+    #: ``SUBSEQUENCE`` / ``SUBSEQSTEP`` name; both are optional in the native
+    #: readers (00708b40, 0070ba70).
+    name: str | None
     body: list[SFCBodyItem]
+    #: ``'sequence'`` for ``SUBSEQUENCE`` (structural position M) or
+    #: ``'substep'`` for ``SUBSEQSTEP`` (step position S). The two share a model
+    #: shape but occupy different positions in a sequence body.
+    kind: str = "sequence"
 
 
 @dataclass
@@ -590,9 +603,12 @@ class SFCTransitionSub:
 
 @dataclass
 class SFCFork:
+    """``SEQFORK`` jump list, optionally closed by ``SEQBREAK``.
+
+    The native reader takes one or more comma-separated target names followed by
+    an optional ``SEQBREAK`` (006f9850), and only ever reads it as a suffix of a
+    step or a transition. A standalone ``SEQBREAK`` is not a sequence element.
+    """
+
     targets: tuple[str, ...]
-
-
-@dataclass
-class SFCBreak:
-    pass
+    has_break: bool = False

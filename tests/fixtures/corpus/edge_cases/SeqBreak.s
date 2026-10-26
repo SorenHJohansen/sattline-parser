@@ -1,10 +1,14 @@
 "Syntax version 2.23, date: 2026-06-19-12:00:00.000 N"
 "Original file date: ---"
 "Program date: 2026-06-19-12:00:00.000, name: SeqBreakEdge"
-(* Edge case: SEQBREAK used to exit a sequence early.
-   Grammar rule: seqbreak. *   Added a closing SEQTRANSITION: the body originally ended on SEQSTEP Finish,
-   which is illegal in itself (SL-V033). That was incidental to what this file
-   tests, and it masked the real SEQBREAK question. *)
+(* Edge case: SEQBREAK as the closing flag of a SEQFORK suffix.
+
+   Native evidence (006f9850, 0070a100, 0070d180): SEQFORK is not a sequence
+   element of its own. It is a suffix of its host step or transition, reads one
+   or more comma-separated target names, and may then consume a SEQBREAK. A
+   standalone SEQBREAK is not in any position starter set, so the early-exit
+   form is written as the fork's flag - see invalid/StandaloneSeqBreak.s for the
+   rejected spelling. *)
 
 BasePicture Invocation
    ( 0.0 , 0.0 , 0.0 , 1.0 , 1.0
@@ -23,7 +27,8 @@ ModuleCode
       SEQTRANSITION TrRun WAIT_FOR True
       SEQSTEP Working
       SEQTRANSITION TrCheck WAIT_FOR Abort
-      SEQBREAK
+         SEQFORK SkipWork SEQBREAK
+      SEQSTEP SkipWork
       SEQTRANSITION TrDone WAIT_FOR NOT Abort
       SEQSTEP Finish
       SEQTRANSITION TrEnd WAIT_FOR NOT Abort

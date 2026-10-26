@@ -166,62 +166,61 @@ def format_seq_nodes(nodes: list[Any], indent: str = _DEFAULT_INDENT) -> str:
         for statement in statements:
             lines.append(indent * level + format_expr(statement, indent))
 
+    def _fmt_fork(fork: ast_model.SFCFork | None) -> None:
+        if fork is None:
+            return
+        suffix = " Break" if fork.has_break else ""
+        lines.append(f"{indent}Fork to {', '.join(fork.targets)}{suffix}")
+
+    def _fmt_step(step: ast_model.SFCStep) -> None:
+        header = "InitStep" if step.kind == "init" else "Step"
+        lines.append(f"{header} {step.name}")
+        for label, block in (("Enter", step.code.enter), ("Active", step.code.active), ("Exit", step.code.exit)):
+            if block:
+                lines.append(indent + label + ":")
+                _fmt_stmt_list(block)
+
+    def _fmt_branches(header: str, footer: str, branches: list[list[Any]]) -> None:
+        lines.append(header + ":")
+        for index, branch in enumerate(branches, start=1):
+            lines.append(indent + f"Branch {index}:")
+            for line in format_seq_nodes(list(branch), indent).splitlines():
+                lines.append(indent * 2 + line)
+        lines.append(footer)
+
+    def _fmt_body(header: str, footer: str, body: list[Any]) -> None:
+        lines.append(header)
+        for line in format_seq_nodes(list(body), indent).splitlines():
+            lines.append(indent + line)
+        lines.append(footer)
+
     for node in nodes:
         if isinstance(node, ast_model.SFCStep):
-            header = "InitStep" if node.kind == "init" else "Step"
-            lines.append(f"{header} {node.name}")
-            if node.code.enter:
-                lines.append(indent + "Enter:")
-                _fmt_stmt_list(node.code.enter)
-            if node.code.active:
-                lines.append(indent + "Active:")
-                _fmt_stmt_list(node.code.active)
-            if node.code.exit:
-                lines.append(indent + "Exit:")
-                _fmt_stmt_list(node.code.exit)
+            _fmt_step(node)
+            _fmt_fork(node.fork)
 
         elif isinstance(node, ast_model.SFCTransition):
             name_suffix = f" {node.name}" if node.name else ""
-            condition = format_expr(node.condition, indent)
-            lines.append(f"Transition{name_suffix} WAIT_FOR {condition}")
+            if node.condition is None:
+                lines.append(f"Transition{name_suffix}")
+            else:
+                lines.append(f"Transition{name_suffix} WAIT_FOR {format_expr(node.condition, indent)}")
+            _fmt_fork(node.fork)
 
         elif isinstance(node, ast_model.SFCAlternative):
-            lines.append("Alternative:")
-            for index, branch in enumerate(node.branches, start=1):
-                lines.append(indent + f"Branch {index}:")
-                branch_str = format_seq_nodes(list(branch), indent)
-                for line in branch_str.splitlines():
-                    lines.append(indent * 2 + line)
-            lines.append("EndAlternative")
+            _fmt_branches("Alternative", "EndAlternative", node.branches)
 
         elif isinstance(node, ast_model.SFCParallel):
-            lines.append("Parallel:")
-            for index, branch in enumerate(node.branches, start=1):
-                lines.append(indent + f"Branch {index}:")
-                branch_str = format_seq_nodes(list(branch), indent)
-                for line in branch_str.splitlines():
-                    lines.append(indent * 2 + line)
-            lines.append("EndParallel")
+            _fmt_branches("Parallel", "EndParallel", node.branches)
 
         elif isinstance(node, ast_model.SFCSubsequence):
-            lines.append(f"Subsequence {node.name}:")
-            sub_str = format_seq_nodes(list(node.body), indent)
-            for line in sub_str.splitlines():
-                lines.append(indent + line)
-            lines.append("EndSubsequence")
+            label = "Substep" if node.kind == "substep" else "Subsequence"
+            name_suffix = f" {node.name}" if node.name else ""
+            _fmt_body(f"{label}{name_suffix}:", "EndSubsequence", node.body)
 
         elif isinstance(node, ast_model.SFCTransitionSub):
-            lines.append(f"TransitionSub {node.name}:")
-            sub_str = format_seq_nodes(list(node.body), indent)
-            for line in sub_str.splitlines():
-                lines.append(indent + line)
-            lines.append("EndTransitionSub")
-
-        elif isinstance(node, ast_model.SFCFork):
-            lines.append(f"Fork to {', '.join(node.targets)}")
-
-        elif isinstance(node, ast_model.SFCBreak):
-            lines.append("Break")
+            name_suffix = f" {node.name}" if node.name else ""
+            _fmt_body(f"TransitionSub{name_suffix}:", "EndTransitionSub", node.body)
 
         else:
             lines.append(str(node))

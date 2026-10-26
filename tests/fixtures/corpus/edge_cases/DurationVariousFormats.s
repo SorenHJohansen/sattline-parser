@@ -9,30 +9,28 @@
    rejects *comparing* durations or times -- "Only integer and real allowed for
    this operator" for exactly the statement that used to be here. No probed form
    of legal duration/time usage exists, so the variables are declared and left
-   alone. See invalid/NonNumericComparisonOperand.s. *)
+   alone. See invalid/NonNumericComparisonOperand.s.
+   D01-D03 full "d h m s ms" forms; D04-D06 short forms (h/m/s);
+   D07-D10 combined forms; D11-D13 plain decimal seconds.  *)
 
 BasePicture Invocation
    ( 0.0 , 0.0 , 0.0 , 1.0 , 1.0
     ) : MODULEDEFINITION DateCode_ 1
 
 LOCALVARIABLES
-   (* Duration_Value wrapper form *)
    D01: duration  := Duration_Value "0d0h0m0s0ms";
    D02: duration  := Duration_Value "1d2h3m4s500ms";
    D03: duration  := Duration_Value "-0d0h5m0s0ms";
 
-   (* Short forms: hours, minutes *)
    D04: duration  := Duration_Value "1h";
    D05: duration  := Duration_Value "4m";
    D06: duration  := Duration_Value "30s";
 
-   (* Combined forms *)
    D07: duration  := Duration_Value "7m6s123ms";
    D08: duration  := Duration_Value "5d5h3m6.5s";
    D09: duration  := Duration_Value "1h30m";
    D10: duration  := Duration_Value "2h15m30s";
 
-   (* Plain-second forms (decimal seconds) *)
    D11: duration  := Duration_Value "12.345";
    D12: duration  := Duration_Value "0";
    D13: duration  := Duration_Value "3600";

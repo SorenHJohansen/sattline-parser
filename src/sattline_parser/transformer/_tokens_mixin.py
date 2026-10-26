@@ -160,6 +160,14 @@ class TokensMixin:
         """Grammar DURATION_VALUE terminal -> GRAMMAR_VALUE_DURATION_VALUE sentinel."""
         return const.GRAMMAR_VALUE_DURATION_VALUE
 
+    def DATECODE_PREFIX(self, _tok: object) -> None:
+        """Grammar DATECODE_PREFIX terminal (``DateCode_``) -> filtered out.
+
+        The attribute is a fixed scanner keyword (native token 0x89/137), not a
+        free ``NAME`` followed by an integer, so it must not reach the AST.
+        """
+        return None
+
     def sl_datecode(self, items: list[object]) -> int:
         """Grammar sl_datecode rule -> int datecode."""
         for it in items:

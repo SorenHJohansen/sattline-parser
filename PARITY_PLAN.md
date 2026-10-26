@@ -197,6 +197,31 @@ See §11 for the outcome and the four corpus expectations they corrected.
     reports an attribute complaint, and validation keeps it out of the parser.
 
 13. **A coordinate position must be a real, never an integer.** SL-V032 IMPLEMENTED.
+    `[user]` The first version of this rule was too narrow: I scoped it to
+    ClippingBounds *computed* tails and deliberately left bare-variable tails
+    permissive as "unproven". The user then stated the rule generally - a
+    coordinate position can never be an integer - which is the correct scope, so
+    the check now covers every collected tail, computed or bare. Kept as validation
+    rather than grammar so real-typed computed tails still parse.
+    Why the grammar alone cannot carry this: every coordinate *literal* position is
+    already `REAL`-only in the grammar (`coordinates`, `clip_value`,
+    `clip_value_plain`, `objsizedef`), so an integer can only reach a coordinate
+    through a tail. The corpus contains zero integer coordinate literals, and the
+    only non-real tail anywhere in the fixtures was the one probe.
+    Two implementation notes worth keeping:
+    * `ModuleDef.clipping_bounds` holds only the resolved float corners, so tail
+      expressions were being dropped. Added `ModuleDef.clipping_tails` and populate
+      it in `moduledef`; the shared `tails` property is untouched, so graphics and
+      interact consumers are unaffected.
+    * `_extract_coord_tails` collected only `str`, numeric pairs and `VarRef`, so
+      expression tails were silently discarded. Extended it to the remaining
+      expression nodes.
+    Known gap, deliberately left: an `InVar_ "Name"` tail carries a variable
+    *reference* whose value could be integer, but resolving the name is not
+    evidenced and no corpus file uses that shape in a coordinate. Flagged rather
+    than silently ignored.
+
+
 14. **A closed sequence body must not end with a step.** SL-V033 IMPLEMENTED.
     Three independent probes (`EdgeTermSeqStep.x`, `EdgeSeqPar.x`,
     `EdgeSubSeqDef.x`) all put the caret on `ENDSEQUENCE` with
@@ -223,30 +248,6 @@ See §11 for the outcome and the four corpus expectations they corrected.
     a transition rather than being reclassified, because otherwise the trailing
     step would mask the real question those files exist to answer. Both remain
     open `we-too-lenient` gaps.
-
-    `[user]` The first version of this rule was too narrow: I scoped it to
-    ClippingBounds *computed* tails and deliberately left bare-variable tails
-    permissive as "unproven". The user then stated the rule generally - a
-    coordinate position can never be an integer - which is the correct scope, so
-    the check now covers every collected tail, computed or bare. Kept as validation
-    rather than grammar so real-typed computed tails still parse.
-    Why the grammar alone cannot carry this: every coordinate *literal* position is
-    already `REAL`-only in the grammar (`coordinates`, `clip_value`,
-    `clip_value_plain`, `objsizedef`), so an integer can only reach a coordinate
-    through a tail. The corpus contains zero integer coordinate literals, and the
-    only non-real tail anywhere in the fixtures was the one probe.
-    Two implementation notes worth keeping:
-    * `ModuleDef.clipping_bounds` holds only the resolved float corners, so tail
-      expressions were being dropped. Added `ModuleDef.clipping_tails` and populate
-      it in `moduledef`; the shared `tails` property is untouched, so graphics and
-      interact consumers are unaffected.
-    * `_extract_coord_tails` collected only `str`, numeric pairs and `VarRef`, so
-      expression tails were silently discarded. Extended it to the remaining
-      expression nodes.
-    Known gap, deliberately left: an `InVar_ "Name"` tail carries a variable
-    *reference* whose value could be integer, but resolving the name is not
-    evidenced and no corpus file uses that shape in a coordinate. Flagged rather
-    than silently ignored.
 
 12. `InVar_` / `OutVar_` **coordinate tail** must name a quoted DefineSym.
     **IMPLEMENTED 2026-10-01.** `ValidCoordInVar.x` gives an unambiguous syntax
@@ -292,10 +293,32 @@ See §11 for the outcome and the four corpus expectations they corrected.
 
 **Reserved names / catalog completeness:**
 18. Declaring a variable/datatype named `On` / `Off` / `GroupData` (we exempt
-    reads but never forbid re-declaration). `[inferred]` — **confirmed**:
-    `ViolVarOn.x` / `ViolVarOff.x` (T1-012) are both rejected by the real
-    parser with `>>>On<<<` / `>>>Off<<< AliasSym Expected`. Ours still
-    accepts both, so this is a real **implementation gap**, not a reversal.
+    reads but never forbid re-declaration). `[inferred]` — **confirmed for
+    `On`/`Off`; SL-V034 IMPLEMENTED 2026-10-02.** `ViolVarOn.x` /
+    `ViolVarOff.x` (T1-012) are both rejected by the real parser with
+    `>>>On<<<` / `>>>Off<<< AliasSym Expected`. Reading the message: at the
+    declaration position the tool wanted an *alias* and found a reserved word.
+    So `On`/`Off` are reserved words that mean an SFC runtime thing — readable
+    wherever a boolean is expected (hence the long-standing SL-V019 read
+    exemption) but never declarable. Implemented as `SL-V034
+    RESERVED_NAME_DECLARED` over the variable-declaration family (locals, module
+    parameters, record fields) plus `DATATYPE` names, per "variable/datatype"
+    above. `MODULETYPE` names are deliberately left alone: no probe reaches
+    them and a moduletype sits in a different namespace.
+    Two structural notes:
+    * The reserved set moved out of `validation/code.py` into
+      `validation/symbols.py` as `SFC_RUNTIME_CONSTANTS`, so the SL-V019 read
+      exemption and the SL-V034 declaration ban read from one frozenset and
+      cannot drift apart.
+    * **`GroupData` is deliberately NOT in the set.** It is a reserved
+      *datatype* — used by a module definition's `GroupConn=` tail — and we
+      intentionally accept it as a type name
+      (`declarations._VALID_UNRESOLVED_DATATYPES`). Folding it into the
+      runtime-constant set would contradict that. Whether *declaring a variable*
+      named `GroupData` is illegal is still open: `probes/ViolVarGroup.x` covers
+      exactly that and is the one pending row in the T1-012 group. If the tool
+      rejects it, `GroupData` joins the set with no structural change; if it
+      accepts, the current exclusion is confirmed correct.
 19. Builtin catalog completeness — only 8 functions modeled. `[inferred]`
 
 ### 6.2 Semantic / cross-module — project graph territory
@@ -406,7 +429,7 @@ remaining are the encoding cases we already reject correctly.
 | --- | --- | --- | --- |
 | `EdgeCmtInEq.x` | `SEQTRANSITION TrStart WAIT_FOR>>>(*<<< inline comment. Expression expected.` | accepts | a comment may not follow a bare `WAIT_FOR` expression |
 | `EdgeDurVarFmt.x` | `>>>(*<<< Duration_Value. AliasSym Expected.` | accepts | duration value list may not be followed by a comment |
-| `EdgeModDefNoTrail.x` | `>>><<< SemicolonSym Expected` | accepts | `ENDDEF` needs its terminating `;` |
+| `EdgeModDefNoTrail.x` | `>>><<< SemicolonSym Expected` | rejects | **RESOLVED 2026-10-02 (grammar *tightening*).** `[user]` re-confirmed. `SemicolonSym Expected` is a token-level expectation error, so unlike SL-V031/032/033 this is a grammar change, not a validator rule. `base_picture_module`'s trailing clause went from ENDDEF_KW + optional `;` to ENDDEF_KW + **required** `;`. Deliberately scoped: RECORD ENDDEFs and ScanGroup ENDDEFs keep their optional `;` - `UnCompressedFullGrammar.s` uses both and the real tool compiles it cleanly, so a blanket rule would have broken a known-good golden file |
 | `EdgeOpSaveAndState.x` | `SavedStateVar: integer Opsave >>>State<<< Unknown error - unable to read error message file.` | accepts | `State` is illegal on a `Opsave` var; the tool cannot even render the message |
 | `EdgeSeqAlt.x` | `>>>ALTERNATIVESEQ<<< EndLoopSeqSym Expected` | accepts | `ALTERNATIVESEQ` is not a standalone step |
 | `EdgeSeqBrk.x` | `>>>SEQBREAK<<< Unexpected symbol or end of input` | accepts | `SEQBREAK` is not a step in this position |
@@ -415,10 +438,10 @@ remaining are the encoding cases we already reject correctly.
 | `EdgeSubSeqDef.x` | `>>>ENDSEQUENCE<<< Incorrect Syntax - Error 32` | rejects | **RESOLVED 2026-10-02 -> SL-V033.** Same terminal-step cause: the outer body ends on a step. The nested sub-sequence body itself is legal |
 | `EdgeTermSeqStep.x` | `>>>ENDSEQUENCE<<< Incorrect Syntax - Error 32` | rejects | **RESOLVED 2026-10-02 -> SL-V033.** The minimal isolated case for the same rule |
 | `ValidComprSeqBasic.x` | `#22 MainSeq #01 >>>SeqControl<<<, SeqTimer). Incorrect Syntax - Error 33` | accepts | Error 33 = step number/order in a sequence header |
-| `ValidCoordInVar.x` | `( 0.1 : InVar_ >>>PanelX<<< DefineSym Expected` | accepts | a coordinate may not be a variable in that tail position |
-| `ValidGraphObjB.x` | `GraphObjects : >>>Layer_<<< 2 AliasSym Expected` | accepts | a layer *number* is illegal in the `GraphObjects` section |
+| `ValidCoordInVar.x` | `( 0.1 : InVar_ >>>PanelX<<< DefineSym Expected` | rejects | **RESOLVED 2026-10-01 -> §6.1-12.** `coord_invar_tail` narrowed to `(value \| litstring_tail)`; a bare name no longer parses. Scoped to the coordinate context only |
+| `ValidGraphObjB.x` | `GraphObjects : >>>Layer_<<< 2 AliasSym Expected` | rejects | **RESOLVED 2026-10-01 as a grammar *removal*** — section-level `layer_info?` dropped from `graph_objects`. Reversible; see §6.4 |
 | `ValidGraphObjEnabl.x` | `"DisplayValue">>>ValueFraction<<< AliasSym Expected` | accepts | a bare enable token may not follow a property name |
-| `ValidInteractEnabl.x` | `>>>Enable_<<< = True: AliasSym Expected` | accepts | `Enable_` is a keyword, not a variable name |
+| `ValidInteractEnabl.x` | `>>>Enable_<<< = True: AliasSym Expected` | rejects | **RESOLVED 2026-10-01 as a grammar *removal*** — `enable_expression` dropped; only the `invar` form is legal. Reversible; see §6.4 |
 | `ValidOpenSeqSeq.x` | `>>>ALTERNATIVEBRANCH<<< Incorrect Syntax - Error 32` | accepts | open sequence inside a branch is illegal |
 | `ValidSubSeqTransB.x` | `>>>ALTERNATIVEBRANCH<<< Incorrect Syntax - Error 32` | accepts | `ALTERNATIVEBRANCH` in a sub-sequence transition |
 | `EdgeUnicodeIdents.x` | `D>>>é<<<bit Incorrect Syntax - Error 76` | **rejects** | matched — Error 76 = illegal identifier char |
@@ -446,7 +469,7 @@ and 10 land in Tier 0 / project territory.
 | `EdgeBareDurZero.x` | `Only integer og real allowed for this operator ZeroDur == ZeroFull` | accepts | `duration` may not be compared (§6.1-2) |
 | `EdgeNegDurVal.x` | `only integer and real allowed for this operator NegFive==NegHour` | accepts | same; negative durations are legal *declarations* |
 | `ValidDurAndTime.x` | `only integer and real allowed for this operator: DurFull == DurBare` | accepts | same; all 10 duration/time initializer forms are fine |
-| `EdgeScanGrpCl.x` | `"ScanGroup": Variable FastScan not declared` | accepts | `GroupConn=` must name a declared variable (§6.2-34) |
+| `EdgeScanGrpCl.x` | `Modul: "ScanGroup" : Variable FastScan not declared.` | accepts | **NOT A RULE - reclassified 2026-10-02.** `[user]` confirmed the file loads, warns and **runs**: the diagnostic is a compile-time *warning*, not a load-time error. The file is accepted and we were already right to accept it. The earlier "rejects" verdict came from reading the warning text as a rejection. Genuine open question is warning *severity*, not rejection - see §6.4 |
 | `EdgeCoordInvarTail.x` | `The expression is an invalid type Source + 1` | rejects | **RESOLVED 2026-10-01 -> SL-V032.** Type rule, not a ban on expressions. Re-declaring the same tail with `Source` as real made the error disappear. Corner tails must be a coordinate position can never be an integer, so the tail must be
 real-typed; rule (b) "literals only" disproven |
 
@@ -735,25 +758,66 @@ Parity work is complete when:
 
 ---
 
-## 11. Current state — 2026-10-01
+## 11. Current state — 2026-10-02
 
 | | count |
 | --- | --- |
-| transcript rows | 163 |
-| tier-0 files surveyed | 106 |
-| `confirmed` | 25 |
+| transcript rows | 167 |
+| tier-0 files surveyed | 110 |
+| `confirmed` | 34 |
 | `crashes-tool` | 6 |
 | `not-enforced` | 1 |
 | `rule-confirmed` | 6 |
 | `surprise-reject` | 1 |
 | `template-broken` | 4 |
-| `survey-mismatch` (tier-0) | 26 |
+| `survey-mismatch` (tier-0) | 20 |
 | `survey-surprise` (tier-0) | 11 |
-| `pending` | 56 |
+| `pending` | 59 |
 
-Tier-0 versus our own parser: **17 we-too-lenient**, 11 we-too-strict (all
-documented stage-scoped divergences — §6.3), 9 wrong-both, 20 agree,
-**0 unknown** (all 106 files carry a marker).
+Tier-0 versus our own parser: **8 we-too-lenient**, 11 we-too-strict (all
+documented stage-scoped divergences — §6.3), 8 wrong-both, 31 agree,
+**0 unknown** (all 110 files carry a marker).
+
+**Three validation rules landed since the previous revision of this section:**
+`SL-V031 ATTRIBUTE_COMBINATION_INVALID` (the `OpSave + State` pair, §6.1-11),
+`SL-V032 COORDINATE_NOT_REAL` (§6.1-13) and `SL-V033 SEQUENCE_ENDS_WITH_STEP`
+(§6.1-14), plus the `coord_invar_tail` grammar narrowing (§6.1-12). Together
+with SL-V028/029/030 they moved `we-too-lenient` 23 → 11 and `agree` 20 → 27
+over two sessions. `ValidSeqBasic.x` was confirmed by the user and no longer
+sits pending.
+
+**Still outstanding at this revision** — carried into the release as known gaps
+rather than defects:
+* 8 `we-too-lenient` rows, each needing one probe apiece: `EdgeSeqAlt`,
+  `EdgeSeqBrk`, `ValidComprSeqBasic`, `ValidGraphObjEnabl`,
+  `ValidOpenSeqSeq`, `ValidSubSeqTransB`.
+* `EdgeCmtInEq` / `EdgeDurVarFmt` came off this list on 2026-10-02 as a
+  **reversal**, not a missing rule — see §6.3d. The reserved-name
+  re-declaration gap (§6.1-18) came off earlier the same day with SL-V034;
+  it was the only entry already `[corpus]`-confirmed, which is why it needed
+  no new probe.
+* `EdgeScanGrpCl.x` came off this list on 2026-10-02: `[user]` established that
+  an undeclared `GroupConn=` target is a compile-time **warning** on a file that
+  still loads and runs, so no rejection rule is owed. Whether we should surface
+  it as `DiagnosticSeverity.WARNING` is an open *design* question, not a parity
+  gap — it is deliberately not implemented, because emitting it would add a
+  diagnostic to a file the real tool accepts, and every current consumer treats
+  any diagnostic as failure.
+* `EdgeModDefTrail.x` is the queued **positive control** for the ENDDEF rule. The
+  negative case is `[corpus]`, but "the terminated form is accepted" is only
+  `[inferred]` from the diagnostic text. If the tool *rejects* `ENDDEF;` too, the
+  trailing clause should be dropped entirely instead of tightened — the fixtures
+  and grammar change are reversible for exactly that reason.
+* 4 probes cannot test their intended rule until `GlobalSetpoint` and
+  `GlobalBias` exist (§6.3b).
+* `HighByteValid.x` / `HighByteInvalid.x` still need a real run (open the
+  invalid one alone).
+* §6.4 watchlist unresolved: SL-V020 vs `AnyType`, and the SFC accessor
+  namespace. The two grammar removals remain reversible pending single-construct
+  probes of the `Enable_` `InVar_` form and per-object `Layer_`.
+* **`PARITY.md` does not exist yet** — it is listed as a deliverable in §7 and
+  is required by §10. Until it is written, no rule has the single
+  rule × status × real-message matrix the definition of done asks for.
 
 Two more closed this session, both **grammar removals** rather than new
 validator rules, and both on the §6.4 watchlist because a removal driven by a
@@ -817,4 +881,81 @@ Two probe files still need a real run before they can leave `pending`:
 
 ---
 
-*Last updated: 2026-10-01*
+*Last updated: 2026-10-02*
+
+
+### 6.3d Comment placement is a grammar concern — two clauses removed (2026-10-02)
+
+`EdgeCmtInEq.x` (`WAIT_FOR` then `(* ... *)` then the expression →
+`Expression expected`) and `EdgeDurVarFmt.x` (a comment as the first item of
+`LOCALVARIABLES` → `AliasSym Expected`) were filed as unimplemented gaps. They
+were not missing rules. Both are **reversals**: the grammar had been written to
+*invite* exactly the constructs the real tool rejects.
+
+```
+-variable_list:   (comments | variable_group)+
++variable_list:   variable_group+
+-seqtransition:   SEQTRANSITION NAME? WAIT_FOR comments? expression
++seqtransition:   SEQTRANSITION NAME? WAIT_FOR expression
+```
+
+Why these two clauses were the anomaly: `variable_list` was the **only** place a
+bare comment was admitted as a declaration-list item. Every other comment
+position in the grammar uses `code_comment`, and only inside *code* lists —
+`entercode`, `activecode`, `exitcode`, `equationblock`, `sequence_body`,
+`if_statement`. So the grammar already encoded "comments live inside code
+blocks"; the two `comments` opt-ins contradicted that. Removing them makes the
+grammar *consistent* rather than adding a concept.
+
+Consequences handled:
+- `edge_cases/CommentInsideEquation.s` had `inline comment is stripped` baked
+  into a `SEQTRANSITION` — the fixture asserted our own bug. The comment now
+  sits between sequence elements, where `sequence_body` still allows it.
+- `edge_cases/DurationVariousFormats.s` had a section comment inside its
+  variable list. A bare comment is not legal before `LOCALVARIABLES` either, so
+  the three group labels moved into the file header.
+- `test_record_and_moduletype_definition_capture_role_comments` carried an
+  unasserted comment in a `RECORD` variable list; removed. Its real assertions
+  (record `trailing_comments`, moduletype `description_comments`) are untouched.
+- **Zero `corpus/valid/` golden files depend on either clause.** No AST change.
+
+### 6.3e Encoding and reserved-name questions closed (2026-10-02 / 2026-10-05)
+
+Four user GUI runs closed four open questions, all in our favour:
+
+| Probe | Result | Settles |
+| --- | --- | --- |
+| `EdgeAsciiIdent.x` | opened without issues | cp1252 high bytes are legal in an **identifier**. The ASCII-only hypothesis was wrong; our `NAME` rule (`\p{L}`, `constants.py:257`) is correct. |
+| `HighByteValid.x` | compiles | cp1252 high bytes are legal in a **comment**. Encoding picture complete - no encoding rule needed anywhere. |
+| `EdgeModDefTrail.x` | compiles | `ENDDEF;` (semicolon **required** when ENDDEF is present) is accepted, confirming the `base_picture_module` narrowing. Evidence-backed in both directions with `EdgeModDefNoTrail.x`. |
+| `ViolVarGroup.x` | parses | Declaring a **variable** named `GroupData` is legal, confirming the deliberate exclusion of `GroupData` from the SL-V034 reserved set. `On`/`Off` are reserved runtime constants; `GroupData` is not. |
+
+**Environment-blocked, not parity gaps.** `ValidSubmodParams.x` and
+`EdgeGlobalParamMap.x` fail only on `ControllerType GLOBAL GlobalSetpoint` /
+`GlobalBias`, which the user confirmed do not exist in their installation. They
+can never load here regardless of grammar, so they are now tagged
+`ENVIRONMENT-BLOCKED` and excluded from the tier-0 tally by
+`analyze.ENVIRONMENT_BLOCKED_MARKERS` instead of inflating `we-too-lenient`.
+
+**Encoding defect in two probes (not a language rule).** `ValidUnComprFull.x`
+and `ValidComprFull.x` were saved as **UTF-8**, not cp1252: they contained byte
+`0x86` (undefined in Windows-1252), and read as cp1252 their `formål` became
+`formÃ¥l` with a `¥` currency symbol where a letter was required. That is exactly
+the recorded `Error 76` - our own encoding failure reproducing the tool's. Both
+have been re-encoded to cp1252. Note the corpus twins
+`valid/UnCompressedFullGrammar.s` / `valid/CompressedFullGrammar.s` were always
+correct cp1252 and parse with zero diagnostics; no tool result was ever recorded
+against them. After re-encoding, both probes hit a *separate*, still-open
+construct - the graph-object enable tail `Enable_ = True : ( ... )` - so they
+remain blocked pending that question.
+
+Two consequences worth carrying forward:
+
+1. `EdgeDurVarFmt.x`'s *stated* subject is duration-literal formats, which the
+   real tool **never reached** — it died on the comment at line 15. That probe is
+   evidence about comment placement and says nothing about duration forms. The
+   duration question is still open and needs a fresh probe.
+2. `edge_cases/UnicodeIdentifiers.s` is a **UTF-8** file living in a cp1252
+   corpus. It only survives because the *test* loader reads UTF-8 first while the
+   public API enforces strict cp1252. Unrelated to this change — it fails
+   identically either way — but it is a latent trap.

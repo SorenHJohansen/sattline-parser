@@ -47,6 +47,33 @@ class DiagnosticCode(StrEnum):
     ATTRIBUTE_COMBINATION_INVALID = "SL-V031"
     COORDINATE_NOT_REAL = "SL-V032"
     SEQUENCE_ENDS_WITH_STEP = "SL-V033"
+    RESERVED_NAME_DECLARED = "SL-V034"
+    OLD_STATE_NOT_WRITABLE = "SL-V035"
+    SEQUENCE_POSITION_INVALID = "SL-V036"
+
+
+#: Codes that the real SattLine parser does NOT enforce, with the probe that
+#: proved it. These were implemented on the strength of the editor refusing to
+#: *create* such a declaration through its UI, then disproved 2026-10-05 by
+#: loading the same source directly from disk: the editor's UI guard is not a
+#: parser rule, and we were rejecting files the tool accepts.
+#:
+#: The enum members are kept so existing imports and stored diagnostics stay
+#: valid, but nothing emits them. Each entry is a pending question for the
+#: editors, not a gap in our parser.
+RETIRED_CODES: dict[DiagnosticCode, str] = {
+    DiagnosticCode.DUPLICATE_DATATYPE_NAME: "BadDupDatatypeName.x",
+    DiagnosticCode.DUPLICATE_MODULETYPE_NAME: "BadDupModTypeName.x",
+    DiagnosticCode.DUPLICATE_VARIABLE_NAME: "BadDupVariaNames.x",
+    DiagnosticCode.DUPLICATE_RECORD_FIELD_NAME: "BadDupRecFldName.x",
+    DiagnosticCode.BUILTIN_DATATYPE_SHADOWED: "BadDatatypeShadows.x",
+    DiagnosticCode.INIT_VALUE_TYPE_MISMATCH: "BadInitValType.x",
+    DiagnosticCode.BARE_DURATION_INIT: "BadBareDurStr.x",
+    DiagnosticCode.BARE_TIME_INIT: "BadBareTimeStr.x",
+    DiagnosticCode.MALFORMED_DURATION_LITERAL: "BadDurLit.x",
+    DiagnosticCode.MALFORMED_TIME_LITERAL: "BadTimeLit.x",
+    DiagnosticCode.SFC_INIT_STEP_PLACEMENT: "BadSfcInitStepNot.x, BadSfcInitStep.x",
+}
 
 
 @dataclass(frozen=True, slots=True)

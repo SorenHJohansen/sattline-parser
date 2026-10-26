@@ -176,6 +176,37 @@ def test_read_text_cp1252_rejects_bytes_invalid_in_cp1252(tmp_path):
         parser_api.read_text_cp1252(source_file)
 
 
+# Proved 2026-10-05 by HighByteInvalid.x: the real editor compiles a file whose
+# undefined Windows-1252 byte 0x81 sits inside a (* ... *) comment. The tolerance
+# is scoped to comment bodies; read_text_cp1252 keeps its strict contract.
+
+
+def test_read_text_cp1252_tolerates_undefined_byte_inside_comment(tmp_path):
+    source_file = tmp_path / "comment_byte.s"
+    source_file.write_bytes(b'"Syntax version 2.23"\n(* byte \x81 here *)\nA\n')
+
+    decoded = parser_api._decode_source_bytes_for_parse(source_file)
+
+    assert "byte" in decoded and "\ufffd" in decoded
+
+
+def test_read_text_cp1252_still_rejects_undefined_byte_outside_comment(tmp_path):
+    source_file = tmp_path / "code_byte.s"
+    source_file.write_bytes(b'"Syntax version 2.23"\nA \x81 B\n')
+
+    with pytest.raises(UnicodeDecodeError):
+        parser_api._decode_source_bytes_for_parse(source_file)
+
+
+def test_read_text_cp1252_strict_helper_is_untouched_by_comment_tolerance(tmp_path):
+    """The public strict API must not silently widen, whatever the parse path does."""
+    source_file = tmp_path / "comment_byte.s"
+    source_file.write_bytes(b"(* \x81 *)\nA\n")
+
+    with pytest.raises(UnicodeDecodeError):
+        parser_api.read_text_cp1252(source_file)
+
+
 def test_load_source_text_decodes_compressed_sources_and_emits_debug(monkeypatch, tmp_path):
     events: list[str] = []
 

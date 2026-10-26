@@ -48,11 +48,11 @@ module_header:              NAME module_typedescription? INVOCATION module_typed
 argument:                   ZOOMABLE | IGNOREMAXMODULE | LAYERMODULE | layer_info | enable | zoomlimits | interact_assign_variable | SYMBOLMODULE | NON_ZOOMABLE
 arguments:                  argument*
 
-base_picture_module:        module_header ":" MODULEDEFINITION sl_datecode frame_module? scan_group? base_module_body (ENDDEF_KW module_end_comment? ";"?)?
+base_picture_module:        module_header ":" MODULEDEFINITION sl_datecode? frame_module? scan_group? base_module_body (ENDDEF_KW module_end_comment? ";")?
 base_module_body:           datatype_typedefinitions? moduletype_definitions? module_body
 
 module_body:                moduleparameters? localvariables? submodules? moduledef modulecode?
-invocation_new_module:      module_header ":" MODULEDEFINITION sl_datecode frame_module? scan_group? module_body ENDDEF_KW module_end_comment? invocation_tail?
+invocation_new_module:      module_header ":" MODULEDEFINITION sl_datecode? frame_module? scan_group? module_body ENDDEF_KW module_end_comment? invocation_tail?
 invocation_module_type:     module_header ":" NAME comments? invocation_tail?
 ?invocation_tail:            ("(" moduletype_par_list ")")? ";"
 moduletype_par_list:        moduletype_par_transfer ("," moduletype_par_transfer)*
@@ -60,20 +60,20 @@ moduletype_par_transfer:    variable_name "=>" GLOBAL_KW? DURATION_VALUE? (value
 frame_module:               "(" FRAME_MODULE ")"
 scan_group:                 "(" GROUPCONN "=" GLOBAL_KW? variable_name ")"
 invoke_coord:               REAL coord_tail* "," REAL coord_tail* "," REAL coord_tail* "," REAL coord_tail* "," REAL coord_tail*
-sl_datecode:                NAME SL_DATECODE
+sl_datecode:                DATECODE_PREFIX SL_DATECODE
 
 // ============================================================================
 // TYPE DEFINITIONS - DATA TYPES (RECORDS)
 // ============================================================================
 datatype_typedefinitions:   TYPEDEFINITIONS record+
-record:                     NAME STRING? "=" RECORD_KW sl_datecode variable_list? ENDDEF_KW module_end_comment? ";"?
+record:                     NAME STRING? "=" RECORD_KW sl_datecode? variable_list? ENDDEF_KW module_end_comment? ";"?
 
 // ============================================================================
 // VARIABLES (AND PARAMETERS)
 // ============================================================================
 variable_item:              NAME (STRING | STRING_CRLF)? //unfortunately SattLine can have unterminated strings in the variable descriptions
 variable_group:             variable_item ("," variable_item)* ":" GLOBAL_KW? NAME (CONST_KW | STATE_KW | OPSAVE_KW | SECURE_KW)* opt_var_init? ";"
-variable_list:              (comments | variable_group)+
+variable_list:              variable_group+
 opt_var_init:               ASSIGN_INIT_VALUE (duration_value | time_value | value | DEFAULT)
 duration_value:             DURATION_VALUE STRING?
 time_value:                 TIME_VALUE STRING?
@@ -85,7 +85,7 @@ value:                      BOOL | REAL | STRING | SIGNED_INT
 moduletype_definitions:     TYPEDEFINITIONS moduletype_definition+
 moduleparameters:           MODULEPARAMETERS variable_list
 localvariables:             LOCALVARIABLES variable_list
-moduletype_definition:      NAME module_typedescription? "=" PRIVATE_KW? MODULEDEFINITION sl_datecode scan_group? module_body ENDDEF_KW module_end_comment? ";"
+moduletype_definition:      NAME module_typedescription? "=" PRIVATE_KW? MODULEDEFINITION sl_datecode? scan_group? module_body ENDDEF_KW module_end_comment? ";"
 
 // ============================================================================
 // SUBMODULES
@@ -122,13 +122,20 @@ argument_list:              expression ("," expression)*
                             | variable_name
                             | value
 
-statement:                  assignment_statement ";" | function_call ";" | if_statement ";" | comment_stmt
+// Statement terminators are optional in the native reader (0072b660); the
+// semicolon is a separator, not a required part of the statement.
+statement:                  assignment_statement ";"? | function_call ";"? | if_statement ";"? | comment_stmt
 assignment_statement:       variable_name "=" expression
 if_statement:               IF expression THEN (code_comment | statement)* (ELSIF expression THEN (code_comment | statement)*)* (ELSE (code_comment | statement)*)? ENDIF
 
 //Sequences
 sequence:                   (SEQUENCE | OPENSEQUENCE) NAME? seq_control_opt? codeblock_coord objsizedef layer_info? sequence_body (ENDSEQUENCE | ENDOPENSEQUENCE)
-sequence_body:              (code_comment | seq_element | seqparallel | seqalternative)*
+// Element positions follow the native sequence readers (00708d20/0070db70):
+// S = step position (SEQINITSTEP, SEQSTEP, SUBSEQSTEP, PARALLELSEQ),
+// T = transition position (SEQTRANSITION, SUBSEQTRANSITION, ALTERNATIVESEQ),
+// M = structural (SUBSEQUENCE). SEQFORK is not an element: it is a suffix of
+// its host step or transition (006f9850, 0070a100, 0070d180).
+sequence_body:              (code_comment | seq_element | seqparallel | seqalternative)+
 
 seq_element:                seqinitstep
                             | seqstep
@@ -136,26 +143,29 @@ seq_element:                seqinitstep
                             | seqtransitionsub
                             | seqsubstep
                             | seqsub
-                            | seqfork
-                            | seqbreak
 
 seq_control_opt:            "(" SEQCONTROL? ","? SEQTIMER? ")"
 codeblock_coord:            COORD_KW REAL "," REAL
 objsizedef:                 OBJSIZE REAL "," REAL
 
 // SEQUENCE ELEMENTS
+// An initial step takes no SEQFORK suffix: the native evidence places the fork
+// suffix on ordinary steps and transitions only (0070a100, 0070d180). Whether
+// an initial step accepts one too is still open (see PARITY_HANDOFF_PLAN.md Q7);
+// if a real file needs it, widen this rule rather than the AST.
 seqinitstep:                SEQINITSTEP NAME? code_blocks
 // Ordinary steps may be unnamed in real SattLine (verified against the actual
 // SattLine parser); only the name is optional, never the code block run.
-seqstep:                    SEQSTEP NAME? code_blocks
-seqtransition:              SEQTRANSITION NAME? WAIT_FOR comments? expression
+seqstep:                    SEQSTEP NAME? code_blocks seqfork?
+// Both the name and the guard are optional; an absent guard compiles as true
+// (native 0070d180 leaves the expression unset, 006fad30 lowers it to true).
+seqtransition:              SEQTRANSITION NAME? (WAIT_FOR expression)? seqfork?
 seqtransitionsub:           SUBSEQTRANSITION NAME? sequence_body ENDSUBSEQTRANSITION
-seqsubstep:                 SUBSEQSTEP NAME sequence_body ENDSUBSEQSTEP
+seqsubstep:                 SUBSEQSTEP NAME? sequence_body ENDSUBSEQSTEP
 seqalternative:             ALTERNATIVESEQ sequence_body (ALTERNATIVEBRANCH sequence_body)+ ENDALTERNATIVE
 seqparallel:                PARALLELSEQ sequence_body (PARALLELBRANCH sequence_body)+ ENDPARALLEL
-seqsub:                     SUBSEQUENCE NAME sequence_body ENDSUBSEQUENCE
-seqfork:                    SEQFORK NAME ("," NAME)*
-seqbreak:                   SEQBREAK
+seqsub:                     SUBSEQUENCE NAME? sequence_body ENDSUBSEQUENCE
+seqfork:                    SEQFORK NAME ("," NAME)* SEQBREAK?
 
 code_blocks:                entercode? activecode? exitcode?
 entercode:                  ENTERCODE (code_comment | statement)*
@@ -195,14 +205,29 @@ graph_object:               text_object | rectangle_object | line_object | oval_
 //Common properties
 common_properties:          (comments | layer_info | enable | color_properties | connection_node_bare)*
 layer_info:                 LAYER_PREFIX "=" SIGNED_INT
-enable:                     ENABLE_PREFIX "=" BOOL invar
+// Two distinct enable forms, both evidence-backed 2026-10-05.
+// Graph objects: the tail is OPTIONAL and may be a parenthesised expression.
+//   bare      `Enable_ = True`                  -> accepted  (EdgePropEnable.x)
+//   paren     `Enable_ = True : (Flag)`         -> accepted  (EdgePropParenTail.x)
+//   compressor`Enable_ = True : ( NOT EnableVar)`-> emitted by SattLine's own compressor
+// Interact objects: the InVar_/OutVar_ tail is REQUIRED and a parenthesised
+// expression is rejected with AliasSym Expected.
+//   tail      `Enable_ = True : InVar_ "Flag"`  -> accepted  (ValidInteract.x)
+//   paren     `Enable_ = True : (EnableFlag)`   -> rejected  (ValidInteractEnabl.x)
+enable:                     ENABLE_PREFIX "=" BOOL (invar | enable_expression)?
+enable_interact:            ENABLE_PREFIX "=" BOOL invar
 enable_expression:          ":" "(" expression ")"
+// Proved 2026-10-05 (EdgePropEnableInvar.x): after InVar_/OutVar_ the real
+// parser expects a DefineSym, so a BARE identifier is rejected with
+// "DefineSym Expected". Only a literal or a quoted symbol is legal there.
+// coord_invar_tail already required this; this rule did not, which is the
+// inconsistency the probe exposed.
 invar:                      ":" (INVAR_PREFIX | OUTVAR_PREFIX) connected_variable
 variable_name:              NAME (DOT NAME)* STATE_SUFFIX?
 format_string:              format_string_tailed | format_string_plain
 format_string_tailed.1:     FORMATSTRING "=" value (invar_tail | enable_expression)
 format_string_plain:        FORMATSTRING "=" plain_value
-connected_variable:         value | variable_name
+connected_variable:         value
 value_fraction:             value_fraction_tailed | value_fraction_plain
 value_fraction_tailed.1:    VALUEFRACTION "=" SIGNED_INT (invar | enable_expression)
 value_fraction_plain:       VALUEFRACTION "=" SIGNED_INT_NOTAIL
@@ -254,7 +279,7 @@ proc_atom:                  value | plain_value | invar_tail | enable_expression
 combutproc_tail: layer_info
 | interact_assign_variable
 | interact_flag
-| enable
+| enable_interact
 | outline_colour
 | fill_colour
 
@@ -267,7 +292,7 @@ interact_body_seq: (comments | interact_body)+
 interact_body: layer_info
 | outline_colour
 | fill_colour
-| enable
+| enable_interact
 | interact_assign_variable
 | interact_flag
 | interact_value_line
@@ -347,7 +372,7 @@ MODULEPARAMETERS.10:        "{GRAMMAR_VALUE_MODULEPARAMETERS}"
 LOCALVARIABLES.10:          "{GRAMMAR_VALUE_LOCALVARIABLES}"
 GRAPHOBJECTS.10:            "{GRAMMAR_VALUE_GRAPHOBJECTS}"
 INTERACTOBJECTS.10:         "{GRAMMAR_VALUE_INTERACTOBJECTS}"
-DATECODE_PREFIX.50:         "{GRAMMAR_REGEX_DATECODE_PREFIX}"
+DATECODE_PREFIX.50:         "{GRAMMAR_VALUE_DATECODE_PREFIX}"
 GROUPCONN.10:               "{GRAMMAR_VALUE_GROUPCONN}"
 // Sequence and code blocks
 SEQCONTROL.10:               "{GRAMMAR_VALUE_SEQCONTROL}"

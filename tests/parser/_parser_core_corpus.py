@@ -11,8 +11,8 @@ is not just "parses without throwing".
 from ._parser_core_test_support import *
 
 
-def _load_fixture(name: str) -> BasePicture:
-    path = _repo_path("tests", "fixtures", "corpus", "valid", name)
+def _load_fixture(name: str, subdir: str = "valid") -> BasePicture:
+    path = _repo_path("tests", "fixtures", "corpus", subdir, name)
     return parser_core_parse_source_text(path.read_text(encoding="utf-8"))
 
 
@@ -52,12 +52,6 @@ def test_fixture_multiple_moduledef_blocks_preserves_all_in_source_order():
     assert bp.modulecode is bp.modulecodes[-1]
 
 
-def test_fixture_graph_objects_section_layer_applies_to_all_objects():
-    bp = _load_fixture("GraphObjectsSectionLayer.s")
-    assert bp.moduledef is not None
-    assert [go.properties.get("layer") for go in bp.moduledef.graph_objects] == [2, 2]
-
-
 def test_fixture_graph_object_enable_tails_keep_tail_content():
     bp = _load_fixture("GraphObjectEnableTails.s")
     assert bp.moduledef is not None
@@ -80,23 +74,42 @@ def test_fixture_graph_object_shapes_keep_their_types():
     ]
 
 
+def _interact_entries(interactor: Any) -> list[dict[str, Any]]:
+    body = cast(list[Any], interactor.properties.get("body", []))
+    entries: list[dict[str, Any]] = []
+    for node in body:
+        assert isinstance(node, Tree)
+        assert node.data == "interact_body"
+        assert len(node.children) == 1
+        entry = node.children[0]
+        assert isinstance(entry, dict)
+        entries.append(cast(dict[str, Any], entry))
+    return entries
+
+
 def test_fixture_interact_enable_tails_keep_assignments_and_enables():
     bp = _load_fixture("InteractEnableTails.s")
     assert bp.moduledef is not None
     interactors = {io.type: io for io in bp.moduledef.interact_objects}
     assert set(interactors) == {"TextBox_", "ComBut_"}
 
-    text_box = interactors["TextBox_"]
-    body = cast(list[Any], text_box.properties.get("body", []))
-    assigns = [b for b in body if isinstance(b, Tree) and b.data == "interact_body"]
-    assigns_repr = " ".join(repr(cast(list[Any], t.children)) for t in assigns)
-    assert "Variable" in assigns_repr
-    assert "InputValue" in assigns_repr
-    assert "EnableFlag" in assigns_repr
+    # TextBox_: `Variable = 0 : (InputValue > 0)` -- the assignment directive
+    # keeps an expression tail.
+    text_entries = _interact_entries(interactors["TextBox_"])
+    text_assign = next(e["assign"] for e in text_entries if "assign" in e)
+    assert text_assign["name"] == "Variable"
+    assert isinstance(text_assign["tail"], Compare)
+    assert text_assign["tail"].left == VarRef(name="InputValue", state=None, span=text_assign["tail"].left.span)
 
-    combut = interactors["ComBut_"]
-    combut_repr = repr(cast(list[Any], combut.properties.get("body", [])))
-    assert "ToggleBit" in combut_repr
+    # ComBut_: `Variable = False : InVar_ "EnableFlag"` keeps the quoted symbol
+    # as its tail, and `Enable_ = True : InVar_ "ToggleBit"` keeps it too.
+    button_entries = _interact_entries(interactors["ComBut_"])
+    button_assign = next(e["assign"] for e in button_entries if "assign" in e)
+    assert button_assign["name"] == "Variable"
+    assert button_assign["tail"] == "EnableFlag"
+    enable = next(e for e in button_entries if "enable" in e)
+    assert enable["enable"] is True
+    assert enable["tail"] == "ToggleBit"
 
 
 def test_fixture_deeply_nested_comments_roundtrip_as_single_comment():
@@ -111,14 +124,9 @@ def test_fixture_deeply_nested_comments_roundtrip_as_single_comment():
     ]
 
 
-def test_fixture_moduledef_no_trailing_enddef_parses():
-    path = _repo_path("tests", "fixtures", "corpus", "edge_cases", "ModuleDefNoTrailingEnddef.s")
-    bp = parser_core_parse_source_text(path.read_text(encoding="utf-8"))
-    assert bp.moduledef is not None
-    assert bp.moduledef.clipping_bounds == ((-1.0, -1.0), (1.0, 1.0))
-
-
 def test_invalid_fixtures_are_rejected():
     _rejects_fixture("invalid", "ModuleCodeWithoutModuleDef.s")
     _rejects_fixture("invalid", "GraphObjectsDoubleLayer.s")
     _rejects_fixture("invalid", "UnterminatedComment.s")
+    _rejects_fixture("invalid", "CoordInVarTail.s")
+    _rejects_fixture("invalid", "PropertyInVarBareName.s")
