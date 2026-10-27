@@ -150,4 +150,4 @@ where = ["src"]
 version = { attr = "sattline_parser.__version__.__version__" }
 
 [tool.setuptools.package-data]
-sattline_parser = ["grammar/*.lark", "preprocessing/*.json"]
+sattline_parser = ["grammar/*.lark", "preprocessing/*.json", "validation/*.json"]

@@ -45,7 +45,7 @@ header_lines:               syntax_version_line original_file_date_line program_
 
 // Invocation types
 module_header:              NAME module_typedescription? INVOCATION module_typedescription? "(" invoke_coord arguments ")"
-argument:                   ZOOMABLE | IGNOREMAXMODULE | LAYERMODULE | layer_info | enable | zoomlimits | interact_assign_variable | SYMBOLMODULE | NON_ZOOMABLE
+argument:                   ZOOMABLE | IGNOREMAXMODULE | LAYERMODULE | layer_info | enable | module_in_view | zoomlimits | interact_assign_variable | SYMBOLMODULE | NON_ZOOMABLE
 arguments:                  argument*
 
 base_picture_module:        module_header ":" MODULEDEFINITION sl_datecode? frame_module? scan_group? base_module_body (ENDDEF_KW module_end_comment? ";")?
@@ -149,11 +149,10 @@ codeblock_coord:            COORD_KW REAL "," REAL
 objsizedef:                 OBJSIZE REAL "," REAL
 
 // SEQUENCE ELEMENTS
-// An initial step takes no SEQFORK suffix: the native evidence places the fork
-// suffix on ordinary steps and transitions only (0070a100, 0070d180). Whether
-// an initial step accepts one too is still open (see PARITY_HANDOFF_PLAN.md Q7);
-// if a real file needs it, widen this rule rather than the AST.
-seqinitstep:                SEQINITSTEP NAME? code_blocks
+// 0070a100 accepts the fork suffix on SEQINITSTEP and SEQSTEP alike; 0070d180
+// accepts it on SEQTRANSITION. Those are the only recovered callers of 006f9850,
+// so SUBSEQSTEP / SUBSEQTRANSITION wrappers take no fork.
+seqinitstep:                SEQINITSTEP NAME? code_blocks seqfork?
 // Ordinary steps may be unnamed in real SattLine (verified against the actual
 // SattLine parser); only the name is optional, never the code block run.
 seqstep:                    SEQSTEP NAME? code_blocks seqfork?
@@ -173,7 +172,10 @@ activecode:                 ACTIVECODE (code_comment | statement)*
 exitcode:                   EXITCODE (code_comment | statement)*
 
 
-equationblock:              EQUATIONBLOCK NAME codeblock_coord objsizedef layer_info? ":" (code_comment | statement)*
+// 00726030 accepts EQUATIONBLOCK or EQUATIONS (the keywords set different
+// flags); the name, the coordinate/size metadata and the layer metadata are all
+// optional there, and only the statement list after ":" is required.
+equationblock:              (EQUATIONBLOCK | EQUATIONS) NAME? codeblock_coord? objsizedef? layer_info? ":" (code_comment | statement)*
 
 // ============================================================================
 // MODULE DEFINITION
@@ -216,7 +218,17 @@ layer_info:                 LAYER_PREFIX "=" SIGNED_INT
 //   paren     `Enable_ = True : (EnableFlag)`   -> rejected  (ValidInteractEnabl.x)
 enable:                     ENABLE_PREFIX "=" BOOL (invar | enable_expression)?
 enable_interact:            ENABLE_PREFIX "=" BOOL invar
+// ABB's own libraries write `Enable_ = True : (EnableAck AND (ES == 3 …))` on
+// ComBut_/ComButProc_ objects (GC/ABBLib/EventLib.x, JournalLib.x,
+// NucleusLib.x): the reader also takes a parenthesised dynamic tail there. The
+// InVar_/-OutVar_ form stays in `enable_interact`, so this rule carries only the
+// paren tail and the two cannot both match the same source.
+enable_combut:              ENABLE_PREFIX "=" BOOL enable_expression
 enable_expression:          ":" "(" expression ")"
+// Invocation-header property (native 00665970, token 0xA4). Its reader accepts
+// True/False only - Module_In_View is not an arbitrary `NAME = expression`
+// production, and it is stored separately from Enable_ (they can coexist).
+module_in_view:             MODULE_IN_VIEW_KW "=" BOOL (invar_tail | enable_expression)?
 // Proved 2026-10-05 (EdgePropEnableInvar.x): after InVar_/OutVar_ the real
 // parser expects a DefineSym, so a BARE identifier is rejected with
 // "DefineSym Expected". Only a literal or a quoted symbol is legal there.
@@ -280,6 +292,7 @@ combutproc_tail: layer_info
 | interact_assign_variable
 | interact_flag
 | enable_interact
+| enable_combut
 | outline_colour
 | fill_colour
 
@@ -293,6 +306,7 @@ interact_body: layer_info
 | outline_colour
 | fill_colour
 | enable_interact
+| enable_combut
 | interact_assign_variable
 | interact_flag
 | interact_value_line
@@ -373,6 +387,7 @@ LOCALVARIABLES.10:          "{GRAMMAR_VALUE_LOCALVARIABLES}"
 GRAPHOBJECTS.10:            "{GRAMMAR_VALUE_GRAPHOBJECTS}"
 INTERACTOBJECTS.10:         "{GRAMMAR_VALUE_INTERACTOBJECTS}"
 DATECODE_PREFIX.50:         "{GRAMMAR_VALUE_DATECODE_PREFIX}"
+MODULE_IN_VIEW_KW.10:       "{GRAMMAR_VALUE_MODULE_IN_VIEW}"
 GROUPCONN.10:               "{GRAMMAR_VALUE_GROUPCONN}"
 // Sequence and code blocks
 SEQCONTROL.10:               "{GRAMMAR_VALUE_SEQCONTROL}"
@@ -387,6 +402,7 @@ ENTERCODE.10:                "{GRAMMAR_VALUE_ENTERCODE}"
 ACTIVECODE.10:               "{GRAMMAR_VALUE_ACTIVECODE}"
 EXITCODE.10:                 "{GRAMMAR_VALUE_EXITCODE}"
 EQUATIONBLOCK.10:            "{GRAMMAR_VALUE_EQUATIONBLOCK}"
+EQUATIONS.10:                "{GRAMMAR_VALUE_EQUATIONS}"
 ENDSEQUENCE.10:              "{GRAMMAR_VALUE_ENDSEQUENCE}"
 ALTERNATIVESEQ.10:           "{GRAMMAR_VALUE_ALTERNATIVESEQ}"
 ALTERNATIVEBRANCH.10:        "{GRAMMAR_VALUE_ALTERNATIVEBRANCH}"

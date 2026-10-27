@@ -445,3 +445,24 @@ def test_project_lookup_requester_ordering_end_to_end(tmp_path: Path) -> None:
     _write(brand_b, "Dep.x")
     lookup = ProjectLookup([requester, brand_b, brand_a, abb], LoadMode.DRAFT)
     assert lookup.find_code("Dep", requester_dir=requester) == brand_a / "Dep.x"
+
+
+def test_warm_cache_preserves_cold_extension_precedence(tmp_path: Path) -> None:
+    """A warm lookup must not shadow a preferred extension that appeared later.
+
+    Gap P10: the cache recorded ``.x`` for this prefix; a ``.s`` then appeared.
+    Draft mode prefers ``.s``, so warm and cold lookups must agree.
+    """
+    root = tmp_path / "p"
+    cache_dir = tmp_path / "cache"
+    _write(root, "Lib.x")
+
+    cache = FileLookupCache(cache_dir)
+    cold_first = ProjectLookup([root], LoadMode.DRAFT, cache=cache).find_code("Lib")
+    assert cold_first == root / "Lib.x"
+
+    _write(root, "Lib.s")
+
+    warm = ProjectLookup([root], LoadMode.DRAFT, cache=FileLookupCache(cache_dir)).find_code("Lib")
+    cold = ProjectLookup([root], LoadMode.DRAFT).find_code("Lib")
+    assert warm == cold == root / "Lib.s"

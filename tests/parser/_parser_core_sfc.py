@@ -274,20 +274,16 @@ def test_sequence_and_equation_layer_info_is_accepted_but_not_modeled():
 def test_sfc_mixin_rejects_malformed_shapes_and_missing_required_fields():
     mixin = _SFCHarness()
 
-    with pytest.raises(ValueError, match="seqinitstep expected"):
+    with pytest.raises(ValueError, match="seqinitstep expected code_blocks"):
         mixin.seqinitstep([Token("SEQINITSTEP", "SEQINITSTEP"), "Init"])
-    with pytest.raises(ValueError, match="seqinitstep expected"):
+    with pytest.raises(ValueError, match="seqinitstep expected code_blocks"):
         mixin.seqinitstep([Token("SEQINITSTEP", "SEQINITSTEP")])
-    with pytest.raises(ValueError, match="seqinitstep expected"):
+    with pytest.raises(ValueError, match="seqinitstep unexpected item shape"):
         mixin.seqinitstep([Token("SEQINITSTEP", "SEQINITSTEP"), "Init", "not-code-blocks"])
-    with pytest.raises(ValueError, match="seqinitstep expected"):
-        mixin.seqinitstep([Token("SEQINITSTEP", "SEQINITSTEP"), "not-code-blocks"])
-    with pytest.raises(ValueError, match="seqstep expected"):
+    with pytest.raises(ValueError, match="seqstep unexpected item shape"):
         mixin.seqstep([Token("SEQSTEP", "SEQSTEP"), "Step", "not-code-blocks"])
-    with pytest.raises(ValueError, match="seqstep expected"):
+    with pytest.raises(ValueError, match="seqstep expected code_blocks"):
         mixin.seqstep([Token("SEQSTEP", "SEQSTEP")])
-    with pytest.raises(ValueError, match="seqstep expected"):
-        mixin.seqstep([Token("SEQSTEP", "SEQSTEP"), "not-code-blocks"])
     with pytest.raises(ValueError, match="seqtransition unexpected item"):
         mixin.seqtransition([Token("SEQTRANSITION", "SEQTRANSITION"), 1.5])
     with pytest.raises(ValueError, match="seqtransition expected an expression after WAIT_FOR"):
@@ -312,12 +308,15 @@ def test_sfc_mixin_rejects_malformed_shapes_and_missing_required_fields():
         mixin.sequence([Token(parser_const.GRAMMAR_VALUE_SEQUENCE, parser_const.GRAMMAR_VALUE_SEQUENCE), "Seq", (1, 2)])
     with pytest.raises(ValueError, match="equationblock unexpected code item"):
         mixin.equationblock([(1, 2), (3, 4), Tree(parser_const.KEY_STATEMENT, ["stmt"])])
-    with pytest.raises(ValueError, match="Name can't be None"):
-        mixin.equationblock([(1, 2), (3, 4)])
-    with pytest.raises(ValueError, match="Position can't be None"):
-        mixin.equationblock(["EqA"])
-    with pytest.raises(ValueError, match="Size can't be None"):
-        mixin.equationblock(["EqA", (1, 2)])
+    # name, position and size are optional in the native reader (00726030)
+    unnamed = mixin.equationblock([(1, 2), (3, 4)])
+    assert unnamed.name is None
+    assert unnamed.position == (1, 2)
+    assert unnamed.size == (3, 4)
+    name_only = mixin.equationblock(["EqA"])
+    assert name_only.name == "EqA"
+    assert name_only.position is None
+    assert name_only.size is None
 
 
 def test_sfc_mixin_fails_loudly_on_unexpected_modulecode_and_branch_structures():

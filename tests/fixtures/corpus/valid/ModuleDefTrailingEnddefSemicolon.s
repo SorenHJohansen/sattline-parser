@@ -5,7 +5,7 @@
    trailing ENDDEF correctly terminated by `;`.
    NOTE: tool acceptance of this form is [inferred] from the diagnostic text
    ("SemicolonSym Expected") and has NOT been confirmed by a real run yet. The
-   probe probes/EdgeModDefTrail.x exists to settle it. *)
+   real-tool probe EdgeModDefTrail settled it: ENDDEF; compiles. *)
 
 BasePicture Invocation
    ( 0.0 , 0.0 , 0.0 , 1.0 , 1.0

@@ -37,7 +37,7 @@ from sattline_parser.models.expressions import (
     UnaryOp,
     VarRef,
 )
-from sattline_parser.validation.symbols import Scope, resolve_var
+from sattline_parser.validation.symbols import Scope, is_sfc_runtime_constant, resolve_var
 
 
 class TypeFamily(StrEnum):
@@ -110,7 +110,11 @@ def infer_expr_type(expr: SLExpression, scope: Scope, records: dict[str, DataTyp
         return Simple_DataType.STRING.value
     if isinstance(expr, VarRef):
         resolved = resolve_var(expr, scope, records)
-        return None if resolved is None else resolved.datatype_text
+        if resolved is None:
+            # ``On``/``Off`` are boolean literals in the native expression reader
+            # (00487a60) and lower to true/false (0047d720), not variables.
+            return Simple_DataType.BOOLEAN.value if is_sfc_runtime_constant(expr.name) else None
+        return resolved.datatype_text
     if isinstance(expr, Compare | BoolOp | NotOp):
         return Simple_DataType.BOOLEAN.value
     if isinstance(expr, BinOp):

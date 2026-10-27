@@ -36,6 +36,7 @@ from .errors import (
     _unexpected_input_summary as _unexpected_input_summary,  # pyright: ignore[reportPrivateUsage]  # re-exported as a test seam
 )
 from .grammar import constants as const
+from .grammar.keywords import make_keywords_case_insensitive
 from .grammar.sattline_lexer import SattLineLexer
 from .preprocessing import is_coded, is_compressed, preprocess_source, render_ide_text
 from .preprocessing.coded import decode_coded_stream
@@ -88,7 +89,7 @@ def _resolved_grammar() -> str:
         for name in dir(const)
         if name.startswith("GRAMMAR_VALUE_") or name.startswith("GRAMMAR_REGEX_")
     }
-    return grammar_text.format(**grammar_substitutions)
+    return make_keywords_case_insensitive(grammar_text.format(**grammar_substitutions))
 
 
 def _parser_cache_path(
@@ -250,8 +251,8 @@ def _decode_cp1252_comments_tolerant(raw: bytes) -> str:
         if end < 0:
             # Unterminated comment: the lexer would reject this anyway, so keep
             # the strict behaviour rather than guessing where the comment ends.
-            parts.append(raw[start:].decode("cp1252"))
-            break
+            # The tail still decodes strictly, so undefined bytes raise here.
+            return "".join(parts) + raw[start:].decode("cp1252")
         parts.append(raw[start : end + 2].decode("cp1252", errors="replace"))
         pos = end + 2
     return "".join(parts)

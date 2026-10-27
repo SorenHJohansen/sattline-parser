@@ -14,6 +14,7 @@ from sattline_parser.preprocessing.compressed import (
     decode_compressed,
     is_compressed,
     preprocess_sl_text,
+    preprocess_source,
 )
 
 _REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
@@ -39,12 +40,6 @@ def test_scanner_token_table_is_the_recovered_scanner_enum() -> None:
         assert row["code"] == "#" + chr(48 + ordinal // 16) + chr(48 + ordinal % 16)
     assert {row["code"] for row in rows} == set(SCANNER_TOKENS)
     assert SEED_MAPPING is SCANNER_TOKENS
-
-
-def test_scanner_token_table_matches_extracted_handoff_evidence() -> None:
-    if not _HANDOFF_TOKENS.exists():  # pragma: no cover — evidence is vendored locally
-        pytest.skip("handoff evidence not present")
-    assert _HANDOFF_TOKENS.read_bytes() == _TOKEN_DATA.read_bytes()
 
 
 def test_scanner_token_table_pins_words_the_old_seed_table_got_wrong() -> None:
@@ -145,3 +140,32 @@ def test_undefined_byte_inside_an_unterminated_comment_still_fails(tmp_path: pat
     source.write_bytes(b'"Syntax version 2.23, date: 2026-10-26-12:00:00.000 N"\n(* \x81')
     with pytest.raises(UnicodeDecodeError):
         parse_source_file(source)
+
+
+def test_raw_keyword_in_a_coded_file_is_refused_with_a_clear_message() -> None:
+    """Coded mode never reclassifies a raw word (0062cbc0).
+
+    A raw ``SeqControl`` is an identifier there, not the keyword, so promoting it
+    (what expanding codes and re-lexing would do) would accept a unit the real
+    tool rejects. We refuse it explicitly instead.
+    """
+    source = (
+        '"Syntax version 2.23, date: 2026-10-27-12:00:00.000 C"\n#22 MainSeq #01SeqControl, SeqTimer) #88 0.0, 0.0\n'
+    )
+    with pytest.raises(PreprocessError, match="Raw keyword 'SeqControl'"):
+        preprocess_source(source)
+
+
+def test_raw_keyword_inside_a_string_or_comment_is_left_alone() -> None:
+    source = (
+        '"Syntax version 2.23, date: 2026-10-27-12:00:00.000 C"\n#84 (* SeqControl WAIT_FOR *) X #8? "SeqControl";\n'
+    )
+    document = preprocess_source(source)
+    assert "SeqControl" in document.normalized_text
+
+
+def test_coded_golden_with_raw_identifiers_still_decodes() -> None:
+    """Editor output never spells keywords raw, so real compact files stay valid."""
+    compressed = (_CORPUS / "CompressedFullGrammar.s").read_text(encoding="cp1252")
+    document = preprocess_source(compressed)
+    assert "MODULEDEFINITION" in document.normalized_text

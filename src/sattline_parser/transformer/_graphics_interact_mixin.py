@@ -445,6 +445,22 @@ class _GraphicsInteractMixin:
             const.KEY_TAIL: tail,
         }
 
+    def module_in_view(self, items: list[TransformerItem]) -> dict[str, object]:
+        """Grammar module_in_view -> MODULE_IN_VIEW_KW '=' BOOL.
+
+        Native 00665970 reads the value with the Boolean-property reader
+        00631940, which accepts True/False only, and stores it in a field of its
+        own - Module_In_View and Enable_ are distinct properties.
+        """
+        value = False
+        tail: object | None = None
+        for item in items:
+            if isinstance(item, bool):
+                value = item
+            elif not isinstance(item, Token):
+                tail = item
+        return {const.TREE_TAG_MODULE_IN_VIEW: value, const.KEY_TAIL: tail}
+
     def enable_expression(self, items: list[TransformerItem]) -> object:
         """Grammar enable_expression -> expression within enable context."""
         for it in items:

@@ -279,13 +279,16 @@ class ProjectLookup:
             found = self._find_in_base(name, extensions, outranking, kind=kind)
             if found is not None:
                 return found
-        cached_ext = cached["ext"]
-        ordered_exts = [cached_ext] if cached_ext in extensions else []
-        ordered_exts.extend(ext for ext in extensions if ext != cached_ext)
-        for ext in ordered_exts:
+        # Extension *preference* wins over the extension recorded in the cache:
+        # an artifact that appeared after the cache was written must not be
+        # shadowed by the cached one, or a warm lookup would disagree with a cold
+        # one (gap P10). The cached base is still trusted as the resolving base,
+        # and every outranking base was checked above.
+        for ext in extensions:
             path = base / f"{name}{ext}"
             if path.exists():
                 self._dbg(f"Using cached {kind} file: {path}")
+                self._remember(kind, name, base, ext)
                 return path
         self._cache.forget(kind, name, self._mode.value)
         return None
@@ -316,6 +319,20 @@ class ProjectLookup:
 
     def find_code(self, name: str, *, requester_dir: Path | None = None) -> Path | None:
         return self.find(name, ArtifactKind.CODE, requester_dir=requester_dir)
+
+    def find_deps_beside(self, code_path: Path, name: str, *, requester_dir: Path | None = None) -> Path | None:
+        """Resolve the dependency sidecar at the selected body's own prefix.
+
+        A SattLine library is a body plus a sidecar at *one* prefix (native
+        LIB-05, ``00589be0``). Resolving the sidecar through the whole ordered
+        root list can pair a body with an unrelated library's sidecar, so the
+        body prefix decides; the cache still short-circuits an already-known
+        prefix, and the requester-relative scan is only the fallback used by
+        :meth:`find_deps` for consumers that want the old behaviour.
+        """
+        del requester_dir  # the body prefix, not the requester, decides
+        extensions = candidate_extensions(ArtifactKind.DEPS, self._mode)
+        return self._find_in_base(name, extensions, code_path.parent, kind=ArtifactKind.DEPS.value)
 
     def find_deps(self, name: str, *, requester_dir: Path | None = None) -> Path | None:
         return self.find(name, ArtifactKind.DEPS, requester_dir=requester_dir)

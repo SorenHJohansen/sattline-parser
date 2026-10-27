@@ -50,6 +50,7 @@ class DiagnosticCode(StrEnum):
     RESERVED_NAME_DECLARED = "SL-V034"
     OLD_STATE_NOT_WRITABLE = "SL-V035"
     SEQUENCE_POSITION_INVALID = "SL-V036"
+    SEQUENCE_FORK_TARGET_KIND = "SL-V037"
 
 
 #: Codes that the real SattLine parser does NOT enforce, with the probe that

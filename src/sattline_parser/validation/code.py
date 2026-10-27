@@ -91,12 +91,13 @@ def walk_sequence_body(
 
 def walk_module_code(mc: ModuleCode, scope: Scope, records: dict[str, DataType], errors: list[Diagnostic]) -> None:
     sequences = mc.sequences or ()
-    all_known = _collect_module_jump_target_names(mc.sequences)
+    step_names, transition_names = _collect_module_jump_targets(mc.sequences)
+    all_known = step_names | transition_names
     sfc_names = all_known | {fold_identifier(sequence.name) for sequence in sequences if sequence.name}
     _check_duplicate_sfc_names(mc.sequences, errors)
     check_sequence_positions(mc.sequences, errors)
     for sequence in sequences:
-        _check_fork_targets(sequence.code, all_known, errors)
+        _check_fork_targets(sequence.code, step_names, transition_names, errors)
         walk_sequence_body(sequence.code, scope, records, sfc_names, errors)
     for equation in mc.equations or ():
         walk_equation_block(equation, scope, records, sfc_names, errors)
@@ -422,54 +423,91 @@ def _is_sfc_runtime_accessor(ref: VarRef, sfc_names: set[str]) -> bool:
     return "." in ref.name and fold_identifier(root) in sfc_names
 
 
-def _collect_module_jump_target_names(sequences: list[Sequence] | None) -> set[str]:
-    """Collect all step and transition names in a module code block for SEQFORK resolution."""
-    names = _collect_jump_target_names([])
+def _collect_module_jump_targets(sequences: list[Sequence] | None) -> tuple[set[str], set[str]]:
+    """Collect step and transition names across the module's sequences.
+
+    Native ``00703430`` (reached via ``005d7910``) resolves fork names during
+    analysis against the module's sequence-name registry; a narrower
+    "current sequence only" scope was not recovered, so every sequence in the
+    module code block contributes here.
+    """
+    step_names: set[str] = set()
+    transition_names: set[str] = set()
     for sequence in sequences or ():
-        names |= _collect_jump_target_names(sequence.code)
-    return names
+        _collect_jump_targets(sequence.code, step_names, transition_names)
+    return step_names, transition_names
 
 
-def _collect_jump_target_names(items: list[SFCBodyItem]) -> set[str]:
-    """Collect step and transition names a SEQFORK may jump to (intra-sequence)."""
-    names: set[str] = set()
+def _collect_jump_targets(items: list[SFCBodyItem], step_names: set[str], transition_names: set[str]) -> None:
     for item in items:
-        if isinstance(item, SFCStep | SFCTransition) and item.name is not None:
-            names.add(fold_identifier(item.name))
-        elif isinstance(item, SFCTransitionSub):
+        if isinstance(item, SFCStep):
             if item.name is not None:
-                names.add(fold_identifier(item.name))
-            names.update(_collect_jump_target_names(item.body))
+                step_names.add(fold_identifier(item.name))
+        elif isinstance(item, SFCTransition | SFCTransitionSub):
+            if item.name is not None:
+                transition_names.add(fold_identifier(item.name))
+            if isinstance(item, SFCTransitionSub):
+                _collect_jump_targets(item.body, step_names, transition_names)
         elif isinstance(item, SFCAlternative | SFCParallel):
             for branch in item.branches:
-                names.update(_collect_jump_target_names(branch))
+                _collect_jump_targets(branch, step_names, transition_names)
         elif isinstance(item, SFCSubsequence):
-            names.update(_collect_jump_target_names(item.body))
-    return names
+            if item.kind == "substep" and item.name is not None:
+                step_names.add(fold_identifier(item.name))
+            _collect_jump_targets(item.body, step_names, transition_names)
 
 
-def _check_fork_targets(items: list[SFCBodyItem], known: set[str], errors: list[Diagnostic]) -> None:
-    def _check_fork(fork: SFCFork | None) -> None:
+def _check_fork_targets(
+    items: list[SFCBodyItem], step_names: set[str], transition_names: set[str], errors: list[Diagnostic]
+) -> None:
+    """Resolve every SEQFORK target and check its kind.
+
+    ``00703430`` rejects unresolved or wrong-kind targets. A fork hosted on a
+    step must name transitions, and a fork hosted on a transition must name
+    steps -- a rule that merely required every target to be a step would be
+    wrong.
+    """
+
+    def _check_fork(fork: SFCFork | None, host: str) -> None:
         if fork is None:
             return
+        expected = transition_names if host == "step" else step_names
+        other = step_names if host == "step" else transition_names
+        expected_kind = "transition" if host == "step" else "step"
         for target in fork.targets:
-            if fold_identifier(target) not in known:
+            folded = fold_identifier(target)
+            if folded in expected:
+                continue
+            if folded in other:
                 errors.append(
                     Diagnostic(
-                        code=DiagnosticCode.SEQUENCE_FORK_UNKNOWN_TARGET,
-                        message=f"SEQFORK targets unknown step {target!r} in sequence",
+                        code=DiagnosticCode.SEQUENCE_FORK_TARGET_KIND,
+                        message=(
+                            f"SEQFORK on a {host} must target a {expected_kind}; {target!r} is a "
+                            f"{'step' if expected_kind == 'transition' else 'transition'}"
+                        ),
                         span=None,
                     )
                 )
+                continue
+            errors.append(
+                Diagnostic(
+                    code=DiagnosticCode.SEQUENCE_FORK_UNKNOWN_TARGET,
+                    message=f"SEQFORK targets unknown SFC element {target!r} in module",
+                    span=None,
+                )
+            )
 
     for item in items:
-        if isinstance(item, SFCStep | SFCTransition):
-            _check_fork(item.fork)
+        if isinstance(item, SFCStep):
+            _check_fork(item.fork, "step")
+        elif isinstance(item, SFCTransition):
+            _check_fork(item.fork, "transition")
         elif isinstance(item, SFCAlternative | SFCParallel):
             for branch in item.branches:
-                _check_fork_targets(branch, known, errors)
+                _check_fork_targets(branch, step_names, transition_names, errors)
         elif isinstance(item, SFCSubsequence | SFCTransitionSub):
-            _check_fork_targets(item.body, known, errors)
+            _check_fork_targets(item.body, step_names, transition_names, errors)
 
 
 def _check_duplicate_sfc_names(sequences: list[Sequence] | None, errors: list[Diagnostic]) -> None:

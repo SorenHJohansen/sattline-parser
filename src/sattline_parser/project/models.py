@@ -8,7 +8,7 @@ artifact-discovery rules and loading behavior land in later phases.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from enum import Enum
+from enum import Enum, StrEnum
 from pathlib import Path
 from typing import Literal
 
@@ -106,6 +106,43 @@ class GraphicsModel:
         return tuple(message for message in self.messages if message.severity == "warning")
 
 
+class SidecarState(StrEnum):
+    """What the dependency sidecar looked like for a loaded program.
+
+    A library is a body *and* a sidecar at one prefix (native LIB-05), so the
+    three cases are distinct: absent (no file), empty (file, no names) and
+    present. Conflating absent with empty would silently drop a dependency chain.
+    """
+
+    ABSENT = "absent"
+    EMPTY = "empty"
+    PRESENT = "present"
+
+
+class LoadDiagnosticKind(StrEnum):
+    """Non-fatal project-load findings a consumer may want to act on."""
+
+    SIDECAR_MISSING = "sidecar-missing"
+    SIDECAR_ELSEWHERE = "sidecar-elsewhere"
+    SIDECAR_EMPTY = "sidecar-empty"
+    DEPENDENCY_CYCLE = "dependency-cycle"
+
+
+@dataclass(frozen=True, slots=True)
+class LoadDiagnostic:
+    """One non-fatal load finding.
+
+    These are conditions the native loader reports and an operator can continue
+    past (answer 11: Continue/Cancel); raising would be stricter than the real
+    tool, so they are surfaced instead of thrown.
+    """
+
+    kind: LoadDiagnosticKind
+    program: str
+    detail: str
+    path: Path | None = None
+
+
 @dataclass(frozen=True, slots=True)
 class SattLineProgram:
     """A fully loaded SattLine program within a project.
@@ -125,6 +162,10 @@ class SattLineProgram:
     dependencies: tuple[str, ...] = ()
     format: ProgramFormat = ProgramFormat(mode=LoadMode.OFFICIAL)
     source_path: Path | None = None
+    #: Resolved dependency sidecar, when one was read at the body prefix.
+    deps_path: Path | None = None
+    #: Whether that sidecar was absent, empty, or carried dependency names.
+    sidecar: SidecarState = SidecarState.ABSENT
 
 
 @dataclass(frozen=True, slots=True)
@@ -156,7 +197,10 @@ __all__ = [
     "GraphicsModel",
     "GraphicsPictureDisplayPathRow",
     "GraphicsPictureDisplayRecord",
+    "LoadDiagnostic",
+    "LoadDiagnosticKind",
     "LoadMode",
     "ProgramFormat",
     "SattLineProgram",
+    "SidecarState",
 ]

@@ -58,7 +58,10 @@ def _scan_variable_modifiers(items: list[TransformerItem], idx: int) -> tuple[di
         if not isinstance(item, str):
             break
         attribute = _VARIABLE_MODIFIER_KEYWORDS.get(item)
-        if attribute is None:
+        if attribute is None:  # pragma: no cover - defensive: the grammar cannot
+            # produce a bare string after the modifier run today, because every
+            # following element (`:=`, an initialiser, `;`) arrives as a Token or
+            # a value tuple. Kept so a future grammar change cannot silently loop.
             break
         flags[attribute] = True
         order.append(attribute)

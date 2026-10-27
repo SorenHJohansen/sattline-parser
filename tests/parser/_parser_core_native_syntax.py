@@ -19,6 +19,7 @@ from sattline_parser.models.ast_model import (
     SFCSubsequence,
     SFCTransition,
 )
+from sattline_parser.models.expressions import Assignment, IfStmt, VarRef
 
 _HEADER = (
     '"Syntax version 2.23, date: 2026-10-26-12:00:00.000 N"\n'
@@ -339,3 +340,233 @@ def test_string_initialiser_after_a_modifier_ends_the_modifier_run() -> None:
     message = picture.localvariables[0]
     assert message.attribute_order == ("secure",)
     assert message.init_value == "text"
+
+
+def test_initial_step_accepts_a_fork_suffix() -> None:
+    # 0070a100 is a caller of 006f9850 for SEQINITSTEP as well as SEQSTEP.
+    sequence = _first_sequence(
+        _sequence(
+            "      SEQINITSTEP Rerun\n"
+            "         SEQFORK TrStart\n"
+            "      SEQSTEP Working\n"
+            "      SEQTRANSITION TrEnd WAIT_FOR True\n"
+        )
+    )
+    rerun = [node for node in sequence.code if isinstance(node, SFCStep) and node.name == "Rerun"]
+    assert rerun[0].fork is not None
+    assert rerun[0].fork.targets == ("TrStart",)
+
+
+def _fork_codes(body: str) -> set[str]:
+    from sattline_parser.api import parse_and_validate  # noqa: PLC0415
+
+    _picture, diagnostics = parse_and_validate(_module_code(_sequence(body)))
+    return {diagnostic.code.value for diagnostic in diagnostics}
+
+
+def test_step_host_fork_must_name_a_transition() -> None:
+    # 00703430: a step-hosted fork resolves to transitions, a transition-hosted
+    # fork to steps. Requiring every target to be a step would be wrong.
+    body = (
+        "      SEQINITSTEP Rerun\n"
+        "         SEQFORK Later\n"
+        "      SEQSTEP Later\n"
+        "      SEQTRANSITION TrEnd WAIT_FOR True\n"
+    )
+    assert "SL-V037" in _fork_codes(body)
+
+
+def test_transition_host_fork_must_name_a_step() -> None:
+    body = (
+        "      SEQSTEP Working\n"
+        "      SEQTRANSITION TrJump WAIT_FOR Flag\n"
+        "         SEQFORK TrEnd\n"
+        "      SEQTRANSITION TrEnd WAIT_FOR True\n"
+    )
+    assert "SL-V037" in _fork_codes(body)
+
+
+def test_fork_targets_of_the_right_kind_are_clean() -> None:
+    body = (
+        "      SEQINITSTEP Rerun\n"
+        "         SEQFORK TrStart\n"
+        "      SEQTRANSITION TrMid WAIT_FOR Flag\n"
+        "      SEQSTEP Working\n"
+        "      SEQTRANSITION TrJump WAIT_FOR Flag\n"
+        "         SEQFORK Working, Rerun\n"
+        "      SEQSTEP Done\n"
+        "      SEQTRANSITION TrEnd WAIT_FOR True\n"
+    )
+    assert _fork_codes(body) == set()
+
+
+def test_fork_to_an_unknown_name_is_still_unknown_not_wrong_kind() -> None:
+    body = (
+        "      SEQSTEP Working\n"
+        "      SEQTRANSITION TrJump WAIT_FOR Flag\n"
+        "         SEQFORK Ghost\n"
+        "      SEQTRANSITION TrEnd WAIT_FOR True\n"
+    )
+    codes = _fork_codes(body)
+    assert "SL-V017" in codes
+    assert "SL-V037" not in codes
+
+
+def test_module_in_view_is_a_distinct_invocation_property() -> None:
+    # 00665970 reads token 0xA4 with the Boolean-property reader 00631940 and
+    # stores it separately from Enable_ (both may appear).
+    source = (
+        _HEADER
+        + 'BasePicture Invocation (0.0,0.0,0.0,1.0,1.0 Module_In_View = True : OutVar_ "Visible" '
+        + "Enable_ = False) : MODULEDEFINITION DateCode_ 1\n"
+        + "ModuleDef\n"
+        + "ClippingBounds = ( -1.0 , -1.0 ) ( 1.0 , 1.0 )\n"
+        + "ENDDEF (*BasePicture*);\n"
+    )
+    header = parse_source_text(source).header
+    assert header.module_in_view is True
+    assert header.enable is False
+    assert header.invoke_coord_tails == ["Visible"]
+
+
+def test_module_in_view_rejects_on_off() -> None:
+    # The Boolean-property reader takes True/False only, unlike a general
+    # boolean expression where On/Off are legal primaries (00487a60).
+    source = (
+        _HEADER
+        + "BasePicture Invocation (0.0,0.0,0.0,1.0,1.0 Module_In_View = On) : MODULEDEFINITION DateCode_ 1\n"
+        + "ModuleDef\n"
+        + "ClippingBounds = ( -1.0 , -1.0 ) ( 1.0 , 1.0 )\n"
+        + "ENDDEF (*BasePicture*);\n"
+    )
+    with pytest.raises(UnexpectedInput):
+        parse_source_text(source)
+
+
+def test_equations_keyword_is_accepted_like_equationblock() -> None:
+    # 00726030 accepts both spellings and flags them differently; we keep the
+    # parsed shape identical until the flag's downstream meaning is recovered.
+    source = (
+        _HEADER
+        + "BasePicture Invocation (0.0,0.0,0.0,1.0,1.0) : MODULEDEFINITION DateCode_ 1\n"
+        + "LOCALVARIABLES\n"
+        + "   Flag: boolean := False;\n"
+        + "ModuleDef\n"
+        + "ClippingBounds = ( -1.0 , -1.0 ) ( 1.0 , 1.0 )\n"
+        + "ModuleCode\n"
+        + "   EQUATIONS Eq COORD 0.0, 0.0 OBJSIZE 1.0, 1.0 :\n"
+        + "      Flag = True\n"
+        + "ENDDEF (*BasePicture*);\n"
+    )
+    picture = parse_source_text(source)
+    module_code = picture.modulecode
+    assert module_code is not None
+    assert [equation.name for equation in module_code.equations or []] == ["Eq"]
+
+
+# --- keyword case insensitivity (00626850 / 0062e3d0) -----------------------
+
+
+def test_keyword_terminals_are_case_insensitive() -> None:
+    from sattline_parser.grammar.keywords import make_keywords_case_insensitive  # noqa: PLC0415
+
+    text = 'FOO.10: "Foo"\nSEMI: ";"\nBAR: /Ba+r/\nBAZ: /(?i:Quux)/\n'
+    assert make_keywords_case_insensitive(text) == (
+        'FOO.10: /(?i:Foo\\b)/\nSEMI: ";"\nBAR: /(?i:Ba+r)/\nBAZ: /(?i:Quux)/\n'
+    )
+
+
+def test_lowercase_keywords_parse_like_canonical_case() -> None:
+    canonical = (
+        _HEADER
+        + "BasePicture Invocation (0.0,0.0,0.0,1.0,1.0) : MODULEDEFINITION DateCode_ 1\n"
+        + "LOCALVARIABLES\n"
+        + "   Counter: integer State := 0;\n"
+        + "ModuleDef\n"
+        + "ClippingBounds = ( -1.0 , -1.0 ) ( 1.0 , 1.0 )\n"
+        + "ModuleCode\n"
+        + "   EQUATIONBLOCK Main COORD 0.0, 0.0 OBJSIZE 1.0, 1.0 :\n"
+        + "      Counter = Counter + 1;\n"
+        + "ENDDEF (*BasePicture*);\n"
+    )
+    lowered = canonical.replace("BasePicture", "basepicture").replace("MODULEDEFINITION", "moduledefinition")
+    lowered = (
+        lowered.replace("LOCALVARIABLES", "localvariables")
+        .replace("ModuleDef", "moduledef")
+        .replace("ClippingBounds", "clippingbounds")
+        .replace("ModuleCode", "modulecode")
+        .replace("EQUATIONBLOCK", "equationblock")
+        .replace("COORD", "coord")
+        .replace("OBJSIZE", "objsize")
+        .replace("ENDDEF", "enddef")
+        .replace("DateCode_", "datecode_")
+    )
+    canonical_picture = parse_source_text(canonical)
+    lowered_picture = parse_source_text(lowered)
+    assert lowered_picture.name == canonical_picture.name
+    assert lowered_picture.localvariables[0].name == "Counter"
+    assert lowered_picture.datecode == canonical_picture.datecode == 1
+
+
+def test_lowercase_boolean_and_state_suffix_are_equivalent() -> None:
+    source = (
+        _HEADER
+        + "basepicture Invocation (0.0,0.0,0.0,1.0,1.0) : moduledefinition datecode_ 1\n"
+        + "localvariables\n"
+        + "   Counter: integer state := 0;\n"
+        + "   Mirror: integer := 0;\n"
+        + "moduledef\nclippingbounds = ( -1.0 , -1.0 ) ( 1.0 , 1.0 )\n"
+        + "modulecode\n"
+        + "   equationblock Main coord 0.0, 0.0 objsize 1.0, 1.0 :\n"
+        + "      if true then\n"
+        + "         Mirror = Counter:old;\n"
+        + "      endif\n"
+        + "enddef (*BasePicture*);\n"
+    )
+    picture = parse_source_text(source)
+    module_code = picture.modulecode
+    assert module_code is not None
+    equation = (module_code.equations or [])[0]
+    statement = equation.code[0]
+    assert isinstance(statement, IfStmt)
+    nested = statement.branches[0][1][0]
+    assert isinstance(nested, Assignment)
+    reference = nested.value
+    assert isinstance(reference, VarRef)
+    assert reference.state == "old"
+
+
+def test_lowercase_seq_control_flags_are_detected() -> None:
+    source = _module_code(
+        "   sequence Demo (seqcontrol, seqtimer) coord 0.0, 0.0 objsize 1.0, 1.0\n"
+        "      seqstep Only\n"
+        "      seqtransition End wait_for true\n"
+        "   endsequence\n"
+    )
+    picture = parse_source_text(source)
+    module_code = picture.modulecode
+    assert module_code is not None
+    sequence = (module_code.sequences or [])[0]
+    assert sequence.seqcontrol is True
+    assert sequence.seqtimer is True
+    assert sequence.type == "SEQUENCE"
+
+
+def test_equation_block_without_name_or_metadata() -> None:
+    # 00726030: keyword, optional name, optional coord/size, optional layer, ':'
+    source = _module_code(
+        "   EQUATIONBLOCK :\n"
+        "      Flag = True\n"
+        "   EQUATIONS Named :\n"
+        "      Flag = False\n"
+        "   EQUATIONBLOCK Located COORD 0.0, 0.0 OBJSIZE 1.0, 1.0 :\n"
+        "      Flag = True\n"
+    )
+    picture = parse_source_text(source)
+    module_code = picture.modulecode
+    assert module_code is not None
+    equations = module_code.equations or []
+    assert [equation.name for equation in equations] == [None, "Named", "Located"]
+    assert equations[0].position is None and equations[0].size is None
+    assert equations[2].position == (0.0, 0.0)
+    assert len(equations[0].code) == 1
