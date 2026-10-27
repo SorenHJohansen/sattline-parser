@@ -120,28 +120,11 @@ class SFCMixin:
         return module_code
 
     def seqinitstep(self, items: list[TransformerItem]) -> SFCStep:
-        """Grammar seqinitstep -> SEQINITSTEP NAME? code_blocks."""
-        if len(items) != 2 and len(items) != 3:
-            raise ValueError(f"seqinitstep expected (SEQINITSTEP, NAME?, code_blocks); got: {items!r}")
-        name: str | None = None
-        code: SFCCodeBlocks
-        if len(items) == 3:
-            if not isinstance(items[1], str) or not isinstance(items[2], SFCCodeBlocks):
-                raise ValueError(f"seqinitstep expected (SEQINITSTEP, NAME?, code_blocks); got: {items!r}")
-            name = items[1]
-            code = items[2]
-        elif isinstance(items[1], SFCCodeBlocks):
-            code = items[1]
-        else:
-            raise ValueError(f"seqinitstep expected (SEQINITSTEP, NAME?, code_blocks); got: {items!r}")
-        return SFCStep(kind="init", name=name, code=code)
+        """Grammar seqinitstep -> SEQINITSTEP NAME? code_blocks seqfork?."""
+        return self._step(items, "init", "seqinitstep")
 
-    def seqstep(self, items: list[TransformerItem]) -> SFCStep:
-        """Grammar seqstep -> SEQSTEP NAME? code_blocks seqfork?.
-
-        Ordinary steps may be unnamed in real SattLine, mirroring the already
-        optional ``seqinitstep`` name, and may carry a ``SEQFORK`` suffix.
-        """
+    def _step(self, items: list[TransformerItem], kind: str, rule: str) -> SFCStep:
+        """Shared SEQINITSTEP / SEQSTEP shape: name, code blocks, optional fork."""
         name: str | None = None
         code: SFCCodeBlocks | None = None
         fork: SFCFork | None = None
@@ -157,10 +140,14 @@ class SFCMixin:
             elif isinstance(item, str) and name is None:
                 name = item
             else:
-                raise ValueError(f"seqstep expected (SEQSTEP, NAME?, code_blocks, SEQFORK?); got: {items!r}")
+                raise ValueError(f"{rule} unexpected item shape")
         if code is None:
-            raise ValueError(f"seqstep expected code_blocks; got: {items!r}")
-        return SFCStep(kind="step", name=name, code=code, fork=fork)
+            raise ValueError(f"{rule} expected code_blocks")
+        return SFCStep(kind=kind, name=name, code=code, fork=fork)
+
+    def seqstep(self, items: list[TransformerItem]) -> SFCStep:
+        """Grammar seqstep -> SEQSTEP NAME? code_blocks seqfork?."""
+        return self._step(items, "step", "seqstep")
 
     def seqtransition(self, items: list[TransformerItem]) -> SFCTransition:
         """Grammar seqtransition -> SEQTRANSITION NAME? (WAIT_FOR expression)? seqfork?.
@@ -346,9 +333,11 @@ class SFCMixin:
                 for child in tree_children(tree):
                     if not isinstance(child, Token):
                         continue
-                    if child.value == const.GRAMMAR_VALUE_SEQCONTROL:
+                    # Keyword case is folded by the scanner, so compare folded.
+                    spelling = str(child.value).casefold()
+                    if spelling == const.GRAMMAR_VALUE_SEQCONTROL.casefold():
                         seqcontrol = True
-                    elif child.value == const.GRAMMAR_VALUE_SEQTIMER:
+                    elif spelling == const.GRAMMAR_VALUE_SEQTIMER.casefold():
                         seqtimer = True
                 continue
 
@@ -389,7 +378,11 @@ class SFCMixin:
         )
 
     def equationblock(self, items: list[TransformerItem]) -> Equation:
-        """Grammar equationblock -> Equation with name, position, size, code, layer_info."""
+        """Grammar equationblock -> Equation; name/position/size are optional.
+
+        Native 00726030 accepts ``EQUATIONBLOCK``/``EQUATIONS`` with no name and
+        no coordinate/size metadata, so absence is preserved as ``None``.
+        """
         name: str | None = None
         position: tuple[float, float] | None = None
         size: tuple[float, float] | None = None
@@ -421,13 +414,6 @@ class SFCMixin:
                 code.append(item)
             else:
                 raise ValueError(f"equationblock unexpected code item: {type(item).__name__}: {item!r}")
-
-        if name is None:
-            raise ValueError("Name can't be None")
-        if position is None:
-            raise ValueError("Position can't be None")
-        if size is None:
-            raise ValueError("Size can't be None")
 
         return Equation(name=name, position=position, size=size, code=code, layer_info=layer_info)
 

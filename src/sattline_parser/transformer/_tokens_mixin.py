@@ -92,13 +92,17 @@ class TokensMixin:
         return self.REAL(tok)
 
     def BOOL(self, tok: Token) -> bool:
-        """Grammar BOOL terminal -> bool."""
-        s = str(tok)
-        if s == const.GRAMMAR_VALUE_BOOL_TRUE:
+        """Grammar BOOL terminal -> bool.
+
+        The spelling is matched case-insensitively because the native scanner
+        folds keyword case (00626850); the AST still stores a plain bool.
+        """
+        s = str(tok).casefold()
+        if s == const.GRAMMAR_VALUE_BOOL_TRUE.casefold():
             return True
-        if s == const.GRAMMAR_VALUE_BOOL_FALSE:
+        if s == const.GRAMMAR_VALUE_BOOL_FALSE.casefold():
             return False
-        raise ValueError(f"BOOL expected {const.GRAMMAR_VALUE_BOOL_TRUE}/{const.GRAMMAR_VALUE_BOOL_FALSE}; got: {s}")
+        raise ValueError(f"BOOL expected {const.GRAMMAR_VALUE_BOOL_TRUE}/{const.GRAMMAR_VALUE_BOOL_FALSE}; got: {tok}")
 
     def BOOL_NOTAIL(self, tok: Token) -> bool:
         """Grammar BOOL_NOTAIL terminal -> bool (no trailing coordinates)."""

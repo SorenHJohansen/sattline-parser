@@ -11,6 +11,7 @@ false positives, and covers every branch of the validators with hand-built ASTs.
 import pathlib
 
 from sattline_parser import parse_and_validate
+from sattline_parser.preprocessing.compressed import PreprocessError
 from sattline_parser.validation import validate_basepicture
 from sattline_parser.validation.builtins import (
     BUILTIN_DATATYPE_NAMES,
@@ -92,10 +93,12 @@ _RETIRED_VALIDATION_FIXTURES: dict[str, str] = {
     "DatatypeShadowsBuiltinName": "SL-V026",
 }
 
+#: Fixtures refused by the compact-source decoder (a raw keyword in a coded file).
+_DECODE_REJECTED_FIXTURES = ["CodedRawKeyword"]
+
 _PARSE_REJECTED_FIXTURES = [
     "CoordInVarTail",
     "ModuleDefNoTrailingEnddef",
-    "EnableExpressionTail",
     "EncodingStress",
     "FreestandingCommentInModuleCode",
     "GraphObjectsDoubleLayer",
@@ -181,9 +184,9 @@ def test_every_retired_code_is_documented_and_actually_unemitted():
         for path in sorted(_corpus(subdir).glob("*.s")):
             try:
                 _bp, diagnostics = parse_and_validate(_raw(path))
-            except UnexpectedInput:
-                # Parse-rejected files never reach validation, so they cannot
-                # leak a retired code either.
+            except (UnexpectedInput, PreprocessError):
+                # Parse- or decode-rejected files never reach validation, so they
+                # cannot leak a retired code either.
                 continue
             leaked = retired_values & {d.code.value for d in diagnostics}
             assert not leaked, f"{subdir}/{path.name} still emits {sorted(leaked)}"
@@ -198,6 +201,12 @@ def test_cross_module_contract_mismatch_flagged():
 def test_parse_rejected_fixtures_still_raise_parse_errors():
     for stem in _PARSE_REJECTED_FIXTURES:
         with pytest.raises(UnexpectedInput):
+            parser_core_parse_source_text(_raw(_corpus(f"invalid/{stem}.s")))
+
+
+def test_decode_rejected_fixtures_raise_preprocess_errors():
+    for stem in _DECODE_REJECTED_FIXTURES:
+        with pytest.raises(PreprocessError, match="Raw keyword"):
             parser_core_parse_source_text(_raw(_corpus(f"invalid/{stem}.s")))
 
 
@@ -237,13 +246,14 @@ def test_opsave_modifier_order_keeps_both_sides():
     assert _codes("invalid", "OpSaveConstCombined") == {"SL-V031"}
 
 
-def test_graph_enable_allows_bare_and_paren_but_interact_paren_does_not():
+def test_enable_paren_tail_is_accepted_on_graph_and_interact_objects():
     """Graph objects take Enable_ bare and with a paren tail (EdgePropEnable,
-    EdgePropParenTail); the same paren tail on an interact object is rejected
-    (ValidInteractEnabl / EnableExpressionTail)."""
+    EdgePropParenTail). Interactors do too: ABB's own libraries use
+    `Enable_ = True : (EnableAck AND …)` on ComBut_ (GC/ABBLib/EventLib.x), so the
+    single-probe verdict that made the InVar_ tail mandatory there is superseded
+    by corpus evidence."""
     assert _codes("valid", "GraphObjectEnableVariants") == set()
-    with pytest.raises(UnexpectedInput):
-        parser_core_parse_source_text(_raw(_corpus("invalid/EnableExpressionTail.s")))
+    assert _codes("valid", "InteractEnableParenTail") == set()
 
 
 def test_duration_literal_format_table():
@@ -618,8 +628,9 @@ def test_sfc_walk_covers_all_body_item_kinds():
     trailing = SFCTransition(name="TrTail", condition=True)
     after_transition = SFCStep(kind="step", name="AfterTr", code=SFCCodeBlocks())
     after_sub = SFCStep(kind="step", name="AfterTSub", code=SFCCodeBlocks())
+    # A fork hosted on a *transition* must name steps (native 00703430).
     transition.fork = SFCFork(
-        targets=("TrMatch", "TSub", "TrAlt", "SubStep", "ParStep", "TrInner"),
+        targets=("Init", "AfterTr", "SubStep", "AltStep", "ParStep", "SubInner"),
         has_break=True,
     )
     # Positions: Init(S) TrMatch(T) ... every step is followed by a transition
@@ -674,7 +685,8 @@ def test_sfc_step_and_transition_names_collected_for_fork():
             ]
         ]
     )
-    transitions[0].fork = SFCFork(targets=("Run", "T1", "TSub", "TrAlt", "Nested", "NestedAlt", "Mid"))
+    # Step targets only: the host is a transition, and 00703430 checks the kind.
+    transitions[0].fork = SFCFork(targets=("Run", "Mid", "Nested", "NestedAlt", "AfterSub", "Tail"))
     bp.modulecodes = [
         ModuleCode(
             sequences=[
@@ -1354,3 +1366,35 @@ def test_datecode_normalisation_and_generation():
     # generated stamps follow the native clock formula
     assert compute_datecode(123, 1000) == 2400
     assert compute_datecode(123, 0) == 0
+
+
+def test_on_off_runtime_constants_are_boolean_expressions():
+    header = (
+        '"Syntax version 2.23, date: 2026-10-26-12:00:00.000 N"\n'
+        '"Original file date: ---"\n'
+        '"Program date: 2026-10-26-12:00:00.000, name: OnOffTyping"\n'
+    )
+    picture = (
+        "BasePicture Invocation (0.0,0.0,0.0,1.0,1.0) : MODULEDEFINITION DateCode_ 1\n"
+        "LOCALVARIABLES\n"
+        "   Flag: boolean := False;\n"
+        "   Num: integer := 0;\n"
+        "ModuleDef\n"
+        "ClippingBounds = ( -1.0 , -1.0 ) ( 1.0 , 1.0 )\n"
+        "ModuleCode\n"
+        "   EQUATIONBLOCK E COORD 0.0,0.0 OBJSIZE 1.0,1.0 :\n"
+    )
+    tail = "\nENDDEF (*BasePicture*);\n"
+
+    def codes(statement: str) -> set[str]:
+        return {
+            diagnostic.code.value
+            for diagnostic in parse_and_validate(header + picture + f"      {statement}\n" + tail)[1]
+        }
+
+    # On/Off are boolean primaries (00487a60), so these are ordinary assignments
+    assert codes("Flag = On;") == set()
+    assert codes("Flag = Off;") == set()
+    assert "SL-V029" in codes("Num = On;")
+    # ...and numeric comparison against them is rejected (0047b5a0, error 0x17)
+    assert "SL-V028" in codes("Flag = Num > Off;")

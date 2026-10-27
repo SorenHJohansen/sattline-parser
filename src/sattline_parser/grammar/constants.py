@@ -20,6 +20,7 @@ TREE_TAG_INVOKE_COORD = "invoke_coord"
 TREE_TAG_ARGUMENTS = "arguments"
 TREE_TAG_LAYERINFO = "layerinfo"
 TREE_TAG_ENABLE = "enable"
+TREE_TAG_MODULE_IN_VIEW = "module_in_view"
 TREE_TAG_MODULETYPE_PAR_LIST = "moduletype_par_list"
 TREE_TAG_MODULETYPE_PAR_TRANSFER = "moduletype_par_transfer"
 TREE_TAG_VARIABLE_NAME = "variable_name"
@@ -142,6 +143,7 @@ GRAMMAR_VALUE_ENTERCODE = "ENTERCODE"
 GRAMMAR_VALUE_ACTIVECODE = "ACTIVECODE"
 GRAMMAR_VALUE_EXITCODE = "EXITCODE"
 GRAMMAR_VALUE_EQUATIONBLOCK = "EQUATIONBLOCK"
+GRAMMAR_VALUE_EQUATIONS = "EQUATIONS"
 GRAMMAR_VALUE_ENDSEQUENCE = "ENDSEQUENCE"
 GRAMMAR_VALUE_ALTERNATIVESEQ = "ALTERNATIVESEQ"
 GRAMMAR_VALUE_ALTERNATIVEBRANCH = "ALTERNATIVEBRANCH"
@@ -185,6 +187,7 @@ GRAMMAR_VALUE_SEGMENTOBJECT = "SegmentObject"
 GRAMMAR_VALUE_COMPOSITEOBJECT = "CompositeObject"
 GRAMMAR_VALUE_CONNECTIONNODE = "ConnectionNode"
 GRAMMAR_VALUE_ENABLE_PREFIX = "Enable_"
+GRAMMAR_VALUE_MODULE_IN_VIEW = "Module_In_View"
 GRAMMAR_REGEX_ENABLE_PREFIX = r"/Enable_\b/"
 GRAMMAR_VALUE_VARNAME = "VarName"
 GRAMMAR_VALUE_VALUEFRACTION = "ValueFraction"
@@ -247,14 +250,37 @@ GRAMMAR_REGEX_COMMENT_TEXT = r"/(?:[^(*]|\((?!\*)|\*(?!\)))+/"
 GRAMMAR_REGEX_SL_DATECODE = r"/\d+/"
 GRAMMAR_REGEX_BOOL = r"/True\b|False\b/"
 GRAMMAR_REGEX_BOOL_NOTAIL = r"/(?:True|False)\b(?![ \t\r\n]*:)/"
+
+
+#: Identifiers are matched case-insensitively so that the keyword exclusion list
+#: below excludes ``true``/``ENDDEF`` as well as ``True``/``ENDDEF``; the native
+#: scanner folds keyword case (00626850/0062e3d0). The scope wraps the whole
+#: pattern because the terminal spans several lines in the grammar template.
+#: Identifier characters. Native comparison is byte-oriented, and ABB's own
+#: libraries use CP1252 bytes that are not Unicode letters inside identifiers
+#: (``0xA6`` in KaHAXDiluteLib.s, ``0xB8`` in TestApplTank.s, ``0x85`` there too),
+#: so the printable CP1252 range is part of the class alongside the letter/mark
+#: categories.
+def _cp1252_name_characters() -> str:
+    characters: list[str] = []
+    for byte in range(0x80, 0x100):
+        try:
+            characters.append(bytes((byte,)).decode("cp1252"))
+        except UnicodeDecodeError:  # 0x81/0x8D/0x8F/0x90/0x9D are undefined
+            continue
+    return "".join(characters)
+
+
+_NAME_CHAR = r"\p{L}\p{Nl}\p{M}\p{Nd}_'" + _cp1252_name_characters() + r"\uFFFD"
+
 GRAMMAR_REGEX_NAME = (
-    r"/'[^']{1,20}'|"
+    r"/(?i:'[^']{1,20}'|"
     r"(?!"
     r"(?:IF|THEN|ELSE|ELSIF|ENDIF|AND|OR|NOT|True|False|SUBSEQSTEP)"
-    r"(?![\p{L}\p{Nl}\p{M}\p{Nd}_'\uFFFD])"
+    rf"(?![{_NAME_CHAR}])"
     r")"
-    r"[\p{L}\p{Nl}_\uFFFD][\p{L}\p{Nl}\p{M}\p{Nd}_'\uFFFD]{0,19}"
-    r"(?![\p{L}\p{Nl}\p{M}\p{Nd}_'\uFFFD])/"
+    rf"[{_NAME_CHAR}][{_NAME_CHAR}]{{0,19}}"
+    rf"(?![{_NAME_CHAR}]))/"
 )
 GRAMMAR_REGEX_STRING_CRLF = r"/\"([^\"\n]|\"\")*\n/"
 

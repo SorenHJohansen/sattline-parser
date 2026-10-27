@@ -22,6 +22,7 @@ from __future__ import annotations
 
 __all__ = ["fold_identifier", "identifiers_equal"]
 
+
 def _build_fold_bytes() -> dict[int, int]:
     """CP1252 byte -> folded byte, taken from the native upper-byte table."""
     table: dict[int, int] = {0x61 + offset: 0x41 + offset for offset in range(26)}

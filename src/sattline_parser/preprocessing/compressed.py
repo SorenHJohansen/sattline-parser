@@ -51,6 +51,21 @@ SCANNER_TOKENS: dict[str, str] = {
 #: Historical name for :data:`SCANNER_TOKENS`, kept for API compatibility.
 SEED_MAPPING: dict[str, str] = SCANNER_TOKENS
 
+#: Keyword spellings from the scanner table; raw occurrences in compact source
+#: are refused because coded mode never reclassifies a raw word (0062cbc0).
+#: Literal payloads the compressor writes raw (``0062a440``): they are values,
+#: not keywords, so they may appear unencoded in a compact file.
+_RAW_LITERAL_SPELLINGS: frozenset[str] = frozenset({"True", "False", "On", "Off", "Default"})
+
+_KEYWORD_SPELLINGS: frozenset[str] = frozenset(
+    spelling
+    for spelling in SCANNER_TOKENS.values()
+    if spelling.isidentifier()
+    and spelling.isascii()
+    and spelling[0].isalpha()
+    and spelling not in _RAW_LITERAL_SPELLINGS
+)
+
 _MARKER_RE = re.compile(r"#[0-9A-Za-z;:=><?]{1,2}")
 _WHITESPACE_RE = re.compile(r"\s+")
 
@@ -466,6 +481,40 @@ def preprocess_sl_text(text: str) -> tuple[str, dict[str, str]]:
     return decoded, mapping
 
 
+_RAW_WORD_RE = re.compile(r"[A-Za-z][A-Za-z0-9_]*")
+
+
+def _reject_raw_keywords(text: str, keyword_spellings: frozenset[str]) -> None:
+    """Refuse compact source that spells a keyword as raw text.
+
+    In coded mode the native scanner decodes fixed-width ``#NN`` codes as
+    keywords and never reclassifies a raw word (``0062cbc0``), so ``SeqControl``
+    written literally is an *identifier*, not the keyword. Our decoder expands
+    codes and re-lexes as ordinary source, which cannot reproduce that
+    distinction, so a raw keyword spelling is refused with an explicit message
+    instead of being silently promoted to a keyword.
+
+    Editor-produced compact files never contain raw keyword spellings (verified
+    against the compressed/uncompressed golden twins), so this only affects
+    hand-written compact units - which the real tool rejects as well.
+    """
+    regions = _scan_opaque_regions(text)
+    opaque = [(start, end) for _kind, start, end in regions]
+    for match in _RAW_WORD_RE.finditer(text):
+        word = match.group(0)
+        if word not in keyword_spellings:
+            continue
+        position = match.start()
+        if any(start <= position < end for start, end in opaque):
+            continue
+        line = text.count("\n", 0, position) + 1
+        raise PreprocessError(
+            f"Raw keyword {word!r} at line {line} in compact source; "
+            "compact files must encode keywords as #NN codes "
+            "(a raw word is an identifier in coded mode)"
+        )
+
+
 def preprocess_source(text: str) -> SourceDocument:
     """Return a :class:`SourceDocument` with full original-source provenance.
 
@@ -475,6 +524,11 @@ def preprocess_source(text: str) -> SourceDocument:
     """
     if not is_compressed(text):
         return SourceDocument.identity(text)
+    # Only a header-flagged compact file is *coded* in the native sense; the
+    # density heuristic also fires on partially hand-coded text where raw
+    # keywords are ordinary source.
+    if _header_compression_flag(text) == "C":
+        _reject_raw_keywords(text, _KEYWORD_SPELLINGS)
     mapping = dict(SEED_MAPPING)
     decoded, char_map = _decode_with_map(text, mapping)
     return SourceDocument(text, decoded, tuple(char_map))

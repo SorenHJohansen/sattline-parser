@@ -26,6 +26,46 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `CompressedFullGrammar.s` decodes to `UnCompressedFullGrammar.s` token for
   token, which the old table could not.
 
+### Fixed
+
+- **A dependency sidecar is read at the selected body's own prefix.** The
+  loader used to resolve code and `.l`/`.z` through two independent whole-root
+  scans, so `A/Lib.x` could be paired with `B/Lib.z` and that library's own
+  dependencies then resolved relative to `B`. `ProjectLookup.find_deps_beside`
+  now resolves the sidecar only beside the chosen body (native LIB-05,
+  `00589be0`); a sidecar that exists elsewhere becomes a
+  `LoadDiagnosticKind.SIDECAR_ELSEWHERE` diagnostic instead of being paired.
+- **Missing and empty sidecars are visible.** `SattLineProgram` gained
+  `deps_path` and `sidecar` (`SidecarState.ABSENT / EMPTY / PRESENT`), and
+  `SattLineProject.diagnostics()` reports absent / empty / stray sidecars plus
+  dependency cycles. These are the conditions the native loader reports and an
+  operator may continue past, so they are surfaced rather than raised — the
+  `strict=True` contract for missing *bodies* is unchanged.
+- **Warm and cold lookups now agree on extension precedence.** A cached `.x`
+  no longer shadows a `.s` that appeared later at the same prefix (gap P10);
+  the cached base is still trusted, but extensions are tried in preference
+  order.
+
+### Added
+
+- **Native builtin catalogue.** `validation/builtin_catalogue.json` carries the
+  492 usable registrations extracted from the workstation's builtin table,
+  reduced to arity plus write-like argument positions using the recovered mode
+  enum mapping (`00711af0`: `1,2,22→0x01; 4,24→0x02; 6,26→0x03; 8,28→0x08;
+  9,29→0x04; 10,30→0x0C; 11,31→0x10`, write-like `0x0A`). Probe-confirmed
+  signatures in `_build_builtin_functions` override the extracted ones. Names
+  outside the catalogue stay unchecked, which is a deliberate divergence from
+  native expression errors 5/6 (a complete namespace would need every user
+  library, so a false reject there is worse than a missed one).
+- **Compact-source honesty check.** A header-flagged compact file (`C` in the
+  syntax-version line) that spells a keyword as a raw word is refused with
+  `Raw keyword 'SeqControl' at line N in compact source`. In coded mode raw
+  words are identifiers and never keywords (`0062cbc0`), so promoting them —
+  what expanding codes and re-lexing does — would accept a unit the tool
+  rejects. Editor-produced compact files never spell keywords raw (verified
+  against the compressed/uncompressed golden twins), so real files are
+  unaffected.
+
 ### Changed
 
 - **Sequence syntax aligned with the native readers.** `SEQFORK` is no longer a
@@ -68,6 +108,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `F8–FE→D8–DE`, `FF→9F`) instead of `str.casefold`, so `Straße`/`STRASSE` and
   `ﬁle`/`FILE` no longer resolve to the same symbol. Filesystem identity in the
   project layer keeps `casefold`.
+- **SL-V037 `SEQUENCE_FORK_TARGET_KIND`**: a fork hosted on a step must name
+  transitions and a fork hosted on a transition must name steps (native
+  `00703430`); the existing `SL-V017` still reports genuinely unknown names.
+- **`SEQFORK` is accepted on `SEQINITSTEP`** as well as `SEQSTEP`
+  (`0070a100` is a caller of `006f9850` for both) and on `SEQTRANSITION` after
+  its optional guard.
+- **`Module_In_View = True|False [: tail]`** is an explicit invocation-header
+  property (native token 0xA4, reader `00665970`/`00631940`) stored as
+  `ModuleHeader.module_in_view`, distinct from `Enable_`; it accepts `True`/
+  `False` only, not `On`/`Off`.
+- **`EQUATIONS`** is accepted as an alias of `EQUATIONBLOCK` (`00726030`).
+- **`On`/`Off` typed as boolean literals** in expression analysis (`00487a60`,
+  lowered by `0047d720`), so `Num = On` and `Flag = Num > Off` are now rejected
+  like the real compiler rejects them.
+- **Keywords are matched case-insensitively**, as the recovered scanner setup
+  does (`00626850`/`0062e3d0`): `moduledefinition`, `enddef`, `true`, `:old` and
+  `seqcontrol` all parse like their canonical spellings. Lark 1.3.1 has no
+  `case_insensitive` option, so `grammar/keywords.py` rewrites the resolved
+  grammar - letter-bearing string terminals become `/(?i:…\b)/` regexes, and
+  regex terminals (including `NAME`'s keyword exclusion list and
+  `STATE_SUFFIX`) gain a `(?i:…)` scope. Punctuation terminals are untouched.
+- **`EQUATIONBLOCK`/`EQUATIONS` name and coordinate metadata are optional**
+  (`00726030`): `Equation.name`, `.position` and `.size` are `None` when the
+  source omits them, instead of being rejected.
 
 ### Changed
 

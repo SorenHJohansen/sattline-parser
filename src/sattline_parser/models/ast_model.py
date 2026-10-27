@@ -374,9 +374,17 @@ class Sequence:
 
 @dataclass
 class Equation:
-    name: str
-    position: tuple[float, float]
-    size: tuple[float, float]
+    """``EQUATIONBLOCK`` / ``EQUATIONS`` body.
+
+    Native ``00726030`` accepts the keyword, an optional name, optional
+    coordinate/size metadata and layer metadata before ``:`` - only the statement
+    list is required. ``name``/``position``/``size`` are therefore optional, and
+    ``None`` means the source omitted them.
+    """
+
+    name: str | None = None
+    position: tuple[float, float] | None = None
+    size: tuple[float, float] | None = None
     code: list[CodeItem] = field(default_factory=code_item_list)
     layer_info: int | None = None
 
@@ -401,6 +409,9 @@ class ModuleHeader:
     invocation_arguments: tuple[str, ...] = ()
     layer_info: int | None = None
     enable: bool | None = None
+    #: ``Module_In_View = True|False`` invocation-header property (native token
+    #: 0xA4). Distinct from :attr:`enable`; both may appear.
+    module_in_view: bool | None = None
     zoom_limits: tuple[float, float] | None = None
     zoomable: bool = False
     enable_tail: object | None = None
