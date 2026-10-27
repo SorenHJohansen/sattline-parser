@@ -10,6 +10,7 @@ from typing import cast
 import pytest
 from lark import Tree
 
+from sattline_parser.api import parse_source_text
 from sattline_parser.models.ast_model import GraphicsBinding, SourceSpan
 from sattline_parser.project import (
     GraphicsModel,
@@ -19,7 +20,7 @@ from sattline_parser.project import (
     resolve_graphics_companion_path,
 )
 from sattline_parser.project import graphics_bindings as bindings
-from sattline_parser.project import graphics_parsing as parsing
+from sattline_parser.project.graphics_parsing import correlate_composites
 
 
 def _span_value(node: object, *, key: str = "span") -> SourceSpan:
@@ -29,21 +30,34 @@ def _span_value(node: object, *, key: str = "span") -> SourceSpan:
     return raw
 
 
-_OG = """" Syntax version 2.23, date: 2026-06-19-12:41:09.218 N "
+_HEADER = '" Syntax version 2.23, date: 2026-06-19-12:41:09.218 N "'
 
- 5
- None  True  -2.40000E-01 1.08000E+00
-  1.38000E+00 1.28000E+00
- 0
- 2
- Var 0 12 OprPathIndex  Lit 0 2 -1     2
-1 1 Var  Invalid  6 PathOK
-2 1 Var  Invalid  9 PathNotOK
- 0
- None  True
-t
-           0
-"""
+
+def _companion(*lines: str) -> str:
+    """Companion text with the CRLF line endings the native writer emits."""
+    return "".join(f"{line}\r\n" for line in lines)
+
+
+def _family_4() -> str:
+    return _companion(" 4", " 0.0 0.0 1.0 1.0", " 1 1 1 X.Y", " 0")
+
+
+_OG = _companion(
+    _HEADER,
+    "",
+    " 5",
+    " None  True  -2.40000E-01 1.08000E+00",
+    "  1.38000E+00 1.28000E+00",
+    " 0",
+    " 2",
+    " Var 0 12 OprPathIndex  Lit 0 2 -1     2",
+    "1 1 Var  Invalid  6 PathOK",
+    "2 1 Var  Invalid  9 PathNotOK",
+    " 0",
+    " None  True",
+    "t",
+    "           0",
+)
 
 
 def test_parse_graphics_parity_fixture() -> None:
@@ -64,7 +78,7 @@ def test_parse_graphics_parity_fixture() -> None:
     assert record.record_index == 1
     assert record.record_start_line == 3
     assert record.record_end_line == 14
-    assert record.path_row_lines == (9, 10, 11)
+    assert record.path_row_lines == (9, 10)
     assert [
         (row.index_token, row.kind, row.raw_text, row.index_value, row.span.line, row.span.column)
         for row in record.path_rows
@@ -75,10 +89,11 @@ def test_parse_graphics_parity_fixture() -> None:
 
 
 def test_parse_graphics_errors_and_warnings_properties() -> None:
-    model = parse_graphics_text("5\none\n 0\n")
+    model = parse_graphics_text(_family_4())
     assert isinstance(model, GraphicsModel)
     assert model.errors == ()
     assert model.warnings == ()
+    assert model.bindings == ()
 
 
 def test_parse_graphics_empty_text() -> None:
@@ -90,7 +105,7 @@ def test_parse_graphics_empty_text() -> None:
 
 
 def test_parse_graphics_unterminated_record_reports_error() -> None:
-    model = parse_graphics_text(" 4\n some\n none\n")
+    model = parse_graphics_text(_companion(" 4", " 0.0 0.0 1.0 1.0", " 1 1 1 X.Y"))
     assert model.composite_records == ()
     assert len(model.messages) == 1
     message = model.messages[0]
@@ -99,65 +114,199 @@ def test_parse_graphics_unterminated_record_reports_error() -> None:
     assert message.line == 1
 
 
+def test_parse_graphics_reports_malformed_field() -> None:
+    model = parse_graphics_text(_companion(" 4", " not-a-number", " 1 1 1", " 0"))
+
+    [message] = model.messages
+    assert message.severity == "error"
+    assert message.message == "Malformed graphics record: expected a floating-point number"
+    assert (message.line, message.column) == (2, 1)
+
+
+def test_parse_graphics_reports_unrecovered_reader_as_warning() -> None:
+    model = parse_graphics_text(_companion(" 1", " None  True  0.0 0.0", " 0.0 0.0", " -1", " 1 payload", " 0"))
+
+    assert model.composite_records == ()
+    [message] = model.messages
+    assert message.severity == "warning"
+    assert (
+        message.message == "Graphics record content is not recovered for family 1 discriminator 1; record scan stopped"
+    )
+
+
 def test_parse_graphics_records_separated_by_blank_line() -> None:
-    model = parse_graphics_text(" 1\n one\n 0\n\n 2\n two\n 0\n")
+    model = parse_graphics_text(_companion(" 4", " 0.0 0.0 1.0 1.0", " 1 1 1 X.Y", " 0", "", *_family_4_lines()))
+
     assert [
         (c.record_index, c.family_code, c.record_start_line, c.record_end_line) for c in model.composite_records
     ] == [
-        (1, "1", 1, 3),
-        (2, "2", 5, 7),
+        (1, "4", 1, 4),
+        (2, "4", 6, 9),
     ]
     assert model.picture_display_records == ()
     assert model.messages == ()
 
 
-def test_parse_graphics_short_record_skipped() -> None:
-    model = parse_graphics_text(" 5\n 0\n t\n 0\n")
-    assert [(c.record_index, c.family_code) for c in model.composite_records] == [(1, "5")]
-    assert model.picture_display_records == ()
-    assert model.messages == ()
+def _family_4_lines() -> list[str]:
+    return [" 4", " 0.0 0.0 1.0 1.0", " 1 1 1 X.Y", " 0"]
 
 
-def test_parse_graphics_subtype_mismatch_skips_picture_display() -> None:
-    model = parse_graphics_text(" 5\n one\n two\n three\n four\n 0\n done\n t\n 0\n")
-    assert [(c.record_index, c.family_code) for c in model.composite_records] == [(1, "5")]
-    assert model.picture_display_records == ()
-    assert model.messages == ()
+def test_parse_graphics_adjacent_records_need_no_blank_line() -> None:
+    model = parse_graphics_text(_companion(" 4", " 0.0 0.0 1.0 1.0", " 1 1 1 X.Y", " 0", *_family_4_lines()))
 
-
-def test_parse_graphics_missing_keep_shape_flag_reports_error() -> None:
-    model = parse_graphics_text(" 5\n None  True  0 1\n 2 3\n 0\n 2\n row\n row\n None  X\n q\n 0\n")
-    assert model.picture_display_records == ()
-    assert [m.message for m in model.messages] == [
-        "PictureDisplay record is missing the trailing KeepPictureShape flag"
+    assert [(c.record_index, c.record_start_line, c.record_end_line) for c in model.composite_records] == [
+        (1, 1, 4),
+        (2, 5, 8),
     ]
-    assert model.messages[0].line == 5
+
+
+def test_parse_graphics_record_ordinals_follow_file_order() -> None:
+    model = parse_graphics_text(
+        _companion(
+            " 4",
+            " 0.0 0.0 1.0 1.0",
+            " 1 1 1 X.Y",
+            " 0",
+            " 5",
+            " None  True  0.0 0.0",
+            "  1.0 1.0",
+            " 0",
+            " 2",
+            " None 0  None -1     0",
+            " 0 path",
+            " None  True",
+            "t",
+            "           0",
+        )
+    )
+
+    assert [(c.record_index, c.ordinal, c.family_code) for c in model.composite_records] == [
+        (1, 1, "4"),
+        (2, 2, "5"),
+    ]
+
+
+def test_parse_graphics_subtype_1_is_not_a_picture_display() -> None:
+    model = parse_graphics_text(
+        _companion(
+            " 5",
+            " Lit  True  4 True  0.0 0.0",
+            "  1.0 1.0",
+            " -3",
+            " 1",
+            "WeekDayPres",
+            "",
+            "12",
+            "2",
+            " Var 0 5 DayNo ",
+            " None -3 ",
+            "1",
+            "1",
+            "Mandag",
+            "           0",
+        )
+    )
+
+    assert [(c.record_index, c.family_code) for c in model.composite_records] == [(1, "5")]
+    assert model.picture_display_records == ()
+    assert model.messages == ()
+
+
+def test_parse_graphics_unsupported_subtype_reports_error() -> None:
+    model = parse_graphics_text(_companion(" 5", " None  True  0.0 0.0", "  1.0 1.0", " 0", " 9"))
+
+    assert model.composite_records == ()
+    [message] = model.messages
+    assert message.severity == "error"
+    assert message.message == "Unsupported graphics record subtype 9"
 
 
 def test_parse_graphics_keep_shape_is_case_insensitive() -> None:
-    model = parse_graphics_text(
-        " 5\n None  True  0.1 1.1\n 2.1 3.1\n 0\n 2\n"
-        " Var 0 12 OprPathIndex  Lit 0 2 -1     2\n"
-        "1 1 Var  Invalid  4 OKAY\n 0\n None  T\nT\n 0\n"
-    )
-    [record] = model.picture_display_records
-    assert record.path_row_lines == (7, 8)
-    assert [(row.kind, row.raw_text) for row in record.path_rows] == [("variable_invalid", "OKAY")]
-    assert model.messages == ()
+    """The shape byte is only false for a lowercase ``f``; any other byte is true."""
+    for shape in ("t", "T", " "):
+        model = parse_graphics_text(
+            _companion(
+                " 5",
+                " None  True  0.1 1.1",
+                " 2.1 3.1",
+                " 0",
+                " 2",
+                " Var 0 12 OprPathIndex  Lit 0 2 -1     0",
+                " 0 default",
+                " None  True",
+                shape,
+                "           0",
+            )
+        )
+        [record] = model.picture_display_records
+        assert record.record_index == 1
+        assert model.messages == ()
 
 
 def test_parse_graphics_literal_path_row() -> None:
     model = parse_graphics_text(
-        " 5\n None  True  1 2\n 3 4\n 0\n 2\n"
-        " Var 0 12 OprPathIndex  Lit 0 2 -1     2\n"
-        "4 /pic/logo.bmp\n 0\n None  True\nf\n 0\n"
+        _companion(
+            " 5",
+            " None  True  1 2",
+            " 3 4",
+            " 0",
+            " 2",
+            " Var 0 12 OprPathIndex  Lit 0 2 -1     1",
+            "4 0 /pic/logo.bmp",
+            " 0 default",
+            " None  True",
+            "f",
+            "           0",
+        )
     )
+
     [record] = model.picture_display_records
-    assert record.path_row_lines == (7, 8)
-    assert [(row.kind, row.raw_text, row.index_token, row.index_value) for row in record.path_rows] == [
-        ("literal", "/pic/logo.bmp", "4", 4)
-    ]
+    assert record.path_row_lines == (7,)
+    assert [
+        (row.kind, row.raw_text, row.index_token, row.index_value, row.span.column) for row in record.path_rows
+    ] == [("literal", "/pic/logo.bmp", "4", 4, 5)]
     assert model.messages == ()
+
+
+def test_parse_graphics_rows_from_bindings() -> None:
+    model = parse_graphics_text(
+        _companion(
+            " 5",
+            " None  True  1 2",
+            " 3 4",
+            " 0",
+            " 2",
+            " None 0  None -1     3",
+            "1 1 Var  Invalid  6 PathOK",
+            "2 1 Var  True  4 PVar",
+            "3 1 Lit  True  4 text",
+            " 0 default",
+            " None  True",
+            "f",
+            "           0",
+        )
+    )
+
+    [record] = model.picture_display_records
+    assert [(row.index_token, row.kind, row.raw_text) for row in record.path_rows] == [
+        ("1", "variable_invalid", "PathOK"),
+        ("2", "variable", "PVar"),
+    ]
+    assert record.path_row_lines == (7, 8, 9)
+
+
+def test_parse_graphics_blank_lines_do_not_change_record_structure() -> None:
+    dense = _companion(*_family_4_lines(), *_family_4_lines())
+    spaced = _companion("", *_family_4_lines(), "", "", *_family_4_lines(), "")
+
+    def structure(text: str) -> list[tuple[int, str, int]]:
+        model = parse_graphics_text(text)
+        assert model.messages == ()
+        return [
+            (c.record_index, c.family_code, c.record_end_line - c.record_start_line) for c in model.composite_records
+        ]
+
+    assert structure(dense) == structure(spaced)
 
 
 # --- companion-path resolution -------------------------------------------------
@@ -202,96 +351,6 @@ def test_resolve_graphics_companion_path_x_code_only_y(tmp_path: Path) -> None:
 def test_resolve_graphics_companion_path_absent(tmp_path: Path) -> None:
     (tmp_path / "M.s").write_text("", encoding="utf-8")
     assert resolve_graphics_companion_path(tmp_path / "M.s", mode=LoadMode.DRAFT) is None
-
-
-# --- row parsing helpers --------------------------------------------------------
-
-
-def test_parse_picture_display_row_accepts_nested_invalid_variable_paths() -> None:
-    row = parsing._parse_picture_display_row("2 1 Var Invalid 9 PathNotOK", record_index=1, line=10)
-
-    assert row is not None
-    assert row.index_token == "2"
-    assert row.index_value == 2
-    assert row.kind == "variable_invalid"
-    assert row.raw_text == "PathNotOK"
-    assert row.span.line == 10
-    assert row.span.column == 19
-
-
-def test_parse_picture_display_row_keeps_plain_invalid_variable_paths_excluded() -> None:
-    assert parsing._parse_picture_display_row("1 Var  Invalid  7 PathAIT", record_index=1, line=3) is None
-
-
-def test_parse_picture_display_row_variable_kind() -> None:
-    row = parsing._parse_picture_display_row("3 Var True 5 PVar", record_index=1, line=2)
-    assert row is not None
-    assert row.kind == "variable"
-    assert row.raw_text == "PVar"
-    assert row.index_value == 3
-
-
-def test_parse_picture_display_row_non_numeric_index_token() -> None:
-    row = parsing._parse_picture_display_row("abc Var True 5 PVar", record_index=1, line=2)
-    assert row is not None
-    assert row.index_value is None
-
-
-def test_parse_picture_display_row_negative_index() -> None:
-    row = parsing._parse_picture_display_row("-1 1 Var Invalid 6 PathXY", record_index=1, line=2)
-    assert row is not None
-    assert row.index_value == -1
-
-
-def test_parse_picture_display_row_unknown_binding_meta_excluded() -> None:
-    assert parsing._parse_picture_display_row("1 Var X 5 PVar", record_index=1, line=2) is None
-
-
-def test_parse_picture_display_row_non_var_binding_excluded() -> None:
-    assert parsing._parse_picture_display_row("1 Lit True 4 /x", record_index=1, line=2) is None
-
-
-def test_parse_picture_display_row_blank_and_single_token_excluded() -> None:
-    assert parsing._parse_picture_display_row("   ", record_index=1, line=2) is None
-    assert parsing._parse_picture_display_row("2", record_index=1, line=2) is None
-
-
-def test_parse_picture_display_row_literal_kind() -> None:
-    row = parsing._parse_picture_display_row("4 /pic/logo.bmp", record_index=1, line=2)
-    assert row is not None
-    assert row.kind == "literal"
-    assert row.raw_text == "/pic/logo.bmp"
-    assert row.index_value == 4
-
-
-def test_parse_picture_display_row_nested_index_literal() -> None:
-    row = parsing._parse_picture_display_row("4 7 /pic/logo.bmp", record_index=1, line=2)
-    assert row is not None
-    assert row.raw_text == "/pic/logo.bmp"
-    assert row.index_value == 4
-
-
-def test_parse_picture_display_row_literal_lookup_rejected() -> None:
-    assert parsing._parse_picture_display_row("3 Var  x", record_index=1, line=2) is None
-
-
-def test_extract_literal_path_rejects_var_lit_none_payloads() -> None:
-    assert parsing._extract_literal_path("1 Var  x") is None
-    assert parsing._extract_literal_path("1 Lit  x") is None
-    assert parsing._extract_literal_path("1 None  True") is None
-    assert parsing._extract_literal_path("1 /pic/x.bmp") == "/pic/x.bmp"
-    assert parsing._extract_literal_path("single") is None
-
-
-def test_extract_literal_path_nested_index_stripped() -> None:
-    assert parsing._extract_literal_path("1 5 /pic/x.bmp") == "/pic/x.bmp"
-
-
-def test_split_nested_picture_display_payload() -> None:
-    assert parsing._split_nested_picture_display_payload("12 OprPathIndex") == ("12", "OprPathIndex")
-    assert parsing._split_nested_picture_display_payload("-3 rest") == ("-3", "rest")
-    assert parsing._split_nested_picture_display_payload("abc") == (None, "abc")
-    assert parsing._split_nested_picture_display_payload("x rest") == (None, "x rest")
 
 
 # --- binding parsing ------------------------------------------------------------
@@ -548,7 +607,7 @@ def test_offset_source_spans_later_line_column_unchanged() -> None:
 
 def test_parse_graphics_file_reads_disk(tmp_path: Path) -> None:
     path = tmp_path / "Test.g"
-    path.write_text(_OG, encoding="utf-8")
+    path.write_bytes(_OG.encode("cp1252"))
     model = parse_graphics_file(path)
     assert len(model.picture_display_records) == 1
 
@@ -558,3 +617,135 @@ def test_parse_graphics_file_read_failure_propagates(tmp_path: Path) -> None:
     path.mkdir()
     with pytest.raises(OSError):
         parse_graphics_file(path)
+
+
+def test_correlate_composites_binds_markers_to_records_by_ordinal():
+    """00665fc0: each CompositeObject marker consumes the next record, in order."""
+    source = (
+        '"Syntax version 2.23, date: 2026-10-27-12:00:00.000 N"\n'
+        '"Original file date: ---"\n'
+        '"Program date: 2026-10-27-12:00:00.000, name: Composite"\n'
+        "BasePicture Invocation (0.0,0.0,0.0,1.0,1.0) : MODULEDEFINITION DateCode_ 1\n"
+        "ModuleDef\n"
+        "ClippingBounds = ( -1.0 , -1.0 ) ( 1.0 , 1.0 )\n"
+        "GraphObjects :\n"
+        "   CompositeObject\n"
+        "   CompositeObject Layer_ = 2\n"
+        "ENDDEF (*BasePicture*);\n"
+    )
+    picture = parse_source_text(source)
+    model = parse_graphics_text(_companion(*_family_4_lines(), "", *_family_4_lines()))
+
+    pairs, messages = correlate_composites(picture, model)
+
+    assert [pair.marker_ordinal for pair in pairs] == [1, 2]
+    assert [pair.record.ordinal for pair in pairs] == [1, 2]
+    assert messages == ()
+
+
+def test_correlate_composites_reports_unmatched_records_and_markers():
+    source = (
+        '"Syntax version 2.23, date: 2026-10-27-12:00:00.000 N"\n'
+        '"Original file date: ---"\n'
+        '"Program date: 2026-10-27-12:00:00.000, name: Composite"\n'
+        "BasePicture Invocation (0.0,0.0,0.0,1.0,1.0) : MODULEDEFINITION DateCode_ 1\n"
+        "ModuleDef\n"
+        "ClippingBounds = ( -1.0 , -1.0 ) ( 1.0 , 1.0 )\n"
+        "GraphObjects :\n"
+        "   CompositeObject\n"
+        "ENDDEF (*BasePicture*);\n"
+    )
+    picture = parse_source_text(source)
+
+    no_records = parse_graphics_text("")
+    _pairs, messages = correlate_composites(picture, no_records)
+    assert [message.message for message in messages] == [
+        "1 CompositeObject marker(s) in the source but only 0 companion record(s)"
+    ]
+
+    two_records = parse_graphics_text(_companion(*_family_4_lines(), "", *_family_4_lines()))
+    pairs, messages = correlate_composites(picture, two_records)
+    assert len(pairs) == 1
+    assert [message.severity for message in messages] == ["error"]
+    assert "has no matching CompositeObject marker" in messages[0].message
+
+
+def test_correlate_composites_walks_submodules_and_module_types():
+    """Markers are collected in source parse order across definitions."""
+    source = (
+        '"Syntax version 2.23, date: 2026-10-27-12:00:00.000 N"\n'
+        '"Original file date: ---"\n'
+        '"Program date: 2026-10-27-12:00:00.000, name: Composite"\n'
+        "BasePicture Invocation (0.0,0.0,0.0,1.0,1.0) : MODULEDEFINITION DateCode_ 1\n"
+        "TYPEDEFINITIONS\n"
+        "   Child = MODULEDEFINITION DateCode_ 2\n"
+        "   ModuleDef\n"
+        "   ClippingBounds = ( -1.0 , -1.0 ) ( 1.0 , 1.0 )\n"
+        "   GraphObjects :\n"
+        "      CompositeObject\n"
+        "   ENDDEF (*Child*);\n"
+        "SUBMODULES\n"
+        "   Sub Invocation (0.0,0.0,0.0,1.0,1.0) : MODULEDEFINITION DateCode_ 3\n"
+        "   ModuleDef\n"
+        "   ClippingBounds = ( -1.0 , -1.0 ) ( 1.0 , 1.0 )\n"
+        "   GraphObjects :\n"
+        "      CompositeObject\n"
+        "   ENDDEF (*Sub*) ;\n"
+        "ModuleDef\n"
+        "ClippingBounds = ( -1.0 , -1.0 ) ( 1.0 , 1.0 )\n"
+        "ENDDEF (*BasePicture*);\n"
+    )
+    picture = parse_source_text(source)
+    model = parse_graphics_text(_companion(*_family_4_lines(), "", *_family_4_lines()))
+
+    pairs, _messages = correlate_composites(picture, model)
+
+    assert [pair.marker_ordinal for pair in pairs] == [1, 2]
+
+
+def test_correlate_composites_ignores_other_graph_primitives() -> None:
+    """Only CompositeObject markers consume a record; other objects do not."""
+    source = (
+        '"Syntax version 2.23, date: 2026-10-27-12:00:00.000 N"\n'
+        '"Original file date: ---"\n'
+        '"Program date: 2026-10-27-12:00:00.000, name: Composite"\n'
+        "BasePicture Invocation (0.0,0.0,0.0,1.0,1.0) : MODULEDEFINITION DateCode_ 1\n"
+        "ModuleDef\n"
+        "ClippingBounds = ( -1.0 , -1.0 ) ( 1.0 , 1.0 )\n"
+        "GraphObjects :\n"
+        "   CompositeObject\n"
+        "   RectangleObject ( 0.0 , 0.0 ) ( 1.0 , 1.0 )\n"
+        "   CompositeObject\n"
+        "ENDDEF (*BasePicture*);\n"
+    )
+    picture = parse_source_text(source)
+    model = parse_graphics_text(_companion(*_family_4_lines(), *_family_4_lines()))
+
+    pairs, messages = correlate_composites(picture, model)
+
+    assert [pair.marker_ordinal for pair in pairs] == [1, 2]
+    assert messages == ()
+
+
+def test_correlate_composites_counts_every_moduledef_block():
+    """A unit with several ModuleDef blocks contributes all of its markers."""
+    source = (
+        '"Syntax version 2.23, date: 2026-10-27-12:00:00.000 N"\n'
+        '"Original file date: ---"\n'
+        '"Program date: 2026-10-27-12:00:00.000, name: Composite"\n'
+        "BasePicture Invocation (0.0,0.0,0.0,1.0,1.0) : MODULEDEFINITION DateCode_ 1\n"
+        "ModuleDef\n"
+        "ClippingBounds = ( -1.0 , -1.0 ) ( 1.0 , 1.0 )\n"
+        "GraphObjects :\n"
+        "   CompositeObject\n"
+        "ENDDEF (*BasePicture*);\n"
+    )
+    picture = parse_source_text(source)
+    # Two ModuleDef blocks in one unit (the real corpus has up to dozens).
+    picture.moduledefs = [picture.moduledef, picture.moduledef]  # type: ignore[list-item]
+    model = parse_graphics_text(_companion(*_family_4_lines(), "", *_family_4_lines()))
+
+    pairs, messages = correlate_composites(picture, model)
+
+    assert [pair.marker_ordinal for pair in pairs] == [1, 2]
+    assert messages == ()
