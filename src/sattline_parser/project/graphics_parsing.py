@@ -1,11 +1,16 @@
 """Graphics companion parsing and companion-path resolution (plan §3.5, Phase 4).
 
 Extracted from SattLint's ``graphics/validation.py`` into the parser: the
-line/record scanner that reads ``.g`` / ``.y`` companion files into a
-``GraphicsModel`` (bindings, messages, composite records, picture-display
-records). Only the pure parse moves here; correlation
-(``correlate_composite_records`` / ``correlate_picture_display_records``) and
-asset-path warnings stay in the consumer.
+companion scanner that reads ``.g`` / ``.y`` files into a ``GraphicsModel``
+(bindings, messages, composite records, picture-display records). Only the pure
+parse moves here; correlation (``correlate_composites``) and asset-path warnings
+stay in the consumer.
+
+Record boundaries come from the per-family readers in
+``sattline_parser.project.graphics_records`` (the recovered native grammar), not
+from blank lines: see ``docs/graphics_parity.md``. Bindings are additionally
+scanned line by line, because the consumer wants every binding in the file and
+not just the ones a record reader consumes.
 """
 
 from __future__ import annotations
@@ -16,8 +21,10 @@ from sattline_parser.api import read_text_cp1252
 from sattline_parser.models.ast_model import GraphicsBinding, SourceSpan
 
 from .formats import graphics_ext_candidates
-from .graphics_bindings import _BINDING_LINE_RE, _parse_graphics_binding_line, _parse_graphics_binding_match
+from .graphics_bindings import _parse_graphics_binding_line
+from .graphics_records import GraphicsRecord, read_companion_records
 from .models import (
+    GraphicsCompositeBinding,
     GraphicsCompositeRecord,
     GraphicsMessage,
     GraphicsModel,
@@ -26,138 +33,10 @@ from .models import (
     LoadMode,
 )
 
-_RECORD_FAMILY_CODE = "5"
+_COMPOSITE_OBJECT_TYPE = "CompositeObject"
+_PICTURE_DISPLAY_FAMILY = 5
 _PICTURE_DISPLAY_SUBTYPE = "2"
-_RECORD_TERMINATOR = "0"
-_COMPOSITE_RECORD_FAMILIES = frozenset({"1", "2", "4", "5"})
-_KEEP_SHAPE_VALUES = {"t", "f"}
-
-
-def _nonempty_record_lines(lines: list[str], start_index: int, end_index: int) -> list[tuple[int, str]]:
-    return [
-        (line_index, lines[line_index]) for line_index in range(start_index, end_index) if lines[line_index].strip()
-    ]
-
-
-def _find_record_end(lines: list[str], start_index: int) -> int | None:
-    for line_index in range(start_index + 1, len(lines)):
-        if lines[line_index].strip() != _RECORD_TERMINATOR:
-            continue
-        if line_index + 1 >= len(lines) or not lines[line_index + 1].strip():
-            return line_index
-    return None
-
-
-def _extract_literal_path(row_text: str) -> str | None:
-    parts = row_text.strip().split(None, 1)
-    if len(parts) != 2:
-        return None
-
-    payload = parts[1].strip()
-    if not payload or payload.startswith(("Var ", "Lit ", "None ")):
-        return None
-
-    nested_parts = payload.split(None, 1)
-    if len(nested_parts) == 2 and nested_parts[0].lstrip("+-").isdigit():
-        payload = nested_parts[1].strip()
-
-    return payload or None
-
-
-def _split_nested_picture_display_payload(payload: str) -> tuple[str | None, str]:
-    nested_parts = payload.split(None, 1)
-    if len(nested_parts) != 2:
-        return None, payload
-    nested_index_token, nested_payload = nested_parts
-    if not nested_index_token.lstrip("+-").isdigit():
-        return None, payload
-    return nested_index_token, nested_payload.strip()
-
-
-def _parse_picture_display_row(
-    row_text: str,
-    *,
-    record_index: int,
-    line: int,
-) -> GraphicsPictureDisplayPathRow | None:
-    stripped = row_text.strip()
-    if not stripped:
-        return None
-
-    parts = stripped.split(None, 1)
-    if len(parts) != 2:
-        return None
-
-    index_token, payload = parts
-    index_value = int(index_token) if index_token.lstrip("+-").isdigit() else None
-    payload = payload.strip()
-    if not payload:  # pragma: no cover - split(None, 1) never yields an empty second token
-        return None
-
-    binding_payload = payload
-    nested_index_token: str | None = None
-    binding_match = _BINDING_LINE_RE.match(binding_payload)
-    if binding_match is None:
-        nested_index_token, binding_payload = _split_nested_picture_display_payload(payload)
-        binding_match = _BINDING_LINE_RE.match(binding_payload)
-    if binding_match is not None:
-        binding_meta = binding_match.group(2).casefold()
-        if binding_meta == "invalid":
-            if nested_index_token is None:
-                return None
-            row_kind = "variable_invalid"
-        elif binding_meta not in {"true", "false"} and not binding_meta.lstrip("+-").isdigit():
-            return None
-        else:
-            row_kind = "variable"
-        binding, _binding_messages = _parse_graphics_binding_match(binding_payload, line=line, match=binding_match)
-        if binding is None or binding.kind != "var":
-            return None
-        column = row_text.find(binding.raw_text)
-        span = SourceSpan(start=0, end=0, line=line, column=(column + 1) if column >= 0 else 1)
-        return GraphicsPictureDisplayPathRow(
-            record_index=record_index,
-            index_token=index_token,
-            index_value=index_value,
-            kind=row_kind,
-            raw_text=binding.raw_text,
-            span=span,
-        )
-
-    literal_path = _extract_literal_path(row_text)
-    if literal_path is None:
-        return None
-    column = row_text.find(literal_path)
-    return GraphicsPictureDisplayPathRow(
-        record_index=record_index,
-        index_token=index_token,
-        index_value=index_value,
-        kind="literal",
-        raw_text=literal_path,
-        span=SourceSpan(start=0, end=0, line=line, column=(column + 1) if column >= 0 else 1),
-    )
-
-
-def _extract_picture_display_record(
-    record_lines: list[tuple[int, str]],
-    *,
-    record_index: int,
-    record_start_line: int,
-    record_end_line: int,
-) -> GraphicsPictureDisplayRecord:
-    path_row_lines = tuple(row_line_index + 1 for row_line_index, _row_line in record_lines[5:-2])
-    path_rows = tuple(
-        row
-        for row_line_index, row_line in record_lines[5:-2]
-        if (row := _parse_picture_display_row(row_line, record_index=record_index, line=row_line_index + 1)) is not None
-    )
-    return GraphicsPictureDisplayRecord(
-        record_index=record_index,
-        record_start_line=record_start_line,
-        record_end_line=record_end_line,
-        path_row_lines=path_row_lines,
-        path_rows=path_rows,
-    )
+_RECORD_FAMILY_CODE = "5"
 
 
 def resolve_graphics_companion_path(code_path: Path, *, mode: LoadMode) -> Path | None:
@@ -180,90 +59,75 @@ def resolve_graphics_companion_path(code_path: Path, *, mode: LoadMode) -> Path 
     return None
 
 
+def _picture_display_record(record: GraphicsRecord, *, record_index: int) -> GraphicsPictureDisplayRecord:
+    path_rows = tuple(
+        GraphicsPictureDisplayPathRow(
+            record_index=record_index,
+            index_token=str(entry.index),
+            index_value=entry.index,
+            kind=entry.kind,
+            raw_text=entry.text,
+            span=SourceSpan(start=0, end=0, line=entry.line, column=entry.column),
+        )
+        for entry in record.entries
+        if entry.kind != "other"
+    )
+    return GraphicsPictureDisplayRecord(
+        record_index=record_index,
+        record_start_line=record.start_line,
+        record_end_line=record.end_line,
+        subtype=_PICTURE_DISPLAY_SUBTYPE,
+        path_row_lines=tuple(entry.line for entry in record.entries),
+        path_rows=path_rows,
+    )
+
+
 def parse_graphics_text(text: str) -> GraphicsModel:
     """Parse ``.g`` / ``.y`` companion text into a ``GraphicsModel``.
 
     Bindings and structural problems surface as ``GraphicsMessage`` values
     (never raised); asset-path warnings are a consumer responsibility and are
     not computed here.
+
+    The record readers follow the native byte consumption, which assumes the
+    CRLF line endings the native writer emits (``read_text_cp1252`` preserves
+    them). An LF-only text that ends a record field with an empty picture-display
+    payload is read with the tolerant separator described in
+    ``graphics_records``.
     """
-    lines = text.splitlines()
     messages: list[GraphicsMessage] = []
     bindings: list[GraphicsBinding] = []
-    composite_records: list[GraphicsCompositeRecord] = []
-    picture_display_records: list[GraphicsPictureDisplayRecord] = []
-
-    for line_number, line_text in enumerate(lines, start=1):
+    for line_number, line_text in enumerate(text.splitlines(), start=1):
         row_bindings, binding_messages = _parse_graphics_binding_line(line_text, line=line_number)
         bindings.extend(row_bindings)
         messages.extend(binding_messages)
 
-    line_index = 0
-    record_index = 0
-
-    while line_index < len(lines):
-        family_code = lines[line_index].strip()
-        if family_code not in _COMPOSITE_RECORD_FAMILIES:
-            line_index += 1
-            continue
-
-        record_end = _find_record_end(lines, line_index)
-        if record_end is None:
-            messages.append(
-                GraphicsMessage(
-                    severity="error",
-                    message="Unterminated graphics record; expected trailing '0' line",
-                    line=line_index + 1,
-                    column=1,
-                )
-            )
-            break
-
-        record_index += 1
+    companion = read_companion_records(text)
+    composite_records: list[GraphicsCompositeRecord] = []
+    picture_display_records: list[GraphicsPictureDisplayRecord] = []
+    for record_index, record in enumerate(companion.records, start=1):
         composite_records.append(
             GraphicsCompositeRecord(
                 record_index=record_index,
-                record_start_line=line_index + 1,
-                record_end_line=record_end + 1,
-                family_code=family_code,
+                ordinal=record_index,
+                record_start_line=record.start_line,
+                record_end_line=record.end_line,
+                family_code=str(record.family_code),
             )
         )
-
-        if family_code != _RECORD_FAMILY_CODE:
-            line_index = record_end + 1
+        if record.family_code != _PICTURE_DISPLAY_FAMILY or record.subtype != 2:
             continue
+        picture_display_records.append(_picture_display_record(record, record_index=record_index))
 
-        record_lines = _nonempty_record_lines(lines, line_index + 1, record_end)
-        if len(record_lines) < 6:
-            line_index = record_end + 1
-            continue
-
-        subtype_line_index, subtype_line = record_lines[3]
-        if subtype_line.strip() != _PICTURE_DISPLAY_SUBTYPE:
-            line_index = record_end + 1
-            continue
-
-        keep_shape_line_index, keep_shape_line = record_lines[-1]
-        if keep_shape_line.strip().casefold() not in _KEEP_SHAPE_VALUES:
-            messages.append(
-                GraphicsMessage(
-                    severity="error",
-                    message="PictureDisplay record is missing the trailing KeepPictureShape flag",
-                    line=subtype_line_index + 1,
-                    column=1,
-                )
+    if companion.error is not None:
+        messages.append(
+            GraphicsMessage(
+                severity=companion.error.severity,
+                message=companion.error.message,
+                line=companion.error.line,
+                column=1,
             )
-            line_index = record_end + 1
-            continue
-
-        picture_display_record = _extract_picture_display_record(
-            record_lines,
-            record_index=record_index,
-            record_start_line=line_index + 1,
-            record_end_line=record_end + 1,
         )
-        picture_display_records.append(picture_display_record)
-        line_index = keep_shape_line_index + 1
 
     return GraphicsModel(
         messages=tuple(messages),
@@ -283,4 +147,79 @@ def parse_graphics_file(file_path: Path) -> GraphicsModel:
     return parse_graphics_text(text)
 
 
-__all__ = ["parse_graphics_file", "parse_graphics_text", "resolve_graphics_companion_path"]
+def correlate_composites(
+    picture: object, model: GraphicsModel
+) -> tuple[tuple[GraphicsCompositeBinding, ...], tuple[GraphicsMessage, ...]]:
+    """Bind source ``CompositeObject`` markers to companion records by ordinal.
+
+    Native ``00665fc0`` consumes the *next* companion record each time the source
+    parser reaches a ``CompositeObject`` marker (token 0x78), in source-reading
+    order across definitions - there is no name lookup. We therefore walk the
+    source AST in the same order (module definitions, then nested submodules,
+    then module types) and pair marker *n* with record *n*.
+
+    Markers beyond the record list and records beyond the marker list are
+    reported as ``GraphicsMessage`` values (native severity for both is not
+    recovered); the pairs themselves carry the marker span so a consumer can
+    point at the construct.
+    """
+    from sattline_parser.models.ast_model import BasePicture, GraphObject  # noqa: PLC0415
+
+    if not isinstance(picture, BasePicture):  # pragma: no cover - defensive
+        raise TypeError("correlate_composites expects a BasePicture")
+
+    markers: list[SourceSpan | None] = []
+
+    def walk(container: object) -> None:
+        # A unit can hold several ``ModuleDef`` blocks and nested module types;
+        # native order is source order, so every block contributes its markers.
+        module_defs = getattr(container, "moduledefs", None) or [getattr(container, "moduledef", None)]
+        for module_def in module_defs:
+            for graph_object in getattr(module_def, "graph_objects", ()) or ():
+                if isinstance(graph_object, GraphObject) and graph_object.type == _COMPOSITE_OBJECT_TYPE:
+                    markers.append(None)
+        for submodule in getattr(container, "submodules", ()) or ():
+            walk(submodule)
+
+    walk(picture)
+    for module_type in picture.moduletype_defs:
+        walk(module_type)
+
+    messages = list(model.messages)
+    pairs: list[GraphicsCompositeBinding] = []
+    for index, record in enumerate(model.composite_records):
+        if index < len(markers):
+            pairs.append(GraphicsCompositeBinding(marker_ordinal=index + 1, record=record))
+            continue
+        messages.append(
+            GraphicsMessage(
+                severity="error",
+                message=(
+                    f"Companion record {record.ordinal} has no matching CompositeObject marker "
+                    f"in the source (only {len(markers)} found)"
+                ),
+                line=record.record_start_line,
+                column=1,
+            )
+        )
+    if len(markers) > len(model.composite_records):  # pragma: no branch
+        messages.append(
+            GraphicsMessage(
+                severity="error",
+                message=(
+                    f"{len(markers)} CompositeObject marker(s) in the source but only "
+                    f"{len(model.composite_records)} companion record(s)"
+                ),
+                line=1,
+                column=1,
+            )
+        )
+    return tuple(pairs), tuple(messages)
+
+
+__all__ = [
+    "correlate_composites",
+    "parse_graphics_file",
+    "parse_graphics_text",
+    "resolve_graphics_companion_path",
+]

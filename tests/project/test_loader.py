@@ -376,7 +376,7 @@ def test_load_parses_graphics_companion(tmp_path: Path) -> None:
         ("var", "PathNotOK"),
     ]
     [record] = program.graphics.picture_display_records
-    assert record.path_row_lines == (9, 10, 11)
+    assert record.path_row_lines == (9, 10)
 
 
 def test_load_draft_falls_back_to_official_graphics_ext(tmp_path: Path) -> None:

@@ -272,6 +272,10 @@ oval_object:                OVALOBJECT origo_size_pair common_properties
 polygon_object:             POLYGONOBJECT polygon_type? coordinates+ common_properties
 polygon_type:               (POLYLINE | SPLINE | CONNECTION)+
 segment_object:             SEGMENTOBJECT origo_size_pair coordinates common_properties
+// Native 00665fc0 consumes `CompositeObject [Layer_ = <int>]` and then the next
+// companion-graphics record. Narrowing this rule to `layer_info?` makes Lark's
+// LALR table reject real corpus files (the composite marker shares its start
+// with the other graph objects), so the broad form stays until that is resolved.
 composite_object:           COMPOSITEOBJECT common_properties
 
 

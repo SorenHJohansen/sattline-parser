@@ -55,6 +55,22 @@ class GraphicsCompositeRecord:
     record_start_line: int
     record_end_line: int
     family_code: str
+    #: Position of the record in companion-file order. A source
+    #: ``CompositeObject`` marker binds to the record with the same ordinal
+    #: (native 00665fc0 consumes the next record at each marker).
+    ordinal: int = 0
+
+
+@dataclass(frozen=True, slots=True)
+class GraphicsCompositeBinding:
+    """A source ``CompositeObject`` marker paired with its companion record.
+
+    The association is positional (native 00665fc0 consumes the next record at
+    each marker in source order), not a name lookup.
+    """
+
+    marker_ordinal: int
+    record: GraphicsCompositeRecord
 
 
 @dataclass(frozen=True, slots=True)
@@ -192,6 +208,7 @@ class DependencyGraph:
 
 __all__ = [
     "DependencyGraph",
+    "GraphicsCompositeBinding",
     "GraphicsCompositeRecord",
     "GraphicsMessage",
     "GraphicsModel",

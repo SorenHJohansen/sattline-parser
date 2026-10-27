@@ -48,6 +48,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Graphics companion correlation.** `graphics_parsing.correlate_composites`
+  binds each source `CompositeObject` marker to the next companion record by
+  ordinal — the native rule (`00665fc0`, no name lookup) — and reports markers or
+  records left over as `GraphicsMessage` values. `GraphicsCompositeRecord.ordinal`
+  and `GraphicsCompositeBinding` expose the pair.
+
 - **Native builtin catalogue.** `validation/builtin_catalogue.json` carries the
   492 usable registrations extracted from the workstation's builtin table,
   reduced to arity plus write-like argument positions using the recovered mode
@@ -67,6 +73,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   unaffected.
 
 ### Changed
+
+- **Companion records are read by their recovered grammar, not by blank
+  lines.** `project/graphics_records.py` replaces the line heuristic that ended a
+  record at a `0` line followed by a blank line. Each family is consumed field by
+  field (`I`/`H`/`F`/`D`/`END`/`MARK`/`WORD`/`WORD2`/`LINE`/`COUNTED`, binding
+  reader `004a72d0`, families 1/2/4 and family-5 subtypes 1/2 including the
+  version-dependent shape byte and pre-qualifier layouts), so a record boundary
+  follows from the record's own structure. Measured on the 743 companion files
+  under `~/Projects/Libs`: 727 read to completion (12 535 records, 11 967
+  PictureDisplay records, 1 936 indexed path rows) and removing blank lines no
+  longer moves any boundary — the 83 files that still differ do so because a
+  subtype-1 record stores an empty title/default `LINE()`, which *is* an empty
+  line. `GraphicsRecordError` surfaces a structural failure as a `GraphicsMessage`
+  instead of mis-splitting, and a family-1/2 payload sub-reader that was never
+  transcribed (`004dcc30`, `004f1950`, `004d1fc0`, `00417930`) stops the scan with
+  a warning rather than guessing a boundary — 16 corpus files do, and
+  `docs/graphics_parity.md` records why.
 
 - **Sequence syntax aligned with the native readers.** `SEQFORK` is no longer a
   sequence element: it is a suffix of its host `SEQSTEP`/`SEQTRANSITION`, reads
