@@ -200,7 +200,9 @@ if program.graphics is not None:       # GraphicsMessage values, never raised
 - `strict=True` (default) fails fast on missing or unparseable artifacts;
   `strict=False` skips the failing program and continues. Failures surface as
   structured errors (`ProjectLoadError`, `ArtifactLoadError`,
-  `DependencyNotFoundError`, `DependencyParseError`).
+  `DependencyNotFoundError`, `DependencyParseError`), and a skipped program is
+  recorded as a `LoadDiagnosticKind.LOAD_SKIPPED` diagnostic, so a partial load
+  is never silent.
 - `cache_dir=...` optionally enables the parser-owned lookup and per-file AST
   caches (`FileLookupCache` / `FileASTCache`) so repeated loads skip
   re-discovery and re-parsing. When `cache_dir=None` (default) the load is

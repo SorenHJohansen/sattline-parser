@@ -5,7 +5,7 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [2026.10.1] - 2026-10-29
 
 ### Added
 
@@ -28,7 +28,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `1` findings, `2` usage/input, `3` internal — and a traceback is only printed
   under `--debug`. Findings never print internal rule ids as text; the JSON
   carries them for baselines and diffs. Commands are read-only: no `--fix`, no
-  `--write`, no network, no watch mode. `docs/cli.md` documents the surface, and
+  `--write`, no network, no watch mode. Source files are read exactly like
+  `parse_source_file`: plain Windows-1252, marker-compressed text and the binary
+  `\x80 3.1` `.x` framing all decode transparently (undefined cp1252 bytes stay
+  refused outside comments), for files and stdin alike. `docs/cli.md` documents
+  the surface, and
   the entry point is registered as the `sattline` console script next to
   `python -m sattline_parser`; `scripts/smoke_installed.py` exercises both from
   the built wheel and sdist.
@@ -126,47 +130,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `sattline_parser.validation.transfers`; GLOBAL/literal sources, undeclared
   sources, unknown target parameters, `AnyType` formals, numeric widening
   (integer↔real), and record-typed transfers are handled.
-
-- Phase 4 of the project-layer plan: graphics companion parsing. The loader now
-  resolves each program's same-directory `.g` / `.y` companion via
-  `resolve_graphics_companion_path` (draft prefers `.g`, falls back to `.y`;
-  official and `.x` code only accept `.y`; a `.g` / `.y` input resolves to
-  itself) and parses it into a `GraphicsModel` on `SattLineProgram.graphics`.
-  `parse_graphics_text` / `parse_graphics_file` scan composite records (families
-  `1`/`2`/`4`/`5`), picture-display records (`9031`, keep-shape flag, variable /
-  literal path rows), and `Var`/`Lit`/`Expr` bindings — including Lark-parsed
-  expression bindings with source-span offsetting. Graphics content problems
-  become `GraphicsMessage` values (`errors` / `warnings` properties); companion
-  read failures map to `ArtifactLoadError` / `DependencyParseError` honoring the
-  existing strict/non-strict behavior.
-
-- Phase 3 of the project-layer plan: `SattLineProject.load` is now wired end to
-  end. `read_dependency_names` parses `.l` / `.z` dependency files, `ProjectLoader`
-  recursively resolves dependencies requester-relative to the declaring file with
-  casefolded identity memoization (each program visited and parsed exactly once;
-  cycles resolve as edges in the derived graph, never raised), and loads can store
-  results in the parser-owned `FileLookupCache` plus a new HMAC-signed pickle
-  `FileASTCache` (`FILE_AST_CACHE_VERSION = 1`, stat-snapshot validated) under a
-  caller-supplied `cache_dir`. Structured failures map to `DependencyNotFoundError`,
-  `DependencyParseError`, and `ArtifactLoadError`, and `strict=False` skips failing
-  programs instead of aborting.
-
-- Phase 2 of the project-layer plan: `ArtifactKind`, the extension helpers
-  (`code_ext`/`deps_ext`/`graphics_ext`, `*_ext_candidates`,
-  `preferred_extension`, `candidate_extensions`), the per-root `SourceIndex`,
-  requester-relative ordered lookup (`ordered_lookup_bases`,
-  `shared_lookup_root_for`, `ProjectLookup` with `find`/`find_code`/`find_deps`),
-  and the parser-owned, versioned `FileLookupCache`
-  (`LOOKUP_CACHE_VERSION = 1`). Artifact extension/draft-fallback rules and
-  per-artifact discovery now live in the parser; loading behavior still lands in
-  later phases.
-
-- New `sattline_parser.project` layer (Phase 1 of the project-layer plan):
-  `LoadMode`, `ProgramFormat`, the graphics companion model (`GraphicsModel`,
-  `GraphicsMessage`, `GraphicsCompositeRecord`, `GraphicsPictureDisplayRecord`),
-  `SattLineProgram`, `SattLineProject`, `DependencyGraph`, and the structured
-  load errors (`ProjectLoadError` and subclasses). Additive only — artifact
-  discovery and loading behavior land in later phases.
 
 - **PEP 561 typing marker.** The package now ships `py.typed`, so downstream
   type checkers use the inline annotations instead of treating the package as
@@ -353,11 +316,69 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the cached base is still trusted, but extensions are tried in preference
   order.
 
+- **A partial project load is never silent.** `SattLineProject.load(strict=False)`
+  now records every program it had to leave out as
+  `LoadDiagnosticKind.LOAD_SKIPPED` (`load-skipped`) instead of only omitting it
+  from the result, and `sattline project --lenient` reports those diagnostics and
+  exits `1` rather than pretending the tree was complete. A declared dependency
+  that could not be loaded keeps its edge and appears in the diagnostics.
+
+- **`sattline project` roots follow the loader's model.** Target discovery now
+  looks at the artifacts directly inside each root, matching the ordered
+  lookup — a directory that merely *contains* libraries is refused with
+  `no source files directly under <root>; pass each library directory as a root`
+  instead of silently loading nothing.
+
 ### Security
 
 - **Locked development dependencies refreshed.** `certifi`, `filelock`,
   `msgpack`, `urllib3` and `virtualenv` were upgraded in `uv.lock`, so
   `pip-audit` over the locked environment reports no known vulnerabilities.
+
+## [2026.9.2] - 2026-09-22
+
+### Added
+
+- Phase 4 of the project-layer plan: graphics companion parsing. The loader now
+  resolves each program's same-directory `.g` / `.y` companion via
+  `resolve_graphics_companion_path` (draft prefers `.g`, falls back to `.y`;
+  official and `.x` code only accept `.y`; a `.g` / `.y` input resolves to
+  itself) and parses it into a `GraphicsModel` on `SattLineProgram.graphics`.
+  `parse_graphics_text` / `parse_graphics_file` scan composite records (families
+  `1`/`2`/`4`/`5`), picture-display records (`9031`, keep-shape flag, variable /
+  literal path rows), and `Var`/`Lit`/`Expr` bindings — including Lark-parsed
+  expression bindings with source-span offsetting. Graphics content problems
+  become `GraphicsMessage` values (`errors` / `warnings` properties); companion
+  read failures map to `ArtifactLoadError` / `DependencyParseError` honoring the
+  existing strict/non-strict behavior.
+
+- Phase 3 of the project-layer plan: `SattLineProject.load` is now wired end to
+  end. `read_dependency_names` parses `.l` / `.z` dependency files, `ProjectLoader`
+  recursively resolves dependencies requester-relative to the declaring file with
+  casefolded identity memoization (each program visited and parsed exactly once;
+  cycles resolve as edges in the derived graph, never raised), and loads can store
+  results in the parser-owned `FileLookupCache` plus a new HMAC-signed pickle
+  `FileASTCache` (`FILE_AST_CACHE_VERSION = 1`, stat-snapshot validated) under a
+  caller-supplied `cache_dir`. Structured failures map to `DependencyNotFoundError`,
+  `DependencyParseError`, and `ArtifactLoadError`, and `strict=False` skips failing
+  programs instead of aborting.
+
+- Phase 2 of the project-layer plan: `ArtifactKind`, the extension helpers
+  (`code_ext`/`deps_ext`/`graphics_ext`, `*_ext_candidates`,
+  `preferred_extension`, `candidate_extensions`), the per-root `SourceIndex`,
+  requester-relative ordered lookup (`ordered_lookup_bases`,
+  `shared_lookup_root_for`, `ProjectLookup` with `find`/`find_code`/`find_deps`),
+  and the parser-owned, versioned `FileLookupCache`
+  (`LOOKUP_CACHE_VERSION = 1`). Artifact extension/draft-fallback rules and
+  per-artifact discovery now live in the parser; loading behavior still lands in
+  later phases.
+
+- New `sattline_parser.project` layer (Phase 1 of the project-layer plan):
+  `LoadMode`, `ProgramFormat`, the graphics companion model (`GraphicsModel`,
+  `GraphicsMessage`, `GraphicsCompositeRecord`, `GraphicsPictureDisplayRecord`),
+  `SattLineProgram`, `SattLineProject`, `DependencyGraph`, and the structured
+  load errors (`ProjectLoadError` and subclasses). Additive only — artifact
+  discovery and loading behavior land in later phases.
 
 ### Documentation
 

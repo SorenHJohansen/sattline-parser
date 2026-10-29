@@ -46,6 +46,7 @@ __all__ = [
     "build_lark_parser",
     "create_parser",
     "create_sl_parser",
+    "decode_source_bytes",
     "describe_parse_error",
     "load_source_text",
     "parse_and_validate",
@@ -53,6 +54,7 @@ __all__ = [
     "parse_source_text",
     "read_text_cp1252",
     "render_ide_text",
+    "source_text_for_parse",
     "validate_basepicture",
 ]
 
@@ -266,6 +268,49 @@ def _decode_source_bytes_for_parse(path: Path) -> str:
         return _decode_cp1252_comments_tolerant(path.read_bytes())
 
 
+def decode_source_bytes(
+    raw_bytes: bytes,
+    *,
+    debug: Callable[[str], None] | None = None,
+    source_path: Path | None = None,
+    log_failures: bool = True,
+) -> str:
+    """Decode raw source bytes into the text :func:`parse_source_text` expects.
+
+    Byte-coded streams (the binary ``\\x80 3.1`` framing some ``.x`` files
+    carry) are decoded first. Everything else is returned as written —
+    including marker-compressed text, so provenance spans keep pointing into
+    the original source. Undefined Windows-1252 bytes are tolerated inside
+    comments only, exactly as the real editor accepts them.
+    """
+    if is_coded(raw_bytes):
+        return _decode_coded_file_bytes(raw_bytes, debug=debug, source_path=source_path, log_failures=log_failures)
+    try:
+        return raw_bytes.decode("cp1252")
+    except UnicodeDecodeError:
+        return _decode_cp1252_comments_tolerant(raw_bytes)
+
+
+def source_text_for_parse(
+    code_path: Path,
+    *,
+    debug: Callable[[str], None] | None = None,
+    log_failures: bool = True,
+) -> str:
+    """Read a source file into the text :func:`parse_source_file` parses.
+
+    Handles the three on-disk flavors the editor produces: byte-coded streams,
+    marker-compressed text and plain Windows-1252 text.
+    """
+    source_path = Path(code_path)
+    return decode_source_bytes(
+        source_path.read_bytes(),
+        debug=debug,
+        source_path=source_path,
+        log_failures=log_failures,
+    )
+
+
 def load_source_text(
     code_path: Path,
     *,
@@ -390,19 +435,10 @@ def parse_source_file(
     source_path = Path(code_path)
     if debug is not None:
         debug(f"Parsing file: {source_path}")
-    # Read the raw file (strict Windows-1252) and hand the original text to
-    # parse_source_text so compression/decoding and source provenance happen
-    # exactly once and consistently with parse_source_text().
-    raw_bytes = source_path.read_bytes()
-    if is_coded(raw_bytes):
-        raw = _decode_coded_file_bytes(
-            raw_bytes,
-            debug=debug,
-            source_path=source_path,
-            log_failures=log_failures,
-        )
-    else:
-        raw = _decode_source_bytes_for_parse(source_path)
+    # Read the raw file (byte-coded, compressed or strict Windows-1252) and hand
+    # the resulting text to parse_source_text so compression/decoding and source
+    # provenance happen exactly once and consistently with parse_source_text().
+    raw = source_text_for_parse(source_path, debug=debug, log_failures=log_failures)
     return parse_source_text(
         raw,
         parser=parser,

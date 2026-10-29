@@ -53,22 +53,18 @@ def run(args: argparse.Namespace) -> int:
 def _load_model(args: argparse.Namespace) -> tuple[GraphicsModel, str]:
     if args.path != "-" and Path(args.path).suffix.lower() not in {".g", ".y"}:
         raise CliError(f"{args.path} is not a graphics companion (.g/.y)")
-    name, text = read_source(args.path, name=args.stdin_name or "<stdin>")
-    return parse_graphics_text(text), name
+    source = read_source(args.path, name=args.stdin_name or "<stdin>")
+    return parse_graphics_text(source.text), source.name
 
 
 def _correlate(args: argparse.Namespace, model: GraphicsModel) -> tuple[list[dict[str, object]], list[Finding]]:
     if not args.correlate or args.source is None:
         return [], []
-    source = Path(args.source)
+    unit = read_source(args.source, name=None)
     try:
-        text = source.read_bytes().decode("cp1252")
-    except OSError as exc:
-        raise CliError(f"cannot read {source}: {exc.strerror or exc}") from exc
-    try:
-        picture = parse_source_text(text, log_failures=False)
+        picture = parse_source_text(unit.text, log_failures=False)
     except (UnexpectedInput, PreprocessError) as exc:
-        return [], [finding_from_parse_error(exc, text, file=str(source), absolute_paths=False)]
+        return [], [finding_from_parse_error(exc, unit.text, file=unit.name, absolute_paths=False)]
     pairs, messages = correlate_composites(picture, model)
     rows: list[dict[str, object]] = [
         {
@@ -86,7 +82,7 @@ def _correlate(args: argparse.Namespace, model: GraphicsModel) -> tuple[list[dic
             severity=message.severity,
             message=message.message,
             rule="GRAPHICS_CORRELATION",
-            file=str(source),
+            file=unit.name,
             line=message.line,
             column=message.column,
         )

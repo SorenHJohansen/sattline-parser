@@ -96,7 +96,8 @@ sattline parse M.s --tree --depth 3       # the AST as JSON, bounded
 
 Summary fields: `file`, `program`, `name`, `encoding` (`plain`/`coded`) and
 `counts` (module types, submodules, local variables, sequences, equations, graph
-objects, interact objects).
+objects, interact objects). `encoding` is `coded` for both marker-compressed
+text and the binary `.x` framing, `plain` otherwise.
 
 `--tree` emits `{"schema": "sattline.v1.parse", "tree": …}` with source spans.
 `--depth` bounds the output: a composite that is not expanded becomes a
@@ -136,7 +137,8 @@ No matching row exits `1`, so `query` composes in shell tests.
 Load a project tree: programs, their artifacts, and the dependency graph.
 
 ```bash
-sattline project SR/                         # every source under the root
+sattline project SR/                         # every source declared in the root
+sattline project SR/*/                       # one root per library directory
 sattline project SR/ --targets Start,Master  # only these programs
 sattline project SR/ --graph                 # edges only
 sattline project SR/ --graph --of Master --depth 2
@@ -145,16 +147,23 @@ sattline project SR/ --cycles                # only dependency cycles
 sattline project SR/ --mode official --lenient --json
 ```
 
-With no `--targets`, every program name found under the roots is loaded. Draft
-mode (default) reads `.s` (falling back to `.x`); official mode reads only
-`.x`/`.y`/`.z`. `--lenient` keeps whatever did load when an artifact is missing
-or unparseable; without it the load failure is one `PROJECT_LOAD_ERROR` finding
-and the exit code is `1`.
+A root is a **library directory**: the loader resolves artifacts directly inside
+it (that is what the ordered lookup indexes), so pass each library directory,
+not a directory that merely contains libraries. With no `--targets`, every
+program declared directly in the roots is loaded. Draft mode (default) reads
+`.s` (falling back to `.x`); official mode reads only `.x`/`.y`/`.z`.
+
+Without `--lenient`, an unresolvable or unparseable artifact is one
+`PROJECT_LOAD_ERROR` finding and the exit code is `1`. With `--lenient`, the
+rest of the tree still loads, but each skipped program is reported as a
+`load-skipped` diagnostic (and still exits `1`): a partial load is never silent.
 
 Program rows report `name`, the artifact extensions actually found (`code`,
 `graphics`, `deps`), `sidecar`, `dependencies`, `graphics_records` and `source`.
 Graph edges use canonical casefolded identities while program rows keep the
-declared casing, so `--of`/`--graph` and the JSON payload always agree.
+declared casing, so `--of`/`--graph` and the JSON payload always agree. A
+declared but unloaded dependency keeps its edge and appears as a `load-skipped`
+diagnostic.
 
 `--of` walks outwards from one program (its dependencies, or its dependents with
 `--reverse`), bounded by `--depth`. `--cycles` prints each dependency cycle once,
@@ -237,6 +246,25 @@ each command emits (`sattline.v1.check`, `sattline.v1.parse`,
 `sattline.v1.query`, `sattline.v1.project`, `sattline.v1.graphics`,
 `sattline.v1.decode`, `sattline.v1.diff`, `sattline.v1.corpus`,
 `sattline.v1.version`), so a client can pin against a contract.
+
+## Source flavors
+
+Every command that reads a source file reads it exactly like
+`parse_source_file`, so the three on-disk flavors the workstation writes all
+work:
+
+- **plain** Windows-1252 text;
+- **marker-compressed** text (a `C` in the syntax-version line, `#xx` codes):
+  decoded before parsing, with spans and locations mapped back to the original
+  text;
+- **byte-coded** `.x` streams (the binary `\x80 3.1` framing): decoded before
+  parsing; positions then refer to the decoded text, which is what the editor
+  shows.
+
+Undefined Windows-1252 bytes (`0x81 0x8D 0x8F 0x90 0x9D`) are refused outside
+comments and tolerated inside `(* … *)`, exactly as the editor accepts them. A
+file that cannot be read or decoded is a usage error (`2`), never a crash.
+Stdin accepts the same three flavors.
 
 ## Shared options
 

@@ -56,7 +56,8 @@ def _positive_int(value: str) -> int:
 
 def run(args: argparse.Namespace) -> int:
     reject_companion(args.path)
-    name, text = read_source(args.path, name=args.stdin_name)
+    source = read_source(args.path, name=args.stdin_name)
+    name, text = source.name, source.text
     absolute = args.path_style == "absolute"
     try:
         picture = parse_source_text(text, log_failures=False)
