@@ -41,9 +41,12 @@ from .models import (
     GraphicsModel,
     GraphicsPictureDisplayPathRow,
     GraphicsPictureDisplayRecord,
+    LoadDiagnostic,
+    LoadDiagnosticKind,
     LoadMode,
     ProgramFormat,
     SattLineProgram,
+    SidecarState,
 )
 from .project import SattLineProject
 
@@ -63,6 +66,8 @@ __all__ = [
     "GraphicsModel",
     "GraphicsPictureDisplayPathRow",
     "GraphicsPictureDisplayRecord",
+    "LoadDiagnostic",
+    "LoadDiagnosticKind",
     "LoadMode",
     "ProgramFormat",
     "ProjectLoadError",
@@ -70,6 +75,7 @@ __all__ = [
     "ProjectLookup",
     "SattLineProgram",
     "SattLineProject",
+    "SidecarState",
     "SourceIndex",
     "candidate_extensions",
     "code_ext",

@@ -122,6 +122,13 @@ def test_format_seq_nodes_renders_all_node_types():
             kind="substep",
         ),
         ast_model.SFCTransitionSub(name="TS", body=[ast_model.SFCTransition(name="TSub", condition=None)]),
+        ast_model.SFCLoop(
+            name="Iter",
+            condition=VarRef("Flag"),
+            body=[ast_model.SFCStep(kind="step", name="LoopStep", code=ast_model.SFCCodeBlocks())],
+            else_body=[ast_model.SFCTransition(name="LoopEnd", condition=None)],
+        ),
+        ast_model.SFCLoop(body=[ast_model.SFCTransition(name="Bare", condition=True)]),
         forked_step,
         SimpleNamespace(__str__=lambda self: "FallbackNode"),
     ]
@@ -141,6 +148,11 @@ def test_format_seq_nodes_renders_all_node_types():
     assert "Transition T2" in rendered
     assert "Fork to Z Break" in rendered
     assert "Substep:" in rendered
+    assert "Loop Iter While Flag:" in rendered
+    assert "EndLoop" in rendered
+    assert "Else:" in rendered
+    assert "EndElse" in rendered
+    assert "Loop:" in rendered
 
 
 def test_format_expr_handles_new_typed_expression_nodes():

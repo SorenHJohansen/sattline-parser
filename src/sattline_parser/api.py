@@ -37,7 +37,7 @@ from .errors import (
 )
 from .grammar import constants as const
 from .grammar.keywords import make_keywords_case_insensitive
-from .grammar.sattline_lexer import SattLineLexer
+from .grammar.sattline_lexer import SattLineLexer, compact_provenance
 from .preprocessing import is_coded, is_compressed, preprocess_source, render_ide_text
 from .preprocessing.coded import decode_coded_stream
 
@@ -304,8 +304,10 @@ def parse_source_text(
     active_parser = parser if parser is not None else _default_parser()
     active_transformer = transformer if transformer is not None else SLTransformer()
     parser_runner = cast(_ParserProtocol, active_parser)
+    provenance = None if source_doc.is_identity() else source_doc.is_decoded_range
     try:
-        tree = parser_runner.parse(source_doc.normalized_text)
+        with compact_provenance(provenance):
+            tree = parser_runner.parse(source_doc.normalized_text)
     except Exception as exc:
         remap_parse_error(exc, source_doc)
         if log_failures:

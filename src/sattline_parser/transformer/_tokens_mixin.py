@@ -108,6 +108,14 @@ class TokensMixin:
         """Grammar BOOL_NOTAIL terminal -> bool (no trailing coordinates)."""
         return self.BOOL(tok)
 
+    def ON_KW(self, _tok: object) -> Literal[True]:
+        """Grammar ON_KW keyword -> True (a general value literal, not a flag)."""
+        return True
+
+    def OFF_KW(self, _tok: object) -> Literal[False]:
+        """Grammar OFF_KW keyword -> False."""
+        return False
+
     def STRING_NOTAIL(self, tok: Token) -> str:
         """Grammar STRING_NOTAIL terminal -> string (no trailing coordinates)."""
         return self.STRING(tok)

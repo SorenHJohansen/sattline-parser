@@ -71,6 +71,8 @@ class GraphicsCompositeBinding:
 
     marker_ordinal: int
     record: GraphicsCompositeRecord
+    #: Span of the source ``CompositeObject`` marker, when the AST carries one.
+    marker_span: SourceSpan | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -95,6 +97,11 @@ class GraphicsPictureDisplayRecord:
     subtype: str = "2"
     path_row_lines: tuple[int, ...] = ()
     path_rows: tuple[GraphicsPictureDisplayPathRow, ...] = ()
+    #: The inline default payload as its own row (also present in ``path_rows``,
+    #: in file order after the indexed entries). ``None`` when the record has no
+    #: usable default — this is the path used when no index matches, so it is
+    #: usually the record's real asset path.
+    default_path_row: GraphicsPictureDisplayPathRow | None = None
 
 
 @dataclass(frozen=True, slots=True)

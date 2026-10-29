@@ -7,7 +7,7 @@ Handles sequence elements, transitions, steps, equations, and related SFC constr
 
 from __future__ import annotations
 
-from typing import Any, cast
+from typing import Any, Literal, cast
 
 from lark import Token, Tree
 
@@ -22,6 +22,7 @@ from sattline_parser.models.ast_model import (
     SFCBodyItem,
     SFCCodeBlocks,
     SFCFork,
+    SFCLoop,
     SFCParallel,
     SFCStep,
     SFCSubsequence,
@@ -44,7 +45,15 @@ from sattline_parser.models.expressions import (
 )
 
 from ._comments_mixin import is_comment_tree
-from ._module_shared import CodeBlockPayload, TransformerItem, TransformerTree, coord_pair, tree_children
+from ._module_shared import (
+    CodeBlockPayload,
+    TransformerItem,
+    TransformerTree,
+    coord_pair,
+    meta_span,
+    tree_children,
+    v_args,
+)
 
 SfcBody = list[SFCBodyItem]
 
@@ -264,6 +273,41 @@ class SFCMixin:
         branches = self._collect_sequence_branches(items, "seqparallel")
         return SFCParallel(branches=branches)
 
+    def loop(self, items: list[TransformerItem]) -> SFCLoop:
+        """Grammar loop -> SFCLoop (native 006ff000).
+
+        ``FreeWord1 [NAME] C FreeWord2 [expression] [C] FreeWord3``: the first
+        body is required, the second and the expression are optional, and no
+        ``WAIT_FOR`` keyword precedes the expression.
+        """
+        name: str | None = None
+        condition: SLExpression | None = None
+        bodies: list[list[SFCBodyItem]] = []
+        for item in items:
+            if isinstance(item, Token):
+                continue
+            if isinstance(item, Tree):
+                tree = cast(TransformerTree, item)
+                if tree.data != const.KEY_SEQUENCE_BODY:
+                    raise ValueError(f"loop expected sequence_body Trees; got Tree({tree.data!r})")
+                bodies.append(cast(list[SFCBodyItem], list(tree_children(tree))))
+                continue
+            if type(item) is str and name is None:
+                name = item
+                continue
+            if condition is None:
+                condition = cast(SLExpression, item)
+                continue
+            raise ValueError(f"loop unexpected item: {type(item).__name__}: {item!r}")
+        if not bodies:
+            raise ValueError(f"loop expected at least one sequence_body; got: {items!r}")
+        return SFCLoop(
+            name=name,
+            condition=condition,
+            body=bodies[0],
+            else_body=bodies[1] if len(bodies) > 1 else None,
+        )
+
     def seqfork(self, items: list[TransformerItem]) -> SFCFork:
         """Grammar seqfork -> SEQFORK NAME ("," NAME)* SEQBREAK?."""
         targets: list[str] = []
@@ -282,11 +326,21 @@ class SFCMixin:
             raise ValueError(f"seqfork expected at least one NAME target; got: {items!r}")
         return SFCFork(targets=targets_tuple, has_break=has_break)
 
-    def seq_element(self, items: list[TransformerItem]) -> TransformerItem:
-        """Grammar seq_element -> passthrough SFC node."""
-        for item in items:
-            return item
-        raise ValueError("seq_element expected an SFC element; got no items")
+    @v_args(meta=True)
+    def seq_element(self, meta: Any, items: list[TransformerItem]) -> SFCBodyItem:
+        """Grammar seq_element -> the element node, carrying its source span.
+
+        One hook for every position-bearing element (steps, transitions,
+        alternatives, parallels, subsequences and loops), so the sequence-position
+        diagnostics can report a location instead of a bare message.
+        """
+        node = next((item for item in items if not isinstance(item, Token)), None)
+        if node is None:  # pragma: no cover - the grammar always yields one
+            raise ValueError(f"seq_element expected an element; got: {items!r}")
+        span = meta_span(meta)
+        if span is not None:
+            cast(Any, node).span = span
+        return cast(SFCBodyItem, node)
 
     def sequence_body(self, items: list[TransformerItem]) -> TransformerTree:
         """Grammar sequence_body -> Tree of SFC sequence elements with CodeComments inline."""
@@ -355,6 +409,7 @@ class SFCMixin:
                             SFCAlternative,
                             SFCParallel,
                             SFCSubsequence,
+                            SFCLoop,
                             CodeComment,
                         ),
                     ):
@@ -388,9 +443,12 @@ class SFCMixin:
         size: tuple[float, float] | None = None
         code: list[CodeItem] = []
         layer_info: int | None = None
+        kind: Literal["equationblock", "equations"] = "equationblock"
 
         for item in items:
             if isinstance(item, Token):
+                if str(item).casefold() == const.GRAMMAR_VALUE_EQUATIONS.casefold():
+                    kind = "equations"
                 continue
 
             if isinstance(item, int):
@@ -415,7 +473,7 @@ class SFCMixin:
             else:
                 raise ValueError(f"equationblock unexpected code item: {type(item).__name__}: {item!r}")
 
-        return Equation(name=name, position=position, size=size, code=code, layer_info=layer_info)
+        return Equation(kind=kind, name=name, position=position, size=size, code=code, layer_info=layer_info)
 
 
 __all__ = ["SFCMixin"]

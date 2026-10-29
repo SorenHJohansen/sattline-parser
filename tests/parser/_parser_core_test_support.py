@@ -14,6 +14,7 @@ from typing import Any, LiteralString, cast
 import pytest
 from lark import Token, Tree
 from lark.exceptions import UnexpectedCharacters, UnexpectedEOF, UnexpectedInput, UnexpectedToken
+from lark.tree import Meta
 
 from sattline_parser import (
     api as parser_api,
@@ -197,6 +198,7 @@ __all__ = [
     "InteractObject",
     "InterimCoords",
     "LiteralString",
+    "Meta",
     "ModuleCode",
     "ModuleDef",
     "ModuleHeader",

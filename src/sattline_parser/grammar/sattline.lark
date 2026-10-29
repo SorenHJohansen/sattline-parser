@@ -77,7 +77,10 @@ variable_list:              variable_group+
 opt_var_init:               ASSIGN_INIT_VALUE (duration_value | time_value | value | DEFAULT)
 duration_value:             DURATION_VALUE STRING?
 time_value:                 TIME_VALUE STRING?
-value:                      BOOL | REAL | STRING | SIGNED_INT
+// `On`/`Off` are boolean literals only where a value is read (expressions,
+// initializers, binding tails). The graphics property readers keep using BOOL /
+// BOOL_NOTAIL, so they stay True/False-only as recovered.
+value:                      BOOL | ON_KW | OFF_KW | REAL | STRING | SIGNED_INT
 
 // ============================================================================
 // TYPE DEFINITIONS - MODULE TYPES
@@ -135,14 +138,26 @@ sequence:                   (SEQUENCE | OPENSEQUENCE) NAME? seq_control_opt? cod
 // T = transition position (SEQTRANSITION, SUBSEQTRANSITION, ALTERNATIVESEQ),
 // M = structural (SUBSEQUENCE). SEQFORK is not an element: it is a suffix of
 // its host step or transition (006f9850, 0070a100, 0070d180).
-sequence_body:              (code_comment | seq_element | seqparallel | seqalternative)+
+sequence_body:              (code_comment | seq_element)+
 
+// Native 006ff000: `FreeWord1 [NAME] C FreeWord2 [expression] [C] FreeWord3`.
+// C is the same closed `(S T | M)+` body a sequence uses (007089a0), the first C
+// is required and the second optional, and no WAIT_FOR token precedes the
+// optional expression. A loop occupies the structural (M) position, so it may
+// appear anywhere a body element may and may nest inside C.
+loop:                       FREEWORD1 NAME? sequence_body FREEWORD2 expression? sequence_body? FREEWORD3
+
+// Every position-bearing element goes through `seq_element`, so one transformer
+// hook can attach the element's source span (used by the position diagnostics).
 seq_element:                seqinitstep
                             | seqstep
                             | seqtransition
                             | seqtransitionsub
                             | seqsubstep
                             | seqsub
+                            | seqalternative
+                            | seqparallel
+                            | loop
 
 seq_control_opt:            "(" SEQCONTROL? ","? SEQTIMER? ")"
 codeblock_coord:            COORD_KW REAL "," REAL
@@ -273,10 +288,8 @@ polygon_object:             POLYGONOBJECT polygon_type? coordinates+ common_prop
 polygon_type:               (POLYLINE | SPLINE | CONNECTION)+
 segment_object:             SEGMENTOBJECT origo_size_pair coordinates common_properties
 // Native 00665fc0 consumes `CompositeObject [Layer_ = <int>]` and then the next
-// companion-graphics record. Narrowing this rule to `layer_info?` makes Lark's
-// LALR table reject real corpus files (the composite marker shares its start
-// with the other graph objects), so the broad form stays until that is resolved.
-composite_object:           COMPOSITEOBJECT common_properties
+// companion-graphics record; the marker takes no other object properties.
+composite_object:           COMPOSITEOBJECT comments? layer_info?
 
 
 
@@ -315,7 +328,21 @@ interact_body: layer_info
 | interact_flag
 | interact_value_line
 | alignment
+| interact_scale_selector
+| interact_pick_button
 | format_string
+
+// Native 00636050 (ComBut_) and 00677d00 (TextBox_) accept one optional
+// Relative_/Abs_ choice after the alignment slot. It is a bare selector: no
+// `=`, boolean or value follows, and it sets a single object field.
+// The body is still an unordered repetition, so the position is not enforced
+// here; the token is distinct instead of arriving as an anonymous NAME flag.
+interact_scale_selector:    RELATIVE_KW | ABS_KW
+
+// Native 006573b0, the shared interactor property clause. `VarName` is a
+// postfix marker: the preceding STRING holds either the literal text or the
+// reference spelling, and no further identifier follows it.
+interact_pick_button:       INTOBJPICKBUTTON_KW "=" STRING VARNAME?
 
 
 interact_value_line: value_or_invar
@@ -377,6 +404,8 @@ REAL_NOTAIL.1:             {GRAMMAR_REGEX_REAL_NOTAIL}
 REAL:                       {GRAMMAR_REGEX_REAL}
 BOOL_NOTAIL.1:             {GRAMMAR_REGEX_BOOL_NOTAIL}
 BOOL:                       {GRAMMAR_REGEX_BOOL}
+ON_KW.10:                   "{GRAMMAR_VALUE_BOOL_ON}"
+OFF_KW.10:                  "{GRAMMAR_VALUE_BOOL_OFF}"
 STRING_NOTAIL.1:           {GRAMMAR_REGEX_STRING_NOTAIL}
 STRING:                     {GRAMMAR_REGEX_STRING}
 // Top-level/module structure
@@ -450,6 +479,12 @@ COMPOSITEOBJECT.10:         "{GRAMMAR_VALUE_COMPOSITEOBJECT}"
 CONNECTIONNODE.10:          "{GRAMMAR_VALUE_CONNECTIONNODE}"
 ENABLE_PREFIX.10:           {GRAMMAR_REGEX_ENABLE_PREFIX}
 VARNAME.10:                 "{GRAMMAR_VALUE_VARNAME}"
+RELATIVE_KW.10:             "{GRAMMAR_VALUE_RELATIVE}"
+ABS_KW.10:                  "{GRAMMAR_VALUE_ABS}"
+INTOBJPICKBUTTON_KW.10:     "{GRAMMAR_VALUE_INTOBJPICKBUTTON}"
+FREEWORD1.10:               "{GRAMMAR_VALUE_FREEWORD1}"
+FREEWORD2.10:               "{GRAMMAR_VALUE_FREEWORD2}"
+FREEWORD3.10:               "{GRAMMAR_VALUE_FREEWORD3}"
 VALUEFRACTION.10:           "{GRAMMAR_VALUE_VALUEFRACTION}"
 COLOUR0.10:                 "{GRAMMAR_VALUE_COLOUR0}"
 COLOUR1.10:                 "{GRAMMAR_VALUE_COLOUR1}"

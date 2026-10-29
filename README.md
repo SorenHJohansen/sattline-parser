@@ -12,9 +12,15 @@ This package owns the Lark grammar, the strict single-file syntax behavior, the 
 - Structural comments (`(* ... *)`, nested) preserved as role-tagged AST nodes
 - Automatic compressed-source decoding with full source provenance: AST spans and error locations always refer to the *original* source (`SourceSpan` carries character offsets plus line/column)
 - Lexically aware decoding: string literals and comments are protected, so syntax-looking text inside them is never rewritten
-- Error reporting with line/column locations in the original source (`describe_parse_error`)
+- Parse errors described as sentences about the source, with a location, the
+  expected spellings and an actionable hint (`describe_parse_error`)
 - AST models in `sattline_parser.models`
 - `SLTransformer` tree transformer in `sattline_parser.transformer`
+- Read-only `sattline` command line over the parser, project and graphics
+  layers (`check`, `parse`, `query`, `project`, `graphics`, `decode`, `diff`,
+  `corpus`, `version`) with JSON-first output
+- PEP 561 typed: `py.typed` ships, so downstream type checkers use the inline
+  annotations
 - Standalone fuzz harness with hard subprocess timeouts and corpus regression
 - Zero runtime dependencies beyond `lark` and `regex`
 
@@ -27,6 +33,24 @@ pip install sattline-parser
 Requires Python 3.13+.
 
 ## Usage
+
+### Command line
+
+The package ships a `sattline` command (also `python -m sattline_parser`) for
+tooling and agents that should not write Python glue:
+
+```bash
+sattline check SR/*.s --jsonl     # decode + parse + validate, machine-readable
+sattline parse M.s --tree         # the AST as JSON
+sattline query M.s --what writers # one structural question
+sattline diff Old.s New.s         # findings and counts that moved
+sattline version --json           # tool and JSON schema versions
+```
+
+Findings are sentences with a location, an optional `help:` line and a
+machine-only rule id; exit codes are `0` clean, `1` findings, `2` usage/input,
+`3` internal. See the
+[CLI reference](https://github.com/SorenHJohansen/sattline-parser/blob/main/docs/cli.md).
 
 ### Parse a source file
 
@@ -98,11 +122,26 @@ from sattline_parser import create_parser, describe_parse_error, parse_source_te
 
 parser = create_parser()
 try:
-    parse_source_text(source, parser=parser)
+    parse_source_text(source, parser=parser, log_failures=False)
 except Exception as exc:
     details = describe_parse_error(exc, source)
     print(f"{details.line}:{details.column} {details.message}")
 ```
+
+`details.message` is a sentence about the source, not a parser dump. For
+`ENDDEF (*BasePicture*)` with the terminating `;` missing it reads:
+
+```text
+unexpected end of file; expected ';', '(', 'LOCALVARIABLES' or 'ModuleDef'
+help: the unit ends before a required ';'; the last construct is incomplete
+ENDDEF (*BasePicture*)
+                    ^
+```
+
+The same information is available structurally for tools: `details.found`,
+`details.expected`, `details.hint` and `details.source_line`. Pass
+`log_failures=False` to keep the traceback out of the log when you render the
+message yourself.
 
 ### What is the AST good for?
 
@@ -221,7 +260,10 @@ satisfies the range, so the supported range is actually exercised. Installs use
 
 - `src/sattline_parser/grammar/` : Lark grammar and constants
 - `src/sattline_parser/models/` : AST models
+- `src/sattline_parser/preprocessing/` : compressed-source decoding and its scanner table
 - `src/sattline_parser/transformer/` : transformer mixins and `SLTransformer`
+- `src/sattline_parser/validation/` : validator rules, diagnostics and the builtin catalogue
+- `src/sattline_parser/cli/` : the `sattline` command line (one module per command)
 - `src/sattline_parser/api.py` : public entry points
 - `src/sattline_parser/project/` : project/artifact layer (`SattLineProject`, discovery, resolution, `.g`/`.y` parsing, parser-owned caches)
 - `src/sattline_parser/fuzz_harness.py` : standalone fuzzing

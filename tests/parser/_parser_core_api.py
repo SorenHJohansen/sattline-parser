@@ -334,7 +334,8 @@ def test_parse_source_file_logs_parse_failures_with_path(caplog, tmp_path):
     assert record.parser_path == str(source_file)
     assert record.parser_line == 1
     assert record.parser_column is not None
-    assert "Unexpected" in record.parser_context
+    assert "unexpected" in record.parser_context
+    assert "Token(" not in record.parser_context
 
 
 def test_parser_core_create_parser_accepts_legal_comments():

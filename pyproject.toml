@@ -7,7 +7,8 @@ name = "sattline-parser"
 dynamic = ["version"]
 description = "Standalone parser, AST, and transformer for the SattLine PLC language"
 readme = "README.md"
-license = { text = "MIT" }
+license = "MIT"
+license-files = ["LICENSE"]
 authors = [{ name = "S\u00f8ren H. Johansen" }]
 requires-python = ">=3.13"
 keywords = ["sattline", "parser", "transformer", "ast", "plc"]
@@ -25,6 +26,9 @@ dependencies = [
     "lark[interegular]>=1.3.1,<2",
     "regex>=2024.0.0",
 ]
+
+[project.scripts]
+sattline = "sattline_parser.cli:main"
 
 [project.urls]
 Homepage = "https://github.com/SorenHJohansen/sattline-parser"
@@ -150,4 +154,4 @@ where = ["src"]
 version = { attr = "sattline_parser.__version__.__version__" }
 
 [tool.setuptools.package-data]
-sattline_parser = ["grammar/*.lark", "preprocessing/*.json", "validation/*.json"]
+sattline_parser = ["py.typed", "grammar/*.lark", "preprocessing/*.json", "validation/*.json"]

@@ -26,7 +26,20 @@ def _compress(text: str, targets: list[str] | None = None) -> str:
     if targets is None:
         # Compress word-like keywords only, so punctuation stays literal and the
         # span assertions below can quote the original compact text directly.
-        targets = sorted((word for word in reverse if len(word) > 1 and word.isalpha()), key=len, reverse=True)
+        # Encode every identifier-like keyword, including the underscore-suffixed
+        # ones (DateCode_, InVar_): in coded mode a raw word is an identifier, so a
+        # compressor that leaves them raw would produce a different program.
+        targets = sorted(
+            (
+                word
+                for word in reverse
+                if len(word) > 1
+                and word.isidentifier()
+                and word.casefold() not in {"true", "false", "on", "off", "default"}
+            ),
+            key=len,
+            reverse=True,
+        )
     pattern = _re.compile("|".join(_re.escape(w) for w in targets if w not in ("True", "False")))
 
     parts: list[str] = []
@@ -414,3 +427,18 @@ def test_remap_tree_to_original_is_noop_for_identity_documents():
     before = first.meta.start_pos
     remap_tree_to_original(tree, SourceDocument.identity(_PROGRAM))
     assert first.meta.start_pos == before
+
+
+def test_is_decoded_range_separates_codes_from_raw_text():
+    plain = SourceDocument("text", "text", None)
+    assert plain.is_decoded_range(0, 4) is False
+
+    document = preprocess_source('"Syntax version 2.23, date: 2026-10-27-12:00:00.000 C"\n#22 X\n')
+    decoded_start = document.normalized_text.index("SEQUENCE")
+    raw_start = document.normalized_text.index("X")
+
+    assert document.is_decoded_range(decoded_start, decoded_start + len("SEQUENCE")) is True
+    assert document.is_decoded_range(raw_start, raw_start + 1) is False
+    assert document.is_decoded_range(-1, 4) is False
+    assert document.is_decoded_range(5, 5) is False
+    assert document.is_decoded_range(0, len(document.normalized_text) + 1) is False

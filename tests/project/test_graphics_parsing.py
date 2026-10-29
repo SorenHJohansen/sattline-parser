@@ -20,6 +20,7 @@ from sattline_parser.project import (
     resolve_graphics_companion_path,
 )
 from sattline_parser.project import graphics_bindings as bindings
+from sattline_parser.project.graphics_parsing import _composite_markers as parsed_markers
 from sattline_parser.project.graphics_parsing import correlate_composites
 
 
@@ -86,6 +87,8 @@ def test_parse_graphics_parity_fixture() -> None:
         ("1", "variable_invalid", "PathOK", 1, 9, 21),
         ("2", "variable_invalid", "PathNotOK", 2, 10, 21),
     ]
+    # The inline default payload is empty in this record, so it produces no row.
+    assert record.default_path_row is None
 
 
 def test_parse_graphics_errors_and_warnings_properties() -> None:
@@ -124,13 +127,13 @@ def test_parse_graphics_reports_malformed_field() -> None:
 
 
 def test_parse_graphics_reports_unrecovered_reader_as_warning() -> None:
-    model = parse_graphics_text(_companion(" 1", " None  True  0.0 0.0", " 0.0 0.0", " -1", " 1 payload", " 0"))
+    model = parse_graphics_text(_companion(" 1", " None  True  0.0 0.0", " 0.0 0.0", " 0", " 9 payload", " 0"))
 
     assert model.composite_records == ()
     [message] = model.messages
     assert message.severity == "warning"
     assert (
-        message.message == "Graphics record content is not recovered for family 1 discriminator 1; record scan stopped"
+        message.message == "Graphics record content is not recovered for family 1 discriminator 9; record scan stopped"
     )
 
 
@@ -261,10 +264,15 @@ def test_parse_graphics_literal_path_row() -> None:
     )
 
     [record] = model.picture_display_records
-    assert record.path_row_lines == (7,)
+    assert record.path_row_lines == (7, 8)
     assert [
         (row.kind, row.raw_text, row.index_token, row.index_value, row.span.column) for row in record.path_rows
-    ] == [("literal", "/pic/logo.bmp", "4", 4, 5)]
+    ] == [
+        ("literal", "/pic/logo.bmp", "4", 4, 5),
+        ("literal", "default", "0", 0, 4),
+    ]
+    assert record.default_path_row is not None
+    assert record.default_path_row.raw_text == "default"
     assert model.messages == ()
 
 
@@ -291,8 +299,10 @@ def test_parse_graphics_rows_from_bindings() -> None:
     assert [(row.index_token, row.kind, row.raw_text) for row in record.path_rows] == [
         ("1", "variable_invalid", "PathOK"),
         ("2", "variable", "PVar"),
+        ("0", "literal", "default"),
     ]
-    assert record.path_row_lines == (7, 8, 9)
+    assert record.path_row_lines == (7, 8, 10)
+    assert record.default_path_row == record.path_rows[-1]
 
 
 def test_parse_graphics_blank_lines_do_not_change_record_structure() -> None:
@@ -668,6 +678,117 @@ def test_correlate_composites_reports_unmatched_records_and_markers():
     assert len(pairs) == 1
     assert [message.severity for message in messages] == ["error"]
     assert "has no matching CompositeObject marker" in messages[0].message
+
+
+def _section_markers(picture: object) -> tuple[object, object, object]:
+    """The single marker of the module type, of the submodule, and of the own def."""
+    from sattline_parser.models.ast_model import BasePicture, SingleModule  # noqa: PLC0415
+
+    assert isinstance(picture, BasePicture)
+    type_def = picture.moduletype_defs[0].moduledef
+    assert type_def is not None
+    submodule = picture.submodules[0]
+    assert isinstance(submodule, SingleModule)
+    sub_def = submodule.moduledef
+    assert sub_def is not None
+    own_def = picture.moduledef
+    assert own_def is not None
+    type_objects = type_def.graph_objects
+    sub_objects = sub_def.graph_objects
+    own_objects = own_def.graph_objects
+    assert type_objects is not None
+    assert sub_objects is not None
+    assert own_objects is not None
+    return type_objects[0], sub_objects[0], own_objects[0]
+
+
+def _nested_marker_source() -> str:
+    """One CompositeObject in a module type, one in an inline submodule, one own."""
+    return (
+        '"Syntax version 2.23, date: 2026-10-27-12:00:00.000 N"\n'
+        '"Original file date: ---"\n'
+        '"Program date: 2026-10-27-12:00:00.000, name: Order"\n'
+        "BasePicture Invocation (0.0,0.0,0.0,1.0,1.0) : MODULEDEFINITION DateCode_ 1\n"
+        "TYPEDEFINITIONS\n"
+        "   Child = MODULEDEFINITION DateCode_ 2\n"
+        "   ModuleDef\n"
+        "   ClippingBounds = ( -1.0 , -1.0 ) ( 1.0 , 1.0 )\n"
+        "   GraphObjects :\n"
+        "      CompositeObject\n"
+        "   ENDDEF (*Child*);\n"
+        "SUBMODULES\n"
+        "   Sub Invocation (0.0,0.0,0.0,1.0,1.0) : MODULEDEFINITION DateCode_ 3\n"
+        "   ModuleDef\n"
+        "   ClippingBounds = ( -1.0 , -1.0 ) ( 1.0 , 1.0 )\n"
+        "   GraphObjects :\n"
+        "      CompositeObject\n"
+        "   ENDDEF (*Sub*) ;\n"
+        "ModuleDef\n"
+        "ClippingBounds = ( -1.0 , -1.0 ) ( 1.0 , 1.0 )\n"
+        "GraphObjects :\n"
+        "   CompositeObject\n"
+        "ENDDEF (*BasePicture*);\n"
+    )
+
+
+def test_composite_markers_follow_the_native_declaration_order() -> None:
+    """005ccaa0: module types, then inline submodules, then the own ModuleDef.
+
+    The companion cursor is opened before the recursive parse starts, so the
+    first record belongs to the first marker the declaration loop reaches - a
+    module type here, not the enclosing BasePicture's own ModuleDef.
+    """
+    picture = parse_source_text(_nested_marker_source())
+
+    type_marker, sub_marker, own_marker = _section_markers(picture)
+
+    markers = parsed_markers(picture)
+
+    # Identity, not equality: every marker is an equal `GraphObject`.
+    assert len(markers) == 3
+    assert markers[0] is type_marker
+    assert markers[1] is sub_marker
+    assert markers[2] is own_marker
+
+
+def test_composite_markers_carry_a_span_and_pairs_expose_it() -> None:
+    """A paired marker must be pointable-at in the source (diagnostics/UI)."""
+    picture = parse_source_text(
+        '"Syntax version 2.23, date: 2026-10-27-12:00:00.000 N"\n'
+        '"Original file date: ---"\n'
+        '"Program date: 2026-10-27-12:00:00.000, name: Span"\n'
+        "BasePicture Invocation (0.0,0.0,0.0,1.0,1.0) : MODULEDEFINITION DateCode_ 1\n"
+        "ModuleDef\n"
+        "ClippingBounds = ( -1.0 , -1.0 ) ( 1.0 , 1.0 )\n"
+        "GraphObjects :\n"
+        "   CompositeObject Layer_ = 2\n"
+        "ENDDEF (*BasePicture*);\n"
+    )
+
+    module_def = picture.moduledef
+    assert module_def is not None
+    graph_objects = module_def.graph_objects
+    assert graph_objects is not None
+    marker = graph_objects[0]
+    assert marker.span is not None
+    assert (marker.span.line, marker.span.column) == (8, 4)
+
+    model = parse_graphics_text(_companion(*_family_4_lines()))
+    pairs, messages = correlate_composites(picture, model)
+
+    assert messages == ()
+    assert pairs[0].marker_span == marker.span
+
+
+def test_correlate_composites_pairs_records_in_declaration_order() -> None:
+    picture = parse_source_text(_nested_marker_source())
+    model = parse_graphics_text(_companion(*_family_4_lines(), *_family_4_lines(), *_family_4_lines()))
+
+    pairs, messages = correlate_composites(picture, model)
+
+    assert [pair.record.ordinal for pair in pairs] == [1, 2, 3]
+    assert [pair.marker_ordinal for pair in pairs] == [1, 2, 3]
+    assert messages == ()
 
 
 def test_correlate_composites_walks_submodules_and_module_types():
