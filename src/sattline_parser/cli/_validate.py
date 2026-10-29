@@ -40,7 +40,7 @@ def analyse(name: str, text: str, *, absolute: bool) -> Analysis:
     return Analysis(findings=findings, summary=summarise(name, text, picture))
 
 
-def summarise(name: str, text: str, picture: BasePicture) -> dict[str, Any]:
+def summarise(name: str, text: str, picture: BasePicture, *, coded: bool = False) -> dict[str, Any]:
     """A structural summary of one unit (used by ``parse`` and ``diff``)."""
     moduledef = picture.moduledef
     modulecode = picture.modulecode
@@ -48,7 +48,7 @@ def summarise(name: str, text: str, picture: BasePicture) -> dict[str, Any]:
         "file": name,
         "program": picture.program_name,
         "name": picture.name,
-        "encoding": "coded" if is_compressed(text) else "plain",
+        "encoding": "coded" if coded or is_compressed(text) else "plain",
         "counts": {
             "module_types": len(picture.moduletype_defs),
             "submodules": len(picture.submodules),

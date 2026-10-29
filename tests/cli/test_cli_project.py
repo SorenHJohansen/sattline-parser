@@ -72,7 +72,21 @@ def test_missing_root_and_empty_tree_are_usage_errors(tmp_path, capsys) -> None:
     assert "cannot read" in capsys.readouterr().err
 
     assert main(["project", str(tmp_path)]) == ExitCode.USAGE
-    assert "no source files found" in capsys.readouterr().err
+    assert "no source files directly under" in capsys.readouterr().err
+
+
+def test_sources_nested_below_a_root_are_not_discovered(tmp_path, capsys) -> None:
+    library = tmp_path / "ABBLib"
+    library.mkdir()
+    _program(library, "Base")
+
+    # A root is a library directory: the loader resolves artifacts directly
+    # inside it, so discovery must not promise files it cannot load.
+    assert main(["project", str(tmp_path)]) == ExitCode.USAGE
+    assert "pass each library directory as a root" in capsys.readouterr().err
+
+    assert main(["project", str(library)]) == ExitCode.OK
+    assert "programs: 1" in capsys.readouterr().out
 
 
 def test_strict_load_failure_is_a_finding_and_lenient_continues(tmp_path, capsys) -> None:
@@ -83,8 +97,16 @@ def test_strict_load_failure_is_a_finding_and_lenient_continues(tmp_path, capsys
     assert "cannot load project" in out
     assert "MissingLib" in out
 
-    assert main(["project", str(tmp_path), "--lenient"]) == ExitCode.OK
-    assert "programs: 1" in capsys.readouterr().out
+    # --lenient keeps what loaded, but the omission is a finding, not silence.
+    assert main(["project", str(tmp_path), "--lenient"]) == ExitCode.FINDINGS
+    out = capsys.readouterr().out
+    assert "programs: 1" in out
+    assert "load-skipped MissingLib" in out
+
+    assert main(["project", str(tmp_path), "--lenient", "--json"]) == ExitCode.FINDINGS
+    payload = json.loads(capsys.readouterr().out)
+    assert [row["name"] for row in payload["programs"]] == ["Child"]
+    assert [row["kind"] for row in payload["diagnostics"]] == ["load-skipped"]
 
 
 def test_targets_flag_limits_the_load(tmp_path, capsys) -> None:

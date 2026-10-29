@@ -71,8 +71,10 @@ def register(subparsers: argparse._SubParsersAction[argparse.ArgumentParser]) ->
 def run(args: argparse.Namespace) -> int:
     reject_companion(args.old)
     reject_companion(args.new)
-    old_name, old_text = read_source(args.old, name=args.stdin_name)
-    new_name, new_text = read_source(args.new, name=args.stdin_name)
+    old_source = read_source(args.old, name=args.stdin_name)
+    new_source = read_source(args.new, name=args.stdin_name)
+    old_name, old_text = old_source.name, old_source.text
+    new_name, new_text = new_source.name, new_source.text
     result = compare(
         analyse(old_name, old_text, absolute=False),
         analyse(new_name, new_text, absolute=False),

@@ -201,9 +201,12 @@ class ProjectLoader:
                 sidecar=sidecar,
             )
             self._registry[name.casefold()] = program
-        except ProjectLoadError:
+        except ProjectLoadError as exc:
             if self._strict:
                 raise
+            # Non-strict loading must not be silent: an agent or a CI job has to
+            # be able to tell that a program is missing from the result.
+            self._diagnose(LoadDiagnosticKind.LOAD_SKIPPED, name, f"skipped {name!r}: {exc}")
 
     def _read_deps(
         self,

@@ -41,8 +41,8 @@ def run(args: argparse.Namespace) -> int:
     findings: list[Finding] = []
     for target in args.paths:
         reject_companion(target)
-        name, text = read_source(target, name=args.stdin_name)
-        findings.extend(analyse(name, text, absolute=absolute).findings)
+        source = read_source(target, name=args.stdin_name)
+        findings.extend(analyse(source.name, source.text, absolute=absolute).findings)
     reported = selected_findings(findings, args)
     emit_findings(
         reported,

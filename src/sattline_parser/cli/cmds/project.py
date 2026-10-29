@@ -85,7 +85,8 @@ def run(args: argparse.Namespace) -> int:
     else:
         _emit_programs(programs, edges, load_diagnostics, cycles, args=args)
     failing = bool(cycles) or any(
-        diagnostic.kind is LoadDiagnosticKind.DEPENDENCY_CYCLE for diagnostic in load_diagnostics
+        diagnostic.kind in {LoadDiagnosticKind.DEPENDENCY_CYCLE, LoadDiagnosticKind.LOAD_SKIPPED}
+        for diagnostic in load_diagnostics
     )
     return int(ExitCode.FINDINGS if failing else ExitCode.OK)
 
@@ -102,7 +103,8 @@ def _load(args: argparse.Namespace) -> SattLineProject:
         else _discover_targets(roots, mode=mode)
     )
     if not targets:
-        raise CliError(f"no source files found under {' '.join(str(root) for root in roots)}")
+        roots_text = " ".join(str(root) for root in roots)
+        raise CliError(f"no source files directly under {roots_text}; pass each library directory as a root")
     return SattLineProject.load(
         roots,
         mode=mode,
@@ -113,11 +115,16 @@ def _load(args: argparse.Namespace) -> SattLineProject:
 
 
 def _discover_targets(roots: Sequence[Path], *, mode: LoadMode) -> tuple[str, ...]:
-    """Every program name the roots contain, in the loader's extension precedence."""
+    """Every program name declared *in* the roots, in extension precedence.
+
+    A root is a library directory: the loader indexes the artifacts directly
+    inside it, so discovery looks at the same level rather than walking nested
+    directories it could never resolve.
+    """
     extensions = {extension.lower() for extension in code_ext_candidates(mode)}
     names: set[str] = set()
     for root in roots:
-        for path in root.rglob("*"):
+        for path in root.iterdir():
             if path.is_file() and path.suffix.lower() in extensions:
                 names.add(path.stem)
     return tuple(sorted(names))

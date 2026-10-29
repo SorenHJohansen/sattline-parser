@@ -11,6 +11,7 @@ from pathlib import Path
 
 from .._errors import CliError
 from .._exit import ExitCode
+from .._io import read_source_path
 from .._json import SCHEMA_PREFIX, dumps
 from .._validate import Analysis, analyse
 from ._common import add_output_flags
@@ -76,10 +77,10 @@ def run(args: argparse.Namespace) -> int:
 def _analyse_all(paths: Sequence[Path], *, jobs: int) -> list[CorpusRow]:
     def one(path: Path) -> CorpusRow:
         try:
-            text = path.read_bytes().decode("cp1252")
-        except (OSError, UnicodeDecodeError):
+            source = read_source_path(path)
+        except CliError:
             return CorpusRow(file=str(path), errors=1, warnings=0, rules=(("READ_ERROR", 1),))
-        analysis: Analysis = analyse(str(path), text, absolute=False)
+        analysis: Analysis = analyse(source.name, source.text, absolute=False)
         rules = Counter(finding.rule for finding in analysis.findings)
         errors = sum(1 for finding in analysis.findings if finding.is_error)
         return CorpusRow(

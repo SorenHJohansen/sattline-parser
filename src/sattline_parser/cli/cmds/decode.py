@@ -30,16 +30,16 @@ def register(subparsers: argparse._SubParsersAction[argparse.ArgumentParser]) ->
 
 def run(args: argparse.Namespace) -> int:
     reject_companion(args.path)
-    name, text = read_source(args.path, name=args.stdin_name)
+    source = read_source(args.path, name=args.stdin_name)
     try:
-        document = preprocess_source(text)
+        document = preprocess_source(source.text)
     except PreprocessError as exc:
-        raise CliError(f"{name}: {exc}") from exc
+        raise CliError(f"{source.name}: {exc}") from exc
     report = {
         "schema": f"{SCHEMA_PREFIX}.decode",
-        "file": name,
-        "coded": is_compressed(text) and not document.is_identity(),
-        "original_length": len(text),
+        "file": source.name,
+        "coded": source.coded or (is_compressed(source.text) and not document.is_identity()),
+        "original_length": source.original_length,
         "decoded_length": len(document.normalized_text),
     }
     if args.report:

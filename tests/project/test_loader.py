@@ -258,6 +258,9 @@ def test_load_strict_false_skips_missing_dependency(tmp_path: Path) -> None:
     assert "ghost" not in project
     assert project.dependencies_of("Main") == ("Ghost",)
     assert ("main", "ghost") in project.graph().edges
+    skipped = [d for d in project.diagnostics() if d.kind is LoadDiagnosticKind.LOAD_SKIPPED]
+    assert [d.program for d in skipped] == ["Ghost"]
+    assert "missing code file" in skipped[0].detail
 
 
 def test_load_strict_false_skips_broken_code(tmp_path: Path) -> None:
@@ -268,6 +271,9 @@ def test_load_strict_false_skips_broken_code(tmp_path: Path) -> None:
     project = _load(tmp_path, targets=("Ok", "Main"), strict=False)
     assert "ok" in project and "main" in project
     assert "broken" not in project
+    skipped = [d for d in project.diagnostics() if d.kind is LoadDiagnosticKind.LOAD_SKIPPED]
+    assert [d.program for d in skipped] == ["Broken"]
+    assert "failed to parse" in skipped[0].detail
 
 
 def test_load_draft_fallback_extensions(tmp_path: Path) -> None:
