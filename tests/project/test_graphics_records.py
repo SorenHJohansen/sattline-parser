@@ -158,6 +158,16 @@ def test_scanner_reports_unexpected_token() -> None:
     assert excinfo.value.message == "Malformed graphics record: expected a floating-point number"
 
 
+def test_scanner_more_reports_a_same_line_field() -> None:
+    scanner = _Scanner(_companion(" 12  rest", " 34"))
+
+    _ = scanner.read_int()
+    assert scanner.more() is True
+    scanner.end_line()
+    _ = scanner.read_int()
+    assert scanner.more() is False
+
+
 # --- syntax version -------------------------------------------------------------
 
 
@@ -225,35 +235,253 @@ def test_family_4_without_optional_word() -> None:
 # --- family 1 -------------------------------------------------------------------
 
 
-def test_family_1_record_with_transcribed_discriminators() -> None:
+def test_family_1_discriminators_5_and_6() -> None:
     text = _with_header(
         " 1",
         " None  True   0.0 0.0",
         "  1.0 1.0",
-        " -1 1 0 Var 0 8 ResetCnt",
-        " 4 inline payload",
+        " -1",
         " 5 1.5 2",
         " 6 2.5 3",
-        " 7 another inline payload",
         " 0",
     )
 
-    [record] = read_companion_records(text).records
-    assert (record.family_code, record.start_line, record.end_line) == (1, 3, 11)
+    companion = read_companion_records(text)
+
+    assert companion.error is None
+    [record] = companion.records
+    assert (record.family_code, record.start_line, record.end_line) == (1, 3, 9)
 
 
-def test_family_1_unrecovered_payload_stops_with_warning() -> None:
-    companion = read_companion_records(
-        _with_header(" 1", " None  True  0.0 0.0", " 0.0 0.0", " -1", " 1 payload", " 0")
+def test_family_1_subrecord_1_field_consumption() -> None:
+    """004dcc30: D[3], two B11 bindings, H[2], I[2]; no optional tail here."""
+    text = _with_header(
+        " 1",
+        " None  True  0.0 0.0",
+        " 0.0 0.0",
+        " 0",
+        " 1",
+        " 0.0 1.0 2.0",
+        " Var 1 1 A Var 2 1 B",
+        " 5 6 7 8",
+        " 0",
     )
 
-    assert companion.records == ()
-    assert companion.error is not None
-    assert companion.error.severity == "warning"
-    assert (
-        companion.error.message
-        == "Graphics record content is not recovered for family 1 discriminator 1; record scan stopped"
+    companion = read_companion_records(text)
+
+    assert companion.error is None
+    [record] = companion.records
+    assert record.end_line == 11
+
+
+def test_family_1_subrecord_1_optional_tail() -> None:
+    """004dcc30: every ``if MORE()`` gate fires on one line."""
+    text = _with_header(
+        " 1",
+        " None  True  0.0 0.0",
+        " 0.0 0.0",
+        " 0",
+        " 1",
+        " 0.0 1.0 2.0",
+        " Var 1 1 A Var 2 1 B",
+        " 5 6  7 8  9 Var 1 1 Z  2.5  3 4 Var 2 2 Y  5 Var 5 1 Q  6",
+        " Var 3 1 P 7 Var 4 1 R 8 Var 5 1 S",
+        " 0",
     )
+
+    companion = read_companion_records(text)
+
+    assert companion.error is None
+    [record] = companion.records
+    assert record.end_line == 12
+
+
+def test_family_1_subrecord_2_optional_tail() -> None:
+    """004f1950: every ``if MORE()`` gate fires before the 2.7 trailing block."""
+    text = _with_header(
+        " 1",
+        " None  True  0.0 0.0",
+        " 0.0 0.0",
+        " 0",
+        " 2",
+        " 0.0 1.0 2.0",
+        " Lit 1.5 1 a Lit 2.5 1 b",
+        " 3 4 5 6  7  1.5 2.5 Var 1 1 B  Var 2 1 c Var 3 1 d  8",
+        " Var 4 1 e",
+        " Var 5 1 h",
+        " Lit 5.5 1 f Lit 6.5 1 g",
+        " 0",
+    )
+
+    companion = read_companion_records(text)
+
+    assert companion.error is None
+    [record] = companion.records
+    assert record.end_line == 14
+
+
+def test_family_1_subrecord_2_without_pre_2_7_block() -> None:
+    """From 2.7 on the reader always takes the four trailing fields."""
+    text = _with_header(
+        " 1",
+        " None  True  0.0 0.0",
+        " 0.0 0.0",
+        " 0",
+        " 2",
+        " 0.0 1.0 2.0",
+        " Lit 1.5 1 a Lit 2.5 1 b",
+        " 3 4 5 6",
+        " Var 1 1 Z 2.5",
+        " Lit 3.5 1 c Lit 4.5 1 d",
+        " 0",
+    )
+
+    companion = read_companion_records(text)
+
+    assert companion.error is None
+    [record] = companion.records
+    assert record.end_line == 13
+
+
+def test_family_1_subrecord_2_pre_2_7_skips_trailing_fields() -> None:
+    """0062e800 sets DAT_00845343 before 2.7, and the reader skips that block."""
+    lines = [
+        " 1",
+        " None  True  0.0 0.0",
+        " 0.0 0.0",
+        " 0",
+        " 2",
+        " 0.0 1.0 2.0",
+        " Lit 1.5 1 a Lit 2.5 1 b",
+        " 3 4 5 6",
+        " 0",
+    ]
+
+    companion = read_companion_records(_with_header(*lines).replace("Syntax version 2.23", "Syntax version 2.6"))
+
+    assert companion.error is None
+    [record] = companion.records
+    assert record.end_line == 11
+
+
+def test_family_1_subrecord_3_trailing_block() -> None:
+    """004d1fc0: the eight END/field pairs are read from 2.18 on."""
+    lines = [
+        " 1",
+        " None  True  0.0 0.0",
+        " 0.0 0.0",
+        " 0",
+        " 3",
+        " 1 Lit 2.5 1 a 10 11 12",
+        " None 1",
+        " None 2",
+        " None 3",
+        " None 4",
+        " None 5",
+        " None 6",
+        " None 7",
+        " None 8",
+        " 0",
+    ]
+
+    companion = read_companion_records(_with_header(*lines))
+
+    assert companion.error is None
+    [record] = companion.records
+    assert record.end_line == 17
+
+
+def test_family_1_subrecord_3_skips_trailing_block_before_2_18() -> None:
+    lines = [
+        " 1",
+        " None  True  0.0 0.0",
+        " 0.0 0.0",
+        " 0",
+        " 3",
+        " 1 Lit 2.5 1 a 10 11 12",
+        " 0",
+    ]
+
+    companion = read_companion_records(_with_header(*lines).replace("Syntax version 2.23", "Syntax version 2.17"))
+
+    assert companion.error is None
+    [record] = companion.records
+    assert record.end_line == 9
+
+
+def test_family_1_subrecord_3_optional_tail() -> None:
+    """004d1fc0: every ``if MORE()`` gate fires before the trailing block."""
+    lines = [
+        " 1",
+        " None  True  0.0 0.0",
+        " 0.0 0.0",
+        " 0",
+        " 3",
+        " 1 Lit 2.5 1 a 10 11 12  Var 1 1 b Var 2 1 c  Var 3 1 d  14 Var 4 1 e"
+        "  Var 5 1 f  Var 6 1 g Var 7 1 h  15  Var 8 1 i  Var 9 1 j Var 10 1 k Var 11 1 l  16",
+        " Var 12 1 m 17 Var 13 1 n",
+        " None 1",
+        " None 2",
+        " None 3",
+        " None 4",
+        " None 5",
+        " None 6",
+        " None 7",
+        " None 8",
+        " 0",
+    ]
+
+    companion = read_companion_records(_with_header(*lines))
+
+    assert companion.error is None
+    [record] = companion.records
+    assert record.end_line == 18
+
+
+def test_family_1_subrecord_7() -> None:
+    """004e5410 case 7: D[4], H[2], I, optional I."""
+    text = _with_header(" 1", " None  True  0.0 0.0", " 0.0 0.0", " 0", " 7", " 0.1 0.2 0.3 0.4", " -1 -1 5  6", " 0")
+
+    companion = read_companion_records(text)
+
+    assert companion.error is None
+    [record] = companion.records
+    assert record.end_line == 10
+
+
+def test_family_1_subrecord_4_crosses_a_newline() -> None:
+    """004e5410 case 4: the second required I of ``I[2]`` sits on the next line."""
+    text = _with_header(
+        " 1",
+        " None  True  0.0 0.0",
+        " 0.0 0.0",
+        " 0",
+        " 4",
+        " 1 1 Var 50.0 9 Value.Max 1",
+        " 1 0.6667 Var 31 1 a Var 32 1 b None -1",
+        " 0",
+    )
+
+    companion = read_companion_records(text)
+
+    assert companion.error is None
+    [record] = companion.records
+    assert record.end_line == 10
+
+
+def test_family_1_unrecovered_discriminators_stop_with_warning() -> None:
+    for discriminator in (8, 9, -3):
+        companion = read_companion_records(
+            _with_header(" 1", " None  True  0.0 0.0", " 0.0 0.0", " 0", f" {discriminator} payload", " 0")
+        )
+
+        assert companion.records == ()
+        assert companion.error is not None
+        assert companion.error.severity == "warning"
+        assert (
+            companion.error.message
+            == f"Graphics record content is not recovered for family 1 discriminator {discriminator}; record scan stopped"
+        )
 
 
 # --- family 2 -------------------------------------------------------------------
@@ -266,22 +494,44 @@ def test_family_2_record_with_transcribed_discriminators() -> None:
         "  1.0 1.0",
         " 6",
         " 3",
+        " 1 Lit 1.5 1 a Lit 2.5 1 b 0.0 1.0 2.0 3 4",
         " 2 Var 1.5 3 abc 2.5",
-        " 3 0.1 0.2 1 2 3",
-        " 4 9 0.5 4 5 6",
+        " 3 Var 1.5 1 a 0.1 0.2 1 2 3  None 4 None 5",
+        " 4 9 Var 0.5 1 x 4 5 6  7.5 Var 1 1 y Var 2 1 z",
         " 0",
     )
 
-    [record] = read_companion_records(text).records
-    assert (record.family_code, record.start_line, record.end_line) == (2, 3, 11)
+    companion = read_companion_records(text)
+
+    assert companion.error is None
+    [record] = companion.records
+    assert (record.family_code, record.start_line, record.end_line) == (2, 3, 12)
+
+
+def test_family_2_subrecord_1_optional_tail() -> None:
+    text = _with_header(
+        " 2",
+        " None  True   0.0 0.0",
+        "  1.0 1.0",
+        " 6",
+        " 3",
+        " 1 Lit 1.5 1 a Lit 2.5 1 b 0.0 1.0 2.0 3 4  5  6.5 7.5 Var 8 1 c 9 10",
+        " 0",
+    )
+
+    companion = read_companion_records(text)
+
+    assert companion.error is None
+    [record] = companion.records
+    assert record.end_line == 9
 
 
 def test_family_2_unrecovered_payload_stops_with_warning() -> None:
-    companion = read_companion_records(_with_header(" 2", " None  True  0.0 0.0", " 0.0 0.0", " 6", " 3", " 1 x", " 0"))
+    companion = read_companion_records(_with_header(" 2", " None  True  0.0 0.0", " 0.0 0.0", " 6", " 3", " 7 x", " 0"))
 
     assert companion.error is not None
     assert companion.error.severity == "warning"
-    assert companion.error.message.startswith("Graphics record content is not recovered for family 2 discriminator 1")
+    assert companion.error.message.startswith("Graphics record content is not recovered for family 2 discriminator 7")
 
 
 # --- family 5, subtype 1 --------------------------------------------------------
@@ -356,6 +606,10 @@ def test_family_5_subtype_2_literal_entry_and_binding_default() -> None:
     ]
     assert record.entries[0].column == 5
     assert record.end_line == 13
+    # The inline default of this record is a binding, not a literal path.
+    default = record.default_entry
+    assert default is not None
+    assert (default.index, default.kind, default.text) == (1, "variable_invalid", "Paths.OperationPath")
 
 
 def test_family_5_subtype_2_variable_entries_and_inline_default() -> None:
@@ -382,6 +636,9 @@ def test_family_5_subtype_2_variable_entries_and_inline_default() -> None:
         (1, "variable_invalid", "PathOK", 21),
         (2, "variable_invalid", "PathNotOK", 21),
     ]
+    default = record.default_entry
+    assert default is not None
+    assert (default.index, default.kind, default.text) == (0, "literal", "")
 
 
 def test_family_5_subtype_2_row_kinds() -> None:
@@ -478,6 +735,26 @@ def test_family_5_subtype_2_without_shape_byte_for_218() -> None:
     assert companion.error is None
     [record] = companion.records
     assert record.end_line == 11
+
+
+def test_picture_display_default_word_reader_before_0_100() -> None:
+    """00733520 reads the inline default with WORD2() for major 0, minor < 100."""
+    scanner, _version = _open_companion(_companion(" 0   first second"))
+
+    entry = _read_picture_display_default(scanner, GraphicsSyntaxVersion(major=0, minor=97))
+
+    assert (entry.index, entry.kind, entry.text) == (0, "literal", "first")
+    assert scanner.read_word() == "second"
+
+
+def test_picture_display_default_line_reader_from_0_100() -> None:
+    """Any other version uses LINE(), so the whole rest of the line is the path."""
+    scanner, _version = _open_companion(_companion(" 0   first second", "next"))
+
+    entry = _read_picture_display_default(scanner, GraphicsSyntaxVersion(major=2, minor=23))
+
+    assert (entry.index, entry.kind, entry.text) == (0, "literal", "first second")
+    assert scanner.read_word() == "next"
 
 
 def test_family_5_unsupported_subtype_reports_error() -> None:
@@ -620,8 +897,9 @@ def test_modern_binding_var_not_baseline_reads_a_second_reference() -> None:
 def test_picture_display_default_reads_binding_when_discriminator_is_set() -> None:
     scanner, version = _open_companion(_companion(" 1 Var Invalid 3 abc rest", "next"))
 
-    _read_picture_display_default(scanner, version)
+    entry = _read_picture_display_default(scanner, version)
 
+    assert (entry.index, entry.kind, entry.text) == (1, "variable_invalid", "abc")
     assert scanner.read_word() == "next"
 
 

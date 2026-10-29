@@ -14,7 +14,7 @@ from sattline_parser.grammar import constants as const
 from sattline_parser.models.ast_model import GraphObject, InteractObject
 
 from ._comments_mixin import is_comment_tree
-from ._module_shared import InterimCoords
+from ._module_shared import InterimCoords, meta_span, v_args
 
 TransformerItem = object
 TransformerTree = Tree[object]
@@ -262,22 +262,25 @@ class _GraphicsInteractMixin:
         return go
 
     def composite_object(self, items: list[TransformerItem]) -> GraphObject:
-        """Grammar composite_object -> GraphObject (COMPOSITEOBJECT)."""
+        """Grammar composite_object -> GraphObject (COMPOSITEOBJECT).
+
+        The marker takes only the layer clause (``Layer_ = <int>``); the layer is
+        stored under the same key ``common_properties`` uses for other objects.
+        """
         go = GraphObject(const.GRAMMAR_VALUE_COMPOSITEOBJECT)
         properties = _graph_properties(go)
-        _coord_payloads, coord_tails = _coord_parts(self, items)
-        tails = _merged_tails(self, items, coord_tails)
-        if tails:
-            properties[const.KEY_TAILS] = tails
-        self._apply_common_properties(properties, items)
+        for it in items:
+            if isinstance(it, int):
+                properties["layer"] = it
         return go
 
     def connection_node_bare(self, _items: list[TransformerItem]) -> GraphObject:
         """Grammar connection_node_bare -> standalone ConnectionNode object."""
         return GraphObject(const.GRAMMAR_VALUE_CONNECTIONNODE)
 
-    def graph_object(self, items: list[TransformerItem]) -> GraphObject:
-        """Grammar graph_object -> GraphObject with optional layer."""
+    @v_args(meta=True)
+    def graph_object(self, meta: Any, items: list[TransformerItem]) -> GraphObject:
+        """Grammar graph_object -> GraphObject with optional layer and its span."""
         obj: GraphObject | None = None
         layer: int | None = None
         for it in items:
@@ -298,6 +301,7 @@ class _GraphicsInteractMixin:
 
         if layer is not None:
             _graph_properties(obj)["layer"] = layer
+        obj.span = meta_span(meta)
 
         return obj
 
@@ -556,6 +560,37 @@ class _GraphicsInteractMixin:
             elif not isinstance(it, Token):
                 tail = it
         return {const.KEY_NAME: name, const.KEY_EXTRA: extra, const.KEY_TAIL: tail}
+
+    def interact_scale_selector(self, items: list[TransformerItem]) -> dict[str, object]:
+        """Grammar interact_scale_selector -> scale mode (native +0x1C8)."""
+        for it in items:
+            if isinstance(it, Token):
+                folded = str(it).casefold()
+                if folded == const.GRAMMAR_VALUE_RELATIVE.casefold():
+                    return {const.KEY_SCALE_MODE: "relative"}
+                if folded == const.GRAMMAR_VALUE_ABS.casefold():
+                    return {const.KEY_SCALE_MODE: "abs"}
+        raise ValueError(f"interact_scale_selector expected Relative_/Abs_; got: {items!r}")
+
+    def interact_pick_button(self, items: list[TransformerItem]) -> dict[str, object]:
+        """Grammar interact_pick_button -> pick-button clause (native 006573b0).
+
+        `VarName` is a postfix marker, so the string is a reference when it is
+        present and a literal otherwise.
+        """
+        text: str | None = None
+        is_reference = False
+        for it in items:
+            # Lark tokens subclass ``str``, so the token check must come first.
+            if isinstance(it, Token):
+                if it.type == const.TOKEN_VARNAME:
+                    is_reference = True
+                continue
+            if isinstance(it, str) and text is None:
+                text = it
+        if text is None:
+            raise ValueError(f"interact_pick_button expected a STRING; got: {items!r}")
+        return {const.KEY_PICK_BUTTON: {"value": text, "is_reference": is_reference}}
 
     def interact_value_line(self, items: list[TransformerItem]) -> list[TransformerItem]:
         """Grammar interact_value_line -> list of interact value items."""

@@ -67,6 +67,19 @@ class GraphicsSyntaxVersion:
         """``major == 0 and minor <= 96`` selects ``007333c0`` (no shape byte)."""
         return self.major == 0 and self.minor <= 96
 
+    def is_at_or_after(self, major: int, minor: int) -> bool:
+        """Inverse of :meth:`is_before`, named for the recovered flag polarity."""
+        return not self.is_before(major, minor)
+
+    def is_before(self, major: int, minor: int) -> bool:
+        """Whether this version precedes ``major.minor``.
+
+        Two recovered global flags gate older trailing fields: ``0062e800`` sets
+        ``DAT_00845343`` for versions before 2.7 (family 1 subrecord 2) and
+        ``DAT_0084538e`` for versions before 2.18 (family 1 subrecord 3).
+        """
+        return (self.major, self.minor) < (major, minor)
+
 
 #: Assumed version when a companion file carries no ``" Syntax version x.y``
 #: header line (synthetic fixtures). Modern layout, so no legacy branch.
@@ -123,6 +136,9 @@ class GraphicsRecord:
     end_line: int
     subtype: int | None = None
     entries: tuple[GraphicsRecordEntry, ...] = ()
+    #: Inline default payload of a picture display (``default_disc``/`text`),
+    #: which is the path used when no entry matches. ``None`` for other records.
+    default_entry: GraphicsRecordEntry | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -141,6 +157,8 @@ class _BaselineKind(StrEnum):
     B2 = "b2"  # I
     B3 = "b3"  # F
     B4 = "b4"  # WORD2(); "Invalid" collapses to an empty string
+    B11 = "b11"  # WORD2() — same consumption as B4, different payload meaning
+    B12 = "b12"  # WORD2() — same consumption as B4, different payload meaning
 
 
 @dataclass(frozen=True, slots=True)
@@ -241,6 +259,17 @@ class _Scanner:
         if char is None:
             self._fail_unterminated()
         return char
+
+    def more(self) -> bool:
+        """``MORE()`` (``0042ec70``) — an optional same-line field follows.
+
+        The native helper tests only for LF and never skips whitespace. A CRLF
+        companion leaves the CR in place after a numeric read, so both line-break
+        bytes count as "nothing more on this line"; after a word the native
+        reader has already consumed that CR, which is what this matches.
+        """
+        char = self._peek()
+        return char is not None and char not in "\r\n"
 
     def at_record_start(self) -> bool:
         """Whether the next byte can open a record (a family or subtype number)."""
@@ -407,13 +436,14 @@ def _read_record(scanner: _Scanner, version: GraphicsSyntaxVersion, start_line: 
         _read_family_4(scanner)
         return GraphicsRecord(family_code=family, start_line=start_line, end_line=scanner.value_line)
     if family == 5:
-        subtype, entries = _read_family_5(scanner, version)
+        subtype, entries, default_entry = _read_family_5(scanner, version)
         return GraphicsRecord(
             family_code=family,
             start_line=start_line,
             end_line=scanner.value_line,
             subtype=subtype,
             entries=entries,
+            default_entry=default_entry,
         )
     raise GraphicsRecordError(f"Unsupported graphics record family {family}", line=start_line)
 
@@ -437,6 +467,16 @@ def _read_ints(scanner: _Scanner, count: int) -> None:
         scanner.read_int()
 
 
+def _read_float(scanner: _Scanner, count: int) -> None:
+    for _ in range(count):
+        scanner.read_float()
+
+
+def _read_bindings(scanner: _Scanner, kind: _BaselineKind, version: GraphicsSyntaxVersion, count: int) -> None:
+    for _ in range(count):
+        _read_binding(scanner, kind, version)
+
+
 def _read_family_1(scanner: _Scanner, version: GraphicsSyntaxVersion) -> None:
     """``004e5410``: ``B1, D4, H, [I2], [B2], END; disc loop``."""
     scanner.mark()
@@ -450,20 +490,163 @@ def _read_family_1(scanner: _Scanner, version: GraphicsSyntaxVersion) -> None:
         discriminator = scanner.read_int()
         if discriminator == 0:
             break
-        _read_family_1_payload(scanner, discriminator)
+        _read_family_1_payload(scanner, discriminator, version)
         scanner.end_line()
     scanner.end_line()
 
 
-def _read_family_1_payload(scanner: _Scanner, discriminator: int) -> None:
+def _read_family_1_payload(scanner: _Scanner, discriminator: int, version: GraphicsSyntaxVersion) -> None:
+    """Per-discriminator payload; every reader returns before the outer ``END()``."""
+    if discriminator == 1:
+        _read_family_1_subrecord_1(scanner, version)
+        return
+    if discriminator == 2:
+        _read_family_1_subrecord_2(scanner, version)
+        return
+    if discriminator == 4:
+        _read_family_1_subrecord_4(scanner, version)
+        return
+    if discriminator == 3:
+        _read_family_1_subrecord_3(scanner, version)
+        return
     if discriminator in {5, 6}:
         scanner.read_float()
         scanner.read_short()
         return
-    if discriminator in {4, 7}:
-        # Inline payloads: the trailing END owns the rest of the line.
+    if discriminator == 7:
+        _read_family_1_subrecord_7(scanner)
         return
     _fail_unrecovered(scanner, f"family 1 discriminator {discriminator}")
+
+
+def _read_family_1_subrecord_1(scanner: _Scanner, version: GraphicsSyntaxVersion) -> None:
+    """``004dcc30`` — family 1, discriminator 1."""
+    _read_doubles(scanner, 3)
+    _read_binding(scanner, _BaselineKind.B11, version)
+    _read_binding(scanner, _BaselineKind.B11, version)
+    _read_ints(scanner, 2)  # H[2]
+    _read_ints(scanner, 2)  # I[2]
+    if scanner.more():
+        scanner.read_int()
+        _read_binding(scanner, _BaselineKind.B11, version)
+    if scanner.more():
+        scanner.read_float()
+    if scanner.more():
+        _read_ints(scanner, 2)
+        _read_binding(scanner, _BaselineKind.B12, version)
+    if scanner.more():
+        _read_binding(scanner, _BaselineKind.B11, version)
+    if scanner.more():
+        scanner.read_int()
+        scanner.end_line()
+        _read_binding(scanner, _BaselineKind.B1, version)
+        scanner.read_int()
+        _read_binding(scanner, _BaselineKind.B1, version)
+        scanner.read_int()
+        _read_binding(scanner, _BaselineKind.B1, version)
+
+
+def _read_family_1_subrecord_4(scanner: _Scanner, version: GraphicsSyntaxVersion) -> None:
+    """``004e5410`` case 4.
+
+    ``I[2]`` is read with one ``scanf("%d%d")``, so the second integer may sit on
+    the next physical line; the following ``MORE()`` is evaluated only after both
+    have been read.
+    """
+    _read_ints(scanner, 2)
+    _read_binding(scanner, _BaselineKind.B3, version)
+    _read_ints(scanner, 2)
+    if scanner.more():
+        scanner.read_float()
+        _read_binding(scanner, _BaselineKind.B2, version)
+        _read_binding(scanner, _BaselineKind.B2, version)
+    if scanner.more():
+        _read_binding(scanner, _BaselineKind.B2, version)
+
+
+def _read_family_1_subrecord_7(scanner: _Scanner) -> None:
+    """``004e5410`` case 7: ``D[4], H[2], I, [I]``."""
+    _read_doubles(scanner, 4)
+    _read_ints(scanner, 2)  # H[2]
+    scanner.read_int()
+    if scanner.more():
+        scanner.read_int()
+
+
+def _read_family_1_subrecord_2(scanner: _Scanner, version: GraphicsSyntaxVersion) -> None:
+    """``004f1950`` — family 1, discriminator 2."""
+    _read_doubles(scanner, 3)
+    _read_binding(scanner, _BaselineKind.B3, version)
+    _read_binding(scanner, _BaselineKind.B3, version)
+    scanner.read_int()
+    scanner.read_short()
+    _read_ints(scanner, 2)
+    if scanner.more():
+        scanner.read_int()
+    if scanner.more():
+        _read_float(scanner, 2)
+        _read_binding(scanner, _BaselineKind.B2, version)
+    if scanner.more():
+        _read_binding(scanner, _BaselineKind.B4, version)
+        _read_binding(scanner, _BaselineKind.B1, version)
+    if scanner.more():
+        scanner.read_int()
+        scanner.end_line()
+        _read_binding(scanner, _BaselineKind.B1, version)
+    # 0062e800 sets DAT_00845343 for versions *before* 2.7, and the reader takes
+    # its trailing block when that flag is clear.
+    if version.is_at_or_after(2, 7):
+        _read_binding(scanner, _BaselineKind.B1, version)
+        scanner.end_line()
+        _read_binding(scanner, _BaselineKind.B3, version)
+        _read_binding(scanner, _BaselineKind.B3, version)
+
+
+def _read_family_1_subrecord_3(scanner: _Scanner, version: GraphicsSyntaxVersion) -> None:
+    """``004d1fc0`` — family 1, discriminator 3."""
+    scanner.read_int()
+    _read_binding(scanner, _BaselineKind.B3, version)
+    _read_ints(scanner, 3)
+    if scanner.more():
+        _read_binding(scanner, _BaselineKind.B2, version)
+        _read_binding(scanner, _BaselineKind.B2, version)
+    if scanner.more():
+        _read_binding(scanner, _BaselineKind.B1, version)
+    if scanner.more():
+        scanner.read_int()
+        _read_binding(scanner, _BaselineKind.B4, version)
+    if scanner.more():
+        _read_binding(scanner, _BaselineKind.B12, version)
+    if scanner.more():
+        _read_binding(scanner, _BaselineKind.B4, version)
+        _read_binding(scanner, _BaselineKind.B4, version)
+    if scanner.more():
+        scanner.read_int()
+    if scanner.more():
+        _read_binding(scanner, _BaselineKind.B1, version)
+    if scanner.more():
+        _read_bindings(scanner, _BaselineKind.B2, version, 3)
+    if scanner.more():
+        scanner.read_int()
+        scanner.end_line()
+        _read_binding(scanner, _BaselineKind.B1, version)
+        scanner.read_int()
+        _read_binding(scanner, _BaselineKind.B2, version)
+    # 0062e800 sets DAT_0084538e for versions *before* 2.18, and the reader takes
+    # its trailing block when that flag is clear.
+    if version.is_at_or_after(2, 18):
+        for kind in (
+            _BaselineKind.B2,
+            _BaselineKind.B12,
+            _BaselineKind.B12,
+            _BaselineKind.B2,
+            _BaselineKind.B2,
+            _BaselineKind.B1,
+            _BaselineKind.B3,
+            _BaselineKind.B1,
+        ):
+            scanner.end_line()
+            _read_binding(scanner, kind, version)
 
 
 def _read_family_2(scanner: _Scanner, version: GraphicsSyntaxVersion) -> None:
@@ -486,22 +669,46 @@ def _read_family_2(scanner: _Scanner, version: GraphicsSyntaxVersion) -> None:
 
 
 def _read_family_2_payload(scanner: _Scanner, discriminator: int, version: GraphicsSyntaxVersion) -> None:
+    if discriminator == 1:
+        _read_family_2_subrecord_1(scanner, version)
+        return
     if discriminator == 2:
         _read_binding(scanner, _BaselineKind.B3, version)
         scanner.read_float()  # F
         return
     if discriminator == 3:
+        # The corpus writes `3 <B3 binding> <D2> <I3> [B2 B2]`; the transcribed
+        # "D2, I3" omitted the leading binding (see the note in
+        # docs/graphics_parity.md).
+        _read_binding(scanner, _BaselineKind.B3, version)
         _read_doubles(scanner, 2)  # D2
         _read_ints(scanner, 3)  # I3
-        # [B2, B2] is an optional same-line pair; the trailing END owns it.
+        if scanner.more():
+            _read_binding(scanner, _BaselineKind.B2, version)
+            _read_binding(scanner, _BaselineKind.B2, version)
         return
     if discriminator == 4:
         scanner.read_int()  # I
-        scanner.read_float()  # B3
+        _read_binding(scanner, _BaselineKind.B3, version)
         _read_ints(scanner, 3)  # I3
         # [F, B2, B2] is an optional same-line triple; the trailing END owns it.
         return
     _fail_unrecovered(scanner, f"family 2 discriminator {discriminator}")
+
+
+def _read_family_2_subrecord_1(scanner: _Scanner, version: GraphicsSyntaxVersion) -> None:
+    """``00417930`` — family 2, discriminator 1."""
+    _read_binding(scanner, _BaselineKind.B3, version)
+    _read_binding(scanner, _BaselineKind.B3, version)
+    _read_doubles(scanner, 3)
+    _read_ints(scanner, 2)
+    if scanner.more():
+        scanner.read_int()
+    if scanner.more():
+        _read_float(scanner, 2)
+        _read_binding(scanner, _BaselineKind.B2, version)
+        scanner.read_short()
+        scanner.read_int()
 
 
 def _read_family_4(scanner: _Scanner) -> None:
@@ -516,7 +723,9 @@ def _read_family_4(scanner: _Scanner) -> None:
     scanner.end_line()
 
 
-def _read_family_5(scanner: _Scanner, version: GraphicsSyntaxVersion) -> tuple[int, tuple[GraphicsRecordEntry, ...]]:
+def _read_family_5(
+    scanner: _Scanner, version: GraphicsSyntaxVersion
+) -> tuple[int, tuple[GraphicsRecordEntry, ...], GraphicsRecordEntry | None]:
     """``004ac980``: common properties, subtype, then the subtype reader."""
     scanner.mark()
     _read_binding(scanner, _BaselineKind.B1, version)
@@ -527,12 +736,13 @@ def _read_family_5(scanner: _Scanner, version: GraphicsSyntaxVersion) -> tuple[i
     scanner.end_line()
     if subtype == 1:
         _read_picture_display_table(scanner, version)
-        return subtype, ()
+        return subtype, (), None
     if subtype == 2:
         if version.uses_legacy_picture_display:
             _read_picture_display_legacy(scanner, version)
-            return subtype, ()
-        return subtype, _read_picture_display(scanner, version)
+            return subtype, (), None
+        entries, default_entry = _read_picture_display(scanner, version)
+        return subtype, entries, default_entry
     raise GraphicsRecordError(f"Unsupported graphics record subtype {subtype}", line=scanner.value_line)
 
 
@@ -561,7 +771,9 @@ def _read_indexed_text_entries(scanner: _Scanner, count: int) -> None:
         scanner.read_line()
 
 
-def _read_picture_display(scanner: _Scanner, version: GraphicsSyntaxVersion) -> tuple[GraphicsRecordEntry, ...]:
+def _read_picture_display(
+    scanner: _Scanner, version: GraphicsSyntaxVersion
+) -> tuple[tuple[GraphicsRecordEntry, ...], GraphicsRecordEntry]:
     """``00733520``: picture-display subtype 2 for ``major != 0 or minor > 96``."""
     _read_binding(scanner, _BaselineKind.B4, version)
     _read_binding(scanner, _BaselineKind.B2, version)
@@ -569,7 +781,6 @@ def _read_picture_display(scanner: _Scanner, version: GraphicsSyntaxVersion) -> 
     scanner.end_line()
     entries: list[GraphicsRecordEntry] = []
     for _ in range(max(count, 0)):
-        entry_line = scanner.line
         index = scanner.read_int()
         discriminator = scanner.read_int()
         if discriminator == 0:
@@ -585,9 +796,9 @@ def _read_picture_display(scanner: _Scanner, version: GraphicsSyntaxVersion) -> 
                 )
             )
             continue
-        entries.append(_binding_entry(scanner, version, index=index, line=entry_line))
+        entries.append(_binding_entry(scanner, version, index=index))
         scanner.end_line()
-    _read_picture_display_default(scanner, version)
+    default_entry = _read_picture_display_default(scanner, version)
     _read_binding(scanner, _BaselineKind.B1, version)
     if version.reads_picture_shape_byte:
         scanner.end_line()
@@ -595,19 +806,36 @@ def _read_picture_display(scanner: _Scanner, version: GraphicsSyntaxVersion) -> 
     scanner.end_line()
     scanner.read_int()  # trailing
     scanner.end_line()
-    return tuple(entries)
+    return tuple(entries), default_entry
 
 
-def _read_picture_display_default(scanner: _Scanner, version: GraphicsSyntaxVersion) -> None:
+def _read_picture_display_default(scanner: _Scanner, version: GraphicsSyntaxVersion) -> GraphicsRecordEntry:
+    """The payload used when no indexed entry matches.
+
+    ``default_disc == 0`` writes the payload as the rest of the discriminator's
+    line; any other discriminator carries a binding payload instead.
+    """
     discriminator = scanner.read_int()
     if discriminator != 0:
-        _read_binding(scanner, _BaselineKind.B4, version)
+        entry = _binding_entry(scanner, version, index=discriminator)
         scanner.end_line()
-        return
+        return entry
     scanner.read_inline_separator()
-    # `getc + line/word (version split)` is not recovered; the corpus always
-    # writes the payload as the rest of the discriminator's line.
-    scanner.read_line()
+    # 00733520: the separator getc comes first, then a WORD2() for versions
+    # before 0.100 and a LINE() otherwise (every nonzero-major version).
+    if version.major == 0 and version.minor < 100:
+        text = scanner.read_word2()
+        return GraphicsRecordEntry(
+            index=0, kind="literal", text=text, line=scanner.value_line, column=scanner.value_column
+        )
+    raw_text = scanner.read_line()
+    return GraphicsRecordEntry(
+        index=0,
+        kind="literal",
+        text=raw_text.strip(),
+        line=scanner.value_line,
+        column=scanner.value_column + (len(raw_text) - len(raw_text.lstrip())),
+    )
 
 
 def _read_picture_display_legacy(scanner: _Scanner, version: GraphicsSyntaxVersion) -> None:
@@ -633,7 +861,7 @@ def _read_picture_display_legacy(scanner: _Scanner, version: GraphicsSyntaxVersi
     scanner.end_line()
 
 
-def _binding_entry(scanner: _Scanner, version: GraphicsSyntaxVersion, *, index: int, line: int) -> GraphicsRecordEntry:
+def _binding_entry(scanner: _Scanner, version: GraphicsSyntaxVersion, *, index: int) -> GraphicsRecordEntry:
     binding = _read_binding(scanner, _BaselineKind.B4, version)
     return GraphicsRecordEntry(
         index=index,
@@ -663,6 +891,8 @@ def _read_baseline(scanner: _Scanner, kind: _BaselineKind, *, legacy: bool) -> s
         return scanner.read_int()
     if kind is _BaselineKind.B3:
         return scanner.read_float()
+    # B4 / B11 / B12 all read a WORD2() baseline; only their payload meaning
+    # differs, which does not change consumption.
     return scanner.read_word2()
 
 

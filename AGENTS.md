@@ -17,8 +17,12 @@
 | `src/sattline_parser/models/` | AST models (`ast_model.py`) |
 | `src/sattline_parser/transformer/` | Transformer mixins and `SLTransformer` |
 | `src/sattline_parser/fuzz_harness.py` | Standalone fuzz harness |
+| `src/sattline_parser/cli/` | Read-only `sattline` command line: one module per subcommand in `cli/cmds/` |
+| `src/sattline_parser/project/` | Project layer: discovery, resolution, `.g`/`.y` companions, caches, `SattLineProject` |
+| `src/sattline_parser/validation/` | Validator rules, diagnostics, builtin catalogue |
 | `src/sattline_parser/source_document.py` | Source provenance: original/normalized text + source map, span remapping |
-| `tests/` | Parser-core tests including the `tests/parser/` suite |
+| `docs/cli.md` | User-facing CLI surface, exit codes and per-command options |
+| `tests/` | Full suite: `tests/parser/`, `tests/project/`, `tests/cli/`, packaging tests |
 | `tests/fixtures/corpus/` | Corpus fixtures (`.s` sources only) for regression and fuzz seeding |
 
 ## Critical Invariants
@@ -41,4 +45,4 @@
 
 ## Last Updated
 
-2026-08-16
+2026-10-29

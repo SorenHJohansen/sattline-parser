@@ -41,6 +41,7 @@ from sattline_parser.models.ast_model import (
     Sequence,
     SFCAlternative,
     SFCBodyItem,
+    SFCLoop,
     SFCParallel,
     SFCStep,
     SFCSubsequence,
@@ -69,53 +70,64 @@ def _position(item: SFCBodyItem) -> str | None:
         return STEP
     if isinstance(item, SFCTransition | SFCTransitionSub | SFCAlternative):
         return TRANSITION
-    # The union is exhausted down to SFCSubsequence here.
+    if isinstance(item, SFCLoop):
+        # A loop carries its own closed body and takes the structural (M) slot
+        # (006ff000: ``FreeWord1`` is in M_FIRST alongside SUBSEQUENCE).
+        return STRUCTURAL
+    # The union is exhausted down to SFCSubsequence here; a sub-step occupies the
+    # step position and a plain sub-sequence the structural one.
     return STEP if item.kind == "substep" else STRUCTURAL
-    # Defensive: an unknown node cannot be positioned, so treat it as structural
-    # rather than silently splitting a step/transition pair.
-    return STRUCTURAL
 
 
-def _elements(items: list[SFCBodyItem]) -> list[str]:
-    positions: list[str] = []
+#: A positioned sequence element: its S/T/M position and the node itself, so a
+#: diagnostic can point at the exact element instead of only describing it.
+type PositionedElement = tuple[str, SFCBodyItem]
+
+
+def _elements(items: list[SFCBodyItem]) -> list[PositionedElement]:
+    elements: list[PositionedElement] = []
     for item in items:
         position = _position(item)
         if position is not None:
-            positions.append(position)
-    return positions
+            elements.append((position, item))
+    return elements
 
 
-def _error(code: DiagnosticCode, message: str) -> Diagnostic:
-    return Diagnostic(code=code, message=message, span=None)
+def _error(code: DiagnosticCode, message: str, item: SFCBodyItem | None = None) -> Diagnostic:
+    return Diagnostic(code=code, message=message, span=item.span if item is not None else None)
 
 
-def _consecutive_steps() -> Diagnostic:
+def _consecutive_steps(item: SFCBodyItem) -> Diagnostic:
     return _error(
         DiagnosticCode.CONSECUTIVE_SEQUENCE_STEPS,
         "Consecutive SFC steps without an intervening SEQTRANSITION",
+        item,
     )
 
 
-def _structural_after_step() -> Diagnostic:
+def _structural_after_step(item: SFCBodyItem) -> Diagnostic:
     return _error(
         DiagnosticCode.SEQUENCE_POSITION_INVALID,
-        "A SUBSEQUENCE cannot appear between a SEQSTEP and its SEQTRANSITION",
+        "A structural element (SUBSEQUENCE or loop) cannot appear between a SEQSTEP and its SEQTRANSITION",
+        item,
     )
 
 
-def _step_before_transition(position: str) -> Diagnostic:
+def _step_before_transition(position: str, item: SFCBodyItem) -> Diagnostic:
     detail = "a structural construct" if position == STRUCTURAL else "another transition"
     return _error(
         DiagnosticCode.SEQUENCE_POSITION_INVALID,
         f"Expected a SEQSTEP before this element, found {detail}; steps and transitions must alternate",
+        item,
     )
 
 
-def _step_expected(position: str) -> Diagnostic:
+def _step_expected(position: str, item: SFCBodyItem) -> Diagnostic:
     detail = "a transition" if position == TRANSITION else "a structural construct"
     return _error(
         DiagnosticCode.SEQUENCE_POSITION_INVALID,
         f"Expected a SEQSTEP before this element, found {detail}",
+        item,
     )
 
 
@@ -151,12 +163,16 @@ def _check_nested(items: list[SFCBodyItem], errors: list[Diagnostic]) -> None:
             _check_body(item.body, TRANSITION_BODY, errors)
         elif isinstance(item, SFCSubsequence):
             _check_body(item.body, CLOSED if item.kind == "sequence" else STEP_BODY, errors)
+        elif isinstance(item, SFCLoop):
+            _check_body(item.body, CLOSED, errors)
+            if item.else_body is not None:
+                _check_body(item.else_body, CLOSED, errors)
 
 
 def _check_closed(items: list[SFCBodyItem], errors: list[Diagnostic]) -> None:
     """``(S T | M)+``: units alternate and the body ends after a T or an M."""
-    positions = _elements(items)
-    if not positions:
+    elements = _elements(items)
+    if not elements:
         errors.append(
             _error(
                 DiagnosticCode.SEQUENCE_POSITION_INVALID,
@@ -165,33 +181,34 @@ def _check_closed(items: list[SFCBodyItem], errors: list[Diagnostic]) -> None:
         )
         return
     expecting_unit = True
-    for position in positions:
+    for position, item in elements:
         if expecting_unit:
             if position == STEP:
                 expecting_unit = False
             elif position == TRANSITION:
-                errors.append(_step_before_transition(position))
+                errors.append(_step_before_transition(position, item))
             continue
         if position == TRANSITION:
             expecting_unit = True
             continue
         if position == STEP:
-            errors.append(_consecutive_steps())
+            errors.append(_consecutive_steps(item))
             continue
-        errors.append(_structural_after_step())
+        errors.append(_structural_after_step(item))
     if not expecting_unit:
         errors.append(
             _error(
                 DiagnosticCode.SEQUENCE_ENDS_WITH_STEP,
                 "A sequence must not end with a step; it must end with a SEQTRANSITION before ENDSEQUENCE",
+                elements[-1][1],
             )
         )
 
 
 def _check_transition_body(items: list[SFCBodyItem], errors: list[Diagnostic]) -> None:
     """``T (S T | M)*``: alternative branches and SUBSEQTRANSITION bodies."""
-    positions = _elements(items)
-    if not positions:
+    elements = _elements(items)
+    if not elements:
         errors.append(
             _error(
                 DiagnosticCode.SEQUENCE_POSITION_INVALID,
@@ -199,42 +216,44 @@ def _check_transition_body(items: list[SFCBodyItem], errors: list[Diagnostic]) -
             )
         )
         return
-    first = positions[0]
+    first, first_item = elements[0]
     if first != TRANSITION:
         errors.append(
             _error(
                 DiagnosticCode.SFC_ALTERNATIVE_BRANCH_START,
                 "Each ALTERNATIVESEQ branch must start with a SEQTRANSITION or a nested structure",
+                first_item,
             )
         )
     state = "unit" if first == TRANSITION else ("after_step" if first == STEP else "unit")
-    for position in positions[1:]:
+    for position, item in elements[1:]:
         if state == "unit":
             if position == STEP:
                 state = "after_step"
             elif position == TRANSITION:
-                errors.append(_step_before_transition(position))
+                errors.append(_step_before_transition(position, item))
             continue
         if position == TRANSITION:
             state = "unit"
             continue
         if position == STEP:
-            errors.append(_consecutive_steps())
+            errors.append(_consecutive_steps(item))
             continue
-        errors.append(_structural_after_step())
+        errors.append(_structural_after_step(item))
     if state == "after_step":
         errors.append(
             _error(
                 DiagnosticCode.SEQUENCE_POSITION_INVALID,
                 "An alternative branch must not end with a step; it needs a closing SEQTRANSITION",
+                elements[-1][1],
             )
         )
 
 
 def _check_step_body(items: list[SFCBodyItem], errors: list[Diagnostic]) -> None:
     """``M* S (T M* S)*``: parallel branches and SUBSEQSTEP bodies."""
-    positions = _elements(items)
-    if not positions:
+    elements = _elements(items)
+    if not elements:
         errors.append(
             _error(
                 DiagnosticCode.SEQUENCE_POSITION_INVALID,
@@ -243,7 +262,7 @@ def _check_step_body(items: list[SFCBodyItem], errors: list[Diagnostic]) -> None
         )
         return
     state = "start"
-    for position in positions:
+    for position, item in elements:
         if state == "start":
             if position == STEP:
                 state = "after_step"
@@ -254,6 +273,7 @@ def _check_step_body(items: list[SFCBodyItem], errors: list[Diagnostic]) -> None
                     _error(
                         DiagnosticCode.SFC_PARALLEL_BRANCH_START,
                         "Each PARALLELSEQ branch must start with a SEQSTEP",
+                        item,
                     )
                 )
             continue
@@ -261,9 +281,9 @@ def _check_step_body(items: list[SFCBodyItem], errors: list[Diagnostic]) -> None
             if position == TRANSITION:
                 state = "between"
             elif position == STEP:
-                errors.append(_consecutive_steps())
+                errors.append(_consecutive_steps(item))
             else:
-                errors.append(_structural_after_step())
+                errors.append(_structural_after_step(item))
             continue
         # between a transition and the step that must follow it
         if position == STRUCTURAL:
@@ -271,20 +291,21 @@ def _check_step_body(items: list[SFCBodyItem], errors: list[Diagnostic]) -> None
         if position == STEP:
             state = "after_step"
             continue
-        errors.append(_step_expected(position))
+        errors.append(_step_expected(position, item))
     if state != "after_step":
         errors.append(
             _error(
                 DiagnosticCode.SFC_PARALLEL_BRANCH_START,
                 "Each PARALLELSEQ branch must end with a SEQSTEP",
+                elements[-1][1],
             )
         )
 
 
 def _check_open(items: list[SFCBodyItem], errors: list[Diagnostic]) -> None:
     """``open_body``: an open sequence may stop anywhere, but still alternates."""
-    positions = _elements(items)
-    if not positions:
+    elements = _elements(items)
+    if not elements:
         errors.append(
             _error(
                 DiagnosticCode.SEQUENCE_POSITION_INVALID,
@@ -293,7 +314,7 @@ def _check_open(items: list[SFCBodyItem], errors: list[Diagnostic]) -> None:
         )
         return
     state = "start"
-    for position in positions:
+    for position, item in elements:
         if state == "start":
             state = "after_step" if position == STEP else "boundary"
             continue
@@ -301,13 +322,13 @@ def _check_open(items: list[SFCBodyItem], errors: list[Diagnostic]) -> None:
             if position == TRANSITION:
                 state = "boundary"
             elif position == STEP:
-                errors.append(_consecutive_steps())
+                errors.append(_consecutive_steps(item))
             else:
-                errors.append(_structural_after_step())
+                errors.append(_structural_after_step(item))
             continue
         if position == STRUCTURAL:
             continue
         if position == STEP:
             state = "after_step"
             continue
-        errors.append(_step_expected(position))
+        errors.append(_step_expected(position, item))

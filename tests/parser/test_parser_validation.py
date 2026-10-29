@@ -93,10 +93,10 @@ _RETIRED_VALIDATION_FIXTURES: dict[str, str] = {
     "DatatypeShadowsBuiltinName": "SL-V026",
 }
 
-#: Fixtures refused by the compact-source decoder (a raw keyword in a coded file).
-_DECODE_REJECTED_FIXTURES = ["CodedRawKeyword"]
-
 _PARSE_REJECTED_FIXTURES = [
+    # A coded file that spells `SeqControl`/`SeqTimer` raw: those are identifiers
+    # in coded mode (0062cbc0), so the sequence-control slot rejects the unit.
+    "CodedRawKeyword",
     "CoordInVarTail",
     "ModuleDefNoTrailingEnddef",
     "EncodingStress",
@@ -201,12 +201,6 @@ def test_cross_module_contract_mismatch_flagged():
 def test_parse_rejected_fixtures_still_raise_parse_errors():
     for stem in _PARSE_REJECTED_FIXTURES:
         with pytest.raises(UnexpectedInput):
-            parser_core_parse_source_text(_raw(_corpus(f"invalid/{stem}.s")))
-
-
-def test_decode_rejected_fixtures_raise_preprocess_errors():
-    for stem in _DECODE_REJECTED_FIXTURES:
-        with pytest.raises(PreprocessError, match="Raw keyword"):
             parser_core_parse_source_text(_raw(_corpus(f"invalid/{stem}.s")))
 
 

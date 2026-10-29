@@ -26,7 +26,10 @@ since that is how a comment begins in code context).
 
 from __future__ import annotations
 
-from collections.abc import Collection, Iterator
+import re
+from collections.abc import Callable, Collection, Generator, Iterator
+from contextlib import contextmanager
+from contextvars import ContextVar
 from copy import copy
 from typing import Any, cast
 
@@ -42,7 +45,35 @@ from sattline_parser.grammar.constants import (
     TOKEN_NAME,
 )
 
-__all__ = ["SattLineLexer"]
+__all__ = ["SattLineLexer", "compact_provenance"]
+
+#: Folded spellings the compressor writes raw because they are literal values and
+#: not keywords (0062a440). They stay literals even in a coded source.
+_RAW_LITERAL_WORDS = frozenset({"true", "false", "on", "off", "default"})
+
+_WORD_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*\Z")
+
+#: ``predicate(start, end)`` -> True when the normalized span came from a decoded
+#: compact code. Set per parse by :func:`compact_provenance`.
+_Provenance = Callable[[int, int], bool]
+_PROVENANCE: ContextVar[_Provenance | None] = ContextVar("sattline_compact_provenance", default=None)
+
+
+@contextmanager
+def compact_provenance(predicate: _Provenance | None) -> Generator[None]:
+    """Mark the parse that follows as coded (compact) or plain.
+
+    The parser and its lexer are cached and shared, so the provenance is a
+    context-local value rather than lexer state. In coded mode a raw word is an
+    identifier even when it spells a keyword (``0062cbc0``); the lexer therefore
+    only accepts a keyword token when the decoder produced it.
+    """
+    handle = _PROVENANCE.set(predicate)
+    try:
+        yield
+    finally:
+        _PROVENANCE.reset(handle)
+
 
 #: Terminals that must never be lexed by a per-state (code) lexer.
 _COMMENT_BODY_TERMINALS = frozenset({TOKEN_COMMENT_END, TOKEN_COMMENT_TEXT})
@@ -111,6 +142,31 @@ def _module_typedecl_after(text: object, pos: int) -> bool:
     return pos >= end or text[pos] in _WS
 
 
+def _retype_raw_keyword(token: Token, token_type: str) -> str:
+    """Retype a keyword token that the source spelled raw in a coded file to NAME.
+
+    Coded mode decodes fixed-width ``#NN`` codes as keywords and never
+    reclassifies a raw word (``0062cbc0``), so in a decoded document a word token
+    is only a keyword when the decoder produced its characters. Raw literal
+    spellings (``True``/``False``/``On``/``Off``/``Default``) are values the
+    compressor always writes unencoded, so they stay as they are.
+    """
+    predicate = _PROVENANCE.get()
+    if predicate is None or token_type == TOKEN_NAME:
+        return token_type
+    text = str(token)
+    if _WORD_RE.match(text) is None or text.casefold() in _RAW_LITERAL_WORDS:
+        return token_type
+    start = token.start_pos
+    end = token.end_pos
+    if not isinstance(start, int) or not isinstance(end, int):  # pragma: no cover - always set
+        return token_type
+    if predicate(start, end):
+        return token_type
+    token.type = TOKEN_NAME
+    return TOKEN_NAME
+
+
 class SattLineLexer(ContextualLexer):
     """ContextualLexer that models structural (* ... *) comments."""
 
@@ -154,6 +210,8 @@ class SattLineLexer(ContextualLexer):
                 else:
                     token = self.lexers[parser_state.position].next_token(lexer_state, parser_state)
                 token_type = token.type
+                if comment_depth == 0:
+                    token_type = _retype_raw_keyword(token, token_type)
                 if (
                     comment_depth == 0
                     and token_type == TOKEN_NAME

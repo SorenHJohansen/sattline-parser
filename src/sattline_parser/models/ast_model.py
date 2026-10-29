@@ -5,7 +5,7 @@ from __future__ import annotations
 import textwrap
 from dataclasses import MISSING, dataclass, field, fields
 from enum import Enum
-from typing import Any
+from typing import Any, Literal
 
 from ..grammar import constants as const
 from ._ast_model_support import (
@@ -83,6 +83,7 @@ __all__ = [
     "SFCBodyItem",
     "SFCCodeBlocks",
     "SFCFork",
+    "SFCLoop",
     "SFCParallel",
     "SFCStep",
     "SFCSubsequence",
@@ -149,7 +150,7 @@ class CodeComment:
 # SFCBodyItem: the element type of Sequence.code (SFC structure nodes + comments).
 type CodeItem = Assignment | FuncCallStmt | IfStmt | CodeComment
 type SFCBodyItem = (
-    SFCStep | SFCTransition | SFCTransitionSub | SFCAlternative | SFCParallel | SFCSubsequence | CodeComment
+    SFCStep | SFCTransition | SFCTransitionSub | SFCAlternative | SFCParallel | SFCSubsequence | SFCLoop | CodeComment
 )
 
 
@@ -310,6 +311,9 @@ class ParameterMapping:
 class GraphObject:
     type: str
     properties: PropertyMap = field(default_factory=property_map)
+    #: Source span of the object (its ``graph_object`` rule), when positions are
+    #: propagated. Graphics correlation uses it to point at the marker.
+    span: SourceSpan | None = None
 
 
 @dataclass
@@ -379,9 +383,12 @@ class Equation:
     Native ``00726030`` accepts the keyword, an optional name, optional
     coordinate/size metadata and layer metadata before ``:`` - only the statement
     list is required. ``name``/``position``/``size`` are therefore optional, and
-    ``None`` means the source omitted them.
+    ``None`` means the source omitted them. ``kind`` records which of the two
+    keywords was written; the native reader sets different flags for them, and
+    their effect is not recovered, so only the spelling is preserved.
     """
 
+    kind: Literal["equationblock", "equations"] = "equationblock"
     name: str | None = None
     position: tuple[float, float] | None = None
     size: tuple[float, float] | None = None
@@ -571,6 +578,8 @@ class SFCStep:
     code: SFCCodeBlocks
     #: ``SEQFORK`` suffix attached to this step, if any (native 0070a100).
     fork: SFCFork | None = None
+    #: Source span of the element, so position diagnostics can point at it.
+    span: SourceSpan | None = None
 
 
 @dataclass
@@ -582,16 +591,19 @@ class SFCTransition:
     condition: SLExpression | None
     #: ``SEQFORK`` suffix attached to this transition, if any (0070d180).
     fork: SFCFork | None = None
+    span: SourceSpan | None = None
 
 
 @dataclass
 class SFCAlternative:
     branches: list[list[SFCBodyItem]]  # each branch is a list of SFC nodes
+    span: SourceSpan | None = None
 
 
 @dataclass
 class SFCParallel:
     branches: list[list[SFCBodyItem]]
+    span: SourceSpan | None = None
 
 
 @dataclass
@@ -604,12 +616,32 @@ class SFCSubsequence:
     #: ``'substep'`` for ``SUBSEQSTEP`` (step position S). The two share a model
     #: shape but occupy different positions in a sequence body.
     kind: str = "sequence"
+    span: SourceSpan | None = None
+
+
+@dataclass
+class SFCLoop:
+    """Iterative sequence body (``006ff000``).
+
+    ``FreeWord1 [NAME] C FreeWord2 [expression] [C] FreeWord3``: the loop is a
+    structural (M-position) element whose bodies are the closed ``(S T | M)+``
+    shape, the first one required and the second optional. No ``WAIT_FOR`` token
+    precedes the optional expression, and the keywords are the scanner-profile
+    spellings because no human-readable alias was recovered.
+    """
+
+    name: str | None = None
+    condition: SLExpression | None = None
+    body: list[SFCBodyItem] = field(default_factory=sfc_body_list)
+    else_body: list[SFCBodyItem] | None = None
+    span: SourceSpan | None = None
 
 
 @dataclass
 class SFCTransitionSub:
     name: str | None
     body: list[SFCBodyItem]
+    span: SourceSpan | None = None
 
 
 @dataclass

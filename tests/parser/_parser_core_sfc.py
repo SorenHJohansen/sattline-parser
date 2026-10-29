@@ -1,6 +1,8 @@
 # pyright: reportUnknownVariableType=false, reportUnknownMemberType=false, reportUnknownParameterType=false, reportMissingParameterType=false, reportUnknownArgumentType=false, reportCallIssue=false, reportUnknownLambdaType=false, reportUnusedImport=false
 # ruff: noqa: F403, F405
-from sattline_parser.models.ast_model import CodeItem
+from sattline_parser.models.ast_model import CodeItem, SFCLoop
+from sattline_parser.models.expressions import VarRef
+from sattline_parser.validation import validate_basepicture
 
 from ._parser_core_test_support import *
 
@@ -58,9 +60,15 @@ def test_sfc_mixin_builds_modulecode_sequences_and_equations():
     assert mixin.seqfork([Token("SEQFORK", "SEQFORK"), "PathA", Token("SEQBREAK", "SEQBREAK")]) == SFCFork(
         targets=("PathA",), has_break=True
     )
-    assert mixin.seq_element([step]) is step
+    assert mixin.seq_element(Meta(), [step]) is step
+    assert step.span is None
+    spanned = mixin.seq_element(
+        SimpleNamespace(line=3, column=4, start_pos=10, end_pos=20, end_line=3, end_column=14), [step]
+    )
+    assert spanned is step
+    assert step.span == SourceSpan(start=10, end=20, line=3, column=4)
     with pytest.raises(ValueError, match="seq_element expected"):
-        mixin.seq_element([])
+        mixin.seq_element(Meta(), [Token("SEQSTEP", "SEQSTEP")])
 
     seqcontrol_tree = Tree(
         parser_const.KEY_SEQ_CONTROL_OPS,
@@ -205,6 +213,158 @@ def test_parse_source_text_preserves_sfc_step_code_blocks():
     assert exit_stmt.target == VarRef("Counter", span=SourceSpan(start=491, end=498, line=20, column=10))
     assert exit_stmt.value == 0
     assert exit_stmt.span == SourceSpan(start=491, end=502, line=20, column=10)
+
+
+def test_parse_source_text_models_the_loop_construct():
+    """006ff000: `FreeWord1 [NAME] C FreeWord2 [expr] [C] FreeWord3`."""
+    bp = _parse_to_basepicture(
+        '"SyntaxVersion"\n'
+        '"OriginalFileDate"\n'
+        '"ProgramDate"\n'
+        "BasePicture Invocation (0.0,0.0,0.0,1.0,1.0) : MODULEDEFINITION DateCode_ 1\n"
+        "ModuleDef\n"
+        "ClippingBounds = ( -1.0 , -1.0 ) ( 1.0 , 1.0 )\n"
+        "ModuleCode\n"
+        "SEQUENCE Main (SeqControl) COORD 0.0, 0.0 OBJSIZE 1.0, 1.0\n"
+        "   FreeWord1 MyLoop\n"
+        "      SEQINITSTEP Init\n"
+        "      SEQTRANSITION Tr WAIT_FOR True\n"
+        "   FreeWord2 Flag\n"
+        "      SEQSTEP Run\n"
+        "      SEQTRANSITION Tr2 WAIT_FOR True\n"
+        "   FreeWord3\n"
+        "   SEQINITSTEP Second\n"
+        "   SEQTRANSITION Tr3 WAIT_FOR True\n"
+        "ENDSEQUENCE\n"
+        "ENDDEF (*BasePicture*);\n"
+    )
+
+    assert bp.modulecode is not None
+    loop = bp.modulecode.sequences[0].code[0]
+    assert isinstance(loop, SFCLoop)
+    assert loop.name == "MyLoop"
+    assert loop.condition == VarRef("Flag", span=loop.condition.span)  # type: ignore[union-attr]
+    assert [type(node).__name__ for node in loop.body] == ["SFCStep", "SFCTransition"]
+    assert loop.else_body is not None
+    assert [type(node).__name__ for node in loop.else_body] == ["SFCStep", "SFCTransition"]
+
+
+def test_parse_source_text_accepts_a_bare_loop():
+    bp = _parse_to_basepicture(
+        '"SyntaxVersion"\n'
+        '"OriginalFileDate"\n'
+        '"ProgramDate"\n'
+        "BasePicture Invocation (0.0,0.0,0.0,1.0,1.0) : MODULEDEFINITION DateCode_ 1\n"
+        "ModuleDef\n"
+        "ClippingBounds = ( -1.0 , -1.0 ) ( 1.0 , 1.0 )\n"
+        "ModuleCode\n"
+        "SEQUENCE Main (SeqControl) COORD 0.0, 0.0 OBJSIZE 1.0, 1.0\n"
+        "   FreeWord1\n"
+        "      SEQINITSTEP Init\n"
+        "      SEQTRANSITION Tr WAIT_FOR True\n"
+        "   FreeWord2\n"
+        "   FreeWord3\n"
+        "   SEQINITSTEP Second\n"
+        "   SEQTRANSITION Tr2 WAIT_FOR True\n"
+        "ENDSEQUENCE\n"
+        "ENDDEF (*BasePicture*);\n"
+    )
+
+    assert bp.modulecode is not None
+    loop = bp.modulecode.sequences[0].code[0]
+    assert isinstance(loop, SFCLoop)
+    assert (loop.name, loop.condition, loop.else_body) == (None, None, None)
+
+
+def test_loop_transformer_rejects_malformed_items():
+    mixin = _SFCHarness()
+    body_tree = mixin.sequence_body([mixin.seqstep([Token("SEQSTEP", "SEQSTEP"), "Run", mixin.code_blocks([])])])
+
+    with pytest.raises(ValueError, match="expected sequence_body Trees"):
+        mixin.loop([Token("FREEWORD1", "FreeWord1"), Tree("other", [])])
+    with pytest.raises(ValueError, match="loop unexpected item"):
+        mixin.loop([Token("FREEWORD1", "FreeWord1"), body_tree, "name", "cond", "extra"])
+    with pytest.raises(ValueError, match="at least one sequence_body"):
+        mixin.loop([Token("FREEWORD1", "FreeWord1"), Token("FREEWORD3", "FreeWord3")])
+
+
+def test_loop_condition_and_else_body_are_walked_and_positioned():
+    """The loop condition is an expression and both bodies are closed bodies."""
+    bp = _parse_to_basepicture(
+        '"SyntaxVersion"\n'
+        '"OriginalFileDate"\n'
+        '"ProgramDate"\n'
+        "BasePicture Invocation (0.0,0.0,0.0,1.0,1.0) : MODULEDEFINITION DateCode_ 1\n"
+        "LOCALVARIABLES\n"
+        "   Sink: integer := 0;\n"
+        "ModuleDef\n"
+        "ClippingBounds = ( -1.0 , -1.0 ) ( 1.0 , 1.0 )\n"
+        "ModuleCode\n"
+        "SEQUENCE Main (SeqControl) COORD 0.0, 0.0 OBJSIZE 1.0, 1.0\n"
+        "   FreeWord1\n"
+        "      SEQINITSTEP Init\n"
+        "      SEQTRANSITION Tr WAIT_FOR True\n"
+        "   FreeWord2 MissingGuard\n"
+        "      SEQSTEP ElseStep\n"
+        "   FreeWord3\n"
+        "   SEQINITSTEP Second\n"
+        "   SEQTRANSITION Tr2 WAIT_FOR True\n"
+        "ENDSEQUENCE\n"
+        "ENDDEF (*BasePicture*);\n"
+    )
+
+    diagnostics = validate_basepicture(bp)
+
+    # The guard is walked as an expression, and the else body is position-checked
+    # (it ends on a step, which a closed body may not).
+    assert any("MissingGuard" in diagnostic.message for diagnostic in diagnostics)
+    assert any(str(diagnostic.code) == "SL-V033" for diagnostic in diagnostics)
+
+
+def test_loop_body_positions_are_validated_like_a_sequence():
+    """A loop body is the closed `(S T | M)+` shape, so it must not end on a step."""
+    bp = _parse_to_basepicture(
+        '"SyntaxVersion"\n'
+        '"OriginalFileDate"\n'
+        '"ProgramDate"\n'
+        "BasePicture Invocation (0.0,0.0,0.0,1.0,1.0) : MODULEDEFINITION DateCode_ 1\n"
+        "ModuleDef\n"
+        "ClippingBounds = ( -1.0 , -1.0 ) ( 1.0 , 1.0 )\n"
+        "ModuleCode\n"
+        "SEQUENCE Main (SeqControl) COORD 0.0, 0.0 OBJSIZE 1.0, 1.0\n"
+        "   FreeWord1\n"
+        "      SEQSTEP Lonely\n"
+        "   FreeWord2\n"
+        "   FreeWord3\n"
+        "   SEQINITSTEP Second\n"
+        "   SEQTRANSITION Tr WAIT_FOR True\n"
+        "ENDSEQUENCE\n"
+        "ENDDEF (*BasePicture*);\n"
+    )
+
+    codes = {str(diagnostic.code) for diagnostic in validate_basepicture(bp)}
+    # SEQUENCE_ENDS_WITH_STEP: the loop body is checked as a closed body.
+    assert "SL-V033" in codes
+
+
+def test_equationblock_records_which_keyword_was_written():
+    """00726030 accepts EQUATIONBLOCK and EQUATIONS with different native flags."""
+    for keyword, expected in (("EQUATIONBLOCK", "equationblock"), ("EQUATIONS", "equations")):
+        bp = _parse_to_basepicture(
+            '"SyntaxVersion"\n'
+            '"OriginalFileDate"\n'
+            '"ProgramDate"\n'
+            "BasePicture Invocation (0.0,0.0,0.0,1.0,1.0) : MODULEDEFINITION DateCode_ 1\n"
+            "ModuleDef\n"
+            "ClippingBounds = ( -1.0 , -1.0 ) ( 1.0 , 1.0 )\n"
+            "ModuleCode\n"
+            f"{keyword} Calc COORD 0.0, 0.0 OBJSIZE 1.0, 1.0 :\n"
+            "   Flag = True;\n"
+            "ENDDEF (*BasePicture*);\n"
+        )
+
+        assert bp.modulecode is not None
+        assert bp.modulecode.equations[0].kind == expected
 
 
 def test_parse_source_text_accepts_unnamed_ordinary_step():

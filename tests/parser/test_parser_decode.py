@@ -5,7 +5,9 @@ import pathlib
 import re
 
 import pytest
+from lark.exceptions import UnexpectedInput
 
+from sattline_parser.api import parse_source_text as parser_core_parse_source_text
 from sattline_parser.preprocessing.compressed import (
     _MARKER_RE,  # pyright: ignore[reportPrivateUsage]
     SCANNER_TOKENS,
@@ -142,18 +144,53 @@ def test_undefined_byte_inside_an_unterminated_comment_still_fails(tmp_path: pat
         parse_source_file(source)
 
 
-def test_raw_keyword_in_a_coded_file_is_refused_with_a_clear_message() -> None:
+def test_raw_keyword_in_a_coded_file_is_an_identifier_not_a_keyword() -> None:
     """Coded mode never reclassifies a raw word (0062cbc0).
 
-    A raw ``SeqControl`` is an identifier there, not the keyword, so promoting it
-    (what expanding codes and re-lexing would do) would accept a unit the real
-    tool rejects. We refuse it explicitly instead.
+    ``SeqControl`` written literally in a coded file is an identifier, so the
+    sequence-control slot rejects the unit with a syntax error — what the real
+    tool reports — instead of the decoder refusing the whole file.
     """
     source = (
         '"Syntax version 2.23, date: 2026-10-27-12:00:00.000 C"\n#22 MainSeq #01SeqControl, SeqTimer) #88 0.0, 0.0\n'
     )
-    with pytest.raises(PreprocessError, match="Raw keyword 'SeqControl'"):
-        preprocess_source(source)
+
+    document = preprocess_source(source)
+    assert "SEQUENCE" in document.normalized_text
+
+    with pytest.raises(UnexpectedInput):
+        parser_core_parse_source_text(source)
+
+
+def test_coded_file_accepts_a_raw_keyword_spelling_as_an_identifier() -> None:
+    """A raw word is an identifier in coded mode, even when it spells a keyword."""
+    plain = (
+        '" Syntax version 2.23, date: 2026-10-27-12:00:00.000 C"\n'
+        '" Original file date: ---"\n'
+        '" Program date: 2026-10-27-12:00:00.000, name: Sequence"\n'
+        "BasePicture Invocation ( 0.0 , 0.0 , 0.0 , 1.0 , 1.0 ) : MODULEDEFINITION DateCode_ 1\n"
+        "LOCALVARIABLES\n"
+        "   Sequence : integer;\n"
+        "ModuleDef\n"
+        "ClippingBounds = ( -1.0 , -1.0 ) ( 1.0 , 1.0 )\n"
+        "ENDDEF (*BasePicture*);\n"
+    )
+    code_by_word = {word: code for code, word in SCANNER_TOKENS.items() if word}
+    raw_literals = {"true", "false", "on", "off", "default"}
+    compact = re.sub(
+        r"[A-Za-z_][A-Za-z0-9_]*",
+        lambda match: (
+            match.group(0)
+            if match.group(0) == "Sequence" or match.group(0).casefold() in raw_literals
+            else code_by_word.get(match.group(0), match.group(0))
+        ),
+        plain,
+    )
+    assert "Sequence" in compact
+
+    bp = parser_core_parse_source_text(compact)
+
+    assert [variable.name for variable in bp.localvariables] == ["Sequence"]
 
 
 def test_raw_keyword_inside_a_string_or_comment_is_left_alone() -> None:

@@ -21,6 +21,7 @@ from sattline_parser.models.ast_model import (
     SFCAlternative,
     SFCBodyItem,
     SFCFork,
+    SFCLoop,
     SFCParallel,
     SFCStep,
     SFCSubsequence,
@@ -182,6 +183,12 @@ def walk_sfc_item(
             walk_sequence_body(branch, scope, records, sfc_names, errors)
     elif isinstance(item, SFCSubsequence):
         walk_sequence_body(item.body, scope, records, sfc_names, errors)
+    elif isinstance(item, SFCLoop):
+        if item.condition is not None:
+            walk_expression(item.condition, scope, records, sfc_names, errors)
+        walk_sequence_body(item.body, scope, records, sfc_names, errors)
+        if item.else_body is not None:
+            walk_sequence_body(item.else_body, scope, records, sfc_names, errors)
 
 
 def _check_operands(
@@ -455,6 +462,10 @@ def _collect_jump_targets(items: list[SFCBodyItem], step_names: set[str], transi
             if item.kind == "substep" and item.name is not None:
                 step_names.add(fold_identifier(item.name))
             _collect_jump_targets(item.body, step_names, transition_names)
+        elif isinstance(item, SFCLoop):
+            _collect_jump_targets(item.body, step_names, transition_names)
+            if item.else_body is not None:
+                _collect_jump_targets(item.else_body, step_names, transition_names)
 
 
 def _check_fork_targets(
@@ -468,7 +479,7 @@ def _check_fork_targets(
     wrong.
     """
 
-    def _check_fork(fork: SFCFork | None, host: str) -> None:
+    def _check_fork(fork: SFCFork | None, host: str, span: SourceSpan | None) -> None:
         if fork is None:
             return
         expected = transition_names if host == "step" else step_names
@@ -486,7 +497,7 @@ def _check_fork_targets(
                             f"SEQFORK on a {host} must target a {expected_kind}; {target!r} is a "
                             f"{'step' if expected_kind == 'transition' else 'transition'}"
                         ),
-                        span=None,
+                        span=span,
                     )
                 )
                 continue
@@ -494,20 +505,24 @@ def _check_fork_targets(
                 Diagnostic(
                     code=DiagnosticCode.SEQUENCE_FORK_UNKNOWN_TARGET,
                     message=f"SEQFORK targets unknown SFC element {target!r} in module",
-                    span=None,
+                    span=span,
                 )
             )
 
     for item in items:
         if isinstance(item, SFCStep):
-            _check_fork(item.fork, "step")
+            _check_fork(item.fork, "step", item.span)
         elif isinstance(item, SFCTransition):
-            _check_fork(item.fork, "transition")
+            _check_fork(item.fork, "transition", item.span)
         elif isinstance(item, SFCAlternative | SFCParallel):
             for branch in item.branches:
                 _check_fork_targets(branch, step_names, transition_names, errors)
         elif isinstance(item, SFCSubsequence | SFCTransitionSub):
             _check_fork_targets(item.body, step_names, transition_names, errors)
+        elif isinstance(item, SFCLoop):
+            _check_fork_targets(item.body, step_names, transition_names, errors)
+            if item.else_body is not None:
+                _check_fork_targets(item.else_body, step_names, transition_names, errors)
 
 
 def _check_duplicate_sfc_names(sequences: list[Sequence] | None, errors: list[Diagnostic]) -> None:
@@ -527,7 +542,7 @@ def _record_module_names(items: list[SFCBodyItem], seen: set[str], errors: list[
                     Diagnostic(
                         code=DiagnosticCode.DUPLICATE_SFC_ELEMENT_NAME,
                         message=f"SFC element name {name!r} is used by more than one step or transition",
-                        span=None,
+                        span=item.span,
                     )
                 )
             else:
@@ -537,6 +552,10 @@ def _record_module_names(items: list[SFCBodyItem], seen: set[str], errors: list[
                 _record_module_names(branch, seen, errors)
         elif isinstance(item, SFCSubsequence | SFCTransitionSub):
             _record_module_names(item.body, seen, errors)
+        elif isinstance(item, SFCLoop):
+            _record_module_names(item.body, seen, errors)
+            if item.else_body is not None:
+                _record_module_names(item.else_body, seen, errors)
 
 
 def _named_sfc_element_name(item: SFCBodyItem) -> str | None:

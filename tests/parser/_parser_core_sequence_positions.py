@@ -7,6 +7,8 @@ them are named in the test, so a future weakening is visible.
 
 from __future__ import annotations
 
+from typing import Any
+
 from sattline_parser.api import parse_and_validate
 from sattline_parser.validation.diagnostics import DiagnosticCode
 
@@ -25,10 +27,17 @@ _HEADER = (
 _FOOTER = "ENDDEF (*BasePicture*);\n"
 
 
-def _codes(body: str) -> set[str]:
+def _diagnostics(body: str) -> tuple[Any, ...]:
     source = _HEADER + body + _FOOTER
     _picture, diagnostics = parse_and_validate(source)
-    return {diagnostic.code.value for diagnostic in diagnostics}
+    # Every finding must be locatable: a message without a span forces a search.
+    for diagnostic in diagnostics:
+        assert diagnostic.span is not None, diagnostic.message
+    return diagnostics
+
+
+def _codes(body: str) -> set[str]:
+    return {diagnostic.code.value for diagnostic in _diagnostics(body)}
 
 
 def _sequence(body: str, *, opener: str = "SEQUENCE", closer: str = "ENDSEQUENCE") -> str:
@@ -293,3 +302,45 @@ def test_open_body_states_are_covered() -> None:
     # boundary state: a structural item is fine, a second transition is not
     assert _position_codes(_tr(), _sub("sequence"), type_=_OPEN_TYPE) == []
     assert "SL-V036" in _position_codes(_tr(), _sub("sequence"), _tr(), type_=_OPEN_TYPE)
+
+
+def test_position_diagnostics_point_at_the_offending_element() -> None:
+    body = _sequence(_STEP.format(n=1) + _STEP.format(n=2) + _TRANSITION.format(n=1))
+    source = _HEADER + body + _FOOTER
+    _picture, diagnostics = parse_and_validate(source)
+
+    [diagnostic] = [finding for finding in diagnostics if finding.code is DiagnosticCode.CONSECUTIVE_SEQUENCE_STEPS]
+    assert diagnostic.span is not None
+    line_text = source.splitlines()[diagnostic.span.line - 1]
+    assert "SEQSTEP S2" in line_text
+
+
+def test_loop_body_participates_in_name_and_fork_checks() -> None:
+    # A name inside a loop body is still a module-level SFC name.
+    duplicate = _sequence(
+        "      FreeWord1\n"
+        "         SEQSTEP Dup\n"
+        "         SEQTRANSITION T1 WAIT_FOR Flag\n"
+        "      FreeWord2\n"
+        "      FreeWord3\n" + _STEP.format(n="1").replace("S1", "Dup") + _TRANSITION.format(n=2)
+    )
+    assert DiagnosticCode.DUPLICATE_SFC_ELEMENT_NAME.value in _codes(duplicate)
+
+    # A SEQFORK inside a loop body resolves against the same element table.
+    unknown = _sequence(
+        "      FreeWord1\n"
+        "         SEQSTEP Forked SEQFORK MissingTarget\n"
+        "         SEQTRANSITION T1 WAIT_FOR Flag\n"
+        "      FreeWord2\n"
+        "      FreeWord3\n" + _STEP.format(n=1) + _TRANSITION.format(n=2)
+    )
+    assert DiagnosticCode.SEQUENCE_FORK_UNKNOWN_TARGET.value in _codes(unknown)
+
+    wrong_kind = _sequence(
+        "      FreeWord1\n"
+        "         SEQSTEP Forked SEQFORK S1\n"
+        "         SEQTRANSITION T1 WAIT_FOR Flag\n"
+        "      FreeWord2\n"
+        "      FreeWord3\n" + _STEP.format(n=1) + _TRANSITION.format(n=2)
+    )
+    assert DiagnosticCode.SEQUENCE_FORK_TARGET_KIND.value in _codes(wrong_kind)

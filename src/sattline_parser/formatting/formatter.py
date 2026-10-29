@@ -156,6 +156,21 @@ def format_expr(expr: object, indent: str = _DEFAULT_INDENT) -> str:
     return str(expr)
 
 
+def _format_sfc_loop(lines: list[str], node: Any, indent: str) -> None:
+    """Render a `Loop ... EndLoop` block (native 006ff000)."""
+    name_suffix = f" {node.name}" if node.name else ""
+    while_suffix = f" While {format_expr(node.condition, indent)}" if node.condition is not None else ""
+    lines.append(f"Loop{name_suffix}{while_suffix}:")
+    for line in format_seq_nodes(list(node.body), indent).splitlines():
+        lines.append(indent + line)
+    if node.else_body:
+        lines.append("Else:")
+        for line in format_seq_nodes(list(node.else_body), indent).splitlines():
+            lines.append(indent + line)
+        lines.append("EndElse")
+    lines.append("EndLoop")
+
+
 def format_seq_nodes(nodes: list[Any], indent: str = _DEFAULT_INDENT) -> str:
     """Pretty-print a list of SFC nodes recursively."""
     lines: list[str] = []
@@ -217,6 +232,9 @@ def format_seq_nodes(nodes: list[Any], indent: str = _DEFAULT_INDENT) -> str:
             label = "Substep" if node.kind == "substep" else "Subsequence"
             name_suffix = f" {node.name}" if node.name else ""
             _fmt_body(f"{label}{name_suffix}:", "EndSubsequence", node.body)
+
+        elif isinstance(node, ast_model.SFCLoop):
+            _format_sfc_loop(lines, node, indent)
 
         elif isinstance(node, ast_model.SFCTransitionSub):
             name_suffix = f" {node.name}" if node.name else ""

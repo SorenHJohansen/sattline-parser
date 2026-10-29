@@ -16,13 +16,14 @@ not just the ones a record reader consumes.
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Literal
 
 from sattline_parser.api import read_text_cp1252
 from sattline_parser.models.ast_model import GraphicsBinding, SourceSpan
 
 from .formats import graphics_ext_candidates
 from .graphics_bindings import _parse_graphics_binding_line
-from .graphics_records import GraphicsRecord, read_companion_records
+from .graphics_records import GraphicsRecord, GraphicsRecordEntry, read_companion_records
 from .models import (
     GraphicsCompositeBinding,
     GraphicsCompositeRecord,
@@ -36,7 +37,6 @@ from .models import (
 _COMPOSITE_OBJECT_TYPE = "CompositeObject"
 _PICTURE_DISPLAY_FAMILY = 5
 _PICTURE_DISPLAY_SUBTYPE = "2"
-_RECORD_FAMILY_CODE = "5"
 
 
 def resolve_graphics_companion_path(code_path: Path, *, mode: LoadMode) -> Path | None:
@@ -59,26 +59,56 @@ def resolve_graphics_companion_path(code_path: Path, *, mode: LoadMode) -> Path 
     return None
 
 
-def _picture_display_record(record: GraphicsRecord, *, record_index: int) -> GraphicsPictureDisplayRecord:
-    path_rows = tuple(
-        GraphicsPictureDisplayPathRow(
-            record_index=record_index,
-            index_token=str(entry.index),
-            index_value=entry.index,
-            kind=entry.kind,
-            raw_text=entry.text,
-            span=SourceSpan(start=0, end=0, line=entry.line, column=entry.column),
-        )
-        for entry in record.entries
-        if entry.kind != "other"
+def _path_row(
+    entry: GraphicsRecordEntry,
+    kind: Literal["literal", "variable", "variable_invalid"],
+    *,
+    record_index: int,
+) -> GraphicsPictureDisplayPathRow:
+    return GraphicsPictureDisplayPathRow(
+        record_index=record_index,
+        index_token=str(entry.index),
+        index_value=entry.index,
+        kind=kind,
+        raw_text=entry.text,
+        span=SourceSpan(start=0, end=0, line=entry.line, column=entry.column),
     )
+
+
+def _carries_path(entry: GraphicsRecordEntry) -> bool:
+    """Whether an entry/index pair carries a path a consumer can resolve.
+
+    ``other`` is a non-``Var`` binding (an expression or literal payload, not a
+    path variable) and an empty literal is the writer's "no path" form.
+    """
+    return entry.kind != "other" and not (entry.kind == "literal" and not entry.text)
+
+
+def _picture_display_record(record: GraphicsRecord, *, record_index: int) -> GraphicsPictureDisplayRecord:
+    rows: list[GraphicsPictureDisplayPathRow] = []
+    path_row_lines: list[int] = []
+    for entry in record.entries:
+        if entry.kind == "other" or not _carries_path(entry):
+            continue
+        rows.append(_path_row(entry, entry.kind, record_index=record_index))
+        path_row_lines.append(entry.line)
+    default_entry = record.default_entry
+    default_row: GraphicsPictureDisplayPathRow | None = None
+    if default_entry is not None and default_entry.kind != "other" and _carries_path(default_entry):
+        # The default payload is the path used when no index matches; keep it in
+        # `path_rows` (file order, after the entries) so consumers that validate
+        # literal asset paths still see it.
+        default_row = _path_row(default_entry, default_entry.kind, record_index=record_index)
+        rows.append(default_row)
+        path_row_lines.append(default_entry.line)
     return GraphicsPictureDisplayRecord(
         record_index=record_index,
         record_start_line=record.start_line,
         record_end_line=record.end_line,
         subtype=_PICTURE_DISPLAY_SUBTYPE,
-        path_row_lines=tuple(entry.line for entry in record.entries),
-        path_rows=path_rows,
+        path_row_lines=tuple(path_row_lines),
+        path_rows=tuple(rows),
+        default_path_row=default_row,
     )
 
 
@@ -147,49 +177,78 @@ def parse_graphics_file(file_path: Path) -> GraphicsModel:
     return parse_graphics_text(text)
 
 
+def _composite_markers(picture: object) -> list[object]:
+    """Source ``CompositeObject`` markers in the order the native reader sees them.
+
+    ``005ccaa0`` is the controlling token reader (not a later tree walk): its
+    declaration loop consumes ``TYPEDEFINITIONS`` (recursing into each module
+    type through ``005dc3f0``), then ``SUBMODULES`` inline definitions
+    (``005cc700``, recursing through ``005ccaa0``) and only then calls
+    ``00663540`` for the enclosing module's own ``ModuleDef``. ``00665fc0``
+    consumes one companion record at each marker while that loop runs, so the
+    record order is children-before-own: module types, inline submodules, own
+    ``ModuleDef``. The normal source writer (``005cf580``) writes in the same
+    order, and an invocation that references an existing named module type takes
+    the ``005cc700`` reference branch, which does not reread that type.
+    """
+    from sattline_parser.models.ast_model import GraphObject  # noqa: PLC0415
+
+    markers: list[object] = []
+
+    def walk(container: object) -> None:
+        for module_type in getattr(container, "moduletype_defs", ()) or ():
+            walk(module_type)
+        for submodule in getattr(container, "submodules", ()) or ():
+            walk(submodule)
+        # A unit can hold several ``ModuleDef`` blocks (legacy per-layer runs);
+        # ``00663540`` reads the block group that follows the declaration
+        # sections, so every block contributes its markers here.
+        module_defs = getattr(container, "moduledefs", None) or [getattr(container, "moduledef", None)]
+        for module_def in module_defs:
+            for graph_object in getattr(module_def, "graph_objects", ()) or ():
+                if isinstance(graph_object, GraphObject) and graph_object.type == _COMPOSITE_OBJECT_TYPE:
+                    markers.append(graph_object)
+
+    walk(picture)
+    return markers
+
+
 def correlate_composites(
     picture: object, model: GraphicsModel
 ) -> tuple[tuple[GraphicsCompositeBinding, ...], tuple[GraphicsMessage, ...]]:
     """Bind source ``CompositeObject`` markers to companion records by ordinal.
 
     Native ``00665fc0`` consumes the *next* companion record each time the source
-    parser reaches a ``CompositeObject`` marker (token 0x78), in source-reading
-    order across definitions - there is no name lookup. We therefore walk the
-    source AST in the same order (module definitions, then nested submodules,
-    then module types) and pair marker *n* with record *n*.
+    parser reaches a ``CompositeObject`` marker (token 0x78) - there is no name
+    lookup and one cursor serves the whole source/companion pair. We therefore
+    walk the source AST in that same order (module type definitions, inline
+    submodule definitions, then the enclosing ``ModuleDef``; see
+    :func:`_composite_markers`) and pair marker *n* with record *n*.
 
     Markers beyond the record list and records beyond the marker list are
-    reported as ``GraphicsMessage`` values (native severity for both is not
-    recovered); the pairs themselves carry the marker span so a consumer can
-    point at the construct.
+    reported as ``GraphicsMessage`` values. Those diagnostics are parser-owned:
+    no native severity was recovered for either case. Each pair carries the
+    marker's source span so a consumer can point at the construct.
     """
-    from sattline_parser.models.ast_model import BasePicture, GraphObject  # noqa: PLC0415
+    from sattline_parser.models.ast_model import BasePicture  # noqa: PLC0415
 
     if not isinstance(picture, BasePicture):  # pragma: no cover - defensive
         raise TypeError("correlate_composites expects a BasePicture")
 
-    markers: list[SourceSpan | None] = []
-
-    def walk(container: object) -> None:
-        # A unit can hold several ``ModuleDef`` blocks and nested module types;
-        # native order is source order, so every block contributes its markers.
-        module_defs = getattr(container, "moduledefs", None) or [getattr(container, "moduledef", None)]
-        for module_def in module_defs:
-            for graph_object in getattr(module_def, "graph_objects", ()) or ():
-                if isinstance(graph_object, GraphObject) and graph_object.type == _COMPOSITE_OBJECT_TYPE:
-                    markers.append(None)
-        for submodule in getattr(container, "submodules", ()) or ():
-            walk(submodule)
-
-    walk(picture)
-    for module_type in picture.moduletype_defs:
-        walk(module_type)
+    markers = _composite_markers(picture)
+    marker_spans = [getattr(marker, "span", None) for marker in markers]
 
     messages = list(model.messages)
     pairs: list[GraphicsCompositeBinding] = []
     for index, record in enumerate(model.composite_records):
         if index < len(markers):
-            pairs.append(GraphicsCompositeBinding(marker_ordinal=index + 1, record=record))
+            pairs.append(
+                GraphicsCompositeBinding(
+                    marker_ordinal=index + 1,
+                    record=record,
+                    marker_span=marker_spans[index],
+                )
+            )
             continue
         messages.append(
             GraphicsMessage(

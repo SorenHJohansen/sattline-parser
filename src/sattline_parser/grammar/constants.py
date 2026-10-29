@@ -37,6 +37,9 @@ TREE_TAG_SYMBOLMODULE = "SymbolModule"
 TREE_TAG_NON_ZOOMABLE = "Non_Zoomable"
 
 KEY_NAME = "name"
+#: Interactor body keys for the two recovered clauses below.
+KEY_SCALE_MODE = "scale_mode"
+KEY_PICK_BUTTON = "pick_button"
 KEY_COORDS = "coords"
 KEY_SEGMENT_POINT = "segment_point"
 KEY_POLYGON_TYPE = "polygon_type"
@@ -106,6 +109,11 @@ GRAMMAR_REGEX_REAL = r"/[+-]?(?:\d+\.\d+(?:[eE][+-]?\d+)?|\d+[eE][+-]?\d+)/"
 GRAMMAR_REGEX_REAL_NOTAIL = r"/[+-]?(?:\d+\.\d+(?:[eE][+-]?\d+)?|\d+[eE][+-]?\d+)(?![ \t\r\n]*:)/"
 GRAMMAR_VALUE_BOOL_TRUE = "True"
 GRAMMAR_VALUE_BOOL_FALSE = "False"
+#: Boolean literal spellings the native value readers also accept (00487a60,
+#: 005c80f0, 00631940). They are keyword terminals, so they only act as literals
+#: where the grammar expects a value; elsewhere they stay ordinary names.
+GRAMMAR_VALUE_BOOL_ON = "On"
+GRAMMAR_VALUE_BOOL_OFF = "Off"
 GRAMMAR_REGEX_STRING = r"/\"([^\n\"]|\"\")*\"/"
 GRAMMAR_REGEX_STRING_NOTAIL = r"/\"([^\n\"]|\"\")*\"(?![ \t\r\n]*:)/"
 GRAMMAR_REGEX_NOT = r"/NOT\b/"
@@ -190,6 +198,19 @@ GRAMMAR_VALUE_ENABLE_PREFIX = "Enable_"
 GRAMMAR_VALUE_MODULE_IN_VIEW = "Module_In_View"
 GRAMMAR_REGEX_ENABLE_PREFIX = r"/Enable_\b/"
 GRAMMAR_VALUE_VARNAME = "VarName"
+#: Bare one-of interactor selectors (00636050 ComBut_, 00677d00 TextBox_): they
+#: take no value and set a single field (+0x1C8) to 1 (Relative_) or 0 (Abs_).
+GRAMMAR_VALUE_RELATIVE = "Relative_"
+GRAMMAR_VALUE_ABS = "Abs_"
+#: Shared interactor property clause (006573b0): `IntObjPickButton "=" STRING`
+#: with an optional postfix `VarName` that turns the string into a reference.
+GRAMMAR_VALUE_INTOBJPICKBUTTON = "IntObjPickButton"
+#: Loop statement keywords (006ff000). The scanner profile spells these keywords
+#: "FreeWord1/2/3"; no human-readable alias was recovered, so these are the
+#: spellings the decoder produces.
+GRAMMAR_VALUE_FREEWORD1 = "FreeWord1"
+GRAMMAR_VALUE_FREEWORD2 = "FreeWord2"
+GRAMMAR_VALUE_FREEWORD3 = "FreeWord3"
 GRAMMAR_VALUE_VALUEFRACTION = "ValueFraction"
 GRAMMAR_VALUE_COLOUR0 = "Colour0"
 GRAMMAR_VALUE_COLOUR1 = "Colour1"
