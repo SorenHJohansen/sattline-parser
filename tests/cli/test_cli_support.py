@@ -38,7 +38,7 @@ def test_to_jsonable_handles_scalars_enums_paths_and_spans() -> None:
     assert to_jsonable(2.5, depth=1) == 2.5
     assert to_jsonable("text", depth=1) == "text"
     assert to_jsonable(_Colour.RED, depth=1) == "red"
-    assert to_jsonable(Path("/tmp/x"), depth=1) == "/tmp/x"
+    assert to_jsonable(Path("/tmp/x"), depth=1) == str(Path("/tmp/x"))
     assert to_jsonable(span, depth=1) == {"start": 1, "end": 4, "line": 2, "column": 3}
     assert to_jsonable(LoadMode.DRAFT, depth=1) == "draft"
 
