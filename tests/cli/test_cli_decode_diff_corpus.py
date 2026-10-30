@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 from sattline_parser.cli import main
 from sattline_parser.cli._exit import ExitCode
@@ -139,7 +140,7 @@ def test_corpus_summary_and_exit_codes(tmp_path, capsys) -> None:
     payload = json.loads(capsys.readouterr().out)
     assert payload["schema"] == "sattline.v1.corpus"
     assert payload["files"] == 2
-    assert {row["file"].rsplit("/", 1)[-1] for row in payload["results"]} == {"Clean.s", "Steps.s"}
+    assert {Path(row["file"]).name for row in payload["results"]} == {"Clean.s", "Steps.s"}
 
 
 def test_corpus_reports_unreadable_files(tmp_path, capsys) -> None:
