@@ -35,7 +35,7 @@ _HEADER = '" Syntax version 2.23, date: 2026-06-19-12:41:09.218 N "'
 
 
 def _companion(*lines: str) -> str:
-    """Companion text with the CRLF line endings the native writer emits."""
+    """Companion text with the CRLF line endings the writer emits."""
     return "".join(f"{line}\r\n" for line in lines)
 
 
@@ -126,14 +126,14 @@ def test_parse_graphics_reports_malformed_field() -> None:
     assert (message.line, message.column) == (2, 1)
 
 
-def test_parse_graphics_reports_unrecovered_reader_as_warning() -> None:
+def test_parse_graphics_reports_unsupported_reader_as_warning() -> None:
     model = parse_graphics_text(_companion(" 1", " None  True  0.0 0.0", " 0.0 0.0", " 0", " 9 payload", " 0"))
 
     assert model.composite_records == ()
     [message] = model.messages
     assert message.severity == "warning"
     assert (
-        message.message == "Graphics record content is not recovered for family 1 discriminator 9; record scan stopped"
+        message.message == "Graphics record content is not supported for family 1 discriminator 9; record scan stopped"
     )
 
 
@@ -630,7 +630,7 @@ def test_parse_graphics_file_read_failure_propagates(tmp_path: Path) -> None:
 
 
 def test_correlate_composites_binds_markers_to_records_by_ordinal():
-    """00665fc0: each CompositeObject marker consumes the next record, in order."""
+    """Each CompositeObject marker consumes the next record, in order."""
     source = (
         '"Syntax version 2.23, date: 2026-10-27-12:00:00.000 N"\n'
         '"Original file date: ---"\n'
@@ -731,8 +731,8 @@ def _nested_marker_source() -> str:
     )
 
 
-def test_composite_markers_follow_the_native_declaration_order() -> None:
-    """005ccaa0: module types, then inline submodules, then the own ModuleDef.
+def test_composite_markers_follow_the_declaration_order() -> None:
+    """Module types first, then inline submodules, then the own ModuleDef.
 
     The companion cursor is opened before the recursive parse starts, so the
     first record belongs to the first marker the declaration loop reaches - a

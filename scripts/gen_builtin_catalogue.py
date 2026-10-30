@@ -1,16 +1,16 @@
-"""Regenerate ``validation/builtin_catalogue.json`` from a native export.
+"""Regenerate ``validation/builtin_catalogue.json`` from a signatures export.
 
 Usage::
 
     python scripts/gen_builtin_catalogue.py path/to/builtin_signatures.json
 
-The export is the 504-registration table extracted from the workstation build
-(``builtin_signatures.json``, SHA-256 ``<pinned in validation/builtins.py>``).
-Each registration keeps only what the validator needs: the call arity and the
-1-based positions whose descriptor mode is write-like, derived with the
-recovered mode mapping (``00711af0``: subtract 100 while >100, then 50 while
->50; ``1,2,22→0x01; 4,24→0x02; 6,26→0x03; 8,28→0x08; 9,29→0x04; 10,30→0x0C;
-11,31→0x10``; a write-like parameter has mask bit 0x02 or 0x08).
+The export is the 504-registration builtin table (``builtin_signatures.json``,
+SHA-256 ``<pinned in validation/builtins.py>``). Each registration keeps only
+what the validator needs: the call arity and the 1-based positions whose
+descriptor mode is write-like, derived with the mode mapping (subtract 100
+while >100, then 50 while >50; ``1,2,22->0x01; 4,24->0x02; 6,26->0x03;
+8,28->0x08; 9,29->0x04; 10,30->0x0C; 11,31->0x10``; a write-like parameter has
+mask bit 0x02 or 0x08).
 
 Registrations without parameters are skipped: a signature with no argument
 information would only produce false arity errors.

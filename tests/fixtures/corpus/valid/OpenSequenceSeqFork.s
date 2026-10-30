@@ -5,12 +5,12 @@
    - SEQFORK after a SEQTRANSITION (fork on transition, intra-sequence)
    - SEQFORK after a SEQSTEP, with SEQBREAK
    - SEQFORK after a SEQSTEP, without SEQBREAK
-   (every alternative branch ends on its closing transition - the native reader
-   rejects a branch that finishes on an unmatched step, so the fork to Working
-   hangs off TrRetryDone rather than off the step)
+   (every alternative branch ends on its closing transition; a branch that
+   finishes on an unmatched step is rejected, so the fork to Working hangs off
+   TrRetryDone rather than off the step)
    - SEQFORK with a cross-sequence target in the same module
    SEQBREAK is optional after SEQFORK, and a fork is only ever a suffix of its
-   host step/transition - never a free-standing sequence element.
+   host step or transition, never a free-standing sequence element.
    Expected: strict syntax-check passes. *)
 
 BasePicture Invocation

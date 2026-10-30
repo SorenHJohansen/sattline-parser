@@ -73,7 +73,7 @@ def encode_coded(text: str) -> bytes:
 
 
 def write_coded(directory: Path, name: str, text: str) -> Path:
-    """Write *text* as a byte-coded stream, the way the workstation stores ``.x``."""
+    """Write *text* as a byte-coded stream, the way the ``.x`` format does."""
     path = directory / name
     path.write_bytes(encode_coded(text))
     return path

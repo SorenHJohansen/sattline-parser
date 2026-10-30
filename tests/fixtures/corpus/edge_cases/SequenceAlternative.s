@@ -3,11 +3,10 @@
 "Program date: 2026-06-19-12:00:00.000, name: SeqAltEdge"
 (* Edge case: alternative group between two steps.
    Grammar rules: seqalternative / ALTERNATIVEBRANCH.
-   Corrected 2026-10-26: ALTERNATIVESEQ is a transition-position construct
-   (native 00625d20), so it must sit where a transition may sit - directly after
-   a step, never directly after another transition. The previous version put it
-   right after SEQTRANSITION TrGo, which is the shape the real tool rejected in
-   probe EdgeSeqAlt.x with ">>>ALTERNATIVESEQ<<< EndLoopSeqSym Expected". *)
+   ALTERNATIVESEQ is a transition-position construct, so it must sit where a
+   transition may sit: directly after a step, never directly after another
+   transition. Placing it straight after a transition is rejected with
+   ">>>ALTERNATIVESEQ<<< EndLoopSeqSym Expected". *)
 
 BasePicture Invocation
    ( 0.0 , 0.0 , 0.0 , 1.0 , 1.0

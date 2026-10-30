@@ -48,7 +48,7 @@ from sattline_parser.grammar.constants import (
 __all__ = ["SattLineLexer", "compact_provenance"]
 
 #: Folded spellings the compressor writes raw because they are literal values and
-#: not keywords (0062a440). They stay literals even in a coded source.
+#: not keywords. They stay literals even in a coded source.
 _RAW_LITERAL_WORDS = frozenset({"true", "false", "on", "off", "default"})
 
 _WORD_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*\Z")
@@ -65,8 +65,8 @@ def compact_provenance(predicate: _Provenance | None) -> Generator[None]:
 
     The parser and its lexer are cached and shared, so the provenance is a
     context-local value rather than lexer state. In coded mode a raw word is an
-    identifier even when it spells a keyword (``0062cbc0``); the lexer therefore
-    only accepts a keyword token when the decoder produced it.
+    identifier even when it spells a keyword; the lexer therefore only accepts a
+    keyword token when the decoder produced it.
     """
     handle = _PROVENANCE.set(predicate)
     try:
@@ -146,8 +146,8 @@ def _retype_raw_keyword(token: Token, token_type: str) -> str:
     """Retype a keyword token that the source spelled raw in a coded file to NAME.
 
     Coded mode decodes fixed-width ``#NN`` codes as keywords and never
-    reclassifies a raw word (``0062cbc0``), so in a decoded document a word token
-    is only a keyword when the decoder produced its characters. Raw literal
+    reclassifies a raw word, so in a decoded document a word token is only a
+    keyword when the decoder produced its characters. Raw literal
     spellings (``True``/``False``/``On``/``Off``/``Default``) are values the
     compressor always writes unencoded, so they stay as they are.
     """

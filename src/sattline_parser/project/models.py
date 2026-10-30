@@ -57,7 +57,7 @@ class GraphicsCompositeRecord:
     family_code: str
     #: Position of the record in companion-file order. A source
     #: ``CompositeObject`` marker binds to the record with the same ordinal
-    #: (native 00665fc0 consumes the next record at each marker).
+    #: (the reader consumes the next record at each marker).
     ordinal: int = 0
 
 
@@ -65,7 +65,7 @@ class GraphicsCompositeRecord:
 class GraphicsCompositeBinding:
     """A source ``CompositeObject`` marker paired with its companion record.
 
-    The association is positional (native 00665fc0 consumes the next record at
+    The association is positional (the reader consumes the next record at
     each marker in source order), not a name lookup.
     """
 
@@ -132,7 +132,7 @@ class GraphicsModel:
 class SidecarState(StrEnum):
     """What the dependency sidecar looked like for a loaded program.
 
-    A library is a body *and* a sidecar at one prefix (native LIB-05), so the
+    A library is a body *and* a sidecar at one prefix (LIB-05), so the
     three cases are distinct: absent (no file), empty (file, no names) and
     present. Conflating absent with empty would silently drop a dependency chain.
     """
@@ -158,9 +158,9 @@ class LoadDiagnosticKind(StrEnum):
 class LoadDiagnostic:
     """One non-fatal load finding.
 
-    These are conditions the native loader reports and an operator can continue
-    past (answer 11: Continue/Cancel); raising would be stricter than the real
-    tool, so they are surfaced instead of thrown.
+    These are conditions the loader reports and an operator can continue past
+    (answer 11: Continue/Cancel); raising would be stricter than the tool, so
+    they are surfaced instead of thrown.
     """
 
     kind: LoadDiagnosticKind

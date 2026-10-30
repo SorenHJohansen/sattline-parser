@@ -3,7 +3,7 @@
 "Program date: 2026-04-23-12:00:00.000, name: SequenceBasic"
 (* A coded file with raw keyword spellings in the control slot:
    `SeqControl`/`SeqTimer` are written as plain words. In coded mode a raw word
-   is an identifier and never a keyword (0062cbc0), so the sequence control slot
+   is an identifier and never a keyword, so the sequence control slot
    rejects the unit with a syntax error.
    Expected: syntax error. *)
 

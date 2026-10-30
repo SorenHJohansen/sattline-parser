@@ -94,8 +94,8 @@ class TokensMixin:
     def BOOL(self, tok: Token) -> bool:
         """Grammar BOOL terminal -> bool.
 
-        The spelling is matched case-insensitively because the native scanner
-        folds keyword case (00626850); the AST still stores a plain bool.
+        The spelling is matched case-insensitively because the scanner folds
+        keyword case; the AST still stores a plain bool.
         """
         s = str(tok).casefold()
         if s == const.GRAMMAR_VALUE_BOOL_TRUE.casefold():
@@ -175,8 +175,8 @@ class TokensMixin:
     def DATECODE_PREFIX(self, _tok: object) -> None:
         """Grammar DATECODE_PREFIX terminal (``DateCode_``) -> filtered out.
 
-        The attribute is a fixed scanner keyword (native token 0x89/137), not a
-        free ``NAME`` followed by an integer, so it must not reach the AST.
+        The attribute is a fixed scanner keyword, not a free ``NAME`` followed
+        by an integer, so it must not reach the AST.
         """
         return None
 

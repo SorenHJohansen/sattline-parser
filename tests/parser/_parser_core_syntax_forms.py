@@ -1,8 +1,8 @@
 # pyright: reportUnusedImport=false
-"""Native-confirmed syntax added from the reverse-engineered workstation build.
+"""Syntax forms covered by the parser test suite.
 
-Each case cites the native routine that settles it. The parser must accept the
-shapes the compiler accepts and reject the shapes it refuses at parse time.
+Each case covers one syntax shape. The parser must accept the shapes the
+compiler accepts and reject the shapes it refuses at parse time.
 """
 
 from __future__ import annotations
@@ -24,7 +24,7 @@ from sattline_parser.models.expressions import Assignment, IfStmt, VarRef
 _HEADER = (
     '"Syntax version 2.23, date: 2026-10-26-12:00:00.000 N"\n'
     '"Original file date: ---"\n'
-    '"Program date: 2026-10-26-12:00:00.000, name: NativeSyntax"\n'
+    '"Program date: 2026-10-26-12:00:00.000, name: SyntaxForms"\n'
 )
 
 
@@ -59,7 +59,7 @@ def _first_sequence(text: str) -> Sequence:
     return picture.modulecode.sequences[0]
 
 
-# --- SEQTRANSITION: name and guard are optional (0070d180, 006fad30) --------
+# --- SEQTRANSITION: name and guard are optional -----------------------------
 
 
 def test_unguarded_unnamed_transition_preserves_absent_guard() -> None:
@@ -96,7 +96,7 @@ def test_wait_for_without_expression_is_rejected() -> None:
         parse_source_text(_module_code(_sequence("      SEQTRANSITION WAIT_FOR\n")))
 
 
-# --- SEQFORK is a suffix of a step/transition (006f9850, 0070a100, 0070d180)
+# --- SEQFORK is a suffix of a step/transition -------------------------------
 
 
 def test_transition_fork_with_break_flag() -> None:
@@ -141,7 +141,7 @@ def test_standalone_seqbreak_is_rejected() -> None:
 
 def test_seqfork_cannot_open_a_sequence_body() -> None:
     # A fork is only ever a suffix of a host step/transition; at body start there
-    # is no host, and the native readers do not list SEQFORK as a starter.
+    # is no host, and the readers do not list SEQFORK as a starter.
     with pytest.raises(UnexpectedInput):
         parse_source_text(
             _module_code(
@@ -196,7 +196,7 @@ def test_alternative_group_is_a_transition_position_node() -> None:
     assert len(alternatives[0].branches) == 2
 
 
-# --- SUBSEQUENCE / SUBSEQSTEP names are optional (00708b40, 0070ba70) ------
+# --- SUBSEQUENCE / SUBSEQSTEP names are optional ----------------------------
 
 
 def test_unnamed_subsequence_is_accepted() -> None:
@@ -215,7 +215,7 @@ def test_unnamed_substep_is_accepted() -> None:
     assert substeps[0].name is None
 
 
-# --- DateCode: optional attribute, fixed keyword (005ab1b0, 005d6170) -------
+# --- DateCode: optional attribute, fixed keyword ----------------------------
 
 
 def test_module_definition_without_datecode_is_accepted() -> None:
@@ -271,7 +271,7 @@ def test_record_datecode_is_optional() -> None:
     assert [definition.datecode for definition in picture.datatype_defs] == [None, 7]
 
 
-# --- Statement terminators are optional (0072b660) --------------------------
+# --- Statement terminators are optional -------------------------------------
 
 
 def test_statements_without_semicolons_are_accepted() -> None:
@@ -343,7 +343,7 @@ def test_string_initialiser_after_a_modifier_ends_the_modifier_run() -> None:
 
 
 def test_initial_step_accepts_a_fork_suffix() -> None:
-    # 0070a100 is a caller of 006f9850 for SEQINITSTEP as well as SEQSTEP.
+    # SEQINITSTEP accepts the fork suffix as well as SEQSTEP does.
     sequence = _first_sequence(
         _sequence(
             "      SEQINITSTEP Rerun\n"
@@ -365,7 +365,7 @@ def _fork_codes(body: str) -> set[str]:
 
 
 def test_step_host_fork_must_name_a_transition() -> None:
-    # 00703430: a step-hosted fork resolves to transitions, a transition-hosted
+    # A step-hosted fork resolves to transitions, a transition-hosted
     # fork to steps. Requiring every target to be a step would be wrong.
     body = (
         "      SEQINITSTEP Rerun\n"
@@ -413,7 +413,7 @@ def test_fork_to_an_unknown_name_is_still_unknown_not_wrong_kind() -> None:
 
 
 def test_module_in_view_is_a_distinct_invocation_property() -> None:
-    # 00665970 reads token 0xA4 with the Boolean-property reader 00631940 and
+    # The Boolean-property reader reads token 0xA4 and
     # stores it separately from Enable_ (both may appear).
     source = (
         _HEADER
@@ -431,7 +431,7 @@ def test_module_in_view_is_a_distinct_invocation_property() -> None:
 
 def test_module_in_view_rejects_on_off() -> None:
     # The Boolean-property reader takes True/False only, unlike a general
-    # boolean expression where On/Off are legal primaries (00487a60).
+    # boolean expression where On/Off are legal primaries.
     source = (
         _HEADER
         + "BasePicture Invocation (0.0,0.0,0.0,1.0,1.0 Module_In_View = On) : MODULEDEFINITION DateCode_ 1\n"
@@ -444,8 +444,8 @@ def test_module_in_view_rejects_on_off() -> None:
 
 
 def test_equations_keyword_is_accepted_like_equationblock() -> None:
-    # 00726030 accepts both spellings and flags them differently; we keep the
-    # parsed shape identical until the flag's downstream meaning is recovered.
+    # Both spellings are accepted and flagged differently; we keep the
+    # parsed shape identical until the flag's downstream meaning is known.
     source = (
         _HEADER
         + "BasePicture Invocation (0.0,0.0,0.0,1.0,1.0) : MODULEDEFINITION DateCode_ 1\n"
@@ -464,7 +464,7 @@ def test_equations_keyword_is_accepted_like_equationblock() -> None:
     assert [equation.name for equation in module_code.equations or []] == ["Eq"]
 
 
-# --- keyword case insensitivity (00626850 / 0062e3d0) -----------------------
+# --- keyword case insensitivity ---------------------------------------------
 
 
 def test_keyword_terminals_are_case_insensitive() -> None:
@@ -553,7 +553,7 @@ def test_lowercase_seq_control_flags_are_detected() -> None:
 
 
 def test_equation_block_without_name_or_metadata() -> None:
-    # 00726030: keyword, optional name, optional coord/size, optional layer, ':'
+    # keyword, optional name, optional coord/size, optional layer, ':'
     source = _module_code(
         "   EQUATIONBLOCK :\n"
         "      Flag = True\n"

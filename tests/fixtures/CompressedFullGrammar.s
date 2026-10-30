@@ -1,7 +1,7 @@
 "Syntax version 2.23, date: 2026-08-27-18:41:22.140 C"
 "Original file date: ---"
 "Program date: 2026-08-27-18:41:22.140, name: TestCompress"
-(* Denne programenhed er oprettet 2026-08-25 11:12 af sqhj. *)
+(* Denne programenhed er oprettet 2026-08-25 11:12. *)
  BasePicture
 (* ModuleTypeDescription *)  #6? #01 0.0 , 0.0 , 0.0 , 1.0 ,  1.0  ) #8= #71
 #81 280432068 #78 TestRecord """Description of TestRecord""" #8? #72 #81

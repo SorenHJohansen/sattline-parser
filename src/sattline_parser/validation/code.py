@@ -332,10 +332,10 @@ def _check_assignment(
 def _check_old_write_target(ref: VarRef, resolved: Variable | None, errors: list[Diagnostic]) -> None:
     """``:Old`` is a read state; the compiler rejects it as a write target.
 
-    Native ``00485470`` (statement analysis) rejects an ``:Old`` assignment
-    target with expression-node error 0x14, and ``004748b0`` applies the same to
-    reference-required call arguments. This is a *semantic* rejection, distinct
-    from the syntax that still has to parse ``:Old`` (STATE-01/STATE-02).
+    Statement analysis rejects an ``:Old`` assignment target with
+    expression-node error 0x14, and reference-required call arguments follow the
+    same rule. This is a *semantic* rejection, distinct from the syntax that
+    still has to parse ``:Old`` (STATE-01/STATE-02).
     """
     if ref.state != "old" or resolved is None or not resolved.state:
         return
@@ -433,10 +433,9 @@ def _is_sfc_runtime_accessor(ref: VarRef, sfc_names: set[str]) -> bool:
 def _collect_module_jump_targets(sequences: list[Sequence] | None) -> tuple[set[str], set[str]]:
     """Collect step and transition names across the module's sequences.
 
-    Native ``00703430`` (reached via ``005d7910``) resolves fork names during
-    analysis against the module's sequence-name registry; a narrower
-    "current sequence only" scope was not recovered, so every sequence in the
-    module code block contributes here.
+    Fork names resolve during analysis against the module's sequence-name
+    registry; a narrower "current sequence only" scope could not be
+    established, so every sequence in the module code block contributes here.
     """
     step_names: set[str] = set()
     transition_names: set[str] = set()
@@ -473,10 +472,9 @@ def _check_fork_targets(
 ) -> None:
     """Resolve every SEQFORK target and check its kind.
 
-    ``00703430`` rejects unresolved or wrong-kind targets. A fork hosted on a
-    step must name transitions, and a fork hosted on a transition must name
-    steps -- a rule that merely required every target to be a step would be
-    wrong.
+    Unresolved or wrong-kind targets are rejected. A fork hosted on a step must
+    name transitions, and a fork hosted on a transition must name steps; a rule
+    that merely required every target to be a step would be wrong.
     """
 
     def _check_fork(fork: SFCFork | None, host: str, span: SourceSpan | None) -> None:

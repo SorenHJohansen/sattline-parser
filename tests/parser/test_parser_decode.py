@@ -26,12 +26,12 @@ _HANDOFF_TOKENS = (
     _REPO_ROOT / "SattLine_Parser_AI_Handoff" / "references" / "simulator_v0_8" / "sattlint_sim" / "tokens.json"
 )
 
-#: Source hash of the recovered `.SCANNER` table. Changing this means re-pinning
+#: Source hash of the `.SCANNER` table. Changing this means re-pinning
 #: the evidence, not editing the JSON by hand.
 _TOKENS_SHA256 = "edf254ac3e39093ae56e8fa91fc68d7fee88291386fb1ea4103c29d941bb4b8a"
 
 
-def test_scanner_token_table_is_the_recovered_scanner_enum() -> None:
+def test_scanner_token_table_is_the_scanner_enum() -> None:
     rows = _json.loads(_TOKEN_DATA.read_text(encoding="utf-8"))
     assert len(rows) == 206
     # Scanner ordinals are dense: id = ordinal + 8, ordinal 1..206 maps to a
@@ -45,7 +45,7 @@ def test_scanner_token_table_is_the_recovered_scanner_enum() -> None:
 
 
 def test_scanner_token_table_pins_words_the_old_seed_table_got_wrong() -> None:
-    # Recovered codes #1=, #1>, #9<, #:=: the earlier sample-derived table
+    # Codes #1=, #1>, #9<, #:=: the earlier sample-derived table
     # conflated the On/Off literals with True/False and shifted two property
     # keywords.
     assert SCANNER_TOKENS["#1="] == "On"
@@ -145,7 +145,7 @@ def test_undefined_byte_inside_an_unterminated_comment_still_fails(tmp_path: pat
 
 
 def test_raw_keyword_in_a_coded_file_is_an_identifier_not_a_keyword() -> None:
-    """Coded mode never reclassifies a raw word (0062cbc0).
+    """Coded mode never reclassifies a raw word.
 
     ``SeqControl`` written literally in a coded file is an identifier, so the
     sequence-control slot rejects the unit with a syntax error — what the real

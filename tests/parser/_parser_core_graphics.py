@@ -48,7 +48,7 @@ def test_graphics_interact_mixin_builds_graph_objects_and_lists():
             assert graph_object.properties[parser_const.KEY_COORDS] == coords
         assert graph_object.properties[parser_const.KEY_TAILS] == ["CoordTail", "ExtraTail"]
 
-    # The composite marker takes only the layer clause (native 00665fc0).
+    # The composite marker takes only the layer clause.
     composite = mixin.composite_object([7])
     assert composite.type == parser_const.GRAMMAR_VALUE_COMPOSITEOBJECT
     assert composite.properties == {"layer": 7}
@@ -148,7 +148,7 @@ def _composite_source(graph_body: str) -> str:
 
 
 def test_composite_marker_takes_only_the_layer_clause():
-    """Native 00665fc0 reads `CompositeObject [Layer_ = <int>]` and nothing else."""
+    """Reads `CompositeObject [Layer_ = <int>]` and nothing else."""
     bare = parser_core_parse_source_text(_composite_source("   CompositeObject"))
     assert bare.moduledef is not None
     assert bare.moduledef.graph_objects[0].properties == {}
@@ -172,7 +172,7 @@ def test_composite_marker_rejects_other_object_properties():
 
 
 def test_graphics_property_readers_stay_true_false_only():
-    """`On`/`Off` are value literals; the recovered property readers take BOOL."""
+    """`On`/`Off` are value literals; the property readers take BOOL."""
     with pytest.raises(UnexpectedInput):
         parser_core_parse_source_text(
             _composite_source("   RectangleObject ( -1.0 , 1.0 ) ( 1.0 , -1.0 ) Enable_ = On")
@@ -234,7 +234,7 @@ def test_interact_scale_selector_maps_relative_and_abs():
 
 
 def test_interact_pick_button_models_literal_and_reference():
-    """006573b0: `IntObjPickButton "=" STRING [VarName]`; VarName is a postfix marker."""
+    """`IntObjPickButton "=" STRING [VarName]`; VarName is a postfix marker."""
     mixin = _GraphicsHarness()
 
     literal = mixin.interact_pick_button([Token("INTOBJPICKBUTTON_KW", "IntObjPickButton"), "Pick me"])

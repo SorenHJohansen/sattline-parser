@@ -1,8 +1,7 @@
-"""Native identifier identity (CP1252 upper-byte folding).
+"""Identifier identity (CP1252 upper-byte folding).
 
-SattLine compares identifiers case-insensitively using a *byte* table recovered
-from the workstation build at ``00806168`` (``005b5290``, ``005b5f90``,
-``005b6ce0``). The table is not Unicode case folding:
+SattLine compares identifiers case-insensitively using a *byte* table taken from
+the reference name table. The table is not Unicode case folding:
 
 * ``a``-``z`` fold to ``A``-``Z``;
 * ``0x9A`` folds to ``0x8A`` and ``0x9C`` to ``0x8C`` (single-byte pairs, so
@@ -24,7 +23,7 @@ __all__ = ["fold_identifier", "identifiers_equal"]
 
 
 def _build_fold_bytes() -> dict[int, int]:
-    """CP1252 byte -> folded byte, taken from the native upper-byte table."""
+    """CP1252 byte -> folded byte, taken from the reference upper-byte table."""
     table: dict[int, int] = {0x61 + offset: 0x41 + offset for offset in range(26)}
     table[0x9A] = 0x8A
     table[0x9C] = 0x8C
@@ -43,8 +42,9 @@ def _fold_char(char: str) -> str:
     try:
         raw = char.encode("cp1252")
     except UnicodeEncodeError:
-        # Characters outside the CP1252 profile are not folded: the native table
-        # has no entry for them, and Unicode case folding is a different rule.
+        # Characters outside the CP1252 profile are not folded: the reference
+        # table has no entry for them, and Unicode case folding is a different
+        # rule.
         return char
     folded = _FOLD_BYTES.get(raw[0])
     if folded is None:
@@ -53,12 +53,12 @@ def _fold_char(char: str) -> str:
 
 
 def fold_identifier(name: str) -> str:
-    """Return the native identity key for an identifier."""
+    """Return the folded identity key for an identifier."""
     if name.isascii():
         return name.upper()
     return "".join(_fold_char(char) for char in name)
 
 
 def identifiers_equal(left: str, right: str) -> bool:
-    """Compare two identifiers the way the native symbol table does."""
+    """Compare two identifiers the way the symbol table does."""
     return fold_identifier(left) == fold_identifier(right)

@@ -77,7 +77,7 @@ class TestFuzzParseText:
 
     def test_timeout_enforced(self, monkeypatch: pytest.MonkeyPatch):
         # A hard timeout must actually kill the worker: a worker that never
-        # replies must produce a TimeoutError, and the harness must recover.
+        # replies must produce a TimeoutError, and the harness must resume.
         from sattline_parser.fuzz_harness import TimeoutError, fuzz_parse_text  # noqa: PLC0415
 
         sleeping_worker = "import time\nimport sys\nwhile True:\n    time.sleep(3600)\n"

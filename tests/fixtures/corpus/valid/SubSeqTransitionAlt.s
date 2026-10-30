@@ -6,13 +6,11 @@
    ALTERNATIVESEQ marker, matching the strict SattLine syntax.
    A redundant double ALTERNATIVESEQ marker would be rejected.
 
-   Corrected 2026-10-26: each branch closes on its own transition and a step
-   follows the sub-transition before the next transition. The native readers
-   require alternative branches of the form T (S T | M)* and treat
-   SUBSEQTRANSITION as a transition-position construct, so the earlier version
-   (branches ending on a step, two transitions in a row) is the shape the real
-   tool rejected in probe ValidSubSeqTransB.x with "ALTERNATIVEBRANCH ...
-   Incorrect Syntax - Error 32". *)
+   Each branch closes on its own transition and a step follows the
+   sub-transition before the next transition. Alternative branches take the form
+   T (S T | M)* and SUBSEQTRANSITION is a transition-position construct, so a
+   branch ending on a step, or two transitions in a row, is rejected with
+   "ALTERNATIVEBRANCH ... Incorrect Syntax ... Error 32". *)
 
 
 BasePicture Invocation

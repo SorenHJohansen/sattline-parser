@@ -3,12 +3,11 @@
 "Program date: 2026-06-19-12:00:00.000, name: SeqBreakEdge"
 (* Edge case: SEQBREAK as the closing flag of a SEQFORK suffix.
 
-   Native evidence (006f9850, 0070a100, 0070d180): SEQFORK is not a sequence
-   element of its own. It is a suffix of its host step or transition, reads one
-   or more comma-separated target names, and may then consume a SEQBREAK. A
-   standalone SEQBREAK is not in any position starter set, so the early-exit
-   form is written as the fork's flag - see invalid/StandaloneSeqBreak.s for the
-   rejected spelling. *)
+   SEQFORK is not a sequence element of its own. It is a suffix of its host step
+   or transition, reads one or more comma-separated target names, and may then
+   consume a SEQBREAK. A standalone SEQBREAK is not in any position starter set,
+   so the early-exit form is written as the fork's flag; see
+   invalid/StandaloneSeqBreak.s for the rejected spelling. *)
 
 BasePicture Invocation
    ( 0.0 , 0.0 , 0.0 , 1.0 , 1.0

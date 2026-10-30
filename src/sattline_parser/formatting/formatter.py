@@ -157,7 +157,7 @@ def format_expr(expr: object, indent: str = _DEFAULT_INDENT) -> str:
 
 
 def _format_sfc_loop(lines: list[str], node: Any, indent: str) -> None:
-    """Render a `Loop ... EndLoop` block (native 006ff000)."""
+    """Render a `Loop ... EndLoop` block."""
     name_suffix = f" {node.name}" if node.name else ""
     while_suffix = f" While {format_expr(node.condition, indent)}" if node.condition is not None else ""
     lines.append(f"Loop{name_suffix}{while_suffix}:")

@@ -1,9 +1,7 @@
-"""Sequence element-position validation (native S/T/M productions).
+"""Sequence element-position validation (S/T/M productions).
 
-The native SattLine readers classify every sequence construct into exactly one
-position and accept only specific interleavings (`00625d20` initialises the
-three starter sets; `00708d20`, `007089a0`, `0070db70`, `0070be80`, `0070bcb0`,
-`0070b440`, `0070cf20` implement the readers):
+Each sequence construct classifies into exactly one position, and only specific
+interleavings are accepted. The three starter sets define the positions:
 
 ===================  ==========================================================
 position             constructs
@@ -30,7 +28,7 @@ after the parse so comments may appear anywhere, and report ``SL-V016``,
 ``SL-V023``, ``SL-V024``, ``SL-V033`` or ``SL-V036`` accordingly.
 
 ``SEQFORK`` occupies no position: it is a suffix of its host step/transition
-(`006f9850`, `0070a100`, `0070d180`) and therefore never appears here.
+and therefore never appears here.
 """
 
 from __future__ import annotations
@@ -72,7 +70,7 @@ def _position(item: SFCBodyItem) -> str | None:
         return TRANSITION
     if isinstance(item, SFCLoop):
         # A loop carries its own closed body and takes the structural (M) slot
-        # (006ff000: ``FreeWord1`` is in M_FIRST alongside SUBSEQUENCE).
+        # (``FreeWord1`` sits in M_FIRST alongside SUBSEQUENCE).
         return STRUCTURAL
     # The union is exhausted down to SFCSubsequence here; a sub-step occupies the
     # step position and a plain sub-sequence the structural one.

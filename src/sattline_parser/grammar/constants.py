@@ -37,7 +37,7 @@ TREE_TAG_SYMBOLMODULE = "SymbolModule"
 TREE_TAG_NON_ZOOMABLE = "Non_Zoomable"
 
 KEY_NAME = "name"
-#: Interactor body keys for the two recovered clauses below.
+#: Interactor body keys for the two clauses below.
 KEY_SCALE_MODE = "scale_mode"
 KEY_PICK_BUTTON = "pick_button"
 KEY_COORDS = "coords"
@@ -109,9 +109,9 @@ GRAMMAR_REGEX_REAL = r"/[+-]?(?:\d+\.\d+(?:[eE][+-]?\d+)?|\d+[eE][+-]?\d+)/"
 GRAMMAR_REGEX_REAL_NOTAIL = r"/[+-]?(?:\d+\.\d+(?:[eE][+-]?\d+)?|\d+[eE][+-]?\d+)(?![ \t\r\n]*:)/"
 GRAMMAR_VALUE_BOOL_TRUE = "True"
 GRAMMAR_VALUE_BOOL_FALSE = "False"
-#: Boolean literal spellings the native value readers also accept (00487a60,
-#: 005c80f0, 00631940). They are keyword terminals, so they only act as literals
-#: where the grammar expects a value; elsewhere they stay ordinary names.
+#: Boolean literal spellings the value readers also accept. They are keyword
+#: terminals, so they only act as literals where the grammar expects a value;
+#: elsewhere they stay ordinary names.
 GRAMMAR_VALUE_BOOL_ON = "On"
 GRAMMAR_VALUE_BOOL_OFF = "Off"
 GRAMMAR_REGEX_STRING = r"/\"([^\n\"]|\"\")*\"/"
@@ -198,16 +198,16 @@ GRAMMAR_VALUE_ENABLE_PREFIX = "Enable_"
 GRAMMAR_VALUE_MODULE_IN_VIEW = "Module_In_View"
 GRAMMAR_REGEX_ENABLE_PREFIX = r"/Enable_\b/"
 GRAMMAR_VALUE_VARNAME = "VarName"
-#: Bare one-of interactor selectors (00636050 ComBut_, 00677d00 TextBox_): they
-#: take no value and set a single field (+0x1C8) to 1 (Relative_) or 0 (Abs_).
+#: Bare one-of interactor selectors (ComBut_, TextBox_): they take no value and
+#: set a single object field to 1 (Relative_) or 0 (Abs_).
 GRAMMAR_VALUE_RELATIVE = "Relative_"
 GRAMMAR_VALUE_ABS = "Abs_"
-#: Shared interactor property clause (006573b0): `IntObjPickButton "=" STRING`
+#: Shared interactor property clause: `IntObjPickButton "=" STRING`
 #: with an optional postfix `VarName` that turns the string into a reference.
 GRAMMAR_VALUE_INTOBJPICKBUTTON = "IntObjPickButton"
-#: Loop statement keywords (006ff000). The scanner profile spells these keywords
-#: "FreeWord1/2/3"; no human-readable alias was recovered, so these are the
-#: spellings the decoder produces.
+#: Loop statement keywords. These keywords have no human-readable alias, so the
+#: grammar spells them "FreeWord1/2/3" and those are the spellings the parser
+#: accepts.
 GRAMMAR_VALUE_FREEWORD1 = "FreeWord1"
 GRAMMAR_VALUE_FREEWORD2 = "FreeWord2"
 GRAMMAR_VALUE_FREEWORD3 = "FreeWord3"
@@ -274,13 +274,13 @@ GRAMMAR_REGEX_BOOL_NOTAIL = r"/(?:True|False)\b(?![ \t\r\n]*:)/"
 
 
 #: Identifiers are matched case-insensitively so that the keyword exclusion list
-#: below excludes ``true``/``ENDDEF`` as well as ``True``/``ENDDEF``; the native
-#: scanner folds keyword case (00626850/0062e3d0). The scope wraps the whole
-#: pattern because the terminal spans several lines in the grammar template.
-#: Identifier characters. Native comparison is byte-oriented, and ABB's own
+#: below excludes ``true``/``ENDDEF`` as well as ``True``/``ENDDEF``; keyword
+#: case is folded. The scope wraps the whole pattern because the terminal spans
+#: several lines in the grammar template.
+#: Identifier characters. Comparison is byte-oriented, and real
 #: libraries use CP1252 bytes that are not Unicode letters inside identifiers
-#: (``0xA6`` in KaHAXDiluteLib.s, ``0xB8`` in TestApplTank.s, ``0x85`` there too),
-#: so the printable CP1252 range is part of the class alongside the letter/mark
+#: (``0xA6``, ``0xB8`` and ``0x85`` all occur in identifier text), so the
+#: printable CP1252 range is part of the class alongside the letter/mark
 #: categories.
 def _cp1252_name_characters() -> str:
     characters: list[str] = []

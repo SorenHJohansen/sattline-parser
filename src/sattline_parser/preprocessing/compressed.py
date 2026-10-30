@@ -34,9 +34,8 @@ __all__ = [
     "preprocess_source",
 ]
 
-#: Recovered SattLine scanner token table: compact code (``#`` + two chars from
-#: the ASCII run ``0…?``) -> source spelling. Extracted from the ``.SCANNER``
-#: section of the workstation's 3.1 configuration container by
+#: SattLine scanner token table: compact code (``#`` + two chars from
+#: the ASCII run ``0`` to ``?``) -> source spelling. Produced by
 #: ``sattlint_sim.tokens.scanner_tokens()`` (scanner ordinal ``n`` is encoded as
 #: ``'#' + chr(48 + n // 16) + chr(48 + n % 16)``), pinned in
 #: ``scanner_tokens.json`` and verified against the compressed/uncompressed
@@ -475,7 +474,7 @@ def preprocess_source(text: str) -> SourceDocument:
     """
     if not is_compressed(text):
         return SourceDocument.identity(text)
-    # A header-flagged compact file is *coded* in the native sense; the density
+    # A header-flagged compact file is *coded* by definition; the density
     # heuristic also fires on partially hand-coded text where raw keywords are
     # ordinary source. The reader distinguishes the two per token from the
     # character provenance (see ``grammar.sattline_lexer``).

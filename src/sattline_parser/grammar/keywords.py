@@ -1,8 +1,8 @@
 """Make the grammar's keyword terminals case-insensitive.
 
-The recovered scanner setup matches keywords case-insensitively
-(``00626850``/``0062e3d0``), so ``moduledefinition`` and ``EndDef`` must parse
-exactly like ``MODULEDEFINITION`` and ``ENDDEF``. Lark 1.3.1 has no
+The scanner setup matches keywords case-insensitively, so
+``moduledefinition`` and ``EndDef`` must parse exactly like
+``MODULEDEFINITION`` and ``ENDDEF``. Lark 1.3.1 has no
 ``case_insensitive`` option, so the resolved grammar is rewritten instead:
 
 * a named terminal defined as a plain string literal *containing letters* becomes

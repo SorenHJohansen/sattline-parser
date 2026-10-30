@@ -1,5 +1,5 @@
 # pyright: reportUnusedImport=false
-"""Sequence position rules (native S/T/M productions) at parse+validate level.
+"""Sequence position rules (S/T/M productions) at parse+validate level.
 
 Each rejected shape below is one the real tool refuses: the probes that produced
 them are named in the test, so a future weakening is visible.

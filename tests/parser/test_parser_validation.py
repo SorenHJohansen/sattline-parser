@@ -95,7 +95,7 @@ _RETIRED_VALIDATION_FIXTURES: dict[str, str] = {
 
 _PARSE_REJECTED_FIXTURES = [
     # A coded file that spells `SeqControl`/`SeqTimer` raw: those are identifiers
-    # in coded mode (0062cbc0), so the sequence-control slot rejects the unit.
+    # in coded mode, so the sequence-control slot rejects the unit.
     "CodedRawKeyword",
     "CoordInVarTail",
     "ModuleDefNoTrailingEnddef",
@@ -622,7 +622,7 @@ def test_sfc_walk_covers_all_body_item_kinds():
     trailing = SFCTransition(name="TrTail", condition=True)
     after_transition = SFCStep(kind="step", name="AfterTr", code=SFCCodeBlocks())
     after_sub = SFCStep(kind="step", name="AfterTSub", code=SFCCodeBlocks())
-    # A fork hosted on a *transition* must name steps (native 00703430).
+    # A fork hosted on a *transition* must name steps.
     transition.fork = SFCFork(
         targets=("Init", "AfterTr", "SubStep", "AltStep", "ParStep", "SubInner"),
         has_break=True,
@@ -679,7 +679,7 @@ def test_sfc_step_and_transition_names_collected_for_fork():
             ]
         ]
     )
-    # Step targets only: the host is a transition, and 00703430 checks the kind.
+    # Step targets only: the host is a transition, so the target kind is checked.
     transitions[0].fork = SFCFork(targets=("Run", "Mid", "Nested", "NestedAlt", "AfterSub", "Tail"))
     bp.modulecodes = [
         ModuleCode(
@@ -1268,13 +1268,13 @@ def test_reserved_runtime_names_cannot_be_declared():
     assert "SL-V019" not in codes("   Flag: boolean := False;\n")
 
 
-def test_identifier_folding_uses_the_native_byte_table():
+def test_identifier_folding_uses_the_cp1252_byte_table():
     from sattline_parser.validation.names import fold_identifier, identifiers_equal  # noqa: PLC0415
 
     # ASCII folds to upper case
     assert fold_identifier("count") == "COUNT"
     assert identifiers_equal("Count", "COUNT")
-    # CP1252 high bytes fold through the native table, one byte at a time
+    # CP1252 high bytes fold through the table, one byte at a time
     assert fold_identifier("é") == "É"
     assert identifiers_equal("Straße", "STRAßE")
     assert identifiers_equal("Œuvre", "œuvre")
@@ -1357,7 +1357,7 @@ def test_datecode_normalisation_and_generation():
     # a negative literal is refused rather than given Python's modulo sign
     with pytest.raises(ValueError, match="negative"):
         normalized_datecode(-1)
-    # generated stamps follow the native clock formula
+    # generated stamps follow the clock formula
     assert compute_datecode(123, 1000) == 2400
     assert compute_datecode(123, 0) == 0
 
@@ -1386,9 +1386,9 @@ def test_on_off_runtime_constants_are_boolean_expressions():
             for diagnostic in parse_and_validate(header + picture + f"      {statement}\n" + tail)[1]
         }
 
-    # On/Off are boolean primaries (00487a60), so these are ordinary assignments
+    # On/Off are boolean primaries, so these are ordinary assignments
     assert codes("Flag = On;") == set()
     assert codes("Flag = Off;") == set()
     assert "SL-V029" in codes("Num = On;")
-    # ...and numeric comparison against them is rejected (0047b5a0, error 0x17)
+    # ...and numeric comparison against them is rejected (error 0x17)
     assert "SL-V028" in codes("Flag = Num > Off;")

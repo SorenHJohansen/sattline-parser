@@ -79,7 +79,7 @@ duration_value:             DURATION_VALUE STRING?
 time_value:                 TIME_VALUE STRING?
 // `On`/`Off` are boolean literals only where a value is read (expressions,
 // initializers, binding tails). The graphics property readers keep using BOOL /
-// BOOL_NOTAIL, so they stay True/False-only as recovered.
+// BOOL_NOTAIL, so they stay True/False-only.
 value:                      BOOL | ON_KW | OFF_KW | REAL | STRING | SIGNED_INT
 
 // ============================================================================
@@ -125,7 +125,7 @@ argument_list:              expression ("," expression)*
                             | variable_name
                             | value
 
-// Statement terminators are optional in the native reader (0072b660); the
+// Statement terminators are optional; the
 // semicolon is a separator, not a required part of the statement.
 statement:                  assignment_statement ";"? | function_call ";"? | if_statement ";"? | comment_stmt
 assignment_statement:       variable_name "=" expression
@@ -133,15 +133,15 @@ if_statement:               IF expression THEN (code_comment | statement)* (ELSI
 
 //Sequences
 sequence:                   (SEQUENCE | OPENSEQUENCE) NAME? seq_control_opt? codeblock_coord objsizedef layer_info? sequence_body (ENDSEQUENCE | ENDOPENSEQUENCE)
-// Element positions follow the native sequence readers (00708d20/0070db70):
+// Element positions follow the sequence readers:
 // S = step position (SEQINITSTEP, SEQSTEP, SUBSEQSTEP, PARALLELSEQ),
 // T = transition position (SEQTRANSITION, SUBSEQTRANSITION, ALTERNATIVESEQ),
 // M = structural (SUBSEQUENCE). SEQFORK is not an element: it is a suffix of
-// its host step or transition (006f9850, 0070a100, 0070d180).
+// its host step or transition.
 sequence_body:              (code_comment | seq_element)+
 
-// Native 006ff000: `FreeWord1 [NAME] C FreeWord2 [expression] [C] FreeWord3`.
-// C is the same closed `(S T | M)+` body a sequence uses (007089a0), the first C
+// Loop statement shape: `FreeWord1 [NAME] C FreeWord2 [expression] [C] FreeWord3`.
+// C is the same closed `(S T | M)+` body a sequence uses, the first C
 // is required and the second optional, and no WAIT_FOR token precedes the
 // optional expression. A loop occupies the structural (M) position, so it may
 // appear anywhere a body element may and may nest inside C.
@@ -164,15 +164,15 @@ codeblock_coord:            COORD_KW REAL "," REAL
 objsizedef:                 OBJSIZE REAL "," REAL
 
 // SEQUENCE ELEMENTS
-// 0070a100 accepts the fork suffix on SEQINITSTEP and SEQSTEP alike; 0070d180
-// accepts it on SEQTRANSITION. Those are the only recovered callers of 006f9850,
-// so SUBSEQSTEP / SUBSEQTRANSITION wrappers take no fork.
+// The fork suffix is accepted on SEQINITSTEP and SEQSTEP alike, and on
+// SEQTRANSITION. Those are the only callers, so SUBSEQSTEP / SUBSEQTRANSITION
+// wrappers take no fork.
 seqinitstep:                SEQINITSTEP NAME? code_blocks seqfork?
 // Ordinary steps may be unnamed in real SattLine (verified against the actual
 // SattLine parser); only the name is optional, never the code block run.
 seqstep:                    SEQSTEP NAME? code_blocks seqfork?
 // Both the name and the guard are optional; an absent guard compiles as true
-// (native 0070d180 leaves the expression unset, 006fad30 lowers it to true).
+// (the expression stays unset and lowers to true).
 seqtransition:              SEQTRANSITION NAME? (WAIT_FOR expression)? seqfork?
 seqtransitionsub:           SUBSEQTRANSITION NAME? sequence_body ENDSUBSEQTRANSITION
 seqsubstep:                 SUBSEQSTEP NAME? sequence_body ENDSUBSEQSTEP
@@ -187,7 +187,7 @@ activecode:                 ACTIVECODE (code_comment | statement)*
 exitcode:                   EXITCODE (code_comment | statement)*
 
 
-// 00726030 accepts EQUATIONBLOCK or EQUATIONS (the keywords set different
+// EQUATIONBLOCK and EQUATIONS are both accepted (the keywords set different
 // flags); the name, the coordinate/size metadata and the layer metadata are all
 // optional there, and only the statement list after ":" is required.
 equationblock:              (EQUATIONBLOCK | EQUATIONS) NAME? codeblock_coord? objsizedef? layer_info? ":" (code_comment | statement)*
@@ -240,8 +240,8 @@ enable_interact:            ENABLE_PREFIX "=" BOOL invar
 // paren tail and the two cannot both match the same source.
 enable_combut:              ENABLE_PREFIX "=" BOOL enable_expression
 enable_expression:          ":" "(" expression ")"
-// Invocation-header property (native 00665970, token 0xA4). Its reader accepts
-// True/False only - Module_In_View is not an arbitrary `NAME = expression`
+// Invocation-header property. Its reader accepts
+// True/False only; Module_In_View is not an arbitrary `NAME = expression`
 // production, and it is stored separately from Enable_ (they can coexist).
 module_in_view:             MODULE_IN_VIEW_KW "=" BOOL (invar_tail | enable_expression)?
 // Proved 2026-10-05 (EdgePropEnableInvar.x): after InVar_/OutVar_ the real
@@ -287,7 +287,7 @@ oval_object:                OVALOBJECT origo_size_pair common_properties
 polygon_object:             POLYGONOBJECT polygon_type? coordinates+ common_properties
 polygon_type:               (POLYLINE | SPLINE | CONNECTION)+
 segment_object:             SEGMENTOBJECT origo_size_pair coordinates common_properties
-// Native 00665fc0 consumes `CompositeObject [Layer_ = <int>]` and then the next
+// The reader consumes `CompositeObject [Layer_ = <int>]` and then the next
 // companion-graphics record; the marker takes no other object properties.
 composite_object:           COMPOSITEOBJECT comments? layer_info?
 
@@ -332,14 +332,14 @@ interact_body: layer_info
 | interact_pick_button
 | format_string
 
-// Native 00636050 (ComBut_) and 00677d00 (TextBox_) accept one optional
+// ComBut_ and TextBox_ accept one optional
 // Relative_/Abs_ choice after the alignment slot. It is a bare selector: no
 // `=`, boolean or value follows, and it sets a single object field.
 // The body is still an unordered repetition, so the position is not enforced
 // here; the token is distinct instead of arriving as an anonymous NAME flag.
 interact_scale_selector:    RELATIVE_KW | ABS_KW
 
-// Native 006573b0, the shared interactor property clause. `VarName` is a
+// The shared interactor property clause. `VarName` is a
 // postfix marker: the preceding STRING holds either the literal text or the
 // reference spelling, and no further identifier follows it.
 interact_pick_button:       INTOBJPICKBUTTON_KW "=" STRING VARNAME?

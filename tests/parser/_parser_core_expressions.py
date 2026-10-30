@@ -251,7 +251,7 @@ def test_expression_and_value_literal_allowlists_are_symmetric():
         assert not isinstance(assignment.value, VarRef), f"{literal_kind} literal did not parse as expression operand"
 
         if interact_tail is None:
-            # An initializer is the other recovered value context.
+            # An initializer is the other value context.
             init_bp = _parse_to_basepicture(
                 '"SyntaxVersion"\n'
                 '"OriginalFileDate"\n'

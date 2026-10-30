@@ -475,7 +475,7 @@ def test_load_graphics_structural_errors_do_not_fail_load(tmp_path: Path) -> Non
     assert program.graphics.errors, "expected at least one structural graphics message"
 
 
-# --- sidecar pairing invariant (native LIB-05) ------------------------------
+# --- sidecar pairing invariant (LIB-05) -------------------------------------
 
 
 def test_sidecar_is_not_paired_across_prefixes(tmp_path: Path) -> None:
@@ -483,7 +483,7 @@ def test_sidecar_is_not_paired_across_prefixes(tmp_path: Path) -> None:
 
     ``consumer`` holds the body but no sidecar; ``other`` holds a sidecar only.
     The old whole-root lookup paired the two and then resolved that library's
-    own dependencies relative to ``other``. Native LIB-05 reads the sidecar at
+    own dependencies relative to ``other``. LIB-05 reads the sidecar at
     the selected body prefix and reports the failure instead, so the stray file
     becomes a diagnostic and no dependencies are invented.
     """
@@ -544,7 +544,7 @@ def test_dependency_cycle_is_a_diagnostic_not_an_exception(tmp_path: Path) -> No
 
 
 def test_first_body_match_wins_not_the_newest_datecode(tmp_path: Path) -> None:
-    """Native LIB-01/DATE-01: the first matching body prefix wins.
+    """LIB-01/DATE-01: the first matching body prefix wins.
 
     A later root with a much larger DateCode must not be preferred; a loader
     that "picks the newest" would silently load a different library version.

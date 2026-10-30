@@ -21,7 +21,6 @@
 | `src/sattline_parser/project/` | Project layer: discovery, resolution, `.g`/`.y` companions, caches, `SattLineProject` |
 | `src/sattline_parser/validation/` | Validator rules, diagnostics, builtin catalogue |
 | `src/sattline_parser/source_document.py` | Source provenance: original/normalized text + source map, span remapping |
-| `docs/cli.md` | User-facing CLI surface, exit codes and per-command options |
 | `tests/` | Full suite: `tests/parser/`, `tests/project/`, `tests/cli/`, packaging tests |
 | `tests/fixtures/corpus/` | Corpus fixtures (`.s` sources only) for regression and fuzz seeding |
 

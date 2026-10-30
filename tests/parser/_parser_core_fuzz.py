@@ -46,7 +46,7 @@ def test_reconstruct_error_resolves_known_and_unknown_classes():
     assert isinstance(parser_fuzz_harness._reconstruct_error("OnlyClass", "msg"), RuntimeError)
 
 
-def test_fuzz_worker_recovers_from_killed_process():
+def test_fuzz_worker_resumes_after_killed_process():
     worker = parser_fuzz_harness._FuzzWorker()
     try:
         assert worker.parse("garbage", 5.0).get("ok") is False

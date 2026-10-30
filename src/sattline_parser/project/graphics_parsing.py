@@ -7,10 +7,9 @@ parse moves here; correlation (``correlate_composites``) and asset-path warnings
 stay in the consumer.
 
 Record boundaries come from the per-family readers in
-``sattline_parser.project.graphics_records`` (the recovered native grammar), not
-from blank lines: see ``docs/graphics_parity.md``. Bindings are additionally
-scanned line by line, because the consumer wants every binding in the file and
-not just the ones a record reader consumes.
+``sattline_parser.project.graphics_records``, not from blank lines. Bindings
+are additionally scanned line by line, because the consumer wants every binding
+in the file and not just the ones a record reader consumes.
 """
 
 from __future__ import annotations
@@ -119,10 +118,10 @@ def parse_graphics_text(text: str) -> GraphicsModel:
     (never raised); asset-path warnings are a consumer responsibility and are
     not computed here.
 
-    The record readers follow the native byte consumption, which assumes the
-    CRLF line endings the native writer emits (``read_text_cp1252`` preserves
-    them). An LF-only text that ends a record field with an empty picture-display
-    payload is read with the tolerant separator described in
+    The record readers follow the companion format's byte consumption, which
+    assumes the CRLF line endings the writer emits (``read_text_cp1252``
+    preserves them). An LF-only text that ends a record field with an empty
+    picture-display payload is read with the tolerant separator described in
     ``graphics_records``.
     """
     messages: list[GraphicsMessage] = []
@@ -178,18 +177,17 @@ def parse_graphics_file(file_path: Path) -> GraphicsModel:
 
 
 def _composite_markers(picture: object) -> list[object]:
-    """Source ``CompositeObject`` markers in the order the native reader sees them.
+    """Source ``CompositeObject`` markers in the order the reader sees them.
 
-    ``005ccaa0`` is the controlling token reader (not a later tree walk): its
-    declaration loop consumes ``TYPEDEFINITIONS`` (recursing into each module
-    type through ``005dc3f0``), then ``SUBMODULES`` inline definitions
-    (``005cc700``, recursing through ``005ccaa0``) and only then calls
-    ``00663540`` for the enclosing module's own ``ModuleDef``. ``00665fc0``
-    consumes one companion record at each marker while that loop runs, so the
-    record order is children-before-own: module types, inline submodules, own
-    ``ModuleDef``. The normal source writer (``005cf580``) writes in the same
-    order, and an invocation that references an existing named module type takes
-    the ``005cc700`` reference branch, which does not reread that type.
+    The declaration loop is the controlling token reader (not a later tree
+    walk): it consumes ``TYPEDEFINITIONS`` (recursing into each module type),
+    then ``SUBMODULES`` inline definitions (recursing the same way) and only
+    then reads the enclosing module's own ``ModuleDef``. One companion record
+    is consumed at each marker while that loop runs, so the record order is
+    children-before-own: module types, inline submodules, own ``ModuleDef``.
+    The normal source writer emits the same order, and an invocation that
+    references an existing named module type takes the reference branch, which
+    does not reread that type.
     """
     from sattline_parser.models.ast_model import GraphObject  # noqa: PLC0415
 
@@ -201,8 +199,8 @@ def _composite_markers(picture: object) -> list[object]:
         for submodule in getattr(container, "submodules", ()) or ():
             walk(submodule)
         # A unit can hold several ``ModuleDef`` blocks (legacy per-layer runs);
-        # ``00663540`` reads the block group that follows the declaration
-        # sections, so every block contributes its markers here.
+        # the block group that follows the declaration sections is read in full,
+        # so every block contributes its markers here.
         module_defs = getattr(container, "moduledefs", None) or [getattr(container, "moduledef", None)]
         for module_def in module_defs:
             for graph_object in getattr(module_def, "graph_objects", ()) or ():
@@ -218,17 +216,17 @@ def correlate_composites(
 ) -> tuple[tuple[GraphicsCompositeBinding, ...], tuple[GraphicsMessage, ...]]:
     """Bind source ``CompositeObject`` markers to companion records by ordinal.
 
-    Native ``00665fc0`` consumes the *next* companion record each time the source
-    parser reaches a ``CompositeObject`` marker (token 0x78) - there is no name
-    lookup and one cursor serves the whole source/companion pair. We therefore
-    walk the source AST in that same order (module type definitions, inline
-    submodule definitions, then the enclosing ``ModuleDef``; see
+    Reading the companion consumes the *next* companion record each time the
+    source parser reaches a ``CompositeObject`` marker (token 0x78): there is no
+    name lookup and one cursor serves the whole source/companion pair. We
+    therefore walk the source AST in that same order (module type definitions,
+    inline submodule definitions, then the enclosing ``ModuleDef``; see
     :func:`_composite_markers`) and pair marker *n* with record *n*.
 
     Markers beyond the record list and records beyond the marker list are
     reported as ``GraphicsMessage`` values. Those diagnostics are parser-owned:
-    no native severity was recovered for either case. Each pair carries the
-    marker's source span so a consumer can point at the construct.
+    the companion format defines no severity for either case. Each pair carries
+    the marker's source span so a consumer can point at the construct.
     """
     from sattline_parser.models.ast_model import BasePicture  # noqa: PLC0415
 

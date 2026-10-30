@@ -11,9 +11,9 @@ from ._parser_core_grammar import *
 from ._parser_core_graphics import *
 from ._parser_core_module_definitions import *
 from ._parser_core_modules import *
-from ._parser_core_native_syntax import *
 from ._parser_core_preprocessing import *
 from ._parser_core_provenance import *
 from ._parser_core_sequence_positions import *
 from ._parser_core_sfc import *
+from ._parser_core_syntax_forms import *
 from ._parser_core_transformer import *

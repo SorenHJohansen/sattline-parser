@@ -49,8 +49,8 @@ sattline version --json           # tool and JSON schema versions
 
 Findings are sentences with a location, an optional `help:` line and a
 machine-only rule id; exit codes are `0` clean, `1` findings, `2` usage/input,
-`3` internal. See the
-[CLI reference](https://github.com/SorenHJohansen/sattline-parser/blob/main/docs/cli.md).
+`3` internal. Run `sattline <command> --help` for the full option list of any
+command.
 
 ### Parse a source file
 

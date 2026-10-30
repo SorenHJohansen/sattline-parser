@@ -23,7 +23,7 @@ _UNTERMINATED = "Unterminated graphics record; expected trailing '0' line"
 
 
 def _companion(*lines: str) -> str:
-    """Build companion text the way the native writer does: CRLF line endings."""
+    """Build companion text the way the writer does: CRLF line endings."""
     return "".join(f"{line}\r\n" for line in lines)
 
 
@@ -254,7 +254,7 @@ def test_family_1_discriminators_5_and_6() -> None:
 
 
 def test_family_1_subrecord_1_field_consumption() -> None:
-    """004dcc30: D[3], two B11 bindings, H[2], I[2]; no optional tail here."""
+    """D[3], two B11 bindings, H[2], I[2]; no optional tail here."""
     text = _with_header(
         " 1",
         " None  True  0.0 0.0",
@@ -275,7 +275,7 @@ def test_family_1_subrecord_1_field_consumption() -> None:
 
 
 def test_family_1_subrecord_1_optional_tail() -> None:
-    """004dcc30: every ``if MORE()`` gate fires on one line."""
+    """Every ``if MORE()`` gate fires on one line."""
     text = _with_header(
         " 1",
         " None  True  0.0 0.0",
@@ -297,7 +297,7 @@ def test_family_1_subrecord_1_optional_tail() -> None:
 
 
 def test_family_1_subrecord_2_optional_tail() -> None:
-    """004f1950: every ``if MORE()`` gate fires before the 2.7 trailing block."""
+    """Every ``if MORE()`` gate fires before the 2.7 trailing block."""
     text = _with_header(
         " 1",
         " None  True  0.0 0.0",
@@ -344,7 +344,7 @@ def test_family_1_subrecord_2_without_pre_2_7_block() -> None:
 
 
 def test_family_1_subrecord_2_pre_2_7_skips_trailing_fields() -> None:
-    """0062e800 sets DAT_00845343 before 2.7, and the reader skips that block."""
+    """A version flag is set before 2.7, and the reader skips that block."""
     lines = [
         " 1",
         " None  True  0.0 0.0",
@@ -365,7 +365,7 @@ def test_family_1_subrecord_2_pre_2_7_skips_trailing_fields() -> None:
 
 
 def test_family_1_subrecord_3_trailing_block() -> None:
-    """004d1fc0: the eight END/field pairs are read from 2.18 on."""
+    """The eight END/field pairs are read from 2.18 on."""
     lines = [
         " 1",
         " None  True  0.0 0.0",
@@ -410,7 +410,7 @@ def test_family_1_subrecord_3_skips_trailing_block_before_2_18() -> None:
 
 
 def test_family_1_subrecord_3_optional_tail() -> None:
-    """004d1fc0: every ``if MORE()`` gate fires before the trailing block."""
+    """Every ``if MORE()`` gate fires before the trailing block."""
     lines = [
         " 1",
         " None  True  0.0 0.0",
@@ -439,7 +439,7 @@ def test_family_1_subrecord_3_optional_tail() -> None:
 
 
 def test_family_1_subrecord_7() -> None:
-    """004e5410 case 7: D[4], H[2], I, optional I."""
+    """Case 7: D[4], H[2], I, optional I."""
     text = _with_header(" 1", " None  True  0.0 0.0", " 0.0 0.0", " 0", " 7", " 0.1 0.2 0.3 0.4", " -1 -1 5  6", " 0")
 
     companion = read_companion_records(text)
@@ -450,7 +450,7 @@ def test_family_1_subrecord_7() -> None:
 
 
 def test_family_1_subrecord_4_crosses_a_newline() -> None:
-    """004e5410 case 4: the second required I of ``I[2]`` sits on the next line."""
+    """Case 4: the second required I of ``I[2]`` sits on the next line."""
     text = _with_header(
         " 1",
         " None  True  0.0 0.0",
@@ -469,7 +469,7 @@ def test_family_1_subrecord_4_crosses_a_newline() -> None:
     assert record.end_line == 10
 
 
-def test_family_1_unrecovered_discriminators_stop_with_warning() -> None:
+def test_family_1_unsupported_discriminators_stop_with_warning() -> None:
     for discriminator in (8, 9, -3):
         companion = read_companion_records(
             _with_header(" 1", " None  True  0.0 0.0", " 0.0 0.0", " 0", f" {discriminator} payload", " 0")
@@ -480,14 +480,14 @@ def test_family_1_unrecovered_discriminators_stop_with_warning() -> None:
         assert companion.error.severity == "warning"
         assert (
             companion.error.message
-            == f"Graphics record content is not recovered for family 1 discriminator {discriminator}; record scan stopped"
+            == f"Graphics record content is not supported for family 1 discriminator {discriminator}; record scan stopped"
         )
 
 
 # --- family 2 -------------------------------------------------------------------
 
 
-def test_family_2_record_with_transcribed_discriminators() -> None:
+def test_family_2_record_with_known_discriminators() -> None:
     text = _with_header(
         " 2",
         " None  True   0.0 0.0",
@@ -526,12 +526,12 @@ def test_family_2_subrecord_1_optional_tail() -> None:
     assert record.end_line == 9
 
 
-def test_family_2_unrecovered_payload_stops_with_warning() -> None:
+def test_family_2_unsupported_payload_stops_with_warning() -> None:
     companion = read_companion_records(_with_header(" 2", " None  True  0.0 0.0", " 0.0 0.0", " 6", " 3", " 7 x", " 0"))
 
     assert companion.error is not None
     assert companion.error.severity == "warning"
-    assert companion.error.message.startswith("Graphics record content is not recovered for family 2 discriminator 7")
+    assert companion.error.message.startswith("Graphics record content is not supported for family 2 discriminator 7")
 
 
 # --- family 5, subtype 1 --------------------------------------------------------
@@ -738,7 +738,7 @@ def test_family_5_subtype_2_without_shape_byte_for_218() -> None:
 
 
 def test_picture_display_default_word_reader_before_0_100() -> None:
-    """00733520 reads the inline default with WORD2() for major 0, minor < 100."""
+    """The inline default is read with WORD2() for major 0, minor < 100."""
     scanner, _version = _open_companion(_companion(" 0   first second"))
 
     entry = _read_picture_display_default(scanner, GraphicsSyntaxVersion(major=0, minor=97))
@@ -851,7 +851,7 @@ def test_legacy_picture_display_unknown_marker_stops_with_warning() -> None:
     assert companion.error.severity == "warning"
     assert (
         companion.error.message
-        == "Graphics record content is not recovered for family 5 legacy picture-display marker 9; record scan stopped"
+        == "Graphics record content is not supported for family 5 legacy picture-display marker 9; record scan stopped"
     )
 
 

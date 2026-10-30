@@ -161,9 +161,9 @@ class SFCMixin:
     def seqtransition(self, items: list[TransformerItem]) -> SFCTransition:
         """Grammar seqtransition -> SEQTRANSITION NAME? (WAIT_FOR expression)? seqfork?.
 
-        Both the name and the guard are optional in the native reader; an absent
-        guard is kept as ``None`` because the compiler lowers it to true
-        (0070d180, 006fad30) and a round-trip must not invent a ``WAIT_FOR True``.
+        Both the name and the guard are optional; an absent guard is kept as
+        ``None`` because the compiler lowers it to true and a round-trip must
+        not invent a ``WAIT_FOR True``.
         """
         items = [item for item in items if not is_comment_tree(item)]
         name: str | None = None
@@ -274,7 +274,7 @@ class SFCMixin:
         return SFCParallel(branches=branches)
 
     def loop(self, items: list[TransformerItem]) -> SFCLoop:
-        """Grammar loop -> SFCLoop (native 006ff000).
+        """Grammar loop -> SFCLoop.
 
         ``FreeWord1 [NAME] C FreeWord2 [expression] [C] FreeWord3``: the first
         body is required, the second and the expression are optional, and no
@@ -435,8 +435,8 @@ class SFCMixin:
     def equationblock(self, items: list[TransformerItem]) -> Equation:
         """Grammar equationblock -> Equation; name/position/size are optional.
 
-        Native 00726030 accepts ``EQUATIONBLOCK``/``EQUATIONS`` with no name and
-        no coordinate/size metadata, so absence is preserved as ``None``.
+        The form accepts ``EQUATIONBLOCK``/``EQUATIONS`` with no name and no
+        coordinate/size metadata, so absence is preserved as ``None``.
         """
         name: str | None = None
         position: tuple[float, float] | None = None

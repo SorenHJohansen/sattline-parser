@@ -93,7 +93,7 @@ class SattLineProject:
     def diagnostics(self) -> tuple[LoadDiagnostic, ...]:
         """Non-fatal load findings (missing/empty sidecars, cycles, stray sidecars).
 
-        These are conditions the native loader reports and an operator may
+        These are conditions the loader reports and an operator may
         continue past; they are surfaced rather than raised so the default
         ``strict=True`` contract (missing *bodies* fail) is unchanged.
         """

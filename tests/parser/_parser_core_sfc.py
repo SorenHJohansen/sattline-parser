@@ -216,7 +216,7 @@ def test_parse_source_text_preserves_sfc_step_code_blocks():
 
 
 def test_parse_source_text_models_the_loop_construct():
-    """006ff000: `FreeWord1 [NAME] C FreeWord2 [expr] [C] FreeWord3`."""
+    """`FreeWord1 [NAME] C FreeWord2 [expr] [C] FreeWord3`."""
     bp = _parse_to_basepicture(
         '"SyntaxVersion"\n'
         '"OriginalFileDate"\n'
@@ -348,7 +348,7 @@ def test_loop_body_positions_are_validated_like_a_sequence():
 
 
 def test_equationblock_records_which_keyword_was_written():
-    """00726030 accepts EQUATIONBLOCK and EQUATIONS with different native flags."""
+    """EQUATIONBLOCK and EQUATIONS are both accepted, with different flags."""
     for keyword, expected in (("EQUATIONBLOCK", "equationblock"), ("EQUATIONS", "equations")):
         bp = _parse_to_basepicture(
             '"SyntaxVersion"\n'
@@ -468,7 +468,7 @@ def test_sfc_mixin_rejects_malformed_shapes_and_missing_required_fields():
         mixin.sequence([Token(parser_const.GRAMMAR_VALUE_SEQUENCE, parser_const.GRAMMAR_VALUE_SEQUENCE), "Seq", (1, 2)])
     with pytest.raises(ValueError, match="equationblock unexpected code item"):
         mixin.equationblock([(1, 2), (3, 4), Tree(parser_const.KEY_STATEMENT, ["stmt"])])
-    # name, position and size are optional in the native reader (00726030)
+    # name, position and size are optional in the reader
     unnamed = mixin.equationblock([(1, 2), (3, 4)])
     assert unnamed.name is None
     assert unnamed.position == (1, 2)

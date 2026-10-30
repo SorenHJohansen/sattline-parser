@@ -118,7 +118,7 @@ class ProjectLoader:
         if key in self._registry:
             return
         if key in self._loading:
-            # A dependency loop. The native loader reports it through its
+            # A dependency loop. The loader reports it through its
             # library-error handling and an operator may continue (answer 11),
             # so it becomes a diagnostic and the graph keeps the edge.
             self._diagnose(
@@ -146,7 +146,7 @@ class ProjectLoader:
                     dependency=dependency,
                 )
             # The sidecar belongs to the selected body's prefix; see
-            # ProjectLookup.find_deps_beside and native LIB-05.
+            # ProjectLookup.find_deps_beside and LIB-05.
             deps_path = self._lookup.find_deps_beside(code_path, name, requester_dir=requester_dir)
             sidecar = SidecarState.ABSENT
             if deps_path is None:

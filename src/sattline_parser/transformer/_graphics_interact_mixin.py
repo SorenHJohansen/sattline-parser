@@ -452,9 +452,9 @@ class _GraphicsInteractMixin:
     def module_in_view(self, items: list[TransformerItem]) -> dict[str, object]:
         """Grammar module_in_view -> MODULE_IN_VIEW_KW '=' BOOL.
 
-        Native 00665970 reads the value with the Boolean-property reader
-        00631940, which accepts True/False only, and stores it in a field of its
-        own - Module_In_View and Enable_ are distinct properties.
+        The value is read with the Boolean-property reader, which accepts
+        True/False only, and is stored in a field of its own: Module_In_View and
+        Enable_ are distinct properties.
         """
         value = False
         tail: object | None = None
@@ -562,7 +562,7 @@ class _GraphicsInteractMixin:
         return {const.KEY_NAME: name, const.KEY_EXTRA: extra, const.KEY_TAIL: tail}
 
     def interact_scale_selector(self, items: list[TransformerItem]) -> dict[str, object]:
-        """Grammar interact_scale_selector -> scale mode (native +0x1C8)."""
+        """Grammar interact_scale_selector -> scale mode."""
         for it in items:
             if isinstance(it, Token):
                 folded = str(it).casefold()
@@ -573,7 +573,7 @@ class _GraphicsInteractMixin:
         raise ValueError(f"interact_scale_selector expected Relative_/Abs_; got: {items!r}")
 
     def interact_pick_button(self, items: list[TransformerItem]) -> dict[str, object]:
-        """Grammar interact_pick_button -> pick-button clause (native 006573b0).
+        """Grammar interact_pick_button -> pick-button clause.
 
         `VarName` is a postfix marker, so the string is a reference when it is
         present and a literal otherwise.

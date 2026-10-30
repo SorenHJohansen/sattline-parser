@@ -111,8 +111,8 @@ def infer_expr_type(expr: SLExpression, scope: Scope, records: dict[str, DataTyp
     if isinstance(expr, VarRef):
         resolved = resolve_var(expr, scope, records)
         if resolved is None:
-            # ``On``/``Off`` are boolean literals in the native expression reader
-            # (00487a60) and lower to true/false (0047d720), not variables.
+            # ``On``/``Off`` are boolean literals in the expression reader and
+            # lower to true/false, not variables.
             return Simple_DataType.BOOLEAN.value if is_sfc_runtime_constant(expr.name) else None
         return resolved.datatype_text
     if isinstance(expr, Compare | BoolOp | NotOp):

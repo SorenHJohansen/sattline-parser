@@ -1,7 +1,7 @@
 "Syntax version 2.23, date: 2026-08-27-18:41:22.140 N"
 "Original file date: ---"
 "Program date: 2026-08-27-18:41:22.140, name: TestCompress"
-(* Denne programenhed er oprettet 2026-08-25 11:12 af sqhj. *)
+(* Denne programenhed er oprettet 2026-08-25 11:12. *)
 
 BasePicture
 (* ModuleTypeDescription *)

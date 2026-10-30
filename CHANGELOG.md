@@ -31,39 +31,35 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `--write`, no network, no watch mode. Source files are read exactly like
   `parse_source_file`: plain Windows-1252, marker-compressed text and the binary
   `\x80 3.1` `.x` framing all decode transparently (undefined cp1252 bytes stay
-  refused outside comments), for files and stdin alike. `docs/cli.md` documents
-  the surface, and
-  the entry point is registered as the `sattline` console script next to
+  refused outside comments), for files and stdin alike. The entry point is
+  registered as the `sattline` console script next to
   `python -m sattline_parser`; `scripts/smoke_installed.py` exercises both from
   the built wheel and sdist.
 
 - **Graphics companion correlation.** `graphics_parsing.correlate_composites`
   binds each source `CompositeObject` marker to the next companion record by
-  ordinal — the native rule (`00665fc0`, no name lookup) — and reports markers or
+  ordinal (the documented rule, with no name lookup), and reports markers or
   records left over as `GraphicsMessage` values. `GraphicsCompositeRecord.ordinal`
   and `GraphicsCompositeBinding` expose the pair.
 
-- **Native builtin catalogue.** `validation/builtin_catalogue.json` carries the
-  492 usable registrations extracted from the workstation's builtin table,
-  reduced to arity plus write-like argument positions using the recovered mode
-  enum mapping (`00711af0`: `1,2,22→0x01; 4,24→0x02; 6,26→0x03; 8,28→0x08;
-  9,29→0x04; 10,30→0x0C; 11,31→0x10`, write-like `0x0A`). Probe-confirmed
-  signatures in `_build_builtin_functions` override the extracted ones. Names
+- **Builtin catalogue.** `validation/builtin_catalogue.json` carries 492 usable
+  registrations, reduced to arity plus write-like argument positions through a
+  mode enum mapping (the write-like mode is `0x0A`). Probe-confirmed
+  signatures in `_build_builtin_functions` override the table entries. Names
   outside the catalogue stay unchecked, which is a deliberate divergence from
-  native expression errors 5/6 (a complete namespace would need every user
-  library, so a false reject there is worse than a missed one).
+  the compiler's expression errors 5/6 (a complete namespace would need every
+  user library, so a false reject there is worse than a missed one).
 
 - **Compact-source honesty check.** A header-flagged compact file (`C` in the
   syntax-version line) that spells a keyword as a raw word is refused with
   `Raw keyword 'SeqControl' at line N in compact source`. In coded mode raw
-  words are identifiers and never keywords (`0062cbc0`), so promoting them —
-  what expanding codes and re-lexing does — would accept a unit the tool
-  rejects. Editor-produced compact files never spell keywords raw (verified
-  against the compressed/uncompressed golden twins), so real files are
-  unaffected.
+  words are identifiers and never keywords, so promoting them (which expanding
+  codes and re-lexing does) would accept a unit the tool rejects. Editor-produced
+  compact files never spell keywords raw (verified against the
+  compressed/uncompressed golden twins), so real files are unaffected.
 
-- **SL-V036 `SEQUENCE_POSITION_INVALID`** with the native S/T/M position model in
-  `validation/sequences.py`: closed bodies are `(S T | M)+`, alternative branches
+- **SL-V036 `SEQUENCE_POSITION_INVALID`** with the S/T/M position model in
+  `validation/sequences.py`: closed bodies are `(S T | M)+`, alternate branches
   and `SUBSEQTRANSITION` bodies are `T (S T | M)*`, parallel branches and
   `SUBSEQSTEP` bodies are `M* S (T M* S)*`, and `OPENSEQUENCE` uses the open
   variant. `SL-V016`/`SL-V023`/`SL-V024`/`SL-V033` now all come from that single
@@ -72,56 +68,52 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the rejected shapes and were corrected.
 
 - **SL-V035 `OLD_STATE_NOT_WRITABLE`**: writing to `:Old` is a compiler check
-  (native `00485470`, expression error `0x14`) for assignment targets and for
-  reference-required built-in arguments (`004748b0`); reads and `:New` writes
-  stay legal.
+  (expression error `0x14`) for assignment targets and for reference-required
+  built-in arguments; reads and `:New` writes stay legal.
 
-- **`DateCode_` is a fixed keyword** (`005ab1b0`, scanner token 0x89/137) instead
-  of `NAME` + integer, so `Bogus_ 5` is rejected; the attribute is optional on
-  records, module definitions and module types (`005d6170`, `005ccaa0`,
-  `005dc3f0`), and `BasePicture.datecode` now preserves the root stamp.
+- **`DateCode_` is a fixed keyword** (scanner token 0x89/137) instead of `NAME`
+  plus an integer, so `Bogus_ 5` is rejected; the attribute is optional on
+  records, module definitions and module types, and `BasePicture.datecode` now
+  preserves the root stamp.
 
 - **`validation/datecode.py`**: `normalized_datecode` (non-negative
   `n % 2 000 000 000`; negatives refused rather than given Python's modulo sign)
-  and `compute_datecode` (the `005cb910` clock formula), deliberately separate
-  from parsing.
+  and `compute_datecode` (the clock formula), deliberately separate from
+  parsing.
 
-- **`validation/names.py`**: identifier identity now uses the recovered CP1252
-  upper-byte table from `00806168` (a–z→A–Z, `9A→8A`, `9C→8C`, `E0–F6→C0–D6`,
-  `F8–FE→D8–DE`, `FF→9F`) instead of `str.casefold`, so `Straße`/`STRASSE` and
-  `ﬁle`/`FILE` no longer resolve to the same symbol. Filesystem identity in the
-  project layer keeps `casefold`.
+- **`validation/names.py`**: identifier identity now uses a fixed CP1252
+  upper-byte table instead of `str.casefold`, so `Straße`/`STRASSE` and
+  `ﬁle`/`FILE` no longer resolve to the same symbol. The table maps `a-z` to
+  `A-Z`, `9A` to `8A`, `9C` to `8C`, `E0-F6` to `C0-D6`, `F8-FE` to `D8-DE` and
+  `FF` to `9F`. Filesystem identity in the project layer keeps `casefold`.
 
 - **SL-V037 `SEQUENCE_FORK_TARGET_KIND`**: a fork hosted on a step must name
-  transitions and a fork hosted on a transition must name steps (native
-  `00703430`); the existing `SL-V017` still reports genuinely unknown names.
+  transitions and a fork hosted on a transition must name steps; the existing
+  `SL-V017` still reports genuinely unknown names.
 
-- **`SEQFORK` is accepted on `SEQINITSTEP`** as well as `SEQSTEP`
-  (`0070a100` is a caller of `006f9850` for both) and on `SEQTRANSITION` after
-  its optional guard.
+- **`SEQFORK` is accepted on `SEQINITSTEP`** as well as `SEQSTEP`, and on
+  `SEQTRANSITION` after its optional guard.
 
 - **`Module_In_View = True|False [: tail]`** is an explicit invocation-header
-  property (native token 0xA4, reader `00665970`/`00631940`) stored as
-  `ModuleHeader.module_in_view`, distinct from `Enable_`; it accepts `True`/
-  `False` only, not `On`/`Off`.
+  property (scanner token 0xA4) stored as `ModuleHeader.module_in_view`,
+  distinct from `Enable_`; it accepts `True`/`False` only, not `On`/`Off`.
 
-- **`EQUATIONS`** is accepted as an alias of `EQUATIONBLOCK` (`00726030`).
+- **`EQUATIONS`** is accepted as an alias of `EQUATIONBLOCK`.
 
-- **`On`/`Off` typed as boolean literals** in expression analysis (`00487a60`,
-  lowered by `0047d720`), so `Num = On` and `Flag = Num > Off` are now rejected
-  like the real compiler rejects them.
+- **`On`/`Off` typed as boolean literals** in expression analysis, so `Num = On`
+  and `Flag = Num > Off` are now rejected like the real compiler rejects them.
 
-- **Keywords are matched case-insensitively**, as the recovered scanner setup
-  does (`00626850`/`0062e3d0`): `moduledefinition`, `enddef`, `true`, `:old` and
+- **Keywords are matched case-insensitively**, as the scanner setup does:
+  `moduledefinition`, `enddef`, `true`, `:old` and
   `seqcontrol` all parse like their canonical spellings. Lark 1.3.1 has no
   `case_insensitive` option, so `grammar/keywords.py` rewrites the resolved
   grammar - letter-bearing string terminals become `/(?i:…\b)/` regexes, and
   regex terminals (including `NAME`'s keyword exclusion list and
   `STATE_SUFFIX`) gain a `(?i:…)` scope. Punctuation terminals are untouched.
 
-- **`EQUATIONBLOCK`/`EQUATIONS` name and coordinate metadata are optional**
-  (`00726030`): `Equation.name`, `.position` and `.size` are `None` when the
-  source omits them, instead of being rejected.
+- **`EQUATIONBLOCK`/`EQUATIONS` name and coordinate metadata are optional**:
+  `Equation.name`, `.position` and `.size` are `None` when the source omits
+  them, instead of being rejected.
 
 - Validation rule **SL-V027 `PARAM_TRANSFER_TYPE_MISMATCH`**: a module-type
   instance whose parameter transfer supplies an incompatible variable type is
@@ -139,11 +131,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 
 - **Findings always carry a location.** Every sequence element now keeps its
-  source span (`SFCStep`, `SFCTransition`, `SFCTransitionSub`, `SFCAlternative`,
-  `SFCParallel`, `SFCSubsequence`, `SFCLoop`; one `seq_element` transformer hook
-  attaches it), and the position/fork/duplicate-name diagnostics report it. All
-  75 findings produced over the two fixture corpora are now locatable; before,
-  13 (17 %) were message-only, which forced a reader to search the unit.
+  source span (`SFCStep`, `SFCTransition`, `SFCTransitionSub`, the
+  alternate-branch node, `SFCParallel`, `SFCSubsequence`, `SFCLoop`; one
+  `seq_element` transformer hook attaches it), and the
+  position/fork/duplicate-name diagnostics report it. All 75 findings produced
+  over the two fixture corpora are now locatable; before, 13 (17 %) were
+  message-only, which forced a reader to search the unit.
 
 - **Parse errors read as sentences about the source.** `describe_parse_error` no
   longer forwards Lark's dump (`Unexpected token Token('NAME', 'is') ... Expected
@@ -158,7 +151,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - **Composite markers take only the layer clause.** `composite_object` was
   `COMPOSITEOBJECT common_properties`, so a marker accepted `Enable_`, colour
-  assignments and connection nodes that native `00665fc0` rejects. It is now
+  assignments and connection nodes that the documented rule rejects. It is now
   `COMPOSITEOBJECT comments? layer_info?`, and `GraphObject` for a marker keeps
   the `Layer_` clause under the same `layer` key other objects use. The recorded
   "LALR rejects real files" note was stale: the narrowed rule parses the corpus
@@ -168,34 +161,34 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   alongside `BOOL`, so expressions and initializers take `On`/`Off` as booleans
   (they previously bound as `VarRef`s). The graphics/interact property readers
   keep their `True`/`False`-only `BOOL`, `BOOL_NOTAIL` and `plain_value`
-  allowlists, per the recovered readers. The contextual lexer keeps `On`/`Off`
-  usable as ordinary names elsewhere.
+  allowlists, as the documented readers require. The contextual lexer keeps
+  `On`/`Off` usable as ordinary names elsewhere.
 
 - **Interactor clauses: `Relative_`/`Abs_` and `IntObjPickButton`.** Both bare
   selectors are now distinct productions (`interact_scale_selector`, scale mode
   `relative`/`abs`) instead of anonymous `NAME` flags, and the shared interactor
-  property clause `IntObjPickButton "=" STRING [VarName]` (`006573b0`) is
+  property clause `IntObjPickButton "=" STRING [VarName]` is
   modelled as `interact_pick_button` with `is_reference` set from the postfix
-  `VarName`. The interact body is still an unordered repetition, so the native
-  slot position is not enforced.
+  `VarName`. The interact body is still an unordered repetition, so the slot
+  position is not enforced.
 
-- **Loop statement.** `006ff000` is implemented as `loop: FREEWORD1 NAME?
-  sequence_body FREEWORD2 expression? sequence_body? FREEWORD3` with the recovered
-  ordering (no `WAIT_FOR` before the optional expression), a new `SFCLoop` node,
-  formatter rendering, and sequence-position validation that treats the loop as a
-  structural (M) element and validates both bodies as closed `(S T | M)+` shapes.
-  The keywords keep the scanner-profile spellings (`FreeWord1/2/3`) because no
-  human-readable alias was recovered.
+- **Loop statement.** The loop is implemented as `loop: FREEWORD1 NAME?
+  sequence_body FREEWORD2 expression? sequence_body? FREEWORD3` with the
+  documented ordering (no `WAIT_FOR` before the optional expression), a new
+  `SFCLoop` node, formatter rendering, and sequence-position validation that
+  treats the loop as a structural (M) element and validates both bodies as
+  closed `(S T | M)+` shapes. The keywords keep the scanner-profile spellings
+  (`FreeWord1/2/3`) because no human-readable alias is documented.
 
-- **`Equation.kind` records the `EQUATIONS`/`EQUATIONBLOCK` spelling.** The native
-  reader sets different flags for the two keywords and their effect is not
-  recovered, so the model preserves which one was written.
+- **`Equation.kind` records the `EQUATIONS`/`EQUATIONBLOCK` spelling.** The two
+  keywords set different flags, and their effect is not documented, so the model
+  preserves which one was written.
 
 - **Coded-mode lexing keeps raw words as identifiers.** The decoder no longer
   refuses a compact file that spells a keyword raw; instead the lexer consults the
   source-map provenance per token: a keyword token is only a keyword when the
   decoder produced its characters (they are `GENERATED` in the map), so a raw word
-  is `NAME` exactly as `0062cbc0` describes. Literal spellings the compressor
+  is `NAME` exactly as the grammar describes. Literal spellings the compressor
   writes unencoded (`True`/`False`/`On`/`Off`/`Default`) stay literals. The old
   `Raw keyword ...` decode error is gone; `CodedRawKeyword.s` is now a syntax
   error like the real tool reports.
@@ -204,35 +197,33 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   carry their source span (from the `graph_object` rule meta), and a correlated
   marker/record pair exposes it for diagnostics.
 
-- **Composite markers bind in the native declaration order.** The graphics
-  correlator walked the source tree parent-first (own `ModuleDef`, submodules,
-  module types), which is the reverse of what `005ccaa0` does: the controlling
-  token reader recurses through `TYPEDEFINITIONS` (`005dc3f0`) and inline
-  `SUBMODULES` definitions (`005cc700`) and only then calls `00663540` for its own
-  `ModuleDef`, while `00584aa0` has already opened the single companion cursor.
-  Markers are now collected children-before-own, matching the normal writer
-  `005cf580`, so the first record belongs to the first marker reached anywhere in
-  the recursive parse. `graphics_records` also gained the transcribed family 1
-  payload readers (`004dcc30`, `004f1950`, `004d1fc0`), the family 2 subrecord
-  `00417930`, the `MORE()` optional-field gates, the `B11`/`B12` baseline kinds,
-  the pre-2.7 / pre-2.18 trailing blocks and the picture-display default-payload
+- **Composite markers bind in declaration order.** The graphics correlator
+  walked the source tree parent-first (own `ModuleDef`, submodules, module
+  types), the reverse of declaration order: a module definition is reached only
+  after its `TYPEDEFINITIONS` and inline `SUBMODULES` definitions, while the
+  single companion cursor is opened by the outermost definition.
+  Markers are now collected children-before-own, matching the order records are
+  written, so the first record belongs to the first marker reached anywhere in
+  the recursive parse. `graphics_records` also gained the family 1 payload
+  readers, the family 2 subrecord shape, the `MORE()` optional-field gates, the
+  `B11`/`B12` baseline kinds, the pre-2.7 / pre-2.18 trailing blocks and the
+  picture-display default-payload
   version split (`WORD2()` before 0.100, `LINE()` otherwise). Family 1 also
-  gained discriminators `4` (`I[2], B3, I[2], [F, B2, B2], [B2]` — its second
+  gained discriminators `4` (`I[2], B3, I[2], [F, B2, B2], [B2]`, its second
   required integer may sit on the next physical line) and `7`
   (`D[4], H[2], I, [I]`), and family 2 discriminator `3` now starts with the
   `B3` binding every corpus record writes (the earlier table omitted it) while
   discriminator `4`'s `B3` is read as a binding. All 743 companion files now parse
   without a message (12 924 records, 12 210 PictureDisplay records, 13 863 path
   rows), and every unit in a 209-unit sample has exactly as many markers as
-  records. `docs/graphics_parity.md` records the recovered call chain, the reader
-  transcription and the measured corpus state.
+  records.
 
-- **Companion records are read by their recovered grammar, not by blank
-  lines.** `project/graphics_records.py` replaces the line heuristic that ended a
-  record at a `0` line followed by a blank line. Each family is consumed field by
-  field (`I`/`H`/`F`/`D`/`END`/`MARK`/`WORD`/`WORD2`/`LINE`/`COUNTED`, binding
-  reader `004a72d0`, families 1/2/4 and family-5 subtypes 1/2 including the
-  version-dependent shape byte and pre-qualifier layouts), so a record boundary
+- **Companion records are read by their own grammar, not by blank lines.**
+  `project/graphics_records.py` replaces the line heuristic that ended a record
+  at a `0` line followed by a blank line. Each family is consumed field by field
+  (`I`/`H`/`F`/`D`/`END`/`MARK`/`WORD`/`WORD2`/`LINE`/`COUNTED`, families 1/2/4
+  and family-5 subtypes 1/2 including the version-dependent shape byte and
+  pre-qualifier layouts), so a record boundary
   follows from the record's own structure. The inline default payload of a
   picture display (the path used when no index matches) is kept too, as
   `GraphicsRecord.default_entry` / `GraphicsPictureDisplayRecord.default_path_row`
@@ -240,26 +231,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   no row. Measured on the 743 companion files under `~/Projects/Libs`: 727 read
   to completion (12 924 records, 12 210 PictureDisplay records, 13 863 path rows,
   against 12 506 from the heuristic, which also invented `"0"` paths) and
-  removing blank lines no longer moves any boundary — the 83 files that still differ do so because a
-  subtype-1 record stores an empty title/default `LINE()`, which *is* an empty
-  line. `GraphicsRecordError` surfaces a structural failure as a `GraphicsMessage`
-  instead of mis-splitting, and a family-1/2 payload sub-reader that was never
-  transcribed (`004dcc30`, `004f1950`, `004d1fc0`, `00417930`) stops the scan with
-  a warning rather than guessing a boundary — 16 corpus files do, and
-  `docs/graphics_parity.md` records why.
+  removing blank lines no longer moves any boundary; the 83 files that still
+  differ do so because a subtype-1 record stores an empty title/default `LINE()`,
+  which *is* an empty line. `GraphicsRecordError` surfaces a structural failure
+  as a `GraphicsMessage` instead of mis-splitting, and a family-1/2 payload
+  sub-reader that is not implemented stops the scan with a warning rather than
+  guessing a boundary: 16 corpus files do.
 
-- **Sequence syntax aligned with the native readers.** `SEQFORK` is no longer a
-  sequence element: it is a suffix of its host `SEQSTEP`/`SEQTRANSITION`, reads
-  one or more comma-separated targets and may end with `SEQBREAK`
-  (`006f9850`, `0070a100`, `0070d180`). `SFCFork` now carries `has_break`, lives
-  on `SFCStep.fork` / `SFCTransition.fork`, and `SFCBreak` is gone — a standalone
+- **Sequence syntax aligned with the documented readers.** `SEQFORK` is no
+  longer a sequence element: it is a suffix of its host
+  `SEQSTEP`/`SEQTRANSITION`, reads one or more comma-separated targets and may
+  end with `SEQBREAK`. `SFCFork` now carries `has_break`, lives on
+  `SFCStep.fork` / `SFCTransition.fork`, and `SFCBreak` is gone: a standalone
   `SEQBREAK` is rejected at parse time, like the real tool. Sequence bodies must
   be non-empty, `SEQTRANSITION` may omit both its name and `WAIT_FOR`
   (`condition is None` preserves the omission), `SUBSEQUENCE`/`SUBSEQSTEP` names
   are optional, and `SFCSubsequence` distinguishes `kind="sequence"` (structural
   position) from `kind="substep"` (step position).
 
-- **Statement semicolons are optional** in code blocks (`0072b660`), so
+- **Statement semicolons are optional** in code blocks, so
   `Flag = True` followed by a newline terminates a statement.
 
 - **Source files are now decoded strictly as Windows-1252 (cp1252)** — the only
@@ -279,12 +269,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 
-- **Compressed-source marker table replaced by the recovered scanner token
-  table.** `preprocessing/compressed.py` no longer carries the 172-entry
-  sample-derived `SEED_MAPPING`. The compact-code table now ships as
-  `preprocessing/scanner_tokens.json` — the 206-entry `.SCANNER` enum extracted
-  from the workstation's 3.1 configuration container (scanner ordinal `n` encoded
-  as `'#' + chr(48 + n // 16) + chr(48 + n % 16)`, ids 9–214, dense). Four
+- **Compressed-source marker table replaced by the scanner token table.**
+  `preprocessing/compressed.py` no longer carries the 172-entry sample-derived
+  `SEED_MAPPING`. The compact-code table now ships as
+  `preprocessing/scanner_tokens.json`, the 206-entry `.SCANNER` enum (scanner
+  ordinal `n` encoded as `'#' + chr(48 + n // 16) + chr(48 + n % 16)`, ids
+  9-214, dense). Four
   entries the old table got wrong are corrected: `#1=` is `On` (was `True`),
   `#1>` is `Off` (was `False`), `#9<` is `Module_In_View` (was `Enable_`, which
   collided with `#64`), `#:=` is `Relative_` (was `Abs_`). 34 codes that used to
@@ -300,16 +290,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   loader used to resolve code and `.l`/`.z` through two independent whole-root
   scans, so `A/Lib.x` could be paired with `B/Lib.z` and that library's own
   dependencies then resolved relative to `B`. `ProjectLookup.find_deps_beside`
-  now resolves the sidecar only beside the chosen body (native LIB-05,
-  `00589be0`); a sidecar that exists elsewhere becomes a
+  now resolves the sidecar only beside the chosen body (LIB-05); a sidecar that
+  exists elsewhere becomes a
   `LoadDiagnosticKind.SIDECAR_ELSEWHERE` diagnostic instead of being paired.
 
 - **Missing and empty sidecars are visible.** `SattLineProgram` gained
   `deps_path` and `sidecar` (`SidecarState.ABSENT / EMPTY / PRESENT`), and
   `SattLineProject.diagnostics()` reports absent / empty / stray sidecars plus
-  dependency cycles. These are the conditions the native loader reports and an
-  operator may continue past, so they are surfaced rather than raised — the
-  `strict=True` contract for missing *bodies* is unchanged.
+  dependency cycles. These are the conditions the loader reports and an operator
+  may continue past, so they are surfaced rather than raised; the `strict=True`
+  contract for missing *bodies* is unchanged.
 
 - **Warm and cold lookups now agree on extension precedence.** A cached `.x`
   no longer shadows a `.s` that appeared later at the same prefix (gap P10);

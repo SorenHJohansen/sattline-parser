@@ -3,10 +3,10 @@
 "Program date: 2026-10-26-12:00:00.000, name: WriteToOldState"
 (* INVALID: assigning to the Old state of a State variable.
 
-   :Old is a read state. Native statement analysis (00485470) rejects an :Old
-   assignment target with expression-node error 0x14, and the same check applies
-   to reference-required call arguments (004748b0). This is a compiler check,
-   not an editor guard, and the syntax itself stays legal so that reads such as
+   :Old is a read state. An :Old assignment target is rejected with
+   expression-node error 0x14, and the same check applies to reference-required
+   call arguments. This is a compile-time check, not an editor guard, and the
+   syntax itself stays legal so that reads such as
    `Seen = Counter:Old;` keep working.
 
    Ours reports SL-V035 OLD_STATE_NOT_WRITABLE. *)
