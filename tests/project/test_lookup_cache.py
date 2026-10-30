@@ -179,3 +179,23 @@ def test_remove_file(tmp_path: Path) -> None:
     (tmp_path / "locked").write_text("x", encoding="utf-8")
     with patch(f"{_CACHE_PATH}.Path.unlink", side_effect=OSError("boom")):
         assert not _remove_file(tmp_path / "locked")
+
+
+def test_write_failure_is_tolerated_and_leaves_no_temporary_file(tmp_path: Path) -> None:
+    cache = FileLookupCache(tmp_path, write_through=True)
+
+    with patch(f"{_CACHE_PATH}.os.replace", side_effect=OSError("boom")):
+        cache.set("code", "Lib", "draft", base_dir=tmp_path, ext=".s")
+
+    assert cache.get("code", "lib", "draft") is not None
+    assert not list(tmp_path.glob("*.tmp"))
+
+
+def test_flush_tolerates_a_write_failure(tmp_path: Path) -> None:
+    cache = FileLookupCache(tmp_path, flush_interval=None)
+    cache.set("code", "Lib", "draft", base_dir=tmp_path, ext=".s")
+
+    with patch.object(FileLookupCache, "_save", side_effect=OSError("boom")):
+        cache.flush()
+
+    assert cache.get("code", "lib", "draft") is not None

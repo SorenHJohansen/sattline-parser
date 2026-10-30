@@ -7,6 +7,8 @@ and source pre-processing lives in :mod:`sattline_parser.preprocessing`.
 
 from __future__ import annotations
 
+import getpass
+import os
 import sys
 from collections.abc import Callable
 from functools import lru_cache
@@ -22,6 +24,7 @@ from lark.exceptions import UnexpectedInput
 from sattline_parser.models.ast_model import BasePicture
 from sattline_parser.source_document import remap_parse_error, remap_tree_to_original
 from sattline_parser.transformer.sl_transformer import SLTransformer
+from sattline_parser.validation import Diagnostic, validate_basepicture
 
 from .errors import (
     ParseErrorDetails,
@@ -35,25 +38,73 @@ from .errors import (
     _unexpected_input_summary as _unexpected_input_summary,  # pyright: ignore[reportPrivateUsage]  # re-exported as a test seam
 )
 from .grammar import constants as const
-from .grammar.sattline_lexer import SattLineLexer
+from .grammar.keywords import make_keywords_case_insensitive
+from .grammar.sattline_lexer import SattLineLexer, compact_provenance
 from .preprocessing import is_coded, is_compressed, preprocess_source, render_ide_text
 from .preprocessing.coded import decode_coded_stream
+from .preprocessing.compressed import scan_opaque_regions
 
 __all__ = [
     "ParseErrorDetails",
     "build_lark_parser",
     "create_parser",
     "create_sl_parser",
+    "decode_source_bytes",
     "describe_parse_error",
     "load_source_text",
+    "parse_and_validate",
     "parse_source_file",
     "parse_source_text",
-    "read_text_with_fallback",
+    "read_text_cp1252",
     "render_ide_text",
+    "source_text_for_parse",
+    "validate_basepicture",
 ]
 
 GRAMMAR_PATH = Path(__file__).resolve().parent / "grammar" / "sattline.lark"
-_PARSER_CACHE_DIR = Path(gettempdir()) / "sattline-parser" / "lark-cache"
+
+_CACHE_DIR_MODE = 0o700
+_CACHE_DIR_NAME = "sattline-parser"
+
+
+def _cache_owner_token() -> str:
+    """A per-user token for the cache directory name."""
+    try:
+        return str(os.getuid())
+    except AttributeError:  # Windows has no getuid
+        return getpass.getuser()
+
+
+def _private_cache_dir(path: Path) -> Path | None:
+    """Create ``path`` as a private directory, or return ``None``.
+
+    The directory is created with mode ``0700`` and reused only when it belongs
+    to this user and no group or world bits are set. Anything else (a read-only
+    temp directory, a directory planted by another user) disables the cache.
+    """
+    try:
+        path.mkdir(mode=_CACHE_DIR_MODE, parents=True, exist_ok=True)
+        info = path.stat()
+        if hasattr(os, "getuid") and info.st_uid != os.getuid():
+            return None
+        if info.st_mode & 0o077:
+            path.chmod(_CACHE_DIR_MODE)
+    except OSError:
+        return None
+    return path
+
+
+def _parser_cache_dir() -> Path | None:
+    """The per-user Lark cache directory, or ``None`` when it cannot be private.
+
+    Lark's parser cache is a pickle, so it must not live in a directory another
+    user of the machine can write to. Each user gets a directory named after
+    their uid, created ``0700``, and a directory that fails the ownership or
+    permission check disables the cache entirely.
+    """
+    directory = Path(gettempdir()) / f"{_CACHE_DIR_NAME}-{_cache_owner_token()}" / "lark-cache"
+    return _private_cache_dir(directory)
+
 
 if not GRAMMAR_PATH.exists():
     raise RuntimeError(f"Grammar file missing: {GRAMMAR_PATH}")
@@ -85,14 +136,15 @@ def _resolved_grammar() -> str:
         for name in dir(const)
         if name.startswith("GRAMMAR_VALUE_") or name.startswith("GRAMMAR_REGEX_")
     }
-    return grammar_text.format(**grammar_substitutions)
+    return make_keywords_case_insensitive(grammar_text.format(**grammar_substitutions))
 
 
 def _parser_cache_path(
     *,
     start: str,
     propagate_positions: bool,
-) -> str:
+) -> str | None:
+    """The cache file for this grammar and parser shape, or ``None`` if disabled."""
     cache_key = sha256()
     cache_key.update(_resolved_grammar().encode("utf-8"))
     cache_key.update(start.encode("utf-8"))
@@ -101,8 +153,10 @@ def _parser_cache_path(
     # Lark's own cache payload already includes sys.version_info[:2]; include it
     # in the filename too so a cache written by another interpreter is never read.
     cache_key.update(f"py-{sys.version_info[0]}.{sys.version_info[1]}".encode("ascii"))
-    _PARSER_CACHE_DIR.mkdir(parents=True, exist_ok=True)
-    return str(_PARSER_CACHE_DIR / f"{cache_key.hexdigest()}.lark")
+    directory = _parser_cache_dir()
+    if directory is None:
+        return None
+    return str(directory / f"{cache_key.hexdigest()}.lark")
 
 
 def build_lark_parser(
@@ -125,6 +179,9 @@ def build_lark_parser(
         regex=True,
         cache=_parser_cache_path(start=start, propagate_positions=propagate_positions),
         cache_grammar=True,
+        # Lark's contextual-lexer plugin hook is private. The `<1.4` pin plus the
+        # "Lark Compatibility" CI job that builds against the newest 1.3.x is what
+        # keeps that dependency explicit instead of silently drifting.
         _plugins={"ContextualLexer": SattLineLexer},
     )
 
@@ -189,25 +246,114 @@ def _decode_coded_file_bytes(
         raise
 
 
-def read_text_with_fallback(path: Path) -> str:
-    """Read a text file trying utf-8, then cp1252, then latin-1.
+def read_text_cp1252(path: Path) -> str:
+    """Read a SattLine source file as **Windows-1252** (cp1252) text.
 
-    Reads in binary mode and decodes manually to preserve original line
-    endings (CRLF). Python's ``path.read_text()`` performs universal newline
-    translation which would silently convert CRLF to LF.
+    Windows-1252 is the only encoding the real SattLine parser accepts, so this
+    is a strict decode with **no encoding fallback**: a file whose bytes are
+    not valid Windows-1252 (the undefined bytes ``0x81 0x8D 0x8F 0x90 0x9D``)
+    raises :class:`UnicodeDecodeError` rather than being silently re-read as
+    utf-8 or latin-1, which would decode a mis-encoded file into plausible but
+    wrong text instead of reporting the problem.
+
+    Reads in binary mode to preserve original line endings (CRLF). Python's
+    ``path.read_text()`` performs universal newline translation which would
+    silently convert CRLF to LF.
     """
-    raw = path.read_bytes()
-    for encoding in ("utf-8", "cp1252", "latin-1"):
-        try:
-            return raw.decode(encoding)
-        except UnicodeDecodeError:
+    return path.read_bytes().decode("cp1252")
+
+
+_UNDEFINED_LOW = "\udc80"
+_UNDEFINED_HIGH = "\udcff"
+
+
+def _decode_cp1252_comments_tolerant(raw: bytes) -> str:
+    """Decode Windows-1252, tolerating undefined bytes **inside comments only**.
+
+    The byte ``0x81`` is undefined in Windows-1252, yet a file is accepted when
+    that byte sits inside a ``(* ... *)`` comment. So an undefined byte in a
+    comment body is legal and must not fail the decode. Inside a comment body such a byte decodes to
+    ``U+FFFD``; there is no encoding that maps it to a real character.
+
+    Everywhere else the decode stays strict, and nothing is ever re-read as utf-8
+    or latin-1. The scan reuses :func:`scan_opaque_regions`, so it follows the
+    same lexical rules as the rest of the pipeline: comment bodies nest, and a
+    ``(*`` or ``*)`` inside a string literal is text, not a delimiter.
+
+    An unterminated comment or string is not tolerated: there is no reliable
+    boundary for it, so the strict decode error survives.
+    """
+    # surrogateescape never fails and maps one byte to one character, so a lone
+    # surrogate marks exactly one undefined byte and keeps offsets aligned.
+    text = raw.decode("cp1252", errors="surrogateescape")
+    if not any(_UNDEFINED_LOW <= character <= _UNDEFINED_HIGH for character in text):
+        return text
+
+    comment_spans = [
+        (start, end) for kind, start, end in scan_opaque_regions(text) if kind == "C" and text.endswith("*)", 0, end)
+    ]
+    characters = list(text)
+    span_index = 0
+    for index, character in enumerate(characters):
+        if not (_UNDEFINED_LOW <= character <= _UNDEFINED_HIGH):
             continue
-    # latin-1 never fails — it maps all 256 byte values
-    return raw.decode("latin-1")  # pragma: no cover — loop always returns on 3rd iteration
+        while span_index < len(comment_spans) and comment_spans[span_index][1] <= index:
+            span_index += 1
+        if span_index >= len(comment_spans) or comment_spans[span_index][0] > index:
+            raise UnicodeDecodeError("cp1252", raw, index, index + 1, "character maps to <undefined>")
+        characters[index] = "\ufffd"
+    return "".join(characters)
 
 
-# Internal alias kept for callers that import the private name.
-_read_text_simple = read_text_with_fallback
+def _decode_source_bytes_for_parse(path: Path) -> str:
+    """Read a source file for the parse path, allowing undefined comment bytes."""
+    try:
+        return read_text_cp1252(path)
+    except UnicodeDecodeError:
+        return _decode_cp1252_comments_tolerant(path.read_bytes())
+
+
+def decode_source_bytes(
+    raw_bytes: bytes,
+    *,
+    debug: Callable[[str], None] | None = None,
+    source_path: Path | None = None,
+    log_failures: bool = True,
+) -> str:
+    """Decode raw source bytes into the text :func:`parse_source_text` expects.
+
+    Byte-coded streams (the binary ``\\x80 3.1`` framing some ``.x`` files
+    carry) are decoded first. Everything else is returned as written —
+    including marker-compressed text, so provenance spans keep pointing into
+    the original source. Undefined Windows-1252 bytes are tolerated inside
+    comments only.
+    """
+    if is_coded(raw_bytes):
+        return _decode_coded_file_bytes(raw_bytes, debug=debug, source_path=source_path, log_failures=log_failures)
+    try:
+        return raw_bytes.decode("cp1252")
+    except UnicodeDecodeError:
+        return _decode_cp1252_comments_tolerant(raw_bytes)
+
+
+def source_text_for_parse(
+    code_path: Path,
+    *,
+    debug: Callable[[str], None] | None = None,
+    log_failures: bool = True,
+) -> str:
+    """Read a source file into the text :func:`parse_source_file` parses.
+
+    Handles the three on-disk flavors the editor produces: byte-coded streams,
+    marker-compressed text and plain Windows-1252 text.
+    """
+    source_path = Path(code_path)
+    return decode_source_bytes(
+        source_path.read_bytes(),
+        debug=debug,
+        source_path=source_path,
+        log_failures=log_failures,
+    )
 
 
 def load_source_text(
@@ -215,6 +361,15 @@ def load_source_text(
     *,
     debug: Callable[[str], None] | None = None,
 ) -> str:
+    """Read a source file and return the decoded plain text.
+
+    This is the read-then-decode helper for callers that want the final text
+    rather than a parse result: byte-coded streams and marker-compressed text
+    both come back decoded, and undefined Windows-1252 bytes are tolerated
+    inside comments. :func:`source_text_for_parse` differs on purpose: it
+    leaves marker-compressed text as written so provenance spans keep pointing
+    into the original source.
+    """
     source_path = Path(code_path)
     if debug is not None:
         debug(f"Parsing file: {source_path}")
@@ -222,7 +377,7 @@ def load_source_text(
     raw_bytes = source_path.read_bytes()
     if is_coded(raw_bytes):
         return _decode_coded_file_bytes(raw_bytes, debug=debug, source_path=source_path)
-    src = _read_text_simple(source_path)
+    src = _decode_source_bytes_for_parse(source_path)
     return _decode_compressed_source(src, debug=debug, source_path=source_path)
 
 
@@ -248,8 +403,10 @@ def parse_source_text(
     active_parser = parser if parser is not None else _default_parser()
     active_transformer = transformer if transformer is not None else SLTransformer()
     parser_runner = cast(_ParserProtocol, active_parser)
+    provenance = None if source_doc.is_identity() else source_doc.is_decoded_range
     try:
-        tree = parser_runner.parse(source_doc.normalized_text)
+        with compact_provenance(provenance):
+            tree = parser_runner.parse(source_doc.normalized_text)
     except Exception as exc:
         remap_parse_error(exc, source_doc)
         if log_failures:
@@ -291,6 +448,35 @@ def parse_source_text(
     return basepic
 
 
+def parse_and_validate(
+    src: str,
+    *,
+    parser: Lark | None = None,
+    transformer: SLTransformer | None = None,
+    debug: Callable[[str], None] | None = None,
+    source_path: Path | None = None,
+    log_failures: bool = True,
+    retain_parse_tree: bool = False,
+) -> tuple[BasePicture, tuple[Diagnostic, ...]]:
+    """Parse a SattLine source and run strict single-source validation.
+
+    Returns ``(basepicture, diagnostics)``; ``diagnostics`` is empty for a
+    source that fully validates. ``parse_source_text`` itself stays a pure
+    parse/transform pipeline — callers opt into validation by using this entry
+    point.
+    """
+    basepic = parse_source_text(
+        src,
+        parser=parser,
+        transformer=transformer,
+        debug=debug,
+        source_path=source_path,
+        log_failures=log_failures,
+        retain_parse_tree=retain_parse_tree,
+    )
+    return basepic, validate_basepicture(basepic)
+
+
 def parse_source_file(
     code_path: Path,
     *,
@@ -303,19 +489,10 @@ def parse_source_file(
     source_path = Path(code_path)
     if debug is not None:
         debug(f"Parsing file: {source_path}")
-    # Read the raw file (with encoding fallback) and hand the original text to
-    # parse_source_text so compression/decoding and source provenance happen
-    # exactly once and consistently with parse_source_text().
-    raw_bytes = source_path.read_bytes()
-    if is_coded(raw_bytes):
-        raw = _decode_coded_file_bytes(
-            raw_bytes,
-            debug=debug,
-            source_path=source_path,
-            log_failures=log_failures,
-        )
-    else:
-        raw = _read_text_simple(source_path)
+    # Read the raw file (byte-coded, compressed or strict Windows-1252) and hand
+    # the resulting text to parse_source_text so compression/decoding and source
+    # provenance happen exactly once and consistently with parse_source_text().
+    raw = source_text_for_parse(source_path, debug=debug, log_failures=log_failures)
     return parse_source_text(
         raw,
         parser=parser,

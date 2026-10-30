@@ -86,10 +86,10 @@ def test_log_parser_failure_line_without_column(caplog: pytest.LogCaptureFixture
     assert any("(line 1)" in record.message for record in caplog.records)
 
 
-def test_read_text_with_fallback_raises_oserror() -> None:
+def test_read_text_cp1252_raises_oserror() -> None:
     missing = Path(__file__).parent / "_this_file_must_not_exist.s"
     with pytest.raises(OSError):
-        parser_api.read_text_with_fallback(missing)
+        parser_api.read_text_cp1252(missing)
 
 
 def test_load_source_text_decode_failure(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
@@ -670,17 +670,6 @@ def test_parse_source_text_log_failures_disabled_paths() -> None:
         )
 
 
-def test_opaque_registry_string_text_lookup_failures() -> None:
-    from sattline_parser.preprocessing.compressed import _OpaqueRegistry  # noqa: PLC0415
-
-    registry = _OpaqueRegistry('"a string"')
-    assert registry.string_text("not-a-placeholder") is None
-    assert registry.string_text("\x00C0\x00") is None  # comment slot, not a string
-    assert registry.string_text("\x00S9\x00") is None  # out-of-range index
-    assert registry.string_text("\x00S") is None  # malformed placeholder
-    assert registry.string_text("\x00Sxx\x00") is None  # non-numeric index
-
-
 def test_opaque_registry_restore_rejects_unknown_placeholder() -> None:
     from sattline_parser.preprocessing.compressed import PreprocessError, _OpaqueRegistry  # noqa: PLC0415
 
@@ -718,15 +707,16 @@ def test_uncompressed_golden_file_parses() -> None:
     assert bp.header.name == "BasePicture"
 
 
-# ---- api.py:206 latin-1 fallback ----
+# ---- api.py: read_text_cp1252 strict decode ----
 
 
-def test_read_text_with_fallback_latin1_path(tmp_path: Path) -> None:
-    # byte 0x81 is invalid in both UTF-8 and CP1252 but valid in latin-1
+def test_read_text_cp1252_rejects_latin1_only_bytes(tmp_path: Path) -> None:
+    # byte 0x81 is invalid in both UTF-8 and Windows-1252 (but valid in latin-1);
+    # the real parser only reads Windows-1252, so there is no fallback.
     bad_file = tmp_path / "latin1_test.s"
     bad_file.write_bytes(b"\x81hello")
-    result = parser_api.read_text_with_fallback(bad_file)
-    assert result == "\x81hello"
+    with pytest.raises(UnicodeDecodeError):
+        parser_api.read_text_cp1252(bad_file)
 
 
 # ---- sattline_lexer.py:74 _comment_end balanced path ----
@@ -755,32 +745,6 @@ def test_module_typedecl_after_skips_comment_before_equals() -> None:
 # This path requires TOKEN_MODULE_TYPE_NAME in _state_accepts, but
 # MODULE_TYPE_NAME is not a grammar terminal — the upgrade is dead code.
 # Covered by the lexer integration through the golden file corpus tests.
-
-
-# ---- compressed.py:436 _lookup_text success path ----
-
-
-def test_opaque_registry_string_text_success() -> None:
-    from sattline_parser.preprocessing.compressed import _OpaqueRegistry  # noqa: PLC0415
-
-    registry = _OpaqueRegistry('"first" "second"')
-    # protect() replaces strings with placeholders like \x00S0\x00, \x00S1\x00
-    decoded, _ = registry.protect('"first" "second"')
-    # Extract placeholder for first string
-    import re  # noqa: PLC0415
-
-    placeholders = re.findall(r"\x00S\d+\x00", decoded)
-    assert len(placeholders) >= 1
-    assert registry.string_text(placeholders[0]) == '"first"'
-
-
-# ---- compressed.py:577 _prefix_subst fallback (dead code) ----
-# The regex _MARKER_PREFIX_RE only matches #01... and #0<..., so the
-# fallback return is unreachable.  Exercise via decode_compressed which
-# calls _prefix_subst through _regex_sub — the fallback is not hit.
-
-
-# ---- _graphics_interact_mixin.py:86-92 polygon_type ----
 
 
 def test_polygon_type_method() -> None:

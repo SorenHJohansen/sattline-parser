@@ -3,7 +3,7 @@
 from ._parser_core_test_support import *
 
 
-def test_ast_model_helpers_cover_reduce_usage_and_string_formats(monkeypatch: pytest.MonkeyPatch):  # noqa: PLR0915
+def test_ast_model_helpers_cover_reduce_usage_and_string_formats(monkeypatch: pytest.MonkeyPatch):
     span = SourceSpan(start=2, end=3, line=1, column=3)
     int_lit = IntLiteral(7, span)
     float_lit = FloatLiteral(2.5, span)
@@ -27,24 +27,6 @@ def test_ast_model_helpers_cover_reduce_usage_and_string_formats(monkeypatch: py
     monkeypatch.setattr(Simple_DataType, "from_any", classmethod(_raise_value_error))
     with pytest.raises(ValueError, match="bad datatype"):
         Variable(name="Exploded", datatype=cast(Any, object()))
-
-    usage_path = ["BasePicture"]
-    datatype = DataType(
-        name="Payload",
-        description="desc",
-        datecode=100,
-        var_list=[Variable(name="FieldA", datatype="integer")],
-        origin_file="Program.s",
-        origin_lib="LibHA",
-    )
-    datatype.mark_read(usage_path)
-    datatype.mark_written(usage_path)
-    usage_path.append("Mutated")
-
-    assert datatype.read is True
-    assert datatype.written is True
-    assert datatype.usage_locations == [(["BasePicture"], "read"), (["BasePicture"], "write")]
-    assert "Variables in datatype" in str(datatype)
 
     assert (
         str(
@@ -157,3 +139,19 @@ def test_ast_model_helpers_cover_reduce_usage_and_string_formats(monkeypatch: py
     assert "ModuleTypeInstance{" in str(child)
     assert "ModuleType{" in str(ModuleTypeDef(name="ChildType", modulecode=module_code, submodules=[child]))
     assert "BasePicture{" in str(BasePicture(header=header, moduledef=module_def, modulecode=module_code))
+
+
+def test_datatype_string_formats_its_variables() -> None:
+    datatype = DataType(
+        name="Payload",
+        description="desc",
+        datecode=100,
+        var_list=[Variable(name="FieldA", datatype="integer")],
+        origin_file="Program.s",
+        origin_lib="LibHA",
+    )
+
+    rendered = str(datatype)
+
+    assert "Variables in datatype" in rendered
+    assert "Payload" in rendered

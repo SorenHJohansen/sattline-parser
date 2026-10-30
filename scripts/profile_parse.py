@@ -40,7 +40,7 @@ def _load_text(path: Path) -> str:
     raw = path.read_bytes()
     if is_coded(raw):
         return decode_coded_stream(raw)
-    return api.read_text_with_fallback(path)
+    return api.read_text_cp1252(path)
 
 
 def _timed(fn: Callable[[], object]) -> float:

@@ -1,6 +1,8 @@
 # pyright: reportUnknownVariableType=false, reportUnknownMemberType=false, reportUnknownParameterType=false, reportMissingParameterType=false, reportUnknownArgumentType=false, reportUnknownLambdaType=false, reportPrivateUsage=false, reportUnusedImport=false
 # ruff: noqa: F403, F405
+import getpass
 import logging
+import os
 
 from ._parser_core_test_support import *
 
@@ -99,7 +101,7 @@ def test_create_parser_uses_regex_and_disk_cache(monkeypatch, tmp_path):
             captured["options"] = options
 
     monkeypatch.setattr(parser_api, "Lark", DummyLark)
-    monkeypatch.setattr(parser_api, "_PARSER_CACHE_DIR", cache_dir)
+    monkeypatch.setattr(parser_api, "_parser_cache_dir", lambda: cache_dir)
     parser = parser_api.create_parser()
 
     assert isinstance(parser, DummyLark)
@@ -112,9 +114,9 @@ def test_create_parser_uses_regex_and_disk_cache(monkeypatch, tmp_path):
 
 
 def test_parser_cache_path_isolates_version_dimensions(monkeypatch, tmp_path):
-    monkeypatch.setattr(parser_api, "_PARSER_CACHE_DIR", tmp_path)
+    monkeypatch.setattr(parser_api, "_parser_cache_dir", lambda: tmp_path)
     base = parser_api._parser_cache_path(start="start", propagate_positions=True)
-    assert Path(base).parent == tmp_path
+    assert base is not None and Path(base).parent == tmp_path
 
     different_start = parser_api._parser_cache_path(start="modulecode", propagate_positions=True)
     different_positions = parser_api._parser_cache_path(start="start", propagate_positions=False)
@@ -160,18 +162,83 @@ def test_create_sl_parser_delegates_to_create_parser(monkeypatch):
     assert parser_api.create_sl_parser() is sentinel
 
 
-def test_read_text_with_fallback_accepts_cp1252_bytes(tmp_path):
+def test_read_text_cp1252_accepts_cp1252_bytes(tmp_path):
     source_file = tmp_path / "cp1252.k"
     source_file.write_bytes("Søren".encode("cp1252"))
 
-    assert parser_api.read_text_with_fallback(source_file) == "Søren"
+    assert parser_api.read_text_cp1252(source_file) == "Søren"
 
 
-def test_read_text_with_fallback_falls_back_to_latin1(tmp_path):
-    source_file = tmp_path / "latin1.bin"
+def test_read_text_cp1252_rejects_bytes_invalid_in_cp1252(tmp_path):
+    # 0x81 is undefined in Windows-1252: strict decode, no latin-1/utf-8 fallback
+    source_file = tmp_path / "invalid_cp1252.s"
     source_file.write_bytes(b"\x81A")
 
-    assert parser_api.read_text_with_fallback(source_file) == "\x81A"
+    with pytest.raises(UnicodeDecodeError):
+        parser_api.read_text_cp1252(source_file)
+
+
+# Proved 2026-10-05 by HighByteInvalid.x: the real editor compiles a file whose
+# undefined Windows-1252 byte 0x81 sits inside a (* ... *) comment. The tolerance
+# is scoped to comment bodies; read_text_cp1252 keeps its strict contract.
+
+
+def test_read_text_cp1252_tolerates_undefined_byte_inside_comment(tmp_path):
+    source_file = tmp_path / "comment_byte.s"
+    source_file.write_bytes(b'"Syntax version 2.23"\n(* byte \x81 here *)\nA\n')
+
+    decoded = parser_api._decode_source_bytes_for_parse(source_file)
+
+    assert "byte" in decoded and "\ufffd" in decoded
+
+
+def test_read_text_cp1252_still_rejects_undefined_byte_outside_comment(tmp_path):
+    source_file = tmp_path / "code_byte.s"
+    source_file.write_bytes(b'"Syntax version 2.23"\nA \x81 B\n')
+
+    with pytest.raises(UnicodeDecodeError):
+        parser_api._decode_source_bytes_for_parse(source_file)
+
+
+def test_read_text_cp1252_strict_helper_is_untouched_by_comment_tolerance(tmp_path):
+    """The public strict API must not silently widen, whatever the parse path does."""
+    source_file = tmp_path / "comment_byte.s"
+    source_file.write_bytes(b"(* \x81 *)\nA\n")
+
+    with pytest.raises(UnicodeDecodeError):
+        parser_api.read_text_cp1252(source_file)
+
+
+def test_read_text_cp1252_rejects_undefined_byte_inside_a_string(tmp_path):
+    """A ``(* ... *)`` inside a string is text, so the byte there is not exempt."""
+    source_file = tmp_path / "string_byte.s"
+    source_file.write_bytes(b'"Syntax version 2.23"\n"(* label \x81 *)"\nA\n')
+
+    with pytest.raises(UnicodeDecodeError):
+        parser_api._decode_source_bytes_for_parse(source_file)
+
+
+def test_read_text_cp1252_tolerates_undefined_byte_in_nested_comment(tmp_path):
+    """Comment bodies nest, so the byte stays exempt until the outer ``*)``."""
+    source_file = tmp_path / "nested_comment.s"
+    source_file.write_bytes(b'"Syntax version 2.23"\n(* outer (* inner *) byte \x81 here *)\nA\n')
+
+    decoded = parser_api._decode_source_bytes_for_parse(source_file)
+
+    assert "outer" in decoded
+    assert "inner" in decoded
+    assert "\ufffd" in decoded
+
+
+def test_read_text_cp1252_handles_doubled_quotes_before_a_comment(tmp_path):
+    """A doubled quote is an escaped quote, so the literal does not end early."""
+    source_file = tmp_path / "doubled_quote.s"
+    source_file.write_bytes(b'"Syntax version 2.23"\n"say ""(*)"" here" (* byte \x81 *)\nA\n')
+
+    decoded = parser_api._decode_source_bytes_for_parse(source_file)
+
+    assert 'say ""(*)"" here' in decoded
+    assert "\ufffd" in decoded
 
 
 def test_load_source_text_decodes_compressed_sources_and_emits_debug(monkeypatch, tmp_path):
@@ -179,7 +246,7 @@ def test_load_source_text_decodes_compressed_sources_and_emits_debug(monkeypatch
 
     (tmp_path / "Program.s").write_text("compressed-body")
     monkeypatch.setattr(parser_api, "is_coded", lambda data: False)
-    monkeypatch.setattr(parser_api, "_read_text_simple", lambda path: "compressed-body")
+    monkeypatch.setattr(parser_api, "read_text_cp1252", lambda path: "compressed-body")
     monkeypatch.setattr(parser_api, "is_compressed", lambda text: text == "compressed-body")
     monkeypatch.setattr(
         parser_api,
@@ -301,7 +368,8 @@ def test_parse_source_file_logs_parse_failures_with_path(caplog, tmp_path):
     assert record.parser_path == str(source_file)
     assert record.parser_line == 1
     assert record.parser_column is not None
-    assert "Unexpected" in record.parser_context
+    assert "unexpected" in record.parser_context
+    assert "Token(" not in record.parser_context
 
 
 def test_parser_core_create_parser_accepts_legal_comments():
@@ -326,3 +394,71 @@ def test_parser_core_default_parser_is_lru_cached():
     parser1 = parser_api._default_parser()
     parser2 = parser_api._default_parser()
     assert parser1 is parser2
+
+
+def test_read_text_cp1252_keeps_strict_decode_after_an_unterminated_string(tmp_path):
+    """An unterminated literal leaves no reliable boundary, so strictness returns."""
+    source_file = tmp_path / "unterminated_string.s"
+    source_file.write_bytes(b'"Syntax version 2.23"\n(* byte \x81 *)\n"unterminated')
+
+    decoded = parser_api._decode_source_bytes_for_parse(source_file)
+
+    assert "\ufffd" in decoded
+    assert "unterminated" in decoded
+
+
+def test_parser_cache_is_disabled_without_a_private_directory(monkeypatch):
+    monkeypatch.setattr(parser_api, "_parser_cache_dir", lambda: None)
+
+    assert parser_api._parser_cache_path(start="start", propagate_positions=True) is None
+
+
+def test_private_cache_dir_creates_a_private_directory(tmp_path):
+    directory = tmp_path / "nested" / "lark-cache"
+
+    assert parser_api._private_cache_dir(directory) == directory
+    assert directory.stat().st_mode & 0o777 == 0o700
+
+
+def test_private_cache_dir_tightens_existing_permissions(tmp_path):
+    directory = tmp_path / "lark-cache"
+    directory.mkdir()
+    directory.chmod(0o755)
+
+    assert parser_api._private_cache_dir(directory) == directory
+    assert directory.stat().st_mode & 0o777 == 0o700
+
+
+def test_private_cache_dir_rejects_a_foreign_owner(monkeypatch, tmp_path):
+    real_uid = os.getuid()
+    monkeypatch.setattr(parser_api.os, "getuid", lambda: real_uid + 1)
+
+    assert parser_api._private_cache_dir(tmp_path / "lark-cache") is None
+
+
+def test_private_cache_dir_gives_up_when_it_cannot_be_created(tmp_path):
+    blocker = tmp_path / "blocker"
+    blocker.write_text("not a directory")
+
+    assert parser_api._private_cache_dir(blocker / "lark-cache") is None
+
+
+def test_cache_owner_token_falls_back_without_getuid(monkeypatch):
+    def missing_getuid() -> int:
+        raise AttributeError("getuid")
+
+    monkeypatch.setattr(parser_api.os, "getuid", missing_getuid)
+
+    assert parser_api._cache_owner_token() == getpass.getuser()
+
+
+def test_decode_cp1252_tolerant_passes_clean_text_straight_through():
+    assert parser_api._decode_cp1252_comments_tolerant(b"plain text") == "plain text"
+
+
+def test_read_text_cp1252_rejects_undefined_byte_after_a_closed_comment(tmp_path):
+    source_file = tmp_path / "after_comment.s"
+    source_file.write_bytes(b'"Syntax version 2.23"\n(* ok *)\nA \x81 B\n')
+
+    with pytest.raises(UnicodeDecodeError):
+        parser_api._decode_source_bytes_for_parse(source_file)

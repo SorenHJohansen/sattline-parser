@@ -47,8 +47,6 @@ from lark import Token, Tree
 from lark.exceptions import UnexpectedCharacters, UnexpectedInput
 from lark.tree import Meta
 
-from sattline_parser.models.ast_model import SourceSpan
-
 __all__ = [
     "GENERATED",
     "Generated",
@@ -227,15 +225,19 @@ class SourceDocument:
         column = orig_offset - self._line_starts[index] + 1
         return line, column
 
-    def span_from_normalized(self, norm_start: int, norm_end: int) -> SourceSpan | None:
-        """Build an original-source :class:`SourceSpan` from a normalized range."""
-        start, end = self.map_range(norm_start, norm_end)
-        line, column = self.line_col(start)
-        return _build_span(start, end, line, column)
+    def is_decoded_range(self, norm_start: int, norm_end: int) -> bool:
+        """True when every normalized character in ``[norm_start, norm_end)`` was decoded.
 
-
-def _build_span(start: int, end: int, line: int, column: int) -> SourceSpan:
-    return SourceSpan(start=start, end=end, line=line, column=column)
+        The keyword expander emits its output as :data:`GENERATED` characters, so
+        a span made only of them came from a compact ``#NN`` code. A raw word in
+        the compact file maps to exact offsets and therefore reports ``False``.
+        Identity documents have no map and always report ``False``.
+        """
+        if self._char_map is None:
+            return False
+        if norm_start < 0 or norm_end <= norm_start or norm_end > len(self._char_map):
+            return False
+        return all(value < 0 for value in self._char_map[norm_start:norm_end])
 
 
 def _remap_token(token: Token, doc: SourceDocument) -> None:

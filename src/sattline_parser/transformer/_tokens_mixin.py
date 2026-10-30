@@ -21,14 +21,6 @@ DEFAULT_INIT = object()
 class TokensMixin:
     """Mixin providing token and terminal coercion methods."""
 
-    def _unwrap_token(self, tok: object) -> str | object:
-        """Unwrap a Lark Token to string."""
-        if isinstance(tok, Token):
-            return str(tok)
-        return tok
-
-    # ---- Convert basic terminals to Python values ----
-
     def NAME(self, tok: Token) -> str:
         """Grammar NAME terminal -> string."""
         return str(tok)
@@ -92,17 +84,29 @@ class TokensMixin:
         return self.REAL(tok)
 
     def BOOL(self, tok: Token) -> bool:
-        """Grammar BOOL terminal -> bool."""
-        s = str(tok)
-        if s == const.GRAMMAR_VALUE_BOOL_TRUE:
+        """Grammar BOOL terminal -> bool.
+
+        The spelling is matched case-insensitively because the scanner folds
+        keyword case; the AST still stores a plain bool.
+        """
+        s = str(tok).casefold()
+        if s == const.GRAMMAR_VALUE_BOOL_TRUE.casefold():
             return True
-        if s == const.GRAMMAR_VALUE_BOOL_FALSE:
+        if s == const.GRAMMAR_VALUE_BOOL_FALSE.casefold():
             return False
-        raise ValueError(f"BOOL expected {const.GRAMMAR_VALUE_BOOL_TRUE}/{const.GRAMMAR_VALUE_BOOL_FALSE}; got: {s}")
+        raise ValueError(f"BOOL expected {const.GRAMMAR_VALUE_BOOL_TRUE}/{const.GRAMMAR_VALUE_BOOL_FALSE}; got: {tok}")
 
     def BOOL_NOTAIL(self, tok: Token) -> bool:
         """Grammar BOOL_NOTAIL terminal -> bool (no trailing coordinates)."""
         return self.BOOL(tok)
+
+    def ON_KW(self, _tok: object) -> Literal[True]:
+        """Grammar ON_KW keyword -> True (a general value literal, not a flag)."""
+        return True
+
+    def OFF_KW(self, _tok: object) -> Literal[False]:
+        """Grammar OFF_KW keyword -> False."""
+        return False
 
     def STRING_NOTAIL(self, tok: Token) -> str:
         """Grammar STRING_NOTAIL terminal -> string (no trailing coordinates)."""
@@ -159,6 +163,14 @@ class TokensMixin:
     def DURATION_VALUE(self, _tok: object) -> object:
         """Grammar DURATION_VALUE terminal -> GRAMMAR_VALUE_DURATION_VALUE sentinel."""
         return const.GRAMMAR_VALUE_DURATION_VALUE
+
+    def DATECODE_PREFIX(self, _tok: object) -> None:
+        """Grammar DATECODE_PREFIX terminal (``DateCode_``) -> filtered out.
+
+        The attribute is a fixed scanner keyword, not a free ``NAME`` followed
+        by an integer, so it must not reach the AST.
+        """
+        return None
 
     def sl_datecode(self, items: list[object]) -> int:
         """Grammar sl_datecode rule -> int datecode."""

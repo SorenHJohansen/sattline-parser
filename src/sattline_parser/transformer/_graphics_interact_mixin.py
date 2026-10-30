@@ -14,7 +14,7 @@ from sattline_parser.grammar import constants as const
 from sattline_parser.models.ast_model import GraphObject, InteractObject
 
 from ._comments_mixin import is_comment_tree
-from ._module_shared import InterimCoords
+from ._module_shared import InterimCoords, meta_span, v_args
 
 TransformerItem = object
 TransformerTree = Tree[object]
@@ -262,22 +262,25 @@ class _GraphicsInteractMixin:
         return go
 
     def composite_object(self, items: list[TransformerItem]) -> GraphObject:
-        """Grammar composite_object -> GraphObject (COMPOSITEOBJECT)."""
+        """Grammar composite_object -> GraphObject (COMPOSITEOBJECT).
+
+        The marker takes only the layer clause (``Layer_ = <int>``); the layer is
+        stored under the same key ``common_properties`` uses for other objects.
+        """
         go = GraphObject(const.GRAMMAR_VALUE_COMPOSITEOBJECT)
         properties = _graph_properties(go)
-        _coord_payloads, coord_tails = _coord_parts(self, items)
-        tails = _merged_tails(self, items, coord_tails)
-        if tails:
-            properties[const.KEY_TAILS] = tails
-        self._apply_common_properties(properties, items)
+        for it in items:
+            if isinstance(it, int):
+                properties["layer"] = it
         return go
 
     def connection_node_bare(self, _items: list[TransformerItem]) -> GraphObject:
         """Grammar connection_node_bare -> standalone ConnectionNode object."""
         return GraphObject(const.GRAMMAR_VALUE_CONNECTIONNODE)
 
-    def graph_object(self, items: list[TransformerItem]) -> GraphObject:
-        """Grammar graph_object -> GraphObject with optional layer."""
+    @v_args(meta=True)
+    def graph_object(self, meta: Any, items: list[TransformerItem]) -> GraphObject:
+        """Grammar graph_object -> GraphObject with optional layer and its span."""
         obj: GraphObject | None = None
         layer: int | None = None
         for it in items:
@@ -298,6 +301,7 @@ class _GraphicsInteractMixin:
 
         if layer is not None:
             _graph_properties(obj)["layer"] = layer
+        obj.span = meta_span(meta)
 
         return obj
 
@@ -414,7 +418,25 @@ class _GraphicsInteractMixin:
         raise ValueError(f"invar expected a connected_variable child; got: {items}")
 
     def enable(self, items: list[TransformerItem]) -> dict[str, object]:
-        """Grammar enable -> ENABLE_PREFIX '=' BOOL (invar | enable_expression)."""
+        """Grammar enable -> ENABLE_PREFIX '=' BOOL (invar | enable_expression)?
+
+        The tail is optional: `Enable_ = True` is legal on a graph object. When
+        present it is either an InVar_/OutVar_ tail or a parenthesised
+        expression, the latter written by the compressor as
+        `Enable_ = True : ( NOT EnableVar)`.
+        """
+        return self._enable_payload(items)
+
+    def enable_interact(self, items: list[TransformerItem]) -> dict[str, object]:
+        """Grammar enable_interact -> ENABLE_PREFIX '=' BOOL invar.
+
+        Interact objects require the InVar_/OutVar_ tail and reject a
+        parenthesised one with AliasSym Expected, which is why this is a
+        separate rule from `enable`.
+        """
+        return self._enable_payload(items)
+
+    def _enable_payload(self, items: list[TransformerItem]) -> dict[str, object]:
         val: bool | None = None
         tail: object | None = None
         for it in items:
@@ -426,6 +448,21 @@ class _GraphicsInteractMixin:
             const.TREE_TAG_ENABLE: bool(val) if val is not None else True,
             const.KEY_TAIL: tail,
         }
+
+    def module_in_view(self, items: list[TransformerItem]) -> dict[str, object]:
+        """Grammar module_in_view -> MODULE_IN_VIEW_KW '=' BOOL.
+
+        The value accepts True/False only and is stored in a field of its own:
+        Module_In_View and Enable_ are distinct properties.
+        """
+        value = False
+        tail: object | None = None
+        for item in items:
+            if isinstance(item, bool):
+                value = item
+            elif not isinstance(item, Token):
+                tail = item
+        return {const.TREE_TAG_MODULE_IN_VIEW: value, const.KEY_TAIL: tail}
 
     def enable_expression(self, items: list[TransformerItem]) -> object:
         """Grammar enable_expression -> expression within enable context."""
@@ -522,6 +559,37 @@ class _GraphicsInteractMixin:
             elif not isinstance(it, Token):
                 tail = it
         return {const.KEY_NAME: name, const.KEY_EXTRA: extra, const.KEY_TAIL: tail}
+
+    def interact_scale_selector(self, items: list[TransformerItem]) -> dict[str, object]:
+        """Grammar interact_scale_selector -> scale mode."""
+        for it in items:
+            if isinstance(it, Token):
+                folded = str(it).casefold()
+                if folded == const.GRAMMAR_VALUE_RELATIVE.casefold():
+                    return {const.KEY_SCALE_MODE: "relative"}
+                if folded == const.GRAMMAR_VALUE_ABS.casefold():
+                    return {const.KEY_SCALE_MODE: "abs"}
+        raise ValueError(f"interact_scale_selector expected Relative_/Abs_; got: {items!r}")
+
+    def interact_pick_button(self, items: list[TransformerItem]) -> dict[str, object]:
+        """Grammar interact_pick_button -> pick-button clause.
+
+        `VarName` is a postfix marker, so the string is a reference when it is
+        present and a literal otherwise.
+        """
+        text: str | None = None
+        is_reference = False
+        for it in items:
+            # Lark tokens subclass ``str``, so the token check must come first.
+            if isinstance(it, Token):
+                if it.type == const.TOKEN_VARNAME:
+                    is_reference = True
+                continue
+            if isinstance(it, str) and text is None:
+                text = it
+        if text is None:
+            raise ValueError(f"interact_pick_button expected a STRING; got: {items!r}")
+        return {const.KEY_PICK_BUTTON: {"value": text, "is_reference": is_reference}}
 
     def interact_value_line(self, items: list[TransformerItem]) -> list[TransformerItem]:
         """Grammar interact_value_line -> list of interact value items."""

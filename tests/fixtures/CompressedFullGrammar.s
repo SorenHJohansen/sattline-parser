@@ -1,7 +1,7 @@
 "Syntax version 2.23, date: 2026-08-27-18:41:22.140 C"
 "Original file date: ---"
 "Program date: 2026-08-27-18:41:22.140, name: TestCompress"
-(* Denne programenhed er oprettet 2026-08-25 11:12 af sqhj. *)
+(* Denne programenhed er oprettet 2026-08-25 11:12. *)
  BasePicture
 (* ModuleTypeDescription *)  #6? #01 0.0 , 0.0 , 0.0 , 1.0 ,  1.0  ) #8= #71
 #81 280432068 #78 TestRecord """Description of TestRecord""" #8? #72 #81
@@ -116,8 +116,7 @@ TestModuleType;  SM4 #6? #01 2.32 , -0.64 , 0.0 , 0.4 , 0.4  #6< ) #8= #71 #81
 "EnableVar"  #5< #8= #61 #8? -3 #8= #3> "LineColorVar" #62 #8? -1 #8= #3>
 "AltLineColorVar" #5= #8? 0.0 #8= #3> "LineColorMixVar"  #5; #8= #61 #8? -1 #8=
 #3> "AreaColorVar" #62 #8? 9 #8= #3> "AltAreaColorVar" #5= #8? 0.0 #8= #3>
-"AreaColorMixVar"  #51 #01 2.32 , 1.02 ) #01 2.7 , 0.7 )  #64 #8? #1; #8= #01
-#16 EnableVar)  #5< #8= #61 #8? -3 #8= #3> "LineColorVar" #62 #8? -1 #8= #3>
+"AreaColorMixVar"  #51 #01 2.32 , 1.02 ) #01 2.7 , 0.7 )  #64 #8? #1; #8= #3> "EnableVar"  #5< #8= #61 #8? -3 #8= #3> "LineColorVar" #62 #8? -1 #8= #3>
 "AltLineColorVar" #5= #8? 0.0 #8= #3> "ColorMixVar"  #5; #8= #61 #8? -1 #8= #3>
 "AreaColorVar" #62 #8? 9 #8= #3> "AltAreaColorVar" #5= #8? 0.0 #8= #3>
 "AreaColorMixVar"  #53 #01 1.08 , 1.82 ) #01 1.6 , 1.68 )  #01 1.60402 ,

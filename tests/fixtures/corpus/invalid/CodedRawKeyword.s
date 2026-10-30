@@ -1,12 +1,11 @@
 "Syntax version 2.23, date: 2026-04-23-12:00:00.000 C"
 "Original file date: ---"
 "Program date: 2026-04-23-12:00:00.000, name: SequenceBasic"
-(* Covers the core SEQUENCE constructs:
-   - SEQINITSTEP with ENTERCODE and EXITCODE
-   - SEQSTEP with ENTERCODE, ACTIVECODE, EXITCODE
-   - SEQTRANSITION WAIT_FOR with a boolean expression
-   - SeqControl and SeqTimer optional control parameters
-   Expected: strict syntax-check passes. *)
+(* A coded file with raw keyword spellings in the control slot:
+   `SeqControl`/`SeqTimer` are written as plain words. In coded mode a raw word
+   is an identifier and never a keyword, so the sequence control slot
+   rejects the unit with a syntax error.
+   Expected: syntax error. *)
 
 BasePicture #6?
    #01 0.0 , 0.0 , 0.0 , 1.0 , 1.0

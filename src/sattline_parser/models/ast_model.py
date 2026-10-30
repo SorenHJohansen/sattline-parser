@@ -5,12 +5,11 @@ from __future__ import annotations
 import textwrap
 from dataclasses import MISSING, dataclass, field, fields
 from enum import Enum
-from typing import Any
+from typing import Any, Literal
 
 from ..grammar import constants as const
 from ._ast_model_support import (
     InitValue,
-    ModulePath,
     PropertyMap,
     UsageLocation,
     any_list,
@@ -81,7 +80,6 @@ __all__ = [
     "ParameterMapping",
     "SFCAlternative",
     "SFCBodyItem",
-    "SFCBreak",
     "SFCCodeBlocks",
     "SFCFork",
     "SFCParallel",
@@ -150,15 +148,7 @@ class CodeComment:
 # SFCBodyItem: the element type of Sequence.code (SFC structure nodes + comments).
 type CodeItem = Assignment | FuncCallStmt | IfStmt | CodeComment
 type SFCBodyItem = (
-    SFCStep
-    | SFCTransition
-    | SFCTransitionSub
-    | SFCAlternative
-    | SFCParallel
-    | SFCSubsequence
-    | SFCFork
-    | SFCBreak
-    | CodeComment
+    SFCStep | SFCTransition | SFCTransitionSub | SFCAlternative | SFCParallel | SFCSubsequence | CodeComment
 )
 
 
@@ -223,6 +213,11 @@ class Variable:
     description: str | None = None
     declaration_span: SourceSpan | None = None
     init_is_duration: bool = False
+    # Declaration modifiers in SOURCE ORDER, lowercased. The order matters to
+    # the editor: `OpSave State` is an invalid combination while `State OpSave`
+    # compiles (EdgeOpSaveAndState.x vs OpSaveStateReversed.x, both 2026-10-05),
+    # so the flags above cannot express the rule and the order has to be kept.
+    attribute_order: tuple[str, ...] = ()
 
     @property
     def datatype_text(self) -> str:
@@ -260,14 +255,6 @@ class DataType:
     origin_lib: str | None = None
     declaration_span: SourceSpan | None = None
     trailing_comments: list[CodeComment] = field(default_factory=code_comment_list)
-
-    def mark_read(self, module_path: ModulePath) -> None:
-        self.read = True
-        self.usage_locations.append((module_path.copy(), "read"))
-
-    def mark_written(self, module_path: ModulePath) -> None:
-        self.written = True
-        self.usage_locations.append((module_path.copy(), "write"))
 
     def __str__(self) -> str:
         from ..formatting.formatter import format_list  # noqa: PLC0415
@@ -314,6 +301,9 @@ class ParameterMapping:
 class GraphObject:
     type: str
     properties: PropertyMap = field(default_factory=property_map)
+    #: Source span of the object (its ``graph_object`` rule), when positions are
+    #: propagated. Graphics correlation uses it to point at the marker.
+    span: SourceSpan | None = None
 
 
 @dataclass
@@ -333,6 +323,10 @@ class GraphicsBinding:
 @dataclass
 class ModuleDef:
     clipping_bounds: tuple[tuple[float, float], tuple[float, float]] | None = None
+    #: Coordinate tails attached to the ``ClippingBounds`` corners, in source
+    #: order. Retained so validation can type-check corner tail expressions;
+    #: :attr:`clipping_bounds` keeps only the resolved float values.
+    clipping_tails: list[object] | None = None
     zoom_limits: tuple[float, float] | None = None
     seq_layers: float | dict[str, float] | None = None
     grid: float = 0.2
@@ -374,9 +368,20 @@ class Sequence:
 
 @dataclass
 class Equation:
-    name: str
-    position: tuple[float, float]
-    size: tuple[float, float]
+    """``EQUATIONBLOCK`` / ``EQUATIONS`` body.
+
+    The form accepts the keyword, an optional name, optional coordinate/size
+    metadata and layer metadata before ``:``: only the statement list is
+    required. ``name``/``position``/``size`` are therefore optional, and
+    ``None`` means the source omitted them. ``kind`` records which of the two
+    keywords was written; they are kept distinct, and their effect is not
+    modelled, so only the spelling is preserved.
+    """
+
+    kind: Literal["equationblock", "equations"] = "equationblock"
+    name: str | None = None
+    position: tuple[float, float] | None = None
+    size: tuple[float, float] | None = None
     code: list[CodeItem] = field(default_factory=code_item_list)
     layer_info: int | None = None
 
@@ -401,6 +406,9 @@ class ModuleHeader:
     invocation_arguments: tuple[str, ...] = ()
     layer_info: int | None = None
     enable: bool | None = None
+    #: ``Module_In_View = True|False`` invocation-header property. Distinct from
+    #: :attr:`enable`; both may appear.
+    module_in_view: bool | None = None
     zoom_limits: tuple[float, float] | None = None
     zoomable: bool = False
     enable_tail: object | None = None
@@ -510,6 +518,10 @@ class BasePicture:
     graphics_picture_display_occurrences: list[Any] = field(default_factory=any_list)
     library_dependencies: dict[str, list[str]] = field(default_factory=library_dependency_map)
     trailing_comments: list[CodeComment] = field(default_factory=code_comment_list)
+    #: Explicit DateCode_ attribute of the root module definition, when present.
+    #: Absent is preserved as ``None``; stamping an import date is a separate
+    #: operation and must never be faked during parsing.
+    datecode: int | None = None
     #: The original Lark parse tree, attached by ``parse_source_text`` /
     #: ``parse_source_file`` only when ``retain_parse_tree=True`` is passed, as a
     #: debugging/tooling convenience. It is deliberately *not* part of the
@@ -554,41 +566,63 @@ class SFCStep:
     kind: str  # 'init' or 'step'
     name: str | None
     code: SFCCodeBlocks
+    #: ``SEQFORK`` suffix attached to this step, if any.
+    fork: SFCFork | None = None
+    #: Source span of the element, so position diagnostics can point at it.
+    span: SourceSpan | None = None
 
 
 @dataclass
 class SFCTransition:
     name: str | None
-    condition: SLExpression
+    #: Guard expression; ``None`` when the source omits ``WAIT_FOR`` entirely.
+    #: The omission is accepted and the compiler lowers it to true, so absence
+    #: is preserved rather than synthesized.
+    condition: SLExpression | None
+    #: ``SEQFORK`` suffix attached to this transition, if any.
+    fork: SFCFork | None = None
+    span: SourceSpan | None = None
 
 
 @dataclass
 class SFCAlternative:
     branches: list[list[SFCBodyItem]]  # each branch is a list of SFC nodes
+    span: SourceSpan | None = None
 
 
 @dataclass
 class SFCParallel:
     branches: list[list[SFCBodyItem]]
+    span: SourceSpan | None = None
 
 
 @dataclass
 class SFCSubsequence:
-    name: str
+    #: ``SUBSEQUENCE`` / ``SUBSEQSTEP`` name; both are optional.
+    name: str | None
     body: list[SFCBodyItem]
+    #: ``'sequence'`` for ``SUBSEQUENCE`` (structural position M) or
+    #: ``'substep'`` for ``SUBSEQSTEP`` (step position S). The two share a model
+    #: shape but occupy different positions in a sequence body.
+    kind: str = "sequence"
+    span: SourceSpan | None = None
 
 
 @dataclass
 class SFCTransitionSub:
     name: str | None
     body: list[SFCBodyItem]
+    span: SourceSpan | None = None
 
 
 @dataclass
 class SFCFork:
+    """``SEQFORK`` jump list, optionally closed by ``SEQBREAK``.
+
+    The form takes one or more comma-separated target names followed by an
+    optional ``SEQBREAK``, and only ever appears as a suffix of a step or a
+    transition. A standalone ``SEQBREAK`` is not a sequence element.
+    """
+
     targets: tuple[str, ...]
-
-
-@dataclass
-class SFCBreak:
-    pass
+    has_break: bool = False

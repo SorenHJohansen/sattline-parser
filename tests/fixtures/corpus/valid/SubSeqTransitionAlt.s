@@ -2,10 +2,16 @@
 "Original file date: ---"
 "Program date: 2026-08-25-12:00:00.000, name: SubSeqTransitionAlt"
 (* Covers SUBSEQTRANSITION whose body is an ALTERNATIVESEQ.
-   The ABB export emits a double ALTERNATIVESEQ marker (#34 #34)
-   in this context: the first acts as a structural wrapper and the
-   second starts the actual alternative branches.
-   Expected: strict syntax-check passes. *)
+   The alternative group inside a transition sub uses a single
+   ALTERNATIVESEQ marker, matching the strict SattLine syntax.
+   A redundant double ALTERNATIVESEQ marker would be rejected.
+
+   Each branch closes on its own transition and a step follows the
+   sub-transition before the next transition. Alternative branches take the form
+   T (S T | M)* and SUBSEQTRANSITION is a transition-position construct, so a
+   branch ending on a step, or two transitions in a row, is rejected with
+   "ALTERNATIVEBRANCH ... Incorrect Syntax ... Error 32". *)
+
 
 BasePicture Invocation
    ( 0.0 , 0.0 , 0.0 , 1.0 , 1.0
@@ -32,18 +38,20 @@ ModuleCode
             OutputB = 0;
       SUBSEQTRANSITION TrCheckPhase
          ALTERNATIVESEQ
-         ALTERNATIVESEQ
             SEQTRANSITION TrModeA WAIT_FOR Mode == 1
             SEQSTEP ModeA
                ACTIVECODE
                   OutputA = OutputA + 1;
+            SEQTRANSITION TrModeADone WAIT_FOR True
          ALTERNATIVEBRANCH
             SEQTRANSITION TrModeB WAIT_FOR Mode == 2
             SEQSTEP ModeB
                ACTIVECODE
                   OutputB = OutputB + 1;
+            SEQTRANSITION TrModeBDone WAIT_FOR True
          ENDALTERNATIVE
       ENDSUBSEQTRANSITION
+      SEQSTEP PhaseDone
       SEQTRANSITION TrDone WAIT_FOR NOT StartCmd
    ENDSEQUENCE
 

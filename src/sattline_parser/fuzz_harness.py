@@ -117,16 +117,6 @@ class FuzzResult:
         self.error = error
         self.duration_ms = duration_ms
 
-    def to_dict(self) -> dict[str, t.Any]:
-        return {
-            "input_desc": self.input_desc,
-            "success": self.success,
-            "result_type": type(self.result).__name__ if self.result else None,
-            "error_type": type(self.error).__name__ if self.error else None,
-            "error_message": str(self.error) if self.error else None,
-            "duration_ms": self.duration_ms,
-        }
-
 
 class TimeoutError(Exception):
     pass

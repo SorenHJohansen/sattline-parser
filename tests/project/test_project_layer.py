@@ -15,17 +15,14 @@ from pathlib import Path
 import pytest
 
 from sattline_parser import parse_source_text
-from sattline_parser.models.ast_model import BasePicture, GraphicsBinding, SourceSpan
+from sattline_parser.models.ast_model import BasePicture, GraphicsBinding
 from sattline_parser.project import (
     ArtifactLoadError,
     DependencyGraph,
     DependencyNotFoundError,
     DependencyParseError,
-    GraphicsCompositeRecord,
     GraphicsMessage,
     GraphicsModel,
-    GraphicsPictureDisplayPathRow,
-    GraphicsPictureDisplayRecord,
     LoadMode,
     ProgramFormat,
     ProjectLoadError,
@@ -73,72 +70,20 @@ def test_graphics_message_fields() -> None:
     assert (msg.line, msg.column, msg.length) == (3, 5, 1)
 
 
-def test_graphics_composite_record_fields() -> None:
-    rec = GraphicsCompositeRecord(record_index=2, record_start_line=3, record_end_line=5, family_code="9030")
-    assert rec.record_index == 2
-    assert (rec.record_start_line, rec.record_end_line) == (3, 5)
-    assert rec.family_code == "9030"
-
-
-def test_graphics_picture_display_path_row_fields() -> None:
-    span = SourceSpan(start=0, end=5, line=1, column=1)
-    row = GraphicsPictureDisplayPathRow(
-        record_index=0, index_token="1", index_value=1, kind="literal", raw_text="PICT", span=span
-    )
-    assert row.kind == "literal"
-    assert (row.index_token, row.index_value) == ("1", 1)
-    assert row.raw_text == "PICT"
-    assert row.span is span
-
-
-def test_graphics_picture_display_record_fields() -> None:
-    span = SourceSpan(start=6, end=8, line=2, column=2)
-    row = GraphicsPictureDisplayPathRow(
-        record_index=0, index_token="K", index_value=None, kind="variable", raw_text="K", span=span
-    )
-    rec = GraphicsPictureDisplayRecord(
-        record_index=0,
-        record_start_line=1,
-        record_end_line=4,
-        subtype="2",
-        path_row_lines=(2, 3),
-        path_rows=(row,),
-    )
-    assert rec.subtype == "2"
-    assert rec.path_row_lines == (2, 3)
-    assert rec.path_rows == (row,)
-
-
-def test_graphics_picture_display_record_defaults() -> None:
-    rec = GraphicsPictureDisplayRecord(record_index=0, record_start_line=1, record_end_line=4)
-    assert rec.subtype == "2"
-    assert rec.path_row_lines == ()
-    assert rec.path_rows == ()
-
-
 def test_graphics_model_holds_parse_result() -> None:
     binding = GraphicsBinding(kind="DspPicturePictureDisplay", raw_text="DspPicturePICT", value=None)
     message = GraphicsMessage(severity="error", message="unable to resolve", line=1, column=1)
-    composite = GraphicsCompositeRecord(record_index=0, record_start_line=1, record_end_line=2, family_code="9030")
-    display = GraphicsPictureDisplayRecord(record_index=0, record_start_line=1, record_end_line=4)
-    model = GraphicsModel(
-        bindings=(binding,),
-        messages=(message,),
-        composite_records=(composite,),
-        picture_display_records=(display,),
-    )
+    model = GraphicsModel(bindings=(binding,), messages=(message,))
+
     assert model.bindings == (binding,)
     assert model.messages == (message,)
-    assert model.composite_records == (composite,)
-    assert model.picture_display_records == (display,)
 
 
 def test_graphics_model_defaults() -> None:
     model = GraphicsModel()
+
     assert model.bindings == ()
     assert model.messages == ()
-    assert model.composite_records == ()
-    assert model.picture_display_records == ()
 
 
 def test_sattline_program_defaults() -> None:

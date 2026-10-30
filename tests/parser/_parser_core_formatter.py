@@ -50,12 +50,12 @@ def test_format_seq_nodes_covers_sfc_rendering_variants():
             code=SFCCodeBlocks(enter=[assign_stmt], active=[assign_stmt], exit=[assign_stmt]),
         ),
         SFCTransition(name="ToRun", condition=VarRef("Ready")),
-        SFCAlternative(branches=[[SFCFork(targets=("BranchA",))], [SFCBreak()]]),
-        SFCParallel(branches=[[SFCFork(targets=("P1",))], [SFCFork(targets=("P2",))]]),
-        SFCSubsequence(name="SubA", body=[SFCFork(targets=("SubTarget",))]),
-        SFCTransitionSub(name="TransA", body=[SFCBreak()]),
-        SFCFork(targets=("NextStep",)),
-        SFCBreak(),
+        SFCAlternative(branches=[[SFCStep(kind="step", name="BranchA", code=SFCCodeBlocks())]]),
+        SFCParallel(branches=[[SFCStep(kind="step", name="P1", code=SFCCodeBlocks())]]),
+        SFCSubsequence(name="SubA", body=[]),
+        SFCSubsequence(name="SubStepA", body=[], kind="substep"),
+        SFCTransitionSub(name="TransA", body=[]),
+        SFCStep(kind="step", name="Forked", code=SFCCodeBlocks(), fork=SFCFork(targets=("NextStep",))),
         "fallback-node",
     ]
 
@@ -75,5 +75,5 @@ def test_format_seq_nodes_covers_sfc_rendering_variants():
     assert "TransitionSub TransA:" in rendered
     assert "EndTransitionSub" in rendered
     assert "Fork to NextStep" in rendered
-    assert "Break" in rendered
+    assert "Substep SubStepA:" in rendered
     assert "fallback-node" in rendered

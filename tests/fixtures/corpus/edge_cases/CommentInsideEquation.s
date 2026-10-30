@@ -5,6 +5,8 @@
    Only freestanding comments directly inside ModuleCode (before the first
    EQUATIONBLOCK or SEQUENCE) are rejected.
    This fixture verifies that in-body comments do NOT trigger a validation error.
+   A comment is NOT legal between WAIT_FOR and its expression - the real tool
+   rejects that with "Expression expected" (see probe EdgeCmtInEq.x).
    Expected: strict syntax-check passes. *)
 
 BasePicture Invocation
@@ -31,7 +33,8 @@ ModuleCode
          ENTERCODE
             (* Comment in step ENTERCODE - valid *)
             Output = 0;
-      SEQTRANSITION TrStart WAIT_FOR (* inline comment is stripped *) StartCmd
+      (* a comment between sequence elements is legal *)
+      SEQTRANSITION TrStart WAIT_FOR StartCmd
       SEQSTEP Running
          ACTIVECODE
             (* Comment in step ACTIVECODE - valid *)

@@ -1,7 +1,7 @@
 "Syntax version 2.23, date: 2026-08-27-18:41:22.140 N"
 "Original file date: ---"
 "Program date: 2026-08-27-18:41:22.140, name: TestCompress"
-(* Denne programenhed er oprettet 2026-08-25 11:12 af sqhj. *)
+(* Denne programenhed er oprettet 2026-08-25 11:12. *)
 
 BasePicture
 (* ModuleTypeDescription *)
@@ -427,7 +427,7 @@ GraphObjects :
       FillColour : Colour0 = -1 : InVar_ "AreaColorVar" Colour1 = 9 : InVar_
       "AltAreaColorVar" ColourStyle = 0.0 : InVar_ "AreaColorMixVar"
    OvalObject ( 2.32 , 1.02 ) ( 2.7 , 0.7 )
-      Enable_ = True : ( NOT EnableVar)
+      Enable_ = True : InVar_ "EnableVar"
       OutlineColour : Colour0 = -3 : InVar_ "LineColorVar" Colour1 = -1 :
       InVar_ "AltLineColorVar" ColourStyle = 0.0 : InVar_ "ColorMixVar"
       FillColour : Colour0 = -1 : InVar_ "AreaColorVar" Colour1 = 9 : InVar_

@@ -7,24 +7,29 @@ name = "sattline-parser"
 dynamic = ["version"]
 description = "Standalone parser, AST, and transformer for the SattLine PLC language"
 readme = "README.md"
-license = { text = "MIT" }
+license = "MIT"
+license-files = ["LICENSE"]
 authors = [{ name = "S\u00f8ren H. Johansen" }]
-requires-python = ">=3.13"
+requires-python = ">=3.12"
 keywords = ["sattline", "parser", "transformer", "ast", "plc"]
 classifiers = [
-    "Development Status :: 5 - Production/Stable",
+    "Development Status :: 4 - Beta",
     "Environment :: Console",
     "Intended Audience :: Developers",
     "Operating System :: OS Independent",
     "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
     "Topic :: Software Development :: Compilers",
     "Topic :: Software Development :: Quality Assurance",
 ]
 dependencies = [
-    "lark[interegular]>=1.3.1,<2",
-    "regex>=2024.0.0",
+    "lark[interegular]>=1.3.1,<1.4",
+    "regex>=2026.7.19",
 ]
+
+[project.scripts]
+sattline = "sattline_parser.cli:main"
 
 [project.urls]
 Homepage = "https://github.com/SorenHJohansen/sattline-parser"
@@ -46,7 +51,7 @@ test = [
 ]
 
 dev = [
-    "sattline-parser[test,fuzz]",
+    "sattline-parser[test]",
     "ruff==0.15.20",
     "pyright>=1.1.380",
     "build>=1.2.2",
@@ -96,7 +101,7 @@ fail_under = 100
 
 [tool.ruff]
 line-length = 120
-target-version = "py313"
+target-version = "py312"
 
 [tool.ruff.lint]
 select = [
@@ -133,7 +138,7 @@ max-statements = 50
 [tool.pyright]
 include = ["src", "tests"]
 typeCheckingMode = "strict"
-pythonVersion = "3.13"
+pythonVersion = "3.12"
 venvPath = "."
 venv = ".venv"
 extraPaths = ["src"]
@@ -150,4 +155,4 @@ where = ["src"]
 version = { attr = "sattline_parser.__version__.__version__" }
 
 [tool.setuptools.package-data]
-sattline_parser = ["grammar/*.lark"]
+sattline_parser = ["py.typed", "grammar/*.lark", "preprocessing/*.json", "validation/*.json"]

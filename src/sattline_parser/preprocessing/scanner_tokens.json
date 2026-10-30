@@ -1,0 +1,867 @@
+[
+  {
+    "id": 9,
+    "code": "#01",
+    "text": "("
+  },
+  {
+    "id": 12,
+    "code": "#04",
+    "text": "<"
+  },
+  {
+    "id": 13,
+    "code": "#05",
+    "text": ">"
+  },
+  {
+    "id": 14,
+    "code": "#06",
+    "text": "<="
+  },
+  {
+    "id": 15,
+    "code": "#07",
+    "text": ">="
+  },
+  {
+    "id": 16,
+    "code": "#08",
+    "text": "=="
+  },
+  {
+    "id": 17,
+    "code": "#09",
+    "text": "<>"
+  },
+  {
+    "id": 20,
+    "code": "#0<",
+    "text": "*"
+  },
+  {
+    "id": 23,
+    "code": "#0?",
+    "text": "IF"
+  },
+  {
+    "id": 24,
+    "code": "#10",
+    "text": "THEN"
+  },
+  {
+    "id": 25,
+    "code": "#11",
+    "text": "ELSIF"
+  },
+  {
+    "id": 26,
+    "code": "#12",
+    "text": "ELSE"
+  },
+  {
+    "id": 27,
+    "code": "#13",
+    "text": "ENDIF"
+  },
+  {
+    "id": 28,
+    "code": "#14",
+    "text": "AND"
+  },
+  {
+    "id": 29,
+    "code": "#15",
+    "text": "OR"
+  },
+  {
+    "id": 30,
+    "code": "#16",
+    "text": "NOT"
+  },
+  {
+    "id": 31,
+    "code": "#17",
+    "text": "New"
+  },
+  {
+    "id": 32,
+    "code": "#18",
+    "text": "Old"
+  },
+  {
+    "id": 35,
+    "code": "#1;",
+    "text": "True"
+  },
+  {
+    "id": 36,
+    "code": "#1<",
+    "text": "False"
+  },
+  {
+    "id": 37,
+    "code": "#1=",
+    "text": "On"
+  },
+  {
+    "id": 38,
+    "code": "#1>",
+    "text": "Off"
+  },
+  {
+    "id": 40,
+    "code": "#20",
+    "text": "EQUATIONBLOCK"
+  },
+  {
+    "id": 42,
+    "code": "#22",
+    "text": "SEQUENCE"
+  },
+  {
+    "id": 43,
+    "code": "#23",
+    "text": "ENDSEQUENCE"
+  },
+  {
+    "id": 44,
+    "code": "#24",
+    "text": "OPENSEQUENCE"
+  },
+  {
+    "id": 45,
+    "code": "#25",
+    "text": "ENDOPENSEQUENCE"
+  },
+  {
+    "id": 46,
+    "code": "#26",
+    "text": "SEQINITSTEP"
+  },
+  {
+    "id": 47,
+    "code": "#27",
+    "text": "SEQSTEP"
+  },
+  {
+    "id": 48,
+    "code": "#28",
+    "text": "ENTERCODE"
+  },
+  {
+    "id": 49,
+    "code": "#29",
+    "text": "ACTIVECODE"
+  },
+  {
+    "id": 50,
+    "code": "#2:",
+    "text": "EXITCODE"
+  },
+  {
+    "id": 51,
+    "code": "#2;",
+    "text": "SUBSEQSTEP"
+  },
+  {
+    "id": 52,
+    "code": "#2<",
+    "text": "ENDSUBSEQSTEP"
+  },
+  {
+    "id": 53,
+    "code": "#2=",
+    "text": "PARALLELSEQ"
+  },
+  {
+    "id": 54,
+    "code": "#2>",
+    "text": "PARALLELBRANCH"
+  },
+  {
+    "id": 55,
+    "code": "#2?",
+    "text": "ENDPARALLEL"
+  },
+  {
+    "id": 56,
+    "code": "#30",
+    "text": "SEQTRANSITION"
+  },
+  {
+    "id": 57,
+    "code": "#31",
+    "text": "WAIT_FOR"
+  },
+  {
+    "id": 58,
+    "code": "#32",
+    "text": "SUBSEQTRANSITION"
+  },
+  {
+    "id": 59,
+    "code": "#33",
+    "text": "ENDSUBSEQTRANSITION"
+  },
+  {
+    "id": 60,
+    "code": "#34",
+    "text": "ALTERNATIVESEQ"
+  },
+  {
+    "id": 61,
+    "code": "#35",
+    "text": "ALTERNATIVEBRANCH"
+  },
+  {
+    "id": 62,
+    "code": "#36",
+    "text": "ENDALTERNATIVE"
+  },
+  {
+    "id": 66,
+    "code": "#3:",
+    "text": "SUBSEQUENCE"
+  },
+  {
+    "id": 67,
+    "code": "#3;",
+    "text": "ENDSUBSEQUENCE"
+  },
+  {
+    "id": 68,
+    "code": "#3<",
+    "text": "SEQFORK"
+  },
+  {
+    "id": 69,
+    "code": "#3=",
+    "text": "SEQBREAK"
+  },
+  {
+    "id": 70,
+    "code": "#3>",
+    "text": "InVar_"
+  },
+  {
+    "id": 71,
+    "code": "#3?",
+    "text": "OutVar_"
+  },
+  {
+    "id": 72,
+    "code": "#40",
+    "text": "InteractObjects"
+  },
+  {
+    "id": 73,
+    "code": "#41",
+    "text": "SimpleInteract"
+  },
+  {
+    "id": 74,
+    "code": "#42",
+    "text": "MenuInteract"
+  },
+  {
+    "id": 75,
+    "code": "#43",
+    "text": "SelectVariable"
+  },
+  {
+    "id": 79,
+    "code": "#47",
+    "text": "Variable"
+  },
+  {
+    "id": 80,
+    "code": "#48",
+    "text": "OpMin"
+  },
+  {
+    "id": 81,
+    "code": "#49",
+    "text": "OpMax"
+  },
+  {
+    "id": 82,
+    "code": "#4:",
+    "text": "OpStep"
+  },
+  {
+    "id": 83,
+    "code": "#4;",
+    "text": "SetAction"
+  },
+  {
+    "id": 84,
+    "code": "#4<",
+    "text": "ResetAction"
+  },
+  {
+    "id": 85,
+    "code": "#4=",
+    "text": "ToggleAction"
+  },
+  {
+    "id": 87,
+    "code": "#4?",
+    "text": "GraphObjects"
+  },
+  {
+    "id": 88,
+    "code": "#50",
+    "text": "LineObject"
+  },
+  {
+    "id": 89,
+    "code": "#51",
+    "text": "OvalObject"
+  },
+  {
+    "id": 90,
+    "code": "#52",
+    "text": "RectangleObject"
+  },
+  {
+    "id": 91,
+    "code": "#53",
+    "text": "SegmentObject"
+  },
+  {
+    "id": 92,
+    "code": "#54",
+    "text": "PolygonObject"
+  },
+  {
+    "id": 93,
+    "code": "#55",
+    "text": "Spline"
+  },
+  {
+    "id": 94,
+    "code": "#56",
+    "text": "TextObject"
+  },
+  {
+    "id": 95,
+    "code": "#57",
+    "text": "Polyline"
+  },
+  {
+    "id": 96,
+    "code": "#58",
+    "text": "LeftAligned"
+  },
+  {
+    "id": 97,
+    "code": "#59",
+    "text": "CenterAligned"
+  },
+  {
+    "id": 98,
+    "code": "#5:",
+    "text": "RightAligned"
+  },
+  {
+    "id": 99,
+    "code": "#5;",
+    "text": "FillColour"
+  },
+  {
+    "id": 100,
+    "code": "#5<",
+    "text": "OutlineColour"
+  },
+  {
+    "id": 101,
+    "code": "#5=",
+    "text": "ColourStyle"
+  },
+  {
+    "id": 102,
+    "code": "#5>",
+    "text": "Width_"
+  },
+  {
+    "id": 103,
+    "code": "#5?",
+    "text": "VarName"
+  },
+  {
+    "id": 104,
+    "code": "#60",
+    "text": "ValueFraction"
+  },
+  {
+    "id": 105,
+    "code": "#61",
+    "text": "Colour0"
+  },
+  {
+    "id": 106,
+    "code": "#62",
+    "text": "Colour1"
+  },
+  {
+    "id": 107,
+    "code": "#63",
+    "text": "ZoomLimits"
+  },
+  {
+    "id": 108,
+    "code": "#64",
+    "text": "Enable_"
+  },
+  {
+    "id": 109,
+    "code": "#65",
+    "text": "ClippingBounds"
+  },
+  {
+    "id": 110,
+    "code": "#66",
+    "text": "Dim_"
+  },
+  {
+    "id": 112,
+    "code": "#68",
+    "text": "Connection"
+  },
+  {
+    "id": 113,
+    "code": "#69",
+    "text": "ConnectionNode"
+  },
+  {
+    "id": 114,
+    "code": "#6:",
+    "text": "Zoomable"
+  },
+  {
+    "id": 115,
+    "code": "#6;",
+    "text": "SymbolModule"
+  },
+  {
+    "id": 116,
+    "code": "#6<",
+    "text": "LayerModule"
+  },
+  {
+    "id": 117,
+    "code": "#6=",
+    "text": "IgnoreMaxModule"
+  },
+  {
+    "id": 118,
+    "code": "#6>",
+    "text": "ModuleDef"
+  },
+  {
+    "id": 119,
+    "code": "#6?",
+    "text": "Invocation"
+  },
+  {
+    "id": 120,
+    "code": "#70",
+    "text": "CompositeObject"
+  },
+  {
+    "id": 121,
+    "code": "#71",
+    "text": "MODULEDEFINITION"
+  },
+  {
+    "id": 122,
+    "code": "#72",
+    "text": "RECORD"
+  },
+  {
+    "id": 123,
+    "code": "#73",
+    "text": "MODULEPARAMETERS"
+  },
+  {
+    "id": 124,
+    "code": "#74",
+    "text": "GLOBAL"
+  },
+  {
+    "id": 126,
+    "code": "#76",
+    "text": "PRIVATE_"
+  },
+  {
+    "id": 127,
+    "code": "#77",
+    "text": "Secure"
+  },
+  {
+    "id": 128,
+    "code": "#78",
+    "text": "TYPEDEFINITIONS"
+  },
+  {
+    "id": 129,
+    "code": "#79",
+    "text": "SUBMODULES"
+  },
+  {
+    "id": 130,
+    "code": "#7:",
+    "text": "OpSave"
+  },
+  {
+    "id": 131,
+    "code": "#7;",
+    "text": "Const"
+  },
+  {
+    "id": 132,
+    "code": "#7<",
+    "text": "LOCALVARIABLES"
+  },
+  {
+    "id": 136,
+    "code": "#80",
+    "text": "State"
+  },
+  {
+    "id": 137,
+    "code": "#81",
+    "text": "DateCode_"
+  },
+  {
+    "id": 140,
+    "code": "#84",
+    "text": "ModuleCode"
+  },
+  {
+    "id": 141,
+    "code": "#85",
+    "text": "ENDDEF"
+  },
+  {
+    "id": 142,
+    "code": "#86",
+    "text": "GroupConn"
+  },
+  {
+    "id": 143,
+    "code": "#87",
+    "text": "Frame_Module"
+  },
+  {
+    "id": 144,
+    "code": "#88",
+    "text": "COORD"
+  },
+  {
+    "id": 145,
+    "code": "#89",
+    "text": "OBJSIZE"
+  },
+  {
+    "id": 146,
+    "code": "#8:",
+    "text": "=>"
+  },
+  {
+    "id": 147,
+    "code": "#8;",
+    "text": ":="
+  },
+  {
+    "id": 149,
+    "code": "#8=",
+    "text": ":"
+  },
+  {
+    "id": 151,
+    "code": "#8?",
+    "text": "="
+  },
+  {
+    "id": 156,
+    "code": "#94",
+    "text": "Default"
+  },
+  {
+    "id": 157,
+    "code": "#95",
+    "text": "ProcedureInteract"
+  },
+  {
+    "id": 158,
+    "code": "#96",
+    "text": "LitString"
+  },
+  {
+    "id": 159,
+    "code": "#97",
+    "text": "SeqTimer"
+  },
+  {
+    "id": 161,
+    "code": "#99",
+    "text": "SeqControl"
+  },
+  {
+    "id": 162,
+    "code": "#9:",
+    "text": "Duration_Value"
+  },
+  {
+    "id": 163,
+    "code": "#9;",
+    "text": "Time_Value"
+  },
+  {
+    "id": 164,
+    "code": "#9<",
+    "text": "Module_In_View"
+  },
+  {
+    "id": 165,
+    "code": "#9=",
+    "text": "Value_Changed"
+  },
+  {
+    "id": 166,
+    "code": "#9>",
+    "text": "Event_Text_"
+  },
+  {
+    "id": 167,
+    "code": "#9?",
+    "text": "Event_Tag_"
+  },
+  {
+    "id": 168,
+    "code": "#:0",
+    "text": "Event_Severity_"
+  },
+  {
+    "id": 169,
+    "code": "#:1",
+    "text": "Event_Class_"
+  },
+  {
+    "id": 171,
+    "code": "#:3",
+    "text": "Format_String_"
+  },
+  {
+    "id": 172,
+    "code": "#:4",
+    "text": "Grid"
+  },
+  {
+    "id": 173,
+    "code": "#:5",
+    "text": "Key_"
+  },
+  {
+    "id": 174,
+    "code": "#:6",
+    "text": "ComBut_"
+  },
+  {
+    "id": 175,
+    "code": "#:7",
+    "text": "ComButProc_"
+  },
+  {
+    "id": 176,
+    "code": "#:8",
+    "text": "OptBut_"
+  },
+  {
+    "id": 177,
+    "code": "#:9",
+    "text": "CheckBox_"
+  },
+  {
+    "id": 178,
+    "code": "#::",
+    "text": "TextBox_"
+  },
+  {
+    "id": 179,
+    "code": "#:;",
+    "text": "Visible_"
+  },
+  {
+    "id": 180,
+    "code": "#:<",
+    "text": "Abs_"
+  },
+  {
+    "id": 181,
+    "code": "#:=",
+    "text": "Relative_"
+  },
+  {
+    "id": 182,
+    "code": "#:>",
+    "text": "Value_"
+  },
+  {
+    "id": 183,
+    "code": "#:?",
+    "text": "Decimal_"
+  },
+  {
+    "id": 184,
+    "code": "#;0",
+    "text": "Digits_"
+  },
+  {
+    "id": 185,
+    "code": "#;1",
+    "text": "NoOf_"
+  },
+  {
+    "id": 186,
+    "code": "#;2",
+    "text": "SetVal_"
+  },
+  {
+    "id": 187,
+    "code": "#;3",
+    "text": "SetApp_"
+  },
+  {
+    "id": 188,
+    "code": "#;4",
+    "text": "Two_Layers_"
+  },
+  {
+    "id": 189,
+    "code": "#;5",
+    "text": "Layer_"
+  },
+  {
+    "id": 190,
+    "code": "#;6",
+    "text": "Bool_Value"
+  },
+  {
+    "id": 191,
+    "code": "#;7",
+    "text": "Int_Value"
+  },
+  {
+    "id": 192,
+    "code": "#;8",
+    "text": "Real_Value"
+  },
+  {
+    "id": 193,
+    "code": "#;9",
+    "text": "String_Value"
+  },
+  {
+    "id": 194,
+    "code": "#;:",
+    "text": "Alt_Text"
+  },
+  {
+    "id": 195,
+    "code": "#;;",
+    "text": "Enable_Delay"
+  },
+  {
+    "id": 196,
+    "code": "#;<",
+    "text": "OK_Variable"
+  },
+  {
+    "id": 197,
+    "code": "#;=",
+    "text": "Cancel_Variable"
+  },
+  {
+    "id": 199,
+    "code": "#;?",
+    "text": "LayerLimit_"
+  },
+  {
+    "id": 200,
+    "code": "#<0",
+    "text": "SnglSgn"
+  },
+  {
+    "id": 201,
+    "code": "#<1",
+    "text": "SnglSgnEna"
+  },
+  {
+    "id": 202,
+    "code": "#<2",
+    "text": "Purpose_"
+  },
+  {
+    "id": 203,
+    "code": "#<3",
+    "text": "PurposeChng"
+  },
+  {
+    "id": 204,
+    "code": "#<4",
+    "text": "SgnrCom"
+  },
+  {
+    "id": 205,
+    "code": "#<5",
+    "text": "CommentChng"
+  },
+  {
+    "id": 206,
+    "code": "#<6",
+    "text": "CommentMand"
+  },
+  {
+    "id": 207,
+    "code": "#<7",
+    "text": "Signer1_"
+  },
+  {
+    "id": 208,
+    "code": "#<8",
+    "text": "Signer1Name_"
+  },
+  {
+    "id": 209,
+    "code": "#<9",
+    "text": "DblSgn"
+  },
+  {
+    "id": 210,
+    "code": "#<:",
+    "text": "DblSgnEna"
+  },
+  {
+    "id": 211,
+    "code": "#<;",
+    "text": "CansCom"
+  },
+  {
+    "id": 212,
+    "code": "#<<",
+    "text": "SgnCans"
+  },
+  {
+    "id": 213,
+    "code": "#<=",
+    "text": "Signer2_"
+  },
+  {
+    "id": 214,
+    "code": "#<>",
+    "text": "Signer2Name_"
+  }
+]

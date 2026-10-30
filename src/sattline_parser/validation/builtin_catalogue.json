@@ -1,0 +1,53 @@
+{
+  "CopyTime": {
+    "kind": "procedure",
+    "args": 2,
+    "write": [
+      2
+    ]
+  },
+  "CopyVariable": {
+    "kind": "procedure",
+    "args": 3,
+    "write": [
+      2,
+      3
+    ]
+  },
+  "CopyString": {
+    "kind": "procedure",
+    "args": 3,
+    "write": [
+      2,
+      3
+    ]
+  },
+  "Equal": {
+    "kind": "function",
+    "args": 2,
+    "write": []
+  },
+  "EqualStrings": {
+    "kind": "function",
+    "args": 3,
+    "write": []
+  },
+  "GetStringPos": {
+    "kind": "function",
+    "args": 1,
+    "write": []
+  },
+  "SetStringPos": {
+    "kind": "procedure",
+    "args": 3,
+    "write": [
+      2,
+      3
+    ]
+  },
+  "StringLength": {
+    "kind": "function",
+    "args": 1,
+    "write": []
+  }
+}

@@ -14,6 +14,7 @@ from typing import Any, LiteralString, cast
 import pytest
 from lark import Token, Tree
 from lark.exceptions import UnexpectedCharacters, UnexpectedEOF, UnexpectedInput, UnexpectedToken
+from lark.tree import Meta
 
 from sattline_parser import (
     api as parser_api,
@@ -46,7 +47,6 @@ from sattline_parser.models.ast_model import (
     ParameterMapping,
     Sequence,
     SFCAlternative,
-    SFCBreak,
     SFCCodeBlocks,
     SFCFork,
     SFCParallel,
@@ -198,6 +198,7 @@ __all__ = [
     "InteractObject",
     "InterimCoords",
     "LiteralString",
+    "Meta",
     "ModuleCode",
     "ModuleDef",
     "ModuleHeader",
@@ -207,7 +208,6 @@ __all__ = [
     "ParameterMapping",
     "Path",
     "SFCAlternative",
-    "SFCBreak",
     "SFCCodeBlocks",
     "SFCFork",
     "SFCMixin",

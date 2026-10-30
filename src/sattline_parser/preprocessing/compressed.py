@@ -12,17 +12,17 @@ against the original source (:class:`sattline_parser.source_document.SourceDocum
 
 from __future__ import annotations
 
+import json
 import re
 from collections.abc import Callable
-from dataclasses import dataclass
-from enum import StrEnum
+from pathlib import Path
+from typing import cast
 
 from sattline_parser.source_document import GENERATED, SourceDocument
 
 __all__ = [
+    "SCANNER_TOKENS",
     "SEED_MAPPING",
-    "CompatTransform",
-    "NormalizationKind",
     "PreprocessError",
     "decode_compressed",
     "is_compressed",
@@ -30,184 +30,22 @@ __all__ = [
     "preprocess_source",
 ]
 
-# Seed mappings from sample files (kept explicit for traceability).
-SEED_MAPPING: dict[str, str] = {
-    "#6?": "Invocation",
-    "#6=": "IgnoreMaxModule",
-    "#8=": ":",
-    "#71": "MODULEDEFINITION",
-    "#81": "DateCode_",
-    "#78": "TYPEDEFINITIONS",
-    "#72": "RECORD",
-    "#85": "ENDDEF",
-    "#7:": "OpSave",
-    "#01": "(",
-    "#8?": "=",
-    "#8:": "=>",
-    "#8;": ":=",
-    "#1<": "False",
-    "#1>": "False",
-    "#1=": "True",
-    "#1;": "True",
-    "#79": "SUBMODULES",
-    "#73": "MODULEPARAMETERS",
-    "#7<": "LOCALVARIABLES",
-    "#74": "GLOBAL",
-    "#80": "State",
-    "#17": "New",
-    "#18": "Old",
-    "#87": "Frame_Module",
-    "#6<": "LayerModule",
-    "#6>": "ModuleDef",
-    "#65": "ClippingBounds",
-    "#66": "Dim_",
-    "#40": "InteractObjects",
-    "#41": "SimpleInteract",
-    "#42": "MenuInteract",
-    "#::": "TextBox_",
-    "#4?": "GraphObjects",
-    "#56": "TextObject",
-    "#70": "CompositeObject",
-    "#52": "RectangleObject",
-    "#50": "LineObject",
-    "#51": "OvalObject",
-    "#53": "SegmentObject",
-    "#54": "PolygonObject",
-    "#55": "Spline",
-    "#57": "Polyline",
-    "#58": "LeftAligned",
-    "#5<": "OutlineColour",
-    "#5;": "FillColour",
-    "#5:": "RightAligned",
-    "#59": "CenterAligned",
-    "#5=": "ColourStyle",
-    "#5?": "VarName",
-    "#5>": "Width_",
-    "#95": "ProcedureInteract",
-    "#61": "Colour0",
-    "#62": "Colour1",
-    "#63": "ZoomLimits",
-    "#6:": "Zoomable",
-    "#68": "Connection",
-    "#69": "ConnectionNode",
-    "#43": "SelectVariable",
-    "#84": "ModuleCode",
-    "#86": "GroupConn",
-    "#77": "Secure",
-    "#20": "EQUATIONBLOCK",
-    "#22": "SEQUENCE",
-    "#23": "ENDSEQUENCE",
-    "#88": "COORD",
-    "#89": "OBJSIZE",
-    "#26": "SEQINITSTEP",
-    "#27": "SEQSTEP",
-    "#28": "ENTERCODE",
-    "#29": "ACTIVECODE",
-    "#30": "SEQTRANSITION",
-    "#31": "WAIT_FOR",
-    "#34": "ALTERNATIVESEQ",
-    "#35": "ALTERNATIVEBRANCH",
-    "#36": "ENDALTERNATIVE",
-    "#24": "OPENSEQUENCE",
-    "#25": "ENDOPENSEQUENCE",
-    "#2=": "PARALLELSEQ",
-    "#2>": "PARALLELBRANCH",
-    "#2?": "ENDPARALLEL",
-    "#2;": "SUBSEQSTEP",
-    "#2<": "ENDSUBSEQSTEP",
-    "#32": "SUBSEQTRANSITION",
-    "#33": "ENDSUBSEQTRANSITION",
-    "#3:": "SUBSEQUENCE",
-    "#3;": "ENDSUBSEQUENCE",
-    "#99": "SeqControl",
-    "#97": "SeqTimer",
-    "#2:": "EXITCODE",
-    "#94": "Default",
-    "#7;": "Const",
-    "#76": "PRIVATE_",
-    "#64": "Enable_",
-    "#3>": "InVar_",
-    "#3?": "OutVar_",
-    "#3<": "SEQFORK",
-    "#3=": "SEQBREAK",
-    "#47": "Variable",
-    "#48": "OpMin",
-    "#49": "OpMax",
-    "#4:": "OpStep",
-    "#4=": "ToggleAction",
-    "#4;": "SetAction",
-    "#4<": "ResetAction",
-    "#60": "ValueFraction",
-    "#6;": "SymbolModule",
-    "#9>": "Event_Text_",
-    "#9?": "Event_Tag_",
-    "#9=": "Value_Changed",
-    "#9<": "Enable_",
-    "#9;": "Time_Value",
-    "#9:": "Duration_Value",
-    "#96": "LitString",
-    "#:0": "Event_Severity_",
-    "#:1": "Event_Class_",
-    "#:6": "ComBut_",
-    "#:7": "ComButProc_",
-    "#:8": "OptBut_",
-    "#:>": "Value_",
-    "#:9": "CheckBox_",
-    "#:3": "Format_String_",
-    "#:5": "Key_",
-    "#:4": "Grid",
-    "#:?": "Decimal_",
-    "#:;": "Visible_",
-    "#:<": "Abs_",
-    "#:=": "Abs_",
-    "#;0": "Digits_",
-    "#;1": "NoOf_",
-    "#;2": "SetVal_",
-    "#;3": "SetApp_",
-    "#;4": "Two_Layers_",
-    "#;5": "Layer_",
-    "#;6": "Bool_Value",
-    "#;7": "Int_Value",
-    "#;8": "Real_Value",
-    "#;9": "String_Value",
-    "#;:": "Alt_Text",
-    "#;?": "LayerLimit_",
-    "#;=": "Cancel_Variable",
-    "#;;": "Enable_Delay",
-    "#;<": "OK_Variable",
-    "#16": "NOT",
-    "#14": "AND",
-    "#0?": "IF",
-    "#11": "ELSIF",
-    "#10": "THEN",
-    "#15": "OR",
-    "#12": "ELSE",
-    "#13": "ENDIF",
-    "#05": ">",
-    "#04": "<",
-    "#07": ">=",
-    "#06": "<=",
-    "#08": "==",
-    "#09": "<>",
-    "#<0": "SnglSgn",
-    "#<1": "SnglSgnEna",
-    "#<2": "Purpose_",
-    "#<3": "PurposeChng",
-    "#<4": "SgnrCom",
-    "#<5": "CommentChng",
-    "#<6": "CommentMand",
-    "#<7": "Signer1_",
-    "#<8": "Signer1Name_",
-    "#<9": "DblSgn",
-    "#<:": "DblSgnEna",
-    "#<;": "CansCom",
-    "#<<": "SgnCans",
-    "#<=": "Signer2_",
-    "#<>": "Signer2Name_",
+#: SattLine scanner token table: compact code (``#`` + two chars from the
+#: ASCII run ``0`` to ``?``) -> source spelling. The scanner ordinal ``n`` is
+#: encoded as ``'#' + chr(48 + n // 16) + chr(48 + n % 16)``; entries are checked
+#: against the compressed/uncompressed full-grammar pair. The table covers
+#: keywords and operators only; literal source text is emitted unencoded by the
+#: compressor.
+_TOKEN_DATA_PATH = Path(__file__).with_name("scanner_tokens.json")
+SCANNER_TOKENS: dict[str, str] = {
+    row["code"]: row["text"]
+    for row in cast("list[dict[str, str]]", json.loads(_TOKEN_DATA_PATH.read_text(encoding="utf-8")))
 }
 
+#: Historical name for :data:`SCANNER_TOKENS`, kept for API compatibility.
+SEED_MAPPING: dict[str, str] = SCANNER_TOKENS
+
 _MARKER_RE = re.compile(r"#[0-9A-Za-z;:=><?]{1,2}")
-_MARKER_PREFIX_RE = re.compile(r"#0[1<][A-Za-z0-9]*")
 _WHITESPACE_RE = re.compile(r"\s+")
 
 
@@ -242,48 +80,6 @@ class PreprocessError(ValueError):
     """
 
 
-class NormalizationKind(StrEnum):
-    """How a compatibility-normalization step touches the decoded program.
-
-    The distinction matters because repairs are not all cosmetic: some inject
-    or replace actual syntax that changes the represented program, and
-    consumers deserve to know which is which.
-    """
-
-    SYNTAX_REPAIR = "syntax_repair"
-    SEMANTIC_REPAIR = "semantic_repair"
-
-
-type CompatReplacer = Callable[[_OpaqueRegistry, str, re.Match[str]], str]
-
-
-@dataclass(frozen=True)
-class CompatTransform:
-    """A single explicitly categorized compatibility-normalization step.
-
-    ``replacement`` is either a ``re.sub``-style template string or a callable
-    ``(decoded, match) -> str`` that computes the replacement from the current
-    decoded text. ``kind`` classifies the step:
-
-    * ``SYNTAX_REPAIR`` -- adjusts punctuation and terminators so structure
-      already present in the text parses; no new program meaning is introduced.
-    * ``SEMANTIC_REPAIR`` -- injects or replaces actual syntax/values (default
-      values, missing keywords, value wrappers), changing the represented
-      program.
-    """
-
-    name: str
-    kind: NormalizationKind
-    pattern: re.Pattern[str]
-    replacement: str | CompatReplacer | None
-    description: str
-
-
-#: Ordered compatibility-normalization steps applied by :func:`_normalize_compat`.
-#: All transforms have been removed — the grammar is now the source of truth.
-_COMPAT_TRANSFORMS: tuple[CompatTransform, ...] = ()
-
-
 def _markers_outside_opaque_regions(text: str) -> list[str]:
     """Return ``#marker`` matches that lie entirely outside strings/comments.
 
@@ -294,7 +90,7 @@ def _markers_outside_opaque_regions(text: str) -> list[str]:
     compressed heuristic -- otherwise plain source containing such text would
     be misclassified as compressed and preprocessed.
     """
-    regions = _scan_opaque_regions(text)
+    regions = scan_opaque_regions(text)
     markers: list[str] = []
     region_index = 0
     region_count = len(regions)
@@ -345,7 +141,7 @@ def is_compressed(text: str) -> bool:
 # ---------------------------------------------------------------------------
 
 
-def _scan_opaque_regions(text: str) -> list[tuple[str, int, int]]:
+def scan_opaque_regions(text: str) -> list[tuple[str, int, int]]:
     """Return ``(kind, start, end)`` for every string ('S') and comment ('C').
 
     The scanner understands nested ``(* ... *)`` comments, doubled ``""``
@@ -394,7 +190,7 @@ class _OpaqueRegistry:
         self._strings: list[tuple[int, str]] = []
         self._comments: list[tuple[int, str]] = []
         self._regions: list[tuple[str, int, int, int]] = []
-        for kind, start, end in _scan_opaque_regions(text):
+        for kind, start, end in scan_opaque_regions(text):
             entry = (start, text[start:end])
             if kind == "S":
                 index = len(self._strings)
@@ -426,21 +222,6 @@ class _OpaqueRegistry:
         if len(char_map) != len(decoded):  # pragma: no cover - invariant by construction
             raise PreprocessError("internal error: opaque protection map mismatch")  # pragma: no cover
         return decoded, char_map
-
-    def string_text(self, placeholder: str) -> str | None:
-        return self._lookup_text(placeholder, "S")
-
-    def _lookup_text(self, placeholder: str, kind: str) -> str | None:
-        if len(placeholder) < 4 or placeholder[1] != kind:
-            return None
-        try:
-            index = int(placeholder[2:-1])
-        except (ValueError, IndexError):
-            return None
-        entries = self._strings if kind == "S" else self._comments
-        if 0 <= index < len(entries):
-            return entries[index][1]
-        return None
 
     def restore(self, decoded: str, char_map: list[int]) -> tuple[str, list[int]]:
         parts: list[str] = []
@@ -560,8 +341,7 @@ def _decode_markers(text: str, mapping: dict[str, str]) -> tuple[_OpaqueRegistry
     """Replace ``#markers`` with their mapped text, keeping strings/comments protected.
 
     Returns ``(registry, decoded, char_map)``: the decoded text still holds
-    opaque placeholders for strings and comments. Those placeholders must
-    survive :func:`_normalize_compat` untouched and are restored by
+    opaque placeholders for strings and comments, which are restored by
     :func:`_OpaqueRegistry.restore` at the end of the pipeline.
     """
     registry = _OpaqueRegistry(text)
@@ -574,38 +354,17 @@ def _decode_markers(text: str, mapping: dict[str, str]) -> tuple[_OpaqueRegistry
             raise PreprocessError(f"Unknown compressed marker {tok!r} at character offset {m.start()}")
         return value
 
-    def _prefix_subst(m: re.Match[str]) -> str:
-        tok = m.group(0)
-        if tok.startswith("#01"):
-            return "(" + tok[3:]
-        if tok.startswith("#0<"):
-            return "* " + tok[3:] if len(tok) > 3 else "*"
-        return tok  # pragma: no cover — regex only matches #01 and #0< prefixes
-
-    decoded, char_map = _regex_sub(decoded, char_map, _MARKER_PREFIX_RE, _prefix_subst)
     decoded, char_map = _regex_sub(decoded, char_map, _MARKER_RE, _subst)
     return registry, decoded, char_map
-
-
-def _normalize_compat(_registry: _OpaqueRegistry, decoded: str, char_map: list[int]) -> tuple[str, list[int]]:
-    """Apply the categorized SattLine syntax-variant repairs to decoded text.
-
-    All transforms have been removed — the grammar is now the source of truth.
-    This function is kept for API compatibility but is now a no-op.
-    """
-    return decoded, char_map
 
 
 def _decode_with_map(text: str, mapping: dict[str, str]) -> tuple[str, list[int]]:
     """Decode *text* with *mapping*, returning (decoded, char_map).
 
-    Compressed decoding (:func:`_decode_markers`) and SattLine syntax-variant
-    normalization (:func:`_normalize_compat`) are separate stages; string
-    literals and ``(* ... *)`` comments stay protected through both and are
-    restored last so provenance mapping is preserved.
+    String literals and ``(* ... *)`` comments stay protected through
+    decoding and are restored last so provenance mapping is preserved.
     """
     registry, decoded, char_map = _decode_markers(text, mapping)
-    decoded, char_map = _normalize_compat(registry, decoded, char_map)
     return registry.restore(decoded, char_map)
 
 
@@ -640,6 +399,10 @@ def preprocess_source(text: str) -> SourceDocument:
     """
     if not is_compressed(text):
         return SourceDocument.identity(text)
+    # A header-flagged compact file is *coded* by definition; the density
+    # heuristic also fires on partially hand-coded text where raw keywords are
+    # ordinary source. The two are distinguished per token from the character
+    # provenance (see ``grammar.sattline_lexer``).
     mapping = dict(SEED_MAPPING)
     decoded, char_map = _decode_with_map(text, mapping)
     return SourceDocument(text, decoded, tuple(char_map))

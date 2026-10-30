@@ -36,14 +36,14 @@ from .loader import ProjectLoader, read_dependency_names
 from .lookup_cache import DEFAULT_LOOKUP_CACHE_FLUSH_INTERVAL, LOOKUP_CACHE_VERSION, FileLookupCache
 from .models import (
     DependencyGraph,
-    GraphicsCompositeRecord,
     GraphicsMessage,
     GraphicsModel,
-    GraphicsPictureDisplayPathRow,
-    GraphicsPictureDisplayRecord,
+    LoadDiagnostic,
+    LoadDiagnosticKind,
     LoadMode,
     ProgramFormat,
     SattLineProgram,
+    SidecarState,
 )
 from .project import SattLineProject
 
@@ -58,11 +58,10 @@ __all__ = [
     "DependencyParseError",
     "FileASTCache",
     "FileLookupCache",
-    "GraphicsCompositeRecord",
     "GraphicsMessage",
     "GraphicsModel",
-    "GraphicsPictureDisplayPathRow",
-    "GraphicsPictureDisplayRecord",
+    "LoadDiagnostic",
+    "LoadDiagnosticKind",
     "LoadMode",
     "ProgramFormat",
     "ProjectLoadError",
@@ -70,6 +69,7 @@ __all__ = [
     "ProjectLookup",
     "SattLineProgram",
     "SattLineProject",
+    "SidecarState",
     "SourceIndex",
     "candidate_extensions",
     "code_ext",

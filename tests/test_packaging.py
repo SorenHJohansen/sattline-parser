@@ -11,7 +11,10 @@ from __future__ import annotations
 
 import importlib.metadata
 import importlib.resources
+import json
 import re
+import subprocess
+import sys
 from pathlib import Path
 
 from sattline_parser import (
@@ -46,6 +49,14 @@ def test_grammar_resources_are_packaged() -> None:
     assert grammar_path.is_file()
     content = grammar_path.read_text(encoding="utf-8")
     assert "start:" in content
+
+
+def test_scanner_token_resource_is_packaged() -> None:
+    token_path = importlib.resources.files("sattline_parser").joinpath("preprocessing", "scanner_tokens.json")
+    assert token_path.is_file()
+    rows = json.loads(token_path.read_text(encoding="utf-8"))
+    assert len(rows) == 173
+    assert rows[0]["code"] == "#01"
 
 
 def test_installed_package_parses_small_valid_program() -> None:
@@ -89,3 +100,31 @@ def test_installed_lark_version_satisfies_declared_range() -> None:
     # The declared range excludes lark 2.x; if a future lark 2.x is installed
     # the range must be re-evaluated, not silently accepted.
     assert version < (2, 0, 0), f"lark {lark.__version__} is outside the declared range <2"
+
+
+def test_pep561_marker_is_packaged() -> None:
+    marker = importlib.resources.files("sattline_parser").joinpath("py.typed")
+    assert marker.is_file()
+
+
+def test_console_script_is_registered() -> None:
+    scripts = {
+        entry.name: entry.value
+        for entry in importlib.metadata.entry_points(group="console_scripts")
+        if entry.name == "sattline"
+    }
+    assert scripts == {"sattline": "sattline_parser.cli:main"}
+
+
+def test_module_entry_point_reaches_the_cli() -> None:
+    completed = subprocess.run(
+        [sys.executable, "-m", "sattline_parser", "version", "--json"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert completed.returncode == 0, completed.stderr
+    payload = json.loads(completed.stdout)
+    assert payload["schema"] == "sattline.v1.version"
+    assert payload["version"] == __version__
+    assert "check" in payload["commands"]

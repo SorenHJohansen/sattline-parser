@@ -97,15 +97,32 @@ def test_format_seq_nodes_renders_all_node_types():
             exit=[Assignment(VarRef("C"), IntLiteral(3))],
         ),
     )
+    forked_step = ast_model.SFCStep(
+        kind="step",
+        name="Forked",
+        code=ast_model.SFCCodeBlocks(),
+        fork=ast_model.SFCFork(targets=("Z",), has_break=True),
+    )
     nodes = [
         step,
         ast_model.SFCTransition(name="T1", condition=True),
-        ast_model.SFCAlternative(branches=[[ast_model.SFCFork(targets=("X",))]]),
-        ast_model.SFCParallel(branches=[[ast_model.SFCBreak()]]),
-        ast_model.SFCSubsequence(name="Sub", body=[ast_model.SFCFork(targets=("Y",))]),
-        ast_model.SFCTransitionSub(name="TS", body=[ast_model.SFCBreak()]),
-        ast_model.SFCFork(targets=("Z",)),
-        ast_model.SFCBreak(),
+        ast_model.SFCTransition(name="T2", condition=None),
+        ast_model.SFCAlternative(
+            branches=[[ast_model.SFCStep(kind="step", name="BranchStep", code=ast_model.SFCCodeBlocks())]]
+        ),
+        ast_model.SFCParallel(
+            branches=[[ast_model.SFCStep(kind="step", name="ParStep", code=ast_model.SFCCodeBlocks())]]
+        ),
+        ast_model.SFCSubsequence(
+            name="Sub", body=[ast_model.SFCTransition(name="Inner", condition=True)], kind="sequence"
+        ),
+        ast_model.SFCSubsequence(
+            name=None,
+            body=[ast_model.SFCStep(kind="step", name="InnerStep", code=ast_model.SFCCodeBlocks())],
+            kind="substep",
+        ),
+        ast_model.SFCTransitionSub(name="TS", body=[ast_model.SFCTransition(name="TSub", condition=None)]),
+        forked_step,
         SimpleNamespace(__str__=lambda self: "FallbackNode"),
     ]
 
@@ -121,8 +138,9 @@ def test_format_seq_nodes_renders_all_node_types():
     assert "EndSubsequence" in rendered
     assert "TransitionSub TS:" in rendered
     assert "EndTransitionSub" in rendered
-    assert "Fork to Z" in rendered
-    assert "Break" in rendered
+    assert "Transition T2" in rendered
+    assert "Fork to Z Break" in rendered
+    assert "Substep:" in rendered
 
 
 def test_format_expr_handles_new_typed_expression_nodes():

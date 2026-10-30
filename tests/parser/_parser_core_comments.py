@@ -63,7 +63,6 @@ BasePicture Invocation (0.0,0.0,0.0,1.0,1.0) : MODULEDEFINITION DateCode_ 1
     TYPEDEFINITIONS
     Rec1 = RECORD DateCode_ 2
         A: integer;
-        (* variable list comment *)
     ENDDEF (*rec end*);
 TYPEDEFINITIONS
     Type1 (* type desc *) = MODULEDEFINITION DateCode_ 3

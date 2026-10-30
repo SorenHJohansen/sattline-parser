@@ -11,8 +11,6 @@ def test_tokens_mixin_coerces_supported_terminals_and_keywords():
     signed_int = Token("SIGNED_INT", "-7", start_pos=10, line=4, column=2, end_line=4, end_column=4, end_pos=12)
     real_value = Token("REAL", "3.25", start_pos=20, line=8, column=6, end_line=8, end_column=10, end_pos=24)
 
-    assert mixin._unwrap_token(Token("NAME", "Motor")) == "Motor"
-    assert mixin._unwrap_token("AlreadyString") == "AlreadyString"
     assert mixin.NAME(Token("NAME", "Valve")) == "Valve"
     assert mixin.STRING(Token("STRING", '"He said ""Hi""\n"')) == 'He said "Hi"'
     assert mixin.STRING(Token("STRING", "bare-text")) == "bare-text"
@@ -195,7 +193,14 @@ def test_expression_and_value_literal_allowlists_are_symmetric():
     # Pin that structure so the two contexts can never drift apart.
     grammar = _repo_path("src", "sattline_parser", "grammar", "sattline.lark").read_text(encoding="utf-8")
     value_line = next(line.strip() for line in grammar.splitlines() if line.startswith("value:"))
-    assert {t for t in value_line.split()[1:] if t != "|"} == {"BOOL", "REAL", "STRING", "SIGNED_INT"}
+    assert {t for t in value_line.split()[1:] if t != "|"} == {
+        "BOOL",
+        "ON_KW",
+        "OFF_KW",
+        "REAL",
+        "STRING",
+        "SIGNED_INT",
+    }
 
     plain_value_line = next(line.strip() for line in grammar.splitlines() if line.startswith("plain_value:"))
     assert {t for t in plain_value_line.split()[1:] if t != "|"} == {
@@ -213,12 +218,17 @@ def test_expression_and_value_literal_allowlists_are_symmetric():
     # Behavioural check: each literal kind accepted by `value` also parses as
     # an expression operand, and each is accepted in a standalone value
     # context (interact assignment) too.
+    # ``On``/``Off`` are value literals in expressions and initializers only: the
+    # graphics/interact property readers keep their True/False-only BOOL and
+    # plain_value allowlists, so they are not exercised in the interact context.
     cases = {
-        "int": "Sink = 1;",
-        "real": "Sink = 1.5;",
-        "bool": "Sink = True;",
+        "int": ("Sink = 1;", "0"),
+        "real": ("Sink = 1.5;", "0.5"),
+        "bool": ("Sink = True;", "False"),
+        "on": ("Sink = On;", None),
+        "off": ("Sink = Off;", None),
     }
-    for literal_kind, equation_stmt in cases.items():
+    for literal_kind, (equation_stmt, interact_tail) in cases.items():
         bp = _parse_to_basepicture(
             '"SyntaxVersion"\n'
             '"OriginalFileDate"\n'
@@ -238,6 +248,22 @@ def test_expression_and_value_literal_allowlists_are_symmetric():
         assert isinstance(assignment, Assignment)
         assert not isinstance(assignment.value, VarRef), f"{literal_kind} literal did not parse as expression operand"
 
+        if interact_tail is None:
+            # An initializer is the other value context.
+            init_bp = _parse_to_basepicture(
+                '"SyntaxVersion"\n'
+                '"OriginalFileDate"\n'
+                '"ProgramDate"\n'
+                "BasePicture Invocation (0.0,0.0,0.0,1.0,1.0) : MODULEDEFINITION DateCode_ 1\n"
+                "LOCALVARIABLES\n"
+                f"   Flag: boolean := {literal_kind.capitalize()};\n"
+                "ModuleDef\n"
+                "ClippingBounds = ( -1.0 , -1.0 ) ( 1.0 , 1.0 )\n"
+                "ENDDEF (*BasePicture*);\n"
+            )
+            assert init_bp.localvariables[0].init_value in {True, False}
+            continue
+
         value_bp = _parse_to_basepicture(
             '"SyntaxVersion"\n'
             '"OriginalFileDate"\n'
@@ -250,7 +276,7 @@ def test_expression_and_value_literal_allowlists_are_symmetric():
             "InteractObjects :\n"
             "   ComBut_ ( -0.8 , 0.6 ) ( 0.8 , 0.4 )\n"
             "      Bool_Value\n"
-            f"      Variable = {'0' if literal_kind == 'int' else '0.5' if literal_kind == 'real' else 'False'}\n"
+            f"      Variable = {interact_tail}\n"
             "ENDDEF (*BasePicture*);\n"
         )
         assert value_bp.moduledef is not None

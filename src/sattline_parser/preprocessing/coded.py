@@ -11,7 +11,7 @@ A coded file is a binary stream:
 The decoded payload is the original SattLine text with CRLF line endings:
 stored lone ``\r`` terminators are normalized to ``\r\n``, and genuine
 ``\r\n`` pairs pass through untouched. The text always ends with a line
-terminator, matching native SattLine sources.
+terminator, as SattLine sources do.
 A coded stream may carry a short non-text trailer after its final ``\r``
 (file-format residue); decoding drops the trailer but keeps that ``\r``.
 """

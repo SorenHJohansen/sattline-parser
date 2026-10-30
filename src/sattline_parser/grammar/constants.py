@@ -20,6 +20,7 @@ TREE_TAG_INVOKE_COORD = "invoke_coord"
 TREE_TAG_ARGUMENTS = "arguments"
 TREE_TAG_LAYERINFO = "layerinfo"
 TREE_TAG_ENABLE = "enable"
+TREE_TAG_MODULE_IN_VIEW = "module_in_view"
 TREE_TAG_MODULETYPE_PAR_LIST = "moduletype_par_list"
 TREE_TAG_MODULETYPE_PAR_TRANSFER = "moduletype_par_transfer"
 TREE_TAG_VARIABLE_NAME = "variable_name"
@@ -36,6 +37,9 @@ TREE_TAG_SYMBOLMODULE = "SymbolModule"
 TREE_TAG_NON_ZOOMABLE = "Non_Zoomable"
 
 KEY_NAME = "name"
+#: Interactor body keys for the two clauses below.
+KEY_SCALE_MODE = "scale_mode"
+KEY_PICK_BUTTON = "pick_button"
 KEY_COORDS = "coords"
 KEY_SEGMENT_POINT = "segment_point"
 KEY_POLYGON_TYPE = "polygon_type"
@@ -105,6 +109,11 @@ GRAMMAR_REGEX_REAL = r"/[+-]?(?:\d+\.\d+(?:[eE][+-]?\d+)?|\d+[eE][+-]?\d+)/"
 GRAMMAR_REGEX_REAL_NOTAIL = r"/[+-]?(?:\d+\.\d+(?:[eE][+-]?\d+)?|\d+[eE][+-]?\d+)(?![ \t\r\n]*:)/"
 GRAMMAR_VALUE_BOOL_TRUE = "True"
 GRAMMAR_VALUE_BOOL_FALSE = "False"
+#: Boolean literal spellings accepted wherever a value is read. They are keyword
+#: terminals, so they only act as literals where the grammar expects a value;
+#: elsewhere they stay ordinary names.
+GRAMMAR_VALUE_BOOL_ON = "On"
+GRAMMAR_VALUE_BOOL_OFF = "Off"
 GRAMMAR_REGEX_STRING = r"/\"([^\n\"]|\"\")*\"/"
 GRAMMAR_REGEX_STRING_NOTAIL = r"/\"([^\n\"]|\"\")*\"(?![ \t\r\n]*:)/"
 GRAMMAR_REGEX_NOT = r"/NOT\b/"
@@ -128,7 +137,6 @@ GRAMMAR_VALUE_LOCALVARIABLES = "LOCALVARIABLES"
 GRAMMAR_VALUE_GRAPHOBJECTS = "GraphObjects"
 GRAMMAR_VALUE_INTERACTOBJECTS = "InteractObjects"
 GRAMMAR_VALUE_DATECODE_PREFIX = "DateCode_"
-GRAMMAR_REGEX_DATECODE_PREFIX = r"/[a-zA-Z][a-zA-Z0-9_]*_/"
 GRAMMAR_VALUE_GROUPCONN = "GroupConn"
 
 GRAMMAR_VALUE_SEQCONTROL = "SeqControl"
@@ -143,6 +151,7 @@ GRAMMAR_VALUE_ENTERCODE = "ENTERCODE"
 GRAMMAR_VALUE_ACTIVECODE = "ACTIVECODE"
 GRAMMAR_VALUE_EXITCODE = "EXITCODE"
 GRAMMAR_VALUE_EQUATIONBLOCK = "EQUATIONBLOCK"
+GRAMMAR_VALUE_EQUATIONS = "EQUATIONS"
 GRAMMAR_VALUE_ENDSEQUENCE = "ENDSEQUENCE"
 GRAMMAR_VALUE_ALTERNATIVESEQ = "ALTERNATIVESEQ"
 GRAMMAR_VALUE_ALTERNATIVEBRANCH = "ALTERNATIVEBRANCH"
@@ -186,8 +195,16 @@ GRAMMAR_VALUE_SEGMENTOBJECT = "SegmentObject"
 GRAMMAR_VALUE_COMPOSITEOBJECT = "CompositeObject"
 GRAMMAR_VALUE_CONNECTIONNODE = "ConnectionNode"
 GRAMMAR_VALUE_ENABLE_PREFIX = "Enable_"
+GRAMMAR_VALUE_MODULE_IN_VIEW = "Module_In_View"
 GRAMMAR_REGEX_ENABLE_PREFIX = r"/Enable_\b/"
 GRAMMAR_VALUE_VARNAME = "VarName"
+#: Bare one-of interactor selectors (ComBut_, TextBox_): they take no value and
+#: set a single object field to 1 (Relative_) or 0 (Abs_).
+GRAMMAR_VALUE_RELATIVE = "Relative_"
+GRAMMAR_VALUE_ABS = "Abs_"
+#: Shared interactor property clause: `IntObjPickButton "=" STRING`
+#: with an optional postfix `VarName` that turns the string into a reference.
+GRAMMAR_VALUE_INTOBJPICKBUTTON = "IntObjPickButton"
 GRAMMAR_VALUE_VALUEFRACTION = "ValueFraction"
 GRAMMAR_VALUE_COLOUR0 = "Colour0"
 GRAMMAR_VALUE_COLOUR1 = "Colour1"
@@ -248,14 +265,37 @@ GRAMMAR_REGEX_COMMENT_TEXT = r"/(?:[^(*]|\((?!\*)|\*(?!\)))+/"
 GRAMMAR_REGEX_SL_DATECODE = r"/\d+/"
 GRAMMAR_REGEX_BOOL = r"/True\b|False\b/"
 GRAMMAR_REGEX_BOOL_NOTAIL = r"/(?:True|False)\b(?![ \t\r\n]*:)/"
+
+
+#: Identifiers are matched case-insensitively so that the keyword exclusion list
+#: below excludes ``true``/``ENDDEF`` as well as ``True``/``ENDDEF``; keyword
+#: case is folded. The scope wraps the whole pattern because the terminal spans
+#: several lines in the grammar template.
+#: Identifier characters. Comparison is byte-oriented, and real
+#: libraries use CP1252 bytes that are not Unicode letters inside identifiers
+#: (``0xA6``, ``0xB8`` and ``0x85`` all occur in identifier text), so the
+#: printable CP1252 range is part of the class alongside the letter/mark
+#: categories.
+def _cp1252_name_characters() -> str:
+    characters: list[str] = []
+    for byte in range(0x80, 0x100):
+        try:
+            characters.append(bytes((byte,)).decode("cp1252"))
+        except UnicodeDecodeError:  # 0x81/0x8D/0x8F/0x90/0x9D are undefined
+            continue
+    return "".join(characters)
+
+
+_NAME_CHAR = r"\p{L}\p{Nl}\p{M}\p{Nd}_'" + _cp1252_name_characters() + r"\uFFFD"
+
 GRAMMAR_REGEX_NAME = (
-    r"/'[^']{1,20}'|"
+    r"/(?i:'[^']{1,20}'|"
     r"(?!"
     r"(?:IF|THEN|ELSE|ELSIF|ENDIF|AND|OR|NOT|True|False|SUBSEQSTEP)"
-    r"(?![\p{L}\p{Nl}\p{M}\p{Nd}_'\uFFFD])"
+    rf"(?![{_NAME_CHAR}])"
     r")"
-    r"[\p{L}\p{Nl}_\uFFFD][\p{L}\p{Nl}\p{M}\p{Nd}_'\uFFFD]{0,19}"
-    r"(?![\p{L}\p{Nl}\p{M}\p{Nd}_'\uFFFD])/"
+    rf"[{_NAME_CHAR}][{_NAME_CHAR}]{{0,19}}"
+    rf"(?![{_NAME_CHAR}]))/"
 )
 GRAMMAR_REGEX_STRING_CRLF = r"/\"([^\"\n]|\"\")*\n/"
 

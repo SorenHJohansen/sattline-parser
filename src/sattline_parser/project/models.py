@@ -8,11 +8,11 @@ artifact-discovery rules and loading behavior land in later phases.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from enum import Enum
+from enum import Enum, StrEnum
 from pathlib import Path
 from typing import Literal
 
-from sattline_parser.models.ast_model import BasePicture, GraphicsBinding, SourceSpan
+from sattline_parser.models.ast_model import BasePicture, GraphicsBinding
 
 
 class LoadMode(Enum):
@@ -48,52 +48,15 @@ class GraphicsMessage:
 
 
 @dataclass(frozen=True, slots=True)
-class GraphicsCompositeRecord:
-    """A ``GRAPHICS`` composite (``9030`` family) record from a companion file."""
-
-    record_index: int
-    record_start_line: int
-    record_end_line: int
-    family_code: str
-
-
-@dataclass(frozen=True, slots=True)
-class GraphicsPictureDisplayPathRow:
-    """A single indexed row inside a ``PICTUREDISPLAY`` (``9031``) record."""
-
-    record_index: int
-    index_token: str
-    index_value: int | None
-    kind: Literal["literal", "variable", "variable_invalid"]
-    raw_text: str
-    span: SourceSpan
-
-
-@dataclass(frozen=True, slots=True)
-class GraphicsPictureDisplayRecord:
-    """A ``PICTUREDISPLAY`` (``9031``) record from a graphics companion file."""
-
-    record_index: int
-    record_start_line: int
-    record_end_line: int
-    subtype: str = "2"
-    path_row_lines: tuple[int, ...] = ()
-    path_rows: tuple[GraphicsPictureDisplayPathRow, ...] = ()
-
-
-@dataclass(frozen=True, slots=True)
 class GraphicsModel:
     """The parsed representation of a program's graphics companion file.
 
-    Holds the parse result only (bindings, messages, and record families);
-    semantic validation against the program and asset-path warnings live in the
-    consumer layer.
+    Holds the bindings and the messages the scanner produced. Semantic
+    validation against the program lives in the consumer layer.
     """
 
     bindings: tuple[GraphicsBinding, ...] = ()
     messages: tuple[GraphicsMessage, ...] = ()
-    composite_records: tuple[GraphicsCompositeRecord, ...] = ()
-    picture_display_records: tuple[GraphicsPictureDisplayRecord, ...] = ()
 
     @property
     def errors(self) -> tuple[GraphicsMessage, ...]:
@@ -104,6 +67,46 @@ class GraphicsModel:
     def warnings(self) -> tuple[GraphicsMessage, ...]:
         """Messages with ``severity == "warning"``, in parse order."""
         return tuple(message for message in self.messages if message.severity == "warning")
+
+
+class SidecarState(StrEnum):
+    """What the dependency sidecar looked like for a loaded program.
+
+    A library is a body *and* a sidecar at one prefix (LIB-05), so the
+    three cases are distinct: absent (no file), empty (file, no names) and
+    present. Conflating absent with empty would silently drop a dependency chain.
+    """
+
+    ABSENT = "absent"
+    EMPTY = "empty"
+    PRESENT = "present"
+
+
+class LoadDiagnosticKind(StrEnum):
+    """Non-fatal project-load findings a consumer may want to act on."""
+
+    SIDECAR_MISSING = "sidecar-missing"
+    SIDECAR_ELSEWHERE = "sidecar-elsewhere"
+    SIDECAR_EMPTY = "sidecar-empty"
+    DEPENDENCY_CYCLE = "dependency-cycle"
+    #: A program was left out of a non-strict load because it could not be
+    #: resolved or parsed. The load continues, but the omission stays visible.
+    LOAD_SKIPPED = "load-skipped"
+
+
+@dataclass(frozen=True, slots=True)
+class LoadDiagnostic:
+    """One non-fatal load finding.
+
+    These are conditions the loader reports and an operator can continue past
+    (answer 11: Continue/Cancel); raising would be stricter than the tool, so
+    they are surfaced instead of thrown.
+    """
+
+    kind: LoadDiagnosticKind
+    program: str
+    detail: str
+    path: Path | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -125,6 +128,10 @@ class SattLineProgram:
     dependencies: tuple[str, ...] = ()
     format: ProgramFormat = ProgramFormat(mode=LoadMode.OFFICIAL)
     source_path: Path | None = None
+    #: Resolved dependency sidecar, when one was read at the body prefix.
+    deps_path: Path | None = None
+    #: Whether that sidecar was absent, empty, or carried dependency names.
+    sidecar: SidecarState = SidecarState.ABSENT
 
 
 @dataclass(frozen=True, slots=True)
@@ -151,12 +158,12 @@ class DependencyGraph:
 
 __all__ = [
     "DependencyGraph",
-    "GraphicsCompositeRecord",
     "GraphicsMessage",
     "GraphicsModel",
-    "GraphicsPictureDisplayPathRow",
-    "GraphicsPictureDisplayRecord",
+    "LoadDiagnostic",
+    "LoadDiagnosticKind",
     "LoadMode",
     "ProgramFormat",
     "SattLineProgram",
+    "SidecarState",
 ]

@@ -2,14 +2,12 @@
 # ruff: noqa: F403, F405
 from sattline_parser.preprocessing import is_compressed
 from sattline_parser.preprocessing.compressed import (
-    _COMPAT_TRANSFORMS,
     _MARKER_RE,
     SEED_MAPPING,
     _align_replacement,
     _decode_markers,
     _decode_with_map,
     _header_compression_flag,
-    _normalize_compat,
     _regex_sub,
 )
 from sattline_parser.source_document import GENERATED, Generated
@@ -60,32 +58,20 @@ def test_decode_stages_compose_identically_to_decode_with_map():
     )
 
     registry, decoded, char_map = _decode_markers(text, dict(SEED_MAPPING))
-    normalized, norm_map = _normalize_compat(registry, decoded, char_map)
-    restored, restored_map = registry.restore(normalized, norm_map)
+    restored, restored_map = registry.restore(decoded, char_map)
     full_decoded, full_map = _decode_with_map(text, dict(SEED_MAPPING))
 
     assert restored == full_decoded
     assert tuple(restored_map) == tuple(full_map)
-    assert len(norm_map) == len(normalized)
 
 
 def test_decode_markers_stage_protects_strings_from_unknown_markers():
     text = '#71 Demo ENDDEF "text #99 unknown"'
 
-    registry, _decoded, _char_map = _decode_markers(text, dict(SEED_MAPPING))
-    normalized, _norm_map = _normalize_compat(registry, _decoded, _char_map)
-    restored, _restored_map = registry.restore(normalized, _norm_map)
+    registry, decoded, char_map = _decode_markers(text, dict(SEED_MAPPING))
+    restored, _restored_map = registry.restore(decoded, char_map)
 
     assert '"text #99 unknown"' in restored
-
-
-# ---------------------------------------------------------------------------
-# Compatibility transform catalog
-# ---------------------------------------------------------------------------
-
-
-def test_compat_transform_catalog_is_empty():
-    assert len(_COMPAT_TRANSFORMS) == 0
 
 
 def test_seed_mapping_expands_marker_70_to_composite_object():
