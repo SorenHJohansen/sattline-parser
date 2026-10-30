@@ -34,6 +34,18 @@
 - Do not add imports back into consumer tooling; keep the layers clean.
 - Use the grammar file `src/sattline_parser/grammar/sattline.lark` as canonical.
 
+## Public Tree Rule
+
+This repository is public.
+
+- Describe behavior, never origin: "the syntax accepts `X`" is correct, "the
+  reader at `<address>` accepts `X`" is not.
+- Keep out code addresses, build or version numbers, library, unit, project and
+  person names, and any note about probing, disassembly or how a rule was
+  found.
+- This applies to comments, docstrings, test names, fixture headers, the
+  changelog, commit messages, branch names, PR text and issues.
+
 ## Workflow
 
 - Start from the owning file, symbol, or failing command.
@@ -41,7 +53,10 @@
 - Widen to Ruff, Pyright, or pre-commit only after the local check passes.
 - Never commit directly to `main`. Always work on a feature branch and land
   changes through a pull request; `main` only ever receives merges.
+- Never commit, push, tag, merge, open a PR or delete a branch without explicit
+  permission for that specific action. Propose the command, then wait. Reading
+  files, running tests and inspecting git state need no permission.
 
 ## Last Updated
 
-2026-10-29
+2026-10-30
