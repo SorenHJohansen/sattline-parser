@@ -13,7 +13,7 @@ from pathlib import Path
 from types import MappingProxyType
 
 from .loader import ProjectLoader
-from .models import DependencyGraph, LoadMode, SattLineProgram
+from .models import DependencyGraph, LoadDiagnostic, LoadMode, SattLineProgram
 
 
 class SattLineProject:
@@ -26,6 +26,7 @@ class SattLineProject:
 
     def __init__(self) -> None:
         self._programs: dict[str, SattLineProgram] = {}
+        self._diagnostics: tuple[LoadDiagnostic, ...] = ()
 
     @classmethod
     def _from_programs(cls, programs: Mapping[str, SattLineProgram]) -> SattLineProject:
@@ -65,11 +66,11 @@ class SattLineProject:
         so repeated loads skip re-discovery and re-parsing. When ``None`` the
         load is fully in-memory and hermetic.
         """
-        program_registry = ProjectLoader(
-            roots=roots, mode=mode, strict=strict, debug=debug, cache_dir=cache_dir
-        ).resolve(targets)
+        loader = ProjectLoader(roots=roots, mode=mode, strict=strict, debug=debug, cache_dir=cache_dir)
+        program_registry = loader.resolve(targets)
         project = cls()
         project._programs = program_registry
+        project._diagnostics = loader.diagnostics
         return project
 
     def get(self, name: str) -> SattLineProgram:
@@ -88,6 +89,15 @@ class SattLineProject:
     def programs(self) -> Mapping[str, SattLineProgram]:
         """Read-only canonical view over the loaded programs."""
         return MappingProxyType(self._programs)
+
+    def diagnostics(self) -> tuple[LoadDiagnostic, ...]:
+        """Non-fatal load findings (missing/empty sidecars, cycles, stray sidecars).
+
+        These are conditions the loader reports and an operator may
+        continue past; they are surfaced rather than raised so the default
+        ``strict=True`` contract (missing *bodies* fail) is unchanged.
+        """
+        return self._diagnostics
 
     def dependencies_of(self, name: str) -> tuple[str, ...]:
         """Declared dependencies (as spelled) of ``name``, in declaration order."""

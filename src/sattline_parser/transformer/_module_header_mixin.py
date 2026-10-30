@@ -127,6 +127,7 @@ class ModuleHeaderMixin:
         zoom_limits = None
         zoomable = False
         enable_tail: object | None = None
+        module_in_view: bool | None = None
         description_comments: list[CodeComment] = []
 
         for it in items:
@@ -163,6 +164,12 @@ class ModuleHeaderMixin:
                         tail_obj = payload.get(const.KEY_TAIL)
                         if tail_obj is not None:
                             enable_tail = tail_obj
+                    elif const.TREE_TAG_MODULE_IN_VIEW in payload:
+                        in_view = payload[const.TREE_TAG_MODULE_IN_VIEW]
+                        module_in_view = in_view if isinstance(in_view, bool) else None
+                        in_view_tail = payload.get(const.KEY_TAIL)
+                        if in_view_tail is not None:
+                            coord_tails.append(_normalize_module_header_tail(in_view_tail))
                     elif const.GRAMMAR_VALUE_ZOOMLIMITS in payload:
                         zoom_limits_obj = payload[const.GRAMMAR_VALUE_ZOOMLIMITS]
                         zoom_limits_pair = float_tuple(zoom_limits_obj, 2)
@@ -189,6 +196,7 @@ class ModuleHeaderMixin:
             enable=enable_val,
             zoom_limits=zoom_limits,
             enable_tail=enable_tail,
+            module_in_view=module_in_view,
             invoke_coord_tails=coord_tails,
             description_comments=description_comments,
         )

@@ -1,6 +1,7 @@
 # pyright: reportUnknownVariableType=false, reportUnknownMemberType=false, reportUnknownParameterType=false, reportMissingParameterType=false, reportUnknownArgumentType=false, reportCallIssue=false, reportUnknownLambdaType=false, reportUnusedImport=false
 # ruff: noqa: F403, F405
 from sattline_parser.models.ast_model import CodeItem
+from sattline_parser.models.expressions import VarRef
 
 from ._parser_core_test_support import *
 
@@ -46,18 +47,27 @@ def test_sfc_mixin_builds_modulecode_sequences_and_equations():
         name="SubA",
         body=[init_step, transition],
     )
-    assert mixin.seqalternative([Token("ALT", "ALT"), body_tree, mixin.sequence_body([SFCBreak()])]) == SFCAlternative(
-        branches=[[init_step, transition], [SFCBreak()]]
+    other_step = SFCStep(kind="step", name="Other", code=SFCCodeBlocks())
+    assert mixin.seqalternative([Token("ALT", "ALT"), body_tree, mixin.sequence_body([other_step])]) == SFCAlternative(
+        branches=[[init_step, transition], [other_step]]
     )
-    assert mixin.seqparallel(
-        [Token("PAR", "PAR"), body_tree, mixin.sequence_body([SFCFork(targets=("Other",))])]
-    ) == SFCParallel(branches=[[init_step, transition], [SFCFork(targets=("Other",))]])
+    assert mixin.seqparallel([Token("PAR", "PAR"), body_tree, mixin.sequence_body([other_step])]) == SFCParallel(
+        branches=[[init_step, transition], [other_step]]
+    )
     assert mixin.seqfork([Token("SEQFORK", "SEQFORK"), "NextStep"]) == SFCFork(targets=("NextStep",))
     assert mixin.seqfork([Token("SEQFORK", "SEQFORK"), "PathA", "PathB"]) == SFCFork(targets=("PathA", "PathB"))
-    assert isinstance(mixin.seqbreak([]), SFCBreak)
-    assert mixin.seq_element([step]) is step
+    assert mixin.seqfork([Token("SEQFORK", "SEQFORK"), "PathA", Token("SEQBREAK", "SEQBREAK")]) == SFCFork(
+        targets=("PathA",), has_break=True
+    )
+    assert mixin.seq_element(Meta(), [step]) is step
+    assert step.span is None
+    spanned = mixin.seq_element(
+        SimpleNamespace(line=3, column=4, start_pos=10, end_pos=20, end_line=3, end_column=14), [step]
+    )
+    assert spanned is step
+    assert step.span == SourceSpan(start=10, end=20, line=3, column=4)
     with pytest.raises(ValueError, match="seq_element expected"):
-        mixin.seq_element([])
+        mixin.seq_element(Meta(), [Token("SEQSTEP", "SEQSTEP")])
 
     seqcontrol_tree = Tree(
         parser_const.KEY_SEQ_CONTROL_OPS,
@@ -204,6 +214,26 @@ def test_parse_source_text_preserves_sfc_step_code_blocks():
     assert exit_stmt.span == SourceSpan(start=491, end=502, line=20, column=10)
 
 
+def test_equationblock_records_which_keyword_was_written():
+    """EQUATIONBLOCK and EQUATIONS are both accepted, with different flags."""
+    for keyword, expected in (("EQUATIONBLOCK", "equationblock"), ("EQUATIONS", "equations")):
+        bp = _parse_to_basepicture(
+            '"SyntaxVersion"\n'
+            '"OriginalFileDate"\n'
+            '"ProgramDate"\n'
+            "BasePicture Invocation (0.0,0.0,0.0,1.0,1.0) : MODULEDEFINITION DateCode_ 1\n"
+            "ModuleDef\n"
+            "ClippingBounds = ( -1.0 , -1.0 ) ( 1.0 , 1.0 )\n"
+            "ModuleCode\n"
+            f"{keyword} Calc COORD 0.0, 0.0 OBJSIZE 1.0, 1.0 :\n"
+            "   Flag = True;\n"
+            "ENDDEF (*BasePicture*);\n"
+        )
+
+        assert bp.modulecode is not None
+        assert bp.modulecode.equations[0].kind == expected
+
+
 def test_parse_source_text_accepts_unnamed_ordinary_step():
     # Regression: real SattLine accepts ordinary SEQSTEP blocks without a name
     # (verified against the actual parser); the grammar previously required a
@@ -271,34 +301,32 @@ def test_sequence_and_equation_layer_info_is_accepted_but_not_modeled():
 def test_sfc_mixin_rejects_malformed_shapes_and_missing_required_fields():
     mixin = _SFCHarness()
 
-    with pytest.raises(ValueError, match="seqinitstep expected"):
+    with pytest.raises(ValueError, match="seqinitstep expected code_blocks"):
         mixin.seqinitstep([Token("SEQINITSTEP", "SEQINITSTEP"), "Init"])
-    with pytest.raises(ValueError, match="seqinitstep expected"):
+    with pytest.raises(ValueError, match="seqinitstep expected code_blocks"):
         mixin.seqinitstep([Token("SEQINITSTEP", "SEQINITSTEP")])
-    with pytest.raises(ValueError, match="seqinitstep expected"):
+    with pytest.raises(ValueError, match="seqinitstep unexpected item shape"):
         mixin.seqinitstep([Token("SEQINITSTEP", "SEQINITSTEP"), "Init", "not-code-blocks"])
-    with pytest.raises(ValueError, match="seqinitstep expected"):
-        mixin.seqinitstep([Token("SEQINITSTEP", "SEQINITSTEP"), "not-code-blocks"])
-    with pytest.raises(ValueError, match="seqstep expected"):
+    with pytest.raises(ValueError, match="seqstep unexpected item shape"):
         mixin.seqstep([Token("SEQSTEP", "SEQSTEP"), "Step", "not-code-blocks"])
-    with pytest.raises(ValueError, match="seqstep expected"):
+    with pytest.raises(ValueError, match="seqstep expected code_blocks"):
         mixin.seqstep([Token("SEQSTEP", "SEQSTEP")])
-    with pytest.raises(ValueError, match="seqstep expected"):
-        mixin.seqstep([Token("SEQSTEP", "SEQSTEP"), "not-code-blocks"])
-    with pytest.raises(ValueError, match="seqtransition expected WAIT_FOR"):
-        mixin.seqtransition([Token("SEQTRANSITION", "SEQTRANSITION"), "Gate", Token("NAME", "NAME"), True])
-    with pytest.raises(ValueError, match="seqtransition expected WAIT_FOR"):
-        mixin.seqtransition([Token("SEQTRANSITION", "SEQTRANSITION"), Token("NAME", "NAME"), True])
-    with pytest.raises(ValueError, match=r"seqtransition expected \(SEQTRANSITION"):
-        mixin.seqtransition([Token("SEQTRANSITION", "SEQTRANSITION")])
+    with pytest.raises(ValueError, match="seqtransition unexpected item"):
+        mixin.seqtransition([Token("SEQTRANSITION", "SEQTRANSITION"), 1.5])
+    with pytest.raises(ValueError, match="seqtransition expected an expression after WAIT_FOR"):
+        mixin.seqtransition(
+            [Token("SEQTRANSITION", "SEQTRANSITION"), Token("WAIT_FOR", "WAIT_FOR"), Token("WAIT_FOR", "WAIT_FOR")]
+        )
     with pytest.raises(ValueError, match="seqtransition expected an expression after WAIT_FOR"):
         mixin.seqtransition([Token("SEQTRANSITION", "SEQTRANSITION"), Token("WAIT_FOR", "WAIT_FOR")])
     with pytest.raises(ValueError, match="seqtransitionsub expected"):
         mixin.seqtransitionsub(
             [Token("SUBSEQTRANSITION", "SUBSEQTRANSITION"), "Sub", Tree("wrong", []), Token("END", "END")]
         )
-    with pytest.raises(ValueError, match="seqsub expected"):
+    with pytest.raises(ValueError, match="seqsub unexpected item"):
         mixin.seqsub([Token("SUBSEQUENCE", "SUBSEQUENCE"), "Sub", Tree("wrong", []), Token("END", "END")])
+    with pytest.raises(ValueError, match="seqsub expected a sequence_body"):
+        mixin.seqsub([Token("SUBSEQUENCE", "SUBSEQUENCE"), "Sub"])
     with pytest.raises(ValueError, match="seqfork expected"):
         mixin.seqfork([Token("SEQFORK", "SEQFORK")])
     with pytest.raises(ValueError, match="Position can't be None"):
@@ -307,12 +335,15 @@ def test_sfc_mixin_rejects_malformed_shapes_and_missing_required_fields():
         mixin.sequence([Token(parser_const.GRAMMAR_VALUE_SEQUENCE, parser_const.GRAMMAR_VALUE_SEQUENCE), "Seq", (1, 2)])
     with pytest.raises(ValueError, match="equationblock unexpected code item"):
         mixin.equationblock([(1, 2), (3, 4), Tree(parser_const.KEY_STATEMENT, ["stmt"])])
-    with pytest.raises(ValueError, match="Name can't be None"):
-        mixin.equationblock([(1, 2), (3, 4)])
-    with pytest.raises(ValueError, match="Position can't be None"):
-        mixin.equationblock(["EqA"])
-    with pytest.raises(ValueError, match="Size can't be None"):
-        mixin.equationblock(["EqA", (1, 2)])
+    # name, position and size are optional in the reader
+    unnamed = mixin.equationblock([(1, 2), (3, 4)])
+    assert unnamed.name is None
+    assert unnamed.position == (1, 2)
+    assert unnamed.size == (3, 4)
+    name_only = mixin.equationblock(["EqA"])
+    assert name_only.name == "EqA"
+    assert name_only.position is None
+    assert name_only.size is None
 
 
 def test_sfc_mixin_fails_loudly_on_unexpected_modulecode_and_branch_structures():

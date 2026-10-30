@@ -10,6 +10,15 @@ from typing import Any, TypeGuard, cast
 from lark import Token, Transformer, Tree
 
 from sattline_parser.models.ast_model import BasePicture, FloatLiteral, IntLiteral, VarRef
+from sattline_parser.models.expressions import (
+    BinOp,
+    BoolOp,
+    Compare,
+    FuncCall,
+    NotOp,
+    TernaryOp,
+    UnaryOp,
+)
 
 from ..grammar import constants as const
 from . import _module_shared as _module_shared
@@ -124,6 +133,11 @@ class SLTransformer(
                     visit(nested)
                 return
             if isinstance(value, VarRef):
+                tails.append(value)
+                return
+            if isinstance(value, BoolOp | NotOp | Compare | BinOp | UnaryOp | FuncCall | TernaryOp):
+                # Computed corner tails, e.g. `ClippingBounds = ( -1.0 : (Source + 1) , .. )`.
+                # Retained so validation can type-check them (SL-V032).
                 tails.append(value)
                 return
             if isinstance(value, list):

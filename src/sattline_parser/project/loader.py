@@ -28,7 +28,7 @@ from pathlib import Path
 
 from lark.exceptions import LarkError
 
-from sattline_parser.api import parse_source_file, read_text_with_fallback
+from sattline_parser.api import parse_source_file, read_text_cp1252
 from sattline_parser.models.ast_model import BasePicture
 
 from .ast_cache import FileASTCache
@@ -36,17 +36,21 @@ from .discovery import ProjectLookup
 from .errors import ArtifactLoadError, DependencyNotFoundError, DependencyParseError, ProjectLoadError
 from .graphics_parsing import parse_graphics_file, resolve_graphics_companion_path
 from .lookup_cache import FileLookupCache
-from .models import GraphicsModel, LoadMode, ProgramFormat, SattLineProgram
+from .models import (
+    GraphicsModel,
+    LoadDiagnostic,
+    LoadDiagnosticKind,
+    LoadMode,
+    ProgramFormat,
+    SattLineProgram,
+    SidecarState,
+)
 
 _PARSE_FAILURES = (
     LarkError,  # grammar/matcher/framework/transform failures
     ValueError,  # preprocess and transformer value errors
-    TypeError,
-    AttributeError,
-    RuntimeError,
-    LookupError,
-    UnicodeError,
-    OSError,
+    UnicodeError,  # undecodable source outside a comment body
+    OSError,  # unreadable file
 )
 
 
@@ -56,7 +60,7 @@ def read_dependency_names(deps_path: Path) -> tuple[str, ...]:
     Each non-blank line is one dependency name; lines are trimmed, blank lines
     are ignored, and declaration order is preserved.
     """
-    text = read_text_with_fallback(deps_path)
+    text = read_text_cp1252(deps_path)
     return tuple(line.strip() for line in text.splitlines() if line.strip())
 
 
@@ -80,10 +84,21 @@ class ProjectLoader:
         self._debug = debug
         self._registry: dict[str, SattLineProgram] = {}
         self._loading: set[str] = set()
+        self._diagnostics: list[LoadDiagnostic] = []
 
     def _dbg(self, message: str) -> None:
         if self._debug is not None:
             self._debug(message)
+
+    @property
+    def diagnostics(self) -> tuple[LoadDiagnostic, ...]:
+        """Non-fatal findings recorded during this load, in discovery order."""
+        return tuple(self._diagnostics)
+
+    def _diagnose(self, kind: LoadDiagnosticKind, program: str, detail: str, path: Path | None = None) -> None:
+        diagnostic = LoadDiagnostic(kind=kind, program=program, detail=detail, path=path)
+        if diagnostic not in self._diagnostics:
+            self._diagnostics.append(diagnostic)
 
     def resolve(self, targets: Sequence[str]) -> dict[str, SattLineProgram]:
         try:
@@ -96,7 +111,17 @@ class ProjectLoader:
 
     def _visit(self, name: str, *, requester_dir: Path | None, declared_by: str | None) -> None:
         key = name.casefold()
-        if key in self._registry or key in self._loading:
+        if key in self._registry:
+            return
+        if key in self._loading:
+            # A dependency loop. The loader reports it through its
+            # library-error handling and an operator may continue (answer 11),
+            # so it becomes a diagnostic and the graph keeps the edge.
+            self._diagnose(
+                LoadDiagnosticKind.DEPENDENCY_CYCLE,
+                declared_by or name,
+                f"dependency cycle: {name!r} is already being loaded",
+            )
             return
         self._loading.add(key)
         try:
@@ -116,9 +141,37 @@ class ProjectLoader:
                     f"missing code file for {name!r}",
                     dependency=dependency,
                 )
-            deps_path = self._lookup.find_deps(name, requester_dir=requester_dir)
-            dep_requester = deps_path.parent if deps_path is not None else requester_dir
+            # The sidecar belongs to the selected body's prefix; see
+            # ProjectLookup.find_deps_beside and LIB-05.
+            deps_path = self._lookup.find_deps_beside(code_path, name, requester_dir=requester_dir)
+            sidecar = SidecarState.ABSENT
+            if deps_path is None:
+                stray = self._lookup.find_deps(name, requester_dir=requester_dir)
+                if stray is not None:
+                    self._diagnose(
+                        LoadDiagnosticKind.SIDECAR_ELSEWHERE,
+                        program_name,
+                        f"sidecar {stray.name!r} is not beside body {code_path.name!r}; not paired",
+                        stray,
+                    )
+                else:
+                    self._diagnose(
+                        LoadDiagnosticKind.SIDECAR_MISSING,
+                        program_name,
+                        f"no dependency sidecar beside {code_path.name!r}",
+                        code_path,
+                    )
+            dep_requester = deps_path.parent if deps_path is not None else code_path.parent
             dep_names = self._read_deps(name, deps_path, program_name, dependency)
+            if deps_path is not None:
+                sidecar = SidecarState.PRESENT if dep_names else SidecarState.EMPTY
+                if sidecar is SidecarState.EMPTY:
+                    self._diagnose(
+                        LoadDiagnosticKind.SIDECAR_EMPTY,
+                        program_name,
+                        f"sidecar {deps_path.name!r} declares no dependencies",
+                        deps_path,
+                    )
             for dep in dep_names:
                 self._visit(dep, requester_dir=dep_requester, declared_by=name)
             basepicture = self._load_ast(code_path, program_name=program_name, dependency=dependency)
@@ -140,11 +193,16 @@ class ProjectLoader:
                     deps_ext=deps_path.suffix.lower() if deps_path is not None else None,
                 ),
                 source_path=code_path,
+                deps_path=deps_path,
+                sidecar=sidecar,
             )
             self._registry[name.casefold()] = program
-        except ProjectLoadError:
+        except ProjectLoadError as exc:
             if self._strict:
                 raise
+            # Non-strict loading must not be silent: an agent or a CI job has to
+            # be able to tell that a program is missing from the result.
+            self._diagnose(LoadDiagnosticKind.LOAD_SKIPPED, name, f"skipped {name!r}: {exc}")
 
     def _read_deps(
         self,
@@ -157,7 +215,7 @@ class ProjectLoader:
             return ()
         try:
             return read_dependency_names(deps_path)
-        except OSError as exc:
+        except (OSError, UnicodeError) as exc:
             raise DependencyParseError(
                 program_name,
                 f"unable to read dependency file {deps_path.name} for {name!r}",
@@ -182,7 +240,12 @@ class ProjectLoader:
                 dependency=dependency,
             ) from exc
         if self._ast_cache is not None:
-            self._ast_cache.save(code_path, self._mode.value, basepicture)
+            try:
+                self._ast_cache.save(code_path, self._mode.value, basepicture)
+            except OSError as exc:
+                # The cache is an optimisation: a failed write must not turn a
+                # successful parse into a load failure.
+                self._dbg(f"Cache write failed for {code_path}: {exc}")
         return basepicture
 
 
@@ -197,7 +260,7 @@ def _load_graphics(
     debug(f"Parsing graphics: {graphics_path}")
     try:
         return parse_graphics_file(graphics_path)
-    except OSError as exc:
+    except (OSError, UnicodeError) as exc:
         if dependency is None:
             raise ArtifactLoadError(
                 program_name,

@@ -2,6 +2,7 @@
 from ._parser_core_api import *
 from ._parser_core_ast_model import *
 from ._parser_core_comments import *
+from ._parser_core_corpus import *
 from ._parser_core_errors import *
 from ._parser_core_expressions import *
 from ._parser_core_formatter import *
@@ -12,5 +13,7 @@ from ._parser_core_module_definitions import *
 from ._parser_core_modules import *
 from ._parser_core_preprocessing import *
 from ._parser_core_provenance import *
+from ._parser_core_sequence_positions import *
 from ._parser_core_sfc import *
+from ._parser_core_syntax_forms import *
 from ._parser_core_transformer import *

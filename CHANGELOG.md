@@ -5,28 +5,278 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
-
-### Documentation
-
-- README: new "Project layer" usage section covering `SattLineProject.load`,
-  casefolded identity, `.l`/`.z` dependency resolution, `.g`/`.y` companions,
-  structured load errors, and hermetic `cache_dir=None` loads.
+## [2026.10.1] - 2026-10-29
 
 ### Added
 
-- Phase 4 of the project-layer plan: graphics companion parsing. The loader now
+- **`sattline` command line.** A JSON-first CLI over the library, with one
+  entry point (`sattline` and `python -m sattline_parser`) and nine
+  subcommands:
+  `check` (decode + parse + validate, one finding shape for parse errors,
+  decoder refusals and validator diagnostics, with `--json`/`--jsonl`,
+  `--severity`/`--rule`/`--max-findings` filters and `--fail-on`),
+  `parse` (summary or depth-bounded AST as JSON), `query` (symbols,
+  references, writers, callers, graph/interact objects and sequences, filterable
+  by name, module path and limit), `project` (load a tree, list programs and
+  artifacts, walk `--graph`/`--of`/`--reverse`/`--depth`, report `--cycles`),
+  `graphics` (companion bindings and scan messages),
+  `decode` (coded source to plain text,
+  `--report`/`--json`), `diff` (findings and structural counts between two
+  units), `corpus` (parallel tree triage with a rule histogram and
+  `--fail-on`) and `version` (tool plus schema ids). Every payload is tagged
+  `"schema": "sattline.v1.<command>"`. Exit codes are the contract — `0` clean,
+  `1` findings, `2` usage/input, `3` internal — and a traceback is only printed
+  under `--debug`. Findings never print internal rule ids as text; the JSON
+  carries them for baselines and diffs. Commands are read-only: no `--fix`, no
+  `--write`, no network, no watch mode. Source files are read exactly like
+  `parse_source_file`: plain Windows-1252, marker-compressed text and the binary
+  `\x80 3.1` `.x` framing all decode transparently (undefined cp1252 bytes stay
+  refused outside comments), for files and stdin alike. The entry point is
+  registered as the `sattline` console script next to
+  `python -m sattline_parser`; `scripts/smoke_installed.py` exercises both from
+  the built wheel and sdist.
+
+- **Builtin catalogue.** `validation/builtin_catalogue.json` carries the eight
+  builtin signatures the validator checks (`CopyTime`, `CopyVariable`,
+  `CopyString`, `Equal`, `EqualStrings`, `GetStringPos`, `SetStringPos`,
+  `StringLength`) with their arity and write-like argument positions. Names
+  outside the catalogue stay unchecked, which is deliberate: a complete
+  namespace would need every user library, so a false reject there is worse
+  than a missed one.
+
+- **Compact-source honesty check.** A header-flagged compact file (`C` in the
+  syntax-version line) that spells a keyword as a raw word is refused with
+  `Raw keyword 'SeqControl' at line N in compact source`. In coded mode raw
+  words are identifiers and never keywords, so promoting them (which expanding
+  codes and re-lexing does) would accept a unit the tool rejects. Editor-produced
+  compact files never spell keywords raw (verified against the
+  compressed/uncompressed golden twins), so real files are unaffected.
+
+- **SL-V036 `SEQUENCE_POSITION_INVALID`** with the S/T/M position model in
+  `validation/sequences.py`: closed bodies are `(S T | M)+`, alternate branches
+  and `SUBSEQTRANSITION` bodies are `T (S T | M)*`, parallel branches and
+  `SUBSEQSTEP` bodies are `M* S (T M* S)*`, and `OPENSEQUENCE` uses the open
+  variant. `SL-V016`/`SL-V023`/`SL-V024`/`SL-V033` now all come from that single
+  walk. This reproduces the probe verdicts for `EdgeSeqAlt`,
+  `ValidSubSeqTransB` and `ValidOpenSeqSeq`; those corpus fixtures had encoded
+  the rejected shapes and were corrected.
+
+- **SL-V035 `OLD_STATE_NOT_WRITABLE`**: writing to `:Old` is a compiler check
+  (expression error `0x14`) for assignment targets and for reference-required
+  built-in arguments; reads and `:New` writes stay legal.
+
+- **`DateCode_` is a fixed keyword** (scanner token 0x89/137) instead of `NAME`
+  plus an integer, so `Bogus_ 5` is rejected; the attribute is optional on
+  records, module definitions and module types, and `BasePicture.datecode` now
+  preserves the root stamp.
+
+- **`validation/datecode.py`**: `normalized_datecode` (non-negative
+  `n % 2 000 000 000`; negatives refused rather than given Python's modulo sign)
+  and `compute_datecode` (the clock formula), deliberately separate from
+  parsing.
+
+- **`validation/names.py`**: identifier identity now uses a fixed CP1252
+  upper-byte table instead of `str.casefold`, so `Straße`/`STRASSE` and
+  `ﬁle`/`FILE` no longer resolve to the same symbol. The table maps `a-z` to
+  `A-Z`, `9A` to `8A`, `9C` to `8C`, `E0-F6` to `C0-D6`, `F8-FE` to `D8-DE` and
+  `FF` to `9F`. Filesystem identity in the project layer keeps `casefold`.
+
+- **SL-V037 `SEQUENCE_FORK_TARGET_KIND`**: a fork hosted on a step must name
+  transitions and a fork hosted on a transition must name steps; the existing
+  `SL-V017` still reports genuinely unknown names.
+
+- **`SEQFORK` is accepted on `SEQINITSTEP`** as well as `SEQSTEP`, and on
+  `SEQTRANSITION` after its optional guard.
+
+- **`Module_In_View = True|False [: tail]`** is an explicit invocation-header
+  property (scanner token 0xA4) stored as `ModuleHeader.module_in_view`,
+  distinct from `Enable_`; it accepts `True`/`False` only, not `On`/`Off`.
+
+- **`EQUATIONS`** is accepted as an alias of `EQUATIONBLOCK`.
+
+- **`On`/`Off` typed as boolean literals** in expression analysis, so `Num = On`
+  and `Flag = Num > Off` are now rejected like the real compiler rejects them.
+
+- **Keywords are matched case-insensitively**, as the scanner setup does:
+  `moduledefinition`, `enddef`, `true`, `:old` and
+  `seqcontrol` all parse like their canonical spellings. Lark 1.3.1 has no
+  `case_insensitive` option, so `grammar/keywords.py` rewrites the resolved
+  grammar - letter-bearing string terminals become `/(?i:…\b)/` regexes, and
+  regex terminals (including `NAME`'s keyword exclusion list and
+  `STATE_SUFFIX`) gain a `(?i:…)` scope. Punctuation terminals are untouched.
+
+- **`EQUATIONBLOCK`/`EQUATIONS` name and coordinate metadata are optional**:
+  `Equation.name`, `.position` and `.size` are `None` when the source omits
+  them, instead of being rejected.
+
+- Validation rule **SL-V027 `PARAM_TRANSFER_TYPE_MISMATCH`**: a module-type
+  instance whose parameter transfer supplies an incompatible variable type is
+  now flagged (real-parser confirmed: `Submodule Child, parameter EnableFlag:
+  Variable CounterValue is an invalid type`). Implemented in
+  `sattline_parser.validation.transfers`; GLOBAL/literal sources, undeclared
+  sources, unknown target parameters, `AnyType` formals, numeric widening
+  (integer↔real), and record-typed transfers are handled.
+
+- **PEP 561 typing marker.** The package now ships `py.typed`, so downstream
+  type checkers use the inline annotations instead of treating the package as
+  untyped (`[tool.setuptools.package-data]` ships it, and
+  `tests/test_packaging.py` asserts it in the installed artifact).
+
+### Changed
+
+- **Findings always carry a location.** Every sequence element now keeps its
+  source span (`SFCStep`, `SFCTransition`, `SFCTransitionSub`, the
+  alternate-branch node, `SFCParallel`, `SFCSubsequence`; one `seq_element`
+  transformer hook attaches it), and the
+  position/fork/duplicate-name diagnostics report it. All 75 findings produced
+  over the two fixture corpora are now locatable; before, 13 (17 %) were
+  message-only, which forced a reader to search the unit.
+
+- **Parse errors read as sentences about the source.** `describe_parse_error` no
+  longer forwards Lark's dump (`Unexpected token Token('NAME', 'is') ... Expected
+  one of: COMMENT_START, INVOCATION`). It reports what was found, what was
+  expected in source spellings (terminal names are rendered through the resolved
+  grammar: `';'`, `'ENDDEF'`, `a name`, `a number`), drops always-legal comment
+  terminals, caps the list at five, and adds an actionable `help:` line for
+  recognised shapes (end of file before a required `';'`, a unit missing its
+  quoted header lines, a near-miss keyword). `ParseErrorDetails` additionally
+  exposes `found`, `expected`, `hint` and `source_line` so tools do not have to
+  parse prose.
+
+- **Composite markers take only the layer clause.** `composite_object` was
+  `COMPOSITEOBJECT common_properties`, so a marker accepted `Enable_`, colour
+  assignments and connection nodes that the documented rule rejects. It is now
+  `COMPOSITEOBJECT comments? layer_info?`, and `GraphObject` for a marker keeps
+  the `Layer_` clause under the same `layer` key other objects use. The recorded
+  "LALR rejects real files" note was stale: the narrowed rule parses the corpus
+  identically and rejects the extra properties.
+
+- **`On`/`Off` are value literals.** `value` now accepts `ON_KW`/`OFF_KW`
+  alongside `BOOL`, so expressions and initializers take `On`/`Off` as booleans
+  (they previously bound as `VarRef`s). The graphics/interact property readers
+  keep their `True`/`False`-only `BOOL`, `BOOL_NOTAIL` and `plain_value`
+  allowlists, as the documented readers require. The contextual lexer keeps
+  `On`/`Off` usable as ordinary names elsewhere.
+
+- **Interactor clauses: `Relative_`/`Abs_` and `IntObjPickButton`.** Both bare
+  selectors are now distinct productions (`interact_scale_selector`, scale mode
+  `relative`/`abs`) instead of anonymous `NAME` flags, and the shared interactor
+  property clause `IntObjPickButton "=" STRING [VarName]` is
+  modelled as `interact_pick_button` with `is_reference` set from the postfix
+  `VarName`. The interact body is still an unordered repetition, so the slot
+  position is not enforced.
+
+- **`Equation.kind` records the `EQUATIONS`/`EQUATIONBLOCK` spelling.** The two
+  keywords set different flags, and their effect is not documented, so the model
+  preserves which one was written.
+
+- **Coded-mode lexing keeps raw words as identifiers.** The decoder no longer
+  refuses a compact file that spells a keyword raw; instead the lexer consults the
+  source-map provenance per token: a keyword token is only a keyword when the
+  decoder produced its characters (they are `GENERATED` in the map), so a raw word
+  is `NAME` exactly as the grammar describes. Literal spellings the compressor
+  writes unencoded (`True`/`False`/`On`/`Off`/`Default`) stay literals. The old
+  `Raw keyword ...` decode error is gone; `CodedRawKeyword.s` is now a syntax
+  error like the real tool reports.
+
+- **`GraphObject.span`.** Graph objects carry their source span, taken from the
+  `graph_object` rule meta.
+
+- **Sequence syntax aligned with the documented readers.** `SEQFORK` is no
+  longer a sequence element: it is a suffix of its host
+  `SEQSTEP`/`SEQTRANSITION`, reads one or more comma-separated targets and may
+  end with `SEQBREAK`. `SFCFork` now carries `has_break`, lives on
+  `SFCStep.fork` / `SFCTransition.fork`, and `SFCBreak` is gone: a standalone
+  `SEQBREAK` is rejected at parse time, like the real tool. Sequence bodies must
+  be non-empty, `SEQTRANSITION` may omit both its name and `WAIT_FOR`
+  (`condition is None` preserves the omission), `SUBSEQUENCE`/`SUBSEQSTEP` names
+  are optional, and `SFCSubsequence` distinguishes `kind="sequence"` (structural
+  position) from `kind="substep"` (step position).
+
+- **Statement semicolons are optional** in code blocks, so
+  `Flag = True` followed by a newline terminates a statement.
+
+- **Source files are now decoded strictly as Windows-1252 (cp1252)** — the only
+  encoding the real SattLine parser accepts. `read_text_with_fallback` (which
+  tried utf-8, then cp1252, then latin-1) is replaced by `read_text_cp1252`,
+  which has **no encoding fallback**: bytes that are not valid Windows-1252
+  (`0x81 0x8D 0x8F 0x90 0x9D`) now raise `UnicodeDecodeError` instead of being
+  silently re-read as latin-1. This removes a silent-fallback path that could
+  decode a mis-encoded file into plausible but wrong text. (Breaking rename of
+  the public `read_text_with_fallback` export; behavior of `load_source_text`,
+  `parse_source_file`, and the project loader is otherwise unchanged.)
+
+- **Packaging metadata follows PEP 639.** `project.license` is the SPDX
+  expression `MIT` and the licence text ships through `license-files`, so the
+  setuptools deprecation warning for the TOML-table form is gone. The built
+  distributions are otherwise unchanged.
+
+### Fixed
+
+- **Compressed-source marker table replaced by a data file.**
+  `preprocessing/compressed.py` no longer carries the 172-entry sample-derived
+  `SEED_MAPPING`. The compact-code table now ships as
+  `preprocessing/scanner_tokens.json`, keyed by scanner ordinal (id `n` encoded
+  as `'#' + chr(48 + n // 16) + chr(48 + n % 16)`). Four entries the old table
+  got wrong are corrected against the checked-in compressed/uncompressed pair:
+  `#1=` is `On` (was `True`), `#1>` is `Off` (was `False`), `#9<` is
+  `Module_In_View` (was `Enable_`), `#:=` is `Relative_` (was `Abs_`).
+  `SCANNER_TOKENS` is the canonical name, `SEED_MAPPING` remains as an alias.
+
+- **A dependency sidecar is read at the selected body's own prefix.** The
+  loader used to resolve code and `.l`/`.z` through two independent whole-root
+  scans, so `A/Lib.x` could be paired with `B/Lib.z` and that library's own
+  dependencies then resolved relative to `B`. `ProjectLookup.find_deps_beside`
+  now resolves the sidecar only beside the chosen body (LIB-05); a sidecar that
+  exists elsewhere becomes a
+  `LoadDiagnosticKind.SIDECAR_ELSEWHERE` diagnostic instead of being paired.
+
+- **Missing and empty sidecars are visible.** `SattLineProgram` gained
+  `deps_path` and `sidecar` (`SidecarState.ABSENT / EMPTY / PRESENT`), and
+  `SattLineProject.diagnostics()` reports absent / empty / stray sidecars plus
+  dependency cycles. These are the conditions the loader reports and an operator
+  may continue past, so they are surfaced rather than raised; the `strict=True`
+  contract for missing *bodies* is unchanged.
+
+- **Warm and cold lookups now agree on extension precedence.** A cached `.x`
+  no longer shadows a `.s` that appeared later at the same prefix (gap P10);
+  the cached base is still trusted, but extensions are tried in preference
+  order.
+
+- **A partial project load is never silent.** `SattLineProject.load(strict=False)`
+  now records every program it had to leave out as
+  `LoadDiagnosticKind.LOAD_SKIPPED` (`load-skipped`) instead of only omitting it
+  from the result, and `sattline project --lenient` reports those diagnostics and
+  exits `1` rather than pretending the tree was complete. A declared dependency
+  that could not be loaded keeps its edge and appears in the diagnostics.
+
+- **`sattline project` roots follow the loader's model.** Target discovery now
+  looks at the artifacts directly inside each root, matching the ordered
+  lookup — a directory that merely *contains* libraries is refused with
+  `no source files directly under <root>; pass each library directory as a root`
+  instead of silently loading nothing.
+
+### Security
+
+- **Locked development dependencies refreshed.** `certifi`, `filelock`,
+  `msgpack`, `urllib3` and `virtualenv` were upgraded in `uv.lock`, so
+  `pip-audit` over the locked environment reports no known vulnerabilities.
+
+## [2026.9.2] - 2026-09-22
+
+### Added
+
+- Phase 4 of the project-layer plan: graphics companion parsing. The loader
   resolves each program's same-directory `.g` / `.y` companion via
   `resolve_graphics_companion_path` (draft prefers `.g`, falls back to `.y`;
   official and `.x` code only accept `.y`; a `.g` / `.y` input resolves to
-  itself) and parses it into a `GraphicsModel` on `SattLineProgram.graphics`.
-  `parse_graphics_text` / `parse_graphics_file` scan composite records (families
-  `1`/`2`/`4`/`5`), picture-display records (`9031`, keep-shape flag, variable /
-  literal path rows), and `Var`/`Lit`/`Expr` bindings — including Lark-parsed
-  expression bindings with source-span offsetting. Graphics content problems
-  become `GraphicsMessage` values (`errors` / `warnings` properties); companion
-  read failures map to `ArtifactLoadError` / `DependencyParseError` honoring the
-  existing strict/non-strict behavior.
+  itself) and scans it into a `GraphicsModel` on `SattLineProgram.graphics`.
+  `parse_graphics_text` / `parse_graphics_file` read `Var` / `Lit` / `Expr`
+  bindings, including Lark-parsed expression bindings with source-span
+  offsetting. Binding problems become `GraphicsMessage` values (`errors` /
+  `warnings` properties); companion read failures map to `ArtifactLoadError` /
+  `DependencyParseError` honoring the existing strict/non-strict behavior.
+
 - Phase 3 of the project-layer plan: `SattLineProject.load` is now wired end to
   end. `read_dependency_names` parses `.l` / `.z` dependency files, `ProjectLoader`
   recursively resolves dependencies requester-relative to the declaring file with
@@ -37,6 +287,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   caller-supplied `cache_dir`. Structured failures map to `DependencyNotFoundError`,
   `DependencyParseError`, and `ArtifactLoadError`, and `strict=False` skips failing
   programs instead of aborting.
+
 - Phase 2 of the project-layer plan: `ArtifactKind`, the extension helpers
   (`code_ext`/`deps_ext`/`graphics_ext`, `*_ext_candidates`,
   `preferred_extension`, `candidate_extensions`), the per-root `SourceIndex`,
@@ -46,12 +297,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (`LOOKUP_CACHE_VERSION = 1`). Artifact extension/draft-fallback rules and
   per-artifact discovery now live in the parser; loading behavior still lands in
   later phases.
+
 - New `sattline_parser.project` layer (Phase 1 of the project-layer plan):
   `LoadMode`, `ProgramFormat`, the graphics companion model (`GraphicsModel`,
   `GraphicsMessage`, `GraphicsCompositeRecord`, `GraphicsPictureDisplayRecord`),
   `SattLineProgram`, `SattLineProject`, `DependencyGraph`, and the structured
   load errors (`ProjectLoadError` and subclasses). Additive only — artifact
   discovery and loading behavior land in later phases.
+
+### Documentation
+
+- README: new "Project layer" usage section covering `SattLineProject.load`,
+  casefolded identity, `.l`/`.z` dependency resolution, `.g`/`.y` companions,
+  structured load errors, and hermetic `cache_dir=None` loads.
 
 ## [2026.9.1] - 2026-09-06
 

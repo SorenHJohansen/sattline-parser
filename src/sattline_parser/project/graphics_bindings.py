@@ -1,10 +1,8 @@
-"""Graphics binding and expression parsing helpers (plan §3.5, Phase 4).
+"""Graphics binding and expression parsing helpers.
 
-Extracted from SattLint's ``graphics/validation_bindings.py`` into the parser:
-the ``Var`` / ``Expr`` / ``Lit`` binding scanner, literal coercion, and the
-graphics-expression parser (the parser's own ``expression`` grammar + transformer
-with source spans rebased into the companion file). Only the pure parse moves;
-correlation and asset-path warnings stay in the consumer.
+The ``Var`` / ``Expr`` / ``Lit`` binding scanner, literal coercion, and the
+graphics-expression parser: the package's own ``expression`` grammar and
+transformer, with source spans rebased into the companion file.
 """
 
 from __future__ import annotations
@@ -127,7 +125,8 @@ def _offset_source_spans(node: object, *, line_offset: int, column_offset: int) 
                 return current
             try:
                 return dataclasses.replace(current, **field_map)
-            except TypeError:
+            except (TypeError, ValueError):
+                # 3.12 raises ValueError for an init=False field, 3.13+ TypeError.
                 return current
 
         node_dict = getattr(current, "__dict__", None)

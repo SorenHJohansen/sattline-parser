@@ -1,6 +1,17 @@
 # sattline-parser
 
-Standalone parser, AST, and transformer for ABB SattLine.
+Standalone parser, AST, and transformer for SattLine source.
+
+This is an independent, unofficial project. It is not affiliated with, endorsed
+by, or supported by ABB, and the SattLine name is used only to describe the file
+format this package reads.
+
+## Provenance
+
+Everything in this repository that describes SattLine behaviour was established
+from publicly available documentation, from the observable behaviour of real
+source and companion files, and from black-box testing against the product
+itself.
 
 This package owns the Lark grammar, the strict single-file syntax behavior, the AST models, and the `SLTransformer`, all in one self-contained, installable package.
 
@@ -12,9 +23,15 @@ This package owns the Lark grammar, the strict single-file syntax behavior, the 
 - Structural comments (`(* ... *)`, nested) preserved as role-tagged AST nodes
 - Automatic compressed-source decoding with full source provenance: AST spans and error locations always refer to the *original* source (`SourceSpan` carries character offsets plus line/column)
 - Lexically aware decoding: string literals and comments are protected, so syntax-looking text inside them is never rewritten
-- Error reporting with line/column locations in the original source (`describe_parse_error`)
+- Parse errors described as sentences about the source, with a location, the
+  expected spellings and an actionable hint (`describe_parse_error`)
 - AST models in `sattline_parser.models`
 - `SLTransformer` tree transformer in `sattline_parser.transformer`
+- Read-only `sattline` command line over the parser, project and graphics
+  layers (`check`, `parse`, `query`, `project`, `graphics`, `decode`, `diff`,
+  `corpus`, `version`) with JSON-first output
+- PEP 561 typed: `py.typed` ships, so downstream type checkers use the inline
+  annotations
 - Standalone fuzz harness with hard subprocess timeouts and corpus regression
 - Zero runtime dependencies beyond `lark` and `regex`
 
@@ -27,6 +44,24 @@ pip install sattline-parser
 Requires Python 3.13+.
 
 ## Usage
+
+### Command line
+
+The package ships a `sattline` command (also `python -m sattline_parser`) for
+tooling and agents that should not write Python glue:
+
+```bash
+sattline check SR/*.s --jsonl     # decode + parse + validate, machine-readable
+sattline parse M.s --tree         # the AST as JSON
+sattline query M.s --what writers # one structural question
+sattline diff Old.s New.s         # findings and counts that moved
+sattline version --json           # tool and JSON schema versions
+```
+
+Findings are sentences with a location, an optional `help:` line and a
+machine-only rule id; exit codes are `0` clean, `1` findings, `2` usage/input,
+`3` internal. Run `sattline <command> --help` for the full option list of any
+command.
 
 ### Parse a source file
 
@@ -42,7 +77,7 @@ basepicture = parse_source_file(Path("program.s"))
 ```python
 from sattline_parser import parse_source_text
 
-source = open("program.x", encoding="utf-8").read()
+source = open("program.x", encoding="cp1252").read()
 basepicture = parse_source_text(source)
 ```
 
@@ -50,9 +85,9 @@ basepicture = parse_source_text(source)
 
 ### Choosing an entry point
 
-`parse_source_file` is for when you have a path on disk. It handles the file I/O for you: it reads the file with an encoding fallback (`utf-8`, then `cp1252`, then `latin-1`) and passes the path along so error messages can name the source file.
+`parse_source_file` is for when you have a path on disk. It handles the file I/O for you: it reads the file as **Windows-1252** (`cp1252`) — the only encoding the real SattLine parser accepts, with no fallback to `utf-8` or `latin-1` — and passes the path along so error messages can name the source file.
 
-`parse_source_text` is for when you already hold the source as a string: a snippet, an editor buffer, a response from an API, or content read by your own code. The two are interchangeable in behavior; `parse_source_file(path)` is equivalent to `parse_source_text(path.read_text(...))` plus the encoding fallback and path-aware error reporting. Start with `parse_source_file` when you have a path, `parse_source_text` otherwise.
+`parse_source_text` is for when you already hold the source as a string: a snippet, an editor buffer, a response from an API, or content read by your own code. The two are interchangeable in behavior; `parse_source_file(path)` is equivalent to `parse_source_text(path.read_bytes().decode("cp1252"))` plus path-aware error reporting. Start with `parse_source_file` when you have a path, `parse_source_text` otherwise.
 
 Both entry points handle cleanup automatically, so you do not need to pre-process the source:
 
@@ -98,11 +133,26 @@ from sattline_parser import create_parser, describe_parse_error, parse_source_te
 
 parser = create_parser()
 try:
-    parse_source_text(source, parser=parser)
+    parse_source_text(source, parser=parser, log_failures=False)
 except Exception as exc:
     details = describe_parse_error(exc, source)
     print(f"{details.line}:{details.column} {details.message}")
 ```
+
+`details.message` is a sentence about the source, not a parser dump. For
+`ENDDEF (*BasePicture*)` with the terminating `;` missing it reads:
+
+```text
+unexpected end of file; expected ';', '(', 'LOCALVARIABLES' or 'ModuleDef'
+help: the unit ends before a required ';'; the last construct is incomplete
+ENDDEF (*BasePicture*)
+                    ^
+```
+
+The same information is available structurally for tools: `details.found`,
+`details.expected`, `details.hint` and `details.source_line`. Pass
+`log_failures=False` to keep the traceback out of the log when you render the
+message yourself.
 
 ### What is the AST good for?
 
@@ -146,10 +196,10 @@ project = SattLineProject.load(
     targets=["MyProgram"],
 )
 
-program = project.get("MyProgram")     # case-insensitive; raises KeyError if absent
+program = project.get("MyProgram")  # case-insensitive; raises KeyError if absent
 print(program.name)
-print(list(project.graph().nodes))     # casefolded canonical identities
-if program.graphics is not None:       # GraphicsMessage values, never raised
+print(list(project.graph().nodes))  # casefolded canonical identities
+if program.graphics is not None:  # GraphicsMessage values, never raised
     print(program.graphics.errors)
 ```
 
@@ -161,7 +211,9 @@ if program.graphics is not None:       # GraphicsMessage values, never raised
 - `strict=True` (default) fails fast on missing or unparseable artifacts;
   `strict=False` skips the failing program and continues. Failures surface as
   structured errors (`ProjectLoadError`, `ArtifactLoadError`,
-  `DependencyNotFoundError`, `DependencyParseError`).
+  `DependencyNotFoundError`, `DependencyParseError`), and a skipped program is
+  recorded as a `LoadDiagnosticKind.LOAD_SKIPPED` diagnostic, so a partial load
+  is never silent.
 - `cache_dir=...` optionally enables the parser-owned lookup and per-file AST
   caches (`FileLookupCache` / `FileASTCache`) so repeated loads skip
   re-discovery and re-parsing. When `cache_dir=None` (default) the load is
@@ -189,6 +241,13 @@ pyright src tests
 bandit -q -r src -x tests -c pyproject.toml
 pip-audit
 python scripts/check_branch_coverage.py     # line >= 100%, branch >= 93%
+```
+
+`dev` never pulls the `fuzz` extra, because the fuzzing engine is Linux and
+FreeBSD only. Add it explicitly where it is supported:
+
+```bash
+pip install -e ".[dev,fuzz]"                # Linux / FreeBSD only
 ```
 
 Line coverage is enforced at 100%; branch coverage is measured and gated by
@@ -221,7 +280,10 @@ satisfies the range, so the supported range is actually exercised. Installs use
 
 - `src/sattline_parser/grammar/` : Lark grammar and constants
 - `src/sattline_parser/models/` : AST models
+- `src/sattline_parser/preprocessing/` : compressed-source decoding and its scanner table
 - `src/sattline_parser/transformer/` : transformer mixins and `SLTransformer`
+- `src/sattline_parser/validation/` : validator rules, diagnostics and the builtin catalogue
+- `src/sattline_parser/cli/` : the `sattline` command line (one module per command)
 - `src/sattline_parser/api.py` : public entry points
 - `src/sattline_parser/project/` : project/artifact layer (`SattLineProject`, discovery, resolution, `.g`/`.y` parsing, parser-owned caches)
 - `src/sattline_parser/fuzz_harness.py` : standalone fuzzing

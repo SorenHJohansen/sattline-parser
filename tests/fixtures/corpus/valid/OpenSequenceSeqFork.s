@@ -5,8 +5,12 @@
    - SEQFORK after a SEQTRANSITION (fork on transition, intra-sequence)
    - SEQFORK after a SEQSTEP, with SEQBREAK
    - SEQFORK after a SEQSTEP, without SEQBREAK
+   (every alternative branch ends on its closing transition; a branch that
+   finishes on an unmatched step is rejected, so the fork to Working hangs off
+   TrRetryDone rather than off the step)
    - SEQFORK with a cross-sequence target in the same module
-   SEQBREAK is optional after SEQFORK.
+   SEQBREAK is optional after SEQFORK, and a fork is only ever a suffix of its
+   host step or transition, never a free-standing sequence element.
    Expected: strict syntax-check passes. *)
 
 BasePicture Invocation
@@ -45,7 +49,8 @@ ModuleCode
                RetryCount = RetryCount + 1;
                Output = 0;
                RestartCmd = False;
-         SEQFORK Working SEQBREAK
+         SEQTRANSITION TrRetryDone WAIT_FOR True
+            SEQFORK Working SEQBREAK
       ALTERNATIVEBRANCH
          SEQTRANSITION TrAbort WAIT_FOR AbortCmd
          SEQSTEP Abort
@@ -59,7 +64,6 @@ ModuleCode
 
    SEQUENCE Helper COORD 0.0, 0.0 OBJSIZE 1.0, 0.5
       SEQINITSTEP HInit
-      SEQFORK TrHelper
       SEQTRANSITION TrHelper WAIT_FOR True
          SEQFORK Working
    ENDSEQUENCE

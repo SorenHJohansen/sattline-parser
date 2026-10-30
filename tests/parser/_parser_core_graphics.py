@@ -1,4 +1,4 @@
-# pyright: reportUnknownVariableType=false, reportUnknownMemberType=false, reportUnknownParameterType=false, reportMissingParameterType=false, reportUnknownArgumentType=false, reportUnknownLambdaType=false, reportArgumentType=false, reportPrivateUsage=false, reportUnusedImport=false
+# pyright: reportUnknownVariableType=false, reportUnknownMemberType=false, reportUnknownParameterType=false, reportMissingParameterType=false, reportUnknownArgumentType=false, reportUnknownLambdaType=false, reportArgumentType=false, reportPrivateUsage=false, reportUnusedImport=false, reportCallIssue=false
 # ruff: noqa: F403, F405
 from ._parser_core_test_support import *
 
@@ -41,7 +41,6 @@ def test_graphics_interact_mixin_builds_graph_objects_and_lists():
         ("oval_object", parser_const.GRAMMAR_VALUE_OVALOBJECT, True),
         ("polygon_object", parser_const.GRAMMAR_VALUE_POLYGONOBJECT, False),
         ("segment_object", parser_const.GRAMMAR_VALUE_SEGMENTOBJECT, True),
-        ("composite_object", parser_const.GRAMMAR_VALUE_COMPOSITEOBJECT, False),
     ):
         graph_object = getattr(mixin, method_name)([InterimCoords(coords=coords)])
         assert graph_object.type == expected_type
@@ -49,7 +48,13 @@ def test_graphics_interact_mixin_builds_graph_objects_and_lists():
             assert graph_object.properties[parser_const.KEY_COORDS] == coords
         assert graph_object.properties[parser_const.KEY_TAILS] == ["CoordTail", "ExtraTail"]
 
-    wrapped = mixin.graph_object([text_object, 7])
+    # The composite marker takes only the layer clause.
+    composite = mixin.composite_object([7])
+    assert composite.type == parser_const.GRAMMAR_VALUE_COMPOSITEOBJECT
+    assert composite.properties == {"layer": 7}
+    assert mixin.composite_object([]).properties == {}
+
+    wrapped = mixin.graph_object(Meta(), [text_object, 7])
     interact_child = InteractObject(type="Button_", properties={})
 
     assert wrapped.properties["layer"] == 7
@@ -63,7 +68,7 @@ def test_graphics_interact_mixin_builds_graph_objects_and_lists():
     ]
 
     with pytest.raises(ValueError, match="graph_object expected a GraphObject"):
-        mixin.graph_object(["bad"])
+        mixin.graph_object(Meta(), ["bad"])
     with pytest.raises(ValueError, match="text_content expected a str"):
         mixin.text_content([1, 2])
 
@@ -90,7 +95,10 @@ def test_graph_objects_propagates_section_level_layer_to_objects():
     assert "layer" not in fresh_rect.properties
 
 
-def test_parse_source_text_propagates_graphobjects_section_layer():
+def test_graph_object_layer_is_per_object_not_section_level():
+    # Probe 2026-10-01: the real parser rejects a section-level layer clause with
+    # "GraphObjects : >>>Layer_<<< 2 AliasSym Expected". A layer belongs to the
+    # object that declares it, so there is nothing to propagate.
     bp = parser_core_parse_source_text(
         '"SyntaxVersion"\n'
         '"OriginalFileDate"\n'
@@ -98,14 +106,77 @@ def test_parse_source_text_propagates_graphobjects_section_layer():
         "BasePicture Invocation (0.0,0.0,0.0,1.0,1.0) : MODULEDEFINITION DateCode_ 1\n"
         "ModuleDef\n"
         "ClippingBounds = ( -1.0 , -1.0 ) ( 1.0 , 1.0 )\n"
-        "GraphObjects : Layer_ = 2\n"
+        "GraphObjects :\n"
         "   RectangleObject ( -1.0 , 1.0 ) ( 1.0 , -1.0 )\n"
+        "      Layer_ = 2\n"
         "   TextObject ( -0.8 , 0.5 ) ( 0.8 , -0.5 )\n"
         '      "DisplayValue"\n'
+        "      Layer_ = 3\n"
         "ENDDEF (*BasePicture*);\n"
     )
     assert bp.moduledef is not None
-    assert [go.properties.get("layer") for go in bp.moduledef.graph_objects] == [2, 2]
+    assert [go.properties.get("layer") for go in bp.moduledef.graph_objects] == [2, 3]
+
+
+def test_graphobjects_section_layer_clause_is_rejected():
+    with pytest.raises(UnexpectedInput):
+        parser_core_parse_source_text(
+            '"SyntaxVersion"\n'
+            '"OriginalFileDate"\n'
+            '"ProgramDate"\n'
+            "BasePicture Invocation (0.0,0.0,0.0,1.0,1.0) : MODULEDEFINITION DateCode_ 1\n"
+            "ModuleDef\n"
+            "ClippingBounds = ( -1.0 , -1.0 ) ( 1.0 , 1.0 )\n"
+            "GraphObjects : Layer_ = 2\n"
+            "   RectangleObject ( -1.0 , 1.0 ) ( 1.0 , -1.0 )\n"
+            "ENDDEF (*BasePicture*);\n"
+        )
+
+
+def _composite_source(graph_body: str) -> str:
+    return (
+        '"SyntaxVersion"\n'
+        '"OriginalFileDate"\n'
+        '"ProgramDate"\n'
+        "BasePicture Invocation (0.0,0.0,0.0,1.0,1.0) : MODULEDEFINITION DateCode_ 1\n"
+        "ModuleDef\n"
+        "ClippingBounds = ( -1.0 , -1.0 ) ( 1.0 , 1.0 )\n"
+        "GraphObjects :\n"
+        f"{graph_body}\n"
+        "ENDDEF (*BasePicture*);\n"
+    )
+
+
+def test_composite_marker_takes_only_the_layer_clause():
+    """Reads `CompositeObject [Layer_ = <int>]` and nothing else."""
+    bare = parser_core_parse_source_text(_composite_source("   CompositeObject"))
+    assert bare.moduledef is not None
+    assert bare.moduledef.graph_objects[0].properties == {}
+
+    layered = parser_core_parse_source_text(_composite_source("   CompositeObject Layer_ = 2"))
+    assert layered.moduledef is not None
+    assert layered.moduledef.graph_objects[0].properties == {"layer": 2}
+
+    commented = parser_core_parse_source_text(_composite_source("   CompositeObject (* note *) Layer_ = 3"))
+    assert commented.moduledef is not None
+    assert commented.moduledef.graph_objects[0].properties == {"layer": 3}
+
+
+def test_composite_marker_rejects_other_object_properties():
+    for body in (
+        "   CompositeObject Enable_ = True",
+        "   CompositeObject OutlineColour : Colour0 = 2",
+    ):
+        with pytest.raises(UnexpectedInput):
+            parser_core_parse_source_text(_composite_source(body))
+
+
+def test_graphics_property_readers_stay_true_false_only():
+    """`On`/`Off` are value literals; the property readers take BOOL."""
+    with pytest.raises(UnexpectedInput):
+        parser_core_parse_source_text(
+            _composite_source("   RectangleObject ( -1.0 , 1.0 ) ( 1.0 , -1.0 ) Enable_ = On")
+        )
 
 
 def test_graph_object_handles_standalone_and_attached_connection_nodes():
@@ -115,11 +186,11 @@ def test_graph_object_handles_standalone_and_attached_connection_nodes():
     assert bare_object.type == parser_const.GRAMMAR_VALUE_CONNECTIONNODE
     assert bare_object.properties == {}
 
-    positioned = mixin.graph_object([Tree("connection_node", [(0.25, 0.25)])])
+    positioned = mixin.graph_object(Meta(), [Tree("connection_node", [(0.25, 0.25)])])
     assert positioned.type == parser_const.GRAMMAR_VALUE_CONNECTIONNODE
     assert positioned.properties[parser_const.KEY_COORDS] == (0.25, 0.25)
 
-    unpositioned = mixin.graph_object([Tree("connection_node", [])])
+    unpositioned = mixin.graph_object(Meta(), [Tree("connection_node", [])])
     assert unpositioned.type == parser_const.GRAMMAR_VALUE_CONNECTIONNODE
     assert parser_const.KEY_COORDS not in unpositioned.properties
 
@@ -150,6 +221,56 @@ def test_interact_simple_item_extracts_type_from_grammar_tree():
     assert simple.type == "ComBut_"
     with pytest.raises(ValueError, match="interact_simple_item expected an interactor type"):
         mixin.interact_simple_item([((0.0, 0.0), (1.0, 1.0))])
+
+
+def test_interact_scale_selector_maps_relative_and_abs():
+    mixin = _GraphicsHarness()
+    assert mixin.interact_scale_selector([Token("RELATIVE_KW", "Relative_")]) == {
+        parser_const.KEY_SCALE_MODE: "relative"
+    }
+    assert mixin.interact_scale_selector([Token("ABS_KW", "Abs_")]) == {parser_const.KEY_SCALE_MODE: "abs"}
+    with pytest.raises(ValueError, match="interact_scale_selector expected"):
+        mixin.interact_scale_selector([Token("NAME", "Other")])
+
+
+def test_interact_pick_button_models_literal_and_reference():
+    """`IntObjPickButton "=" STRING [VarName]`; VarName is a postfix marker."""
+    mixin = _GraphicsHarness()
+
+    literal = mixin.interact_pick_button([Token("INTOBJPICKBUTTON_KW", "IntObjPickButton"), "Pick me"])
+    assert literal == {parser_const.KEY_PICK_BUTTON: {"value": "Pick me", "is_reference": False}}
+
+    reference = mixin.interact_pick_button(
+        [Token("INTOBJPICKBUTTON_KW", "IntObjPickButton"), "PickVar", Token("VARNAME", "VarName")]
+    )
+    assert reference == {parser_const.KEY_PICK_BUTTON: {"value": "PickVar", "is_reference": True}}
+
+    with pytest.raises(ValueError, match="interact_pick_button expected"):
+        mixin.interact_pick_button([Token("INTOBJPICKBUTTON_KW", "IntObjPickButton")])
+
+
+def test_interactor_body_accepts_pick_button_and_scale_selector():
+    bp = parser_core_parse_source_text(
+        '"SyntaxVersion"\n'
+        '"OriginalFileDate"\n'
+        '"ProgramDate"\n'
+        "BasePicture Invocation (0.0,0.0,0.0,1.0,1.0) : MODULEDEFINITION DateCode_ 1\n"
+        "ModuleDef\n"
+        "ClippingBounds = ( -1.0 , -1.0 ) ( 1.0 , 1.0 )\n"
+        "InteractObjects :\n"
+        "   TextBox_ ( -0.8 , 0.9 ) ( 0.8 , 0.7 )\n"
+        "      Int_Value\n"
+        '      IntObjPickButton = "Pick me"\n'
+        '      IntObjPickButton = "PickVar" VarName\n'
+        "      RightAligned Relative_\n"
+        "ENDDEF (*BasePicture*);\n"
+    )
+
+    assert bp.moduledef is not None
+    payloads = _body_payloads(bp.moduledef.interact_objects[0])
+    assert {parser_const.KEY_PICK_BUTTON: {"value": "Pick me", "is_reference": False}} in payloads
+    assert {parser_const.KEY_PICK_BUTTON: {"value": "PickVar", "is_reference": True}} in payloads
+    assert {parser_const.KEY_SCALE_MODE: "relative"} in payloads
 
 
 def test_interact_flag_captures_plain_string_name():
@@ -218,6 +339,15 @@ def test_procedure_call_keeps_name_out_of_args():
     }
 
 
+def _body_payloads(interactor: object) -> list[object]:
+    """Flatten one interactor's body items (each is wrapped in an ``interact_body`` tree)."""
+    payloads: list[object] = []
+    properties = getattr(interactor, "properties", {})
+    for item in cast("dict[str, Any]", properties).get("body") or ():
+        payloads.extend(getattr(item, "children", [item]))
+    return payloads
+
+
 def test_interact_widgets_fixture_preserves_types_names_and_assignments():
     # End-to-end regression: parsing InteractWidgets.s must not silently drop
     # interactor types, flag names, or assignment lines.
@@ -229,7 +359,10 @@ def test_interact_widgets_fixture_preserves_types_names_and_assignments():
     assert set(interactors) == {"TextBox_", "ComBut_", "ComButProc_"}
     text_box = interactors["TextBox_"]
     body_text = " ".join(repr(item) for item in cast(list[Any], text_box.properties.get("body", [])))
-    assert "Int_Value" in body_text and "Abs_" in body_text and "Digits_" in body_text
+    assert "Int_Value" in body_text and "Digits_" in body_text
+    # ``Abs_``/``Relative_`` are modelled as a distinct scale-mode selector now.
+    assert {parser_const.KEY_SCALE_MODE: "abs"} in _body_payloads(text_box)
+    assert {parser_const.KEY_SCALE_MODE: "abs"} in _body_payloads(interactors["ComBut_"])
 
     proc_item = interactors["ComButProc_"]
     assert proc_item.properties.get("assigns") is not None

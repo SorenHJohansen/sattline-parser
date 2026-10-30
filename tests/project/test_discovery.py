@@ -76,7 +76,6 @@ def test_source_index_builds_and_finds(tmp_path: Path) -> None:
     _write(root, "Nested/Eta.s")
 
     index = SourceIndex([root])
-    index.prime()
     assert index.roots == (root,)
     assert index.find_in_index(base=root, name="alpha", extensions=(".s", ".x")) == root / "Alpha.s"
     assert index.find_in_index(base=root, name="Beta", extensions=(".s", ".x")) == root / "Beta.x"
@@ -93,7 +92,8 @@ def test_source_index_add_registers_after_index_build(tmp_path: Path) -> None:
     root = tmp_path / "p"
     root.mkdir()
     index = SourceIndex([root])
-    index.prime()
+    # Build the cache while the directory is empty; the late file must not appear.
+    assert index.find_in_index(base=root, name="Absent", extensions=(".s",)) is None
     late = _write(root, "Late.s")
     assert index.find_in_index(base=root, name="Late", extensions=(".s",)) is None
     index.add(base=root, name="Late", path=late)
@@ -247,7 +247,6 @@ def test_lookup_custom_index_discovers_previously_unindexed_file(tmp_path: Path)
     root = tmp_path / "p"
     root.mkdir()
     index = SourceIndex([root])
-    index.prime()
     lookup = ProjectLookup([root], LoadMode.DRAFT, index=index)
     _write(root, "NewFile.s")
     found = lookup.find_code("NewFile")
@@ -389,14 +388,14 @@ def test_find_full_scan_fallbacks(tmp_path: Path) -> None:
     assert lookup.find_code("A") == root / "A.s"
 
     indexed = ProjectLookup([root], LoadMode.DRAFT)
-    indexed._index.prime()
     assert indexed.find_code("Z") == root / "Z.x"
 
     missing = ProjectLookup([root], LoadMode.DRAFT)
     assert missing.find_code("Nope") is None
 
     late = ProjectLookup([root], LoadMode.DRAFT)
-    late._index.prime()
+    # Build the index before the file exists, so resolution has to fall back to a scan.
+    assert late._index.find_in_index(base=root, name="Absent", extensions=(".s",)) is None
     late_file = _write(root, "Late.s")
     assert late.find_code("Late") == late_file
     assert late._index.find_in_index(base=root, name="Late", extensions=(".s",)) == late_file
@@ -445,3 +444,24 @@ def test_project_lookup_requester_ordering_end_to_end(tmp_path: Path) -> None:
     _write(brand_b, "Dep.x")
     lookup = ProjectLookup([requester, brand_b, brand_a, abb], LoadMode.DRAFT)
     assert lookup.find_code("Dep", requester_dir=requester) == brand_a / "Dep.x"
+
+
+def test_warm_cache_preserves_cold_extension_precedence(tmp_path: Path) -> None:
+    """A warm lookup must not shadow a preferred extension that appeared later.
+
+    Gap P10: the cache recorded ``.x`` for this prefix; a ``.s`` then appeared.
+    Draft mode prefers ``.s``, so warm and cold lookups must agree.
+    """
+    root = tmp_path / "p"
+    cache_dir = tmp_path / "cache"
+    _write(root, "Lib.x")
+
+    cache = FileLookupCache(cache_dir)
+    cold_first = ProjectLookup([root], LoadMode.DRAFT, cache=cache).find_code("Lib")
+    assert cold_first == root / "Lib.x"
+
+    _write(root, "Lib.s")
+
+    warm = ProjectLookup([root], LoadMode.DRAFT, cache=FileLookupCache(cache_dir)).find_code("Lib")
+    cold = ProjectLookup([root], LoadMode.DRAFT).find_code("Lib")
+    assert warm == cold == root / "Lib.s"

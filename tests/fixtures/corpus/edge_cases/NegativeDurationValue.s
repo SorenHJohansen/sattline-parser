@@ -5,7 +5,12 @@
    A negative duration represents a time-in-the-past or reverse elapsed-time.
    The Duration_Value form with a leading minus is the documented way to
    express negative durations; the sign applies to the whole value.
-   Expected: strict syntax-check passes. *)
+   Expected: strict syntax-check passes.
+   Probe 2026-10-01: the real parser accepts every declaration form below, but
+   rejects *comparing* durations or times -- "Only integer and real allowed for
+   this operator" for exactly the statement that used to be here. No probed form
+   of legal duration/time usage exists, so the variables are declared and left
+   alone. See invalid/NonNumericComparisonOperand.s. *)
 
 BasePicture Invocation
    ( 0.0 , 0.0 , 0.0 , 1.0 , 1.0
@@ -21,6 +26,6 @@ ModuleDef
 ClippingBounds = ( -1.0 , -1.0 ) ( 1.0 , 1.0 )
 ModuleCode
    EQUATIONBLOCK Main COORD 0.0, 0.0 OBJSIZE 1.0, 1.0 :
-      Sink = NegFive == NegHour OR NegSmall == NegFive;
+      Sink = True;
 
 ENDDEF (*BasePicture*);

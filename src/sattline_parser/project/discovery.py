@@ -61,9 +61,8 @@ def _is_allowed_base(roots: Sequence[Path], base: Path) -> bool:
 class SourceIndex:
     """Per-root artifact index of ``stem.casefold() -> {ext -> Path}``.
 
-    Only code and dependency extensions are indexed — the same set SattLint
-    indexes. Graphics companions are resolved via their code path (Phase 4) and
-    never appear here.
+    Only code and dependency extensions are indexed. Graphics companions are
+    resolved via their code path and never appear here.
     """
 
     INDEXED_EXTENSIONS = frozenset({".s", ".x", ".l", ".z"})
@@ -108,18 +107,13 @@ class SourceIndex:
         index = self._get_base_index(base)
         index.setdefault(name.casefold(), {})[path.suffix.lower()] = path
 
-    def prime(self) -> None:
-        for base in self._roots:
-            self._get_base_index(base)
-
 
 def shared_lookup_root_for(requester_dir: Path | None, roots: Sequence[Path]) -> Path | None:
     """The shared cluster root hosting the requester and >= 2 sibling roots.
 
     Walks up from the requester to the highest ancestor under which at least two
     other roots land in distinct first-level branches; ``None`` when no such
-    cluster exists. Mirrors SattLint's ``_shared_lookup_root_for``
-    (loader_lookup.py).
+    cluster exists.
     """
     requester = _resolved(requester_dir)
     if requester is None:
@@ -150,8 +144,7 @@ def ordered_lookup_bases(roots: Sequence[Path], requester_dir: Path | None) -> t
     Precedence: the requester itself (when it is a configured root), then roots
     sharing the requester's cluster — same branch before sibling branches — then
     every remaining root in configured order. The terminal (last) root acts as
-    the fallback library and is always tried last, mirroring how SattLint keeps
-    the ABB library terminal (loader_lookup.py).
+    the fallback library and is always tried last.
     """
     resolved_roots = [resolved for root in roots if (resolved := _resolved(root)) is not None]
     requester = _resolved(requester_dir)
@@ -279,13 +272,16 @@ class ProjectLookup:
             found = self._find_in_base(name, extensions, outranking, kind=kind)
             if found is not None:
                 return found
-        cached_ext = cached["ext"]
-        ordered_exts = [cached_ext] if cached_ext in extensions else []
-        ordered_exts.extend(ext for ext in extensions if ext != cached_ext)
-        for ext in ordered_exts:
+        # Extension *preference* wins over the extension recorded in the cache:
+        # an artifact that appeared after the cache was written must not be
+        # shadowed by the cached one, or a warm lookup would disagree with a cold
+        # one (gap P10). The cached base is still trusted as the resolving base,
+        # and every outranking base was checked above.
+        for ext in extensions:
             path = base / f"{name}{ext}"
             if path.exists():
                 self._dbg(f"Using cached {kind} file: {path}")
+                self._remember(kind, name, base, ext)
                 return path
         self._cache.forget(kind, name, self._mode.value)
         return None
@@ -316,6 +312,20 @@ class ProjectLookup:
 
     def find_code(self, name: str, *, requester_dir: Path | None = None) -> Path | None:
         return self.find(name, ArtifactKind.CODE, requester_dir=requester_dir)
+
+    def find_deps_beside(self, code_path: Path, name: str, *, requester_dir: Path | None = None) -> Path | None:
+        """Resolve the dependency sidecar at the selected body's own prefix.
+
+        A SattLine library is a body plus a sidecar at *one* prefix (LIB-05).
+        Resolving the sidecar through the whole ordered root list can pair a
+        body with an unrelated library's sidecar, so the
+        body prefix decides; the cache still short-circuits an already-known
+        prefix, and the requester-relative scan is only the fallback used by
+        :meth:`find_deps` for consumers that want the old behaviour.
+        """
+        del requester_dir  # the body prefix, not the requester, decides
+        extensions = candidate_extensions(ArtifactKind.DEPS, self._mode)
+        return self._find_in_base(name, extensions, code_path.parent, kind=ArtifactKind.DEPS.value)
 
     def find_deps(self, name: str, *, requester_dir: Path | None = None) -> Path | None:
         return self.find(name, ArtifactKind.DEPS, requester_dir=requester_dir)

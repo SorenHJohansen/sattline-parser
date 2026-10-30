@@ -1,24 +1,36 @@
-"""Parser-owned per-file AST cache (plan §6, Q7).
+"""Parser-owned per-file AST cache.
 
 Each parsed ``BasePicture`` is stored in an HMAC-signed pickle envelope keyed by
 code path and source mode. The cache namespace and version belong to
 ``sattline-parser`` (``FILE_AST_CACHE_VERSION``, a distinct file-format magic),
-so parser- and SattLint-written cache files never cross-read. Path, mode, and a
+so a cache written by another tool never cross-reads. Path, mode, and a
 ``mtime_ns`` + ``size`` stat snapshot are validated before a cached AST is
 trusted; entries outside the parser namespace are pruned.
+
+The HMAC key lives beside the entries, so the signature only proves that an
+entry was written by whoever could write that directory. It is not a defence
+against a user who can modify the cache directory, and it is not meant to be:
+the directory is created private (mode ``0700``), which is the real boundary.
+Treat a cache directory as private to one user, and never point ``cache_dir``
+at a shared location.
 """
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import hmac
 import os
 import pickle  # nosec B403 - HMAC-signed pickle envelope, key creation racy/excl guarded
 import secrets
+import time
 from pathlib import Path
 from typing import cast
 
 from sattline_parser.models.ast_model import BasePicture
+
+from ._atomic import TEMP_SUFFIX
+from ._atomic import temp_path_for as _temp_path_for
 
 FILE_AST_CACHE_VERSION = 1
 
@@ -26,6 +38,13 @@ _PICKLE_CACHE_MAGIC = b"SATTLINE-PARSER-PICKLE-V1\n"
 _PICKLE_HMAC_KEY_NAME = ".pickle-hmac-key"
 _PICKLE_HMAC_SIZE = 32
 _PICKLE_KEY_DIR_NAME = "file_ast"
+
+#: The cache holds an HMAC key beside its entries, so it must stay private.
+_CACHE_DIR_MODE = 0o700
+
+#: A temporary file younger than this may belong to a running writer, so startup
+#: cleanup leaves it alone.
+_TEMP_FILE_MAX_AGE_SECONDS = 3600.0
 
 _ALLOWED_PICKLE_LOADER_ERRORS = (
     pickle.UnpicklingError,
@@ -51,6 +70,14 @@ def _safe_stat(path: Path) -> os.stat_result | None:
         return path.stat()
     except OSError:
         return None
+
+
+def _temp_file_is_abandoned(path: Path) -> bool:
+    """True when a temporary file is old enough that no writer can still own it."""
+    stat_result = _safe_stat(path)
+    if stat_result is None:
+        return True
+    return time.time() - stat_result.st_mtime >= _TEMP_FILE_MAX_AGE_SECONDS
 
 
 def _as_data_dict(value: object) -> dict[object, object] | None:
@@ -161,7 +188,7 @@ def _save_pickle_payload(path: Path, payload: object) -> None:
         raise OSError(f"Could not create pickle HMAC key for {path.parent}")
     pickled_payload = pickle.dumps(payload, protocol=pickle.HIGHEST_PROTOCOL)
     signature = hmac.new(key, pickled_payload, hashlib.sha256).hexdigest().encode("ascii")
-    temp_path = path.with_name(f"{path.name}.tmp")
+    temp_path = _temp_path_for(path)
     try:
         with temp_path.open("wb") as handle:
             handle.write(_PICKLE_CACHE_MAGIC)
@@ -180,12 +207,14 @@ class FileASTCache:
     """Per-file AST cache keyed by code path and source mode.
 
     The backing store lives under ``<cache_dir>/file_ast`` so it never collides
-    with the file-lookup cache or with a borrowed SattLint cache directory.
+    with the file-lookup cache.
     """
 
     def __init__(self, cache_dir: Path) -> None:
         self.cache_dir = cache_dir / _PICKLE_KEY_DIR_NAME
-        self.cache_dir.mkdir(parents=True, exist_ok=True)
+        self.cache_dir.mkdir(mode=_CACHE_DIR_MODE, parents=True, exist_ok=True)
+        with contextlib.suppress(OSError):
+            self.cache_dir.chmod(_CACHE_DIR_MODE)
         self._startup_pruned_entries = self.prune_stale_entries()
 
     @staticmethod
@@ -253,9 +282,11 @@ class FileASTCache:
         for path in directory.iterdir():
             if not path.is_file():
                 continue
-            if path.name.endswith(".pickle.tmp"):
-                _remove_file(path)
-                removed += 1
+            if path.name.endswith(TEMP_SUFFIX):
+                if not _temp_file_is_abandoned(path):
+                    continue
+                if _remove_file(path):
+                    removed += 1
                 continue
             if not path.name.endswith(".pickle"):
                 continue

@@ -1,7 +1,7 @@
 """Layout decoded SattLine source so the IDE accepts it as a program file.
 
-Decoding reproduces whatever line breaks the binary stream stored. Native
-SattLine sources additionally follow two conventions the IDE relies on when
+Decoding reproduces whatever line breaks the binary stream stored. SattLine
+program files additionally follow two conventions the IDE relies on when
 re-reading a saved file: CRLF terminators and no line longer than
 :data:`MAX_IDE_LINE_LENGTH` characters. :func:`render_ide_text` applies that
 layout and is safe to run on already-formatted text.

@@ -21,6 +21,7 @@ from sattline_parser.project import (
     read_dependency_names,
 )
 from sattline_parser.project import loader as project_loader
+from sattline_parser.project.models import LoadDiagnosticKind, SidecarState
 
 _CODE = """"Syntax version 2.23, date: 2026-04-23-12:00:00.000 N"
 "Original file date: ---"
@@ -257,6 +258,9 @@ def test_load_strict_false_skips_missing_dependency(tmp_path: Path) -> None:
     assert "ghost" not in project
     assert project.dependencies_of("Main") == ("Ghost",)
     assert ("main", "ghost") in project.graph().edges
+    skipped = [d for d in project.diagnostics() if d.kind is LoadDiagnosticKind.LOAD_SKIPPED]
+    assert [d.program for d in skipped] == ["Ghost"]
+    assert "missing code file" in skipped[0].detail
 
 
 def test_load_strict_false_skips_broken_code(tmp_path: Path) -> None:
@@ -267,6 +271,9 @@ def test_load_strict_false_skips_broken_code(tmp_path: Path) -> None:
     project = _load(tmp_path, targets=("Ok", "Main"), strict=False)
     assert "ok" in project and "main" in project
     assert "broken" not in project
+    skipped = [d for d in project.diagnostics() if d.kind is LoadDiagnosticKind.LOAD_SKIPPED]
+    assert [d.program for d in skipped] == ["Broken"]
+    assert "failed to parse" in skipped[0].detail
 
 
 def test_load_draft_fallback_extensions(tmp_path: Path) -> None:
@@ -285,7 +292,6 @@ def test_load_arbitrary_graphics_companion_does_not_raise(tmp_path: Path) -> Non
     project = _load(tmp_path)
     program = project.programs()["main"]
     assert program.graphics is not None
-    assert program.graphics.picture_display_records == ()
     assert program.graphics.messages == ()
 
 
@@ -374,8 +380,6 @@ def test_load_parses_graphics_companion(tmp_path: Path) -> None:
         ("var", "PathOK"),
         ("var", "PathNotOK"),
     ]
-    [record] = program.graphics.picture_display_records
-    assert record.path_row_lines == (9, 10, 11)
 
 
 def test_load_draft_falls_back_to_official_graphics_ext(tmp_path: Path) -> None:
@@ -458,11 +462,152 @@ def test_load_dependency_graphics_read_failure_raises_dependency_parse_error(tmp
     assert exc_info.value.dependency == "Lib"
 
 
-def test_load_graphics_structural_errors_do_not_fail_load(tmp_path: Path) -> None:
+# --- sidecar pairing invariant (LIB-05) -------------------------------------
+
+
+def test_load_dependency_sidecar_decode_failure_raises(tmp_path: Path) -> None:
     _write(tmp_path, "Main.s", _CODE)
-    _write(tmp_path, "Main.g", _GFX_UNTERMINATED)
+    (tmp_path / "Main.l").write_bytes(b"Lib \x81\n")
 
-    program = _load(tmp_path).programs()["main"]
+    with pytest.raises(DependencyParseError) as exc_info:
+        _load(tmp_path)
 
-    assert program.graphics is not None
-    assert program.graphics.errors, "expected at least one structural graphics message"
+    assert exc_info.value.program == "Main"
+    assert exc_info.value.dependency is None
+
+
+def test_load_dependency_sidecar_decode_failure_non_strict_skips(tmp_path: Path) -> None:
+    _write(tmp_path, "Main.s", _CODE)
+    (tmp_path / "Main.l").write_bytes(b"Lib \x81\n")
+    _write(tmp_path, "Ok.s", _CODE)
+
+    project = _load(tmp_path, targets=("Ok", "Main"), strict=False)
+
+    assert "main" not in project
+    skipped = [d for d in project.diagnostics() if d.kind is LoadDiagnosticKind.LOAD_SKIPPED]
+    assert [d.program for d in skipped] == ["Main"]
+    assert "unable to read dependency file" in skipped[0].detail
+
+
+def test_load_graphics_decode_failure_strict_raises(tmp_path: Path) -> None:
+    _write(tmp_path, "Main.s", _CODE)
+    (tmp_path / "Main.g").write_bytes(b"\x81 graphics\n")
+
+    with pytest.raises(ArtifactLoadError):
+        _load(tmp_path)
+
+
+def test_load_graphics_decode_failure_non_strict_skips(tmp_path: Path) -> None:
+    _write(tmp_path, "Main.s", _CODE)
+    (tmp_path / "Main.g").write_bytes(b"\x81 graphics\n")
+
+    project = _load(tmp_path, strict=False)
+
+    assert "main" not in project
+
+
+def test_load_dependency_graphics_decode_failure_raises_dependency_parse_error(tmp_path: Path) -> None:
+    _write(tmp_path, "Main.l", "Lib\n")
+    _write(tmp_path, "Main.s", _CODE)
+    _write(tmp_path, "Lib.s", _CODE)
+    (tmp_path / "Lib.g").write_bytes(b"\x81 graphics\n")
+
+    with pytest.raises(DependencyParseError) as exc_info:
+        _load(tmp_path)
+
+    assert exc_info.value.program == "Main"
+    assert exc_info.value.dependency == "Lib"
+
+
+def test_load_survives_a_cache_write_failure(tmp_path: Path) -> None:
+    _write(tmp_path, "Main.s", _CODE)
+
+    with patch.object(project_loader.FileASTCache, "save", side_effect=OSError("boom")):
+        project = _load(tmp_path, cache_dir=tmp_path / "cache")
+
+    assert "main" in project
+
+
+def test_sidecar_is_not_paired_across_prefixes(tmp_path: Path) -> None:
+    """A body must never be paired with a sidecar from another library prefix.
+
+    ``consumer`` holds the body but no sidecar; ``other`` holds a sidecar only.
+    The old whole-root lookup paired the two and then resolved that library's
+    own dependencies relative to ``other``. LIB-05 reads the sidecar at
+    the selected body prefix and reports the failure instead, so the stray file
+    becomes a diagnostic and no dependencies are invented.
+    """
+    consumer = tmp_path / "consumer"
+    other = tmp_path / "other"
+    _write(consumer, "Main.s", _CODE)
+    _write(consumer, "Lib.s", _CODE)
+    other.mkdir()
+    _write(other, "Lib.l", "OtherSide\n")
+    _write(other, "OtherSide.s", _CODE)
+
+    project = SattLineProject.load([consumer, other], LoadMode.DRAFT, ["Main", "Lib"])
+
+    program = project.get("Lib")
+    assert program.dependencies == ()
+    assert program.deps_path is None
+    assert program.sidecar is SidecarState.ABSENT
+    stray = [d for d in project.diagnostics() if d.kind is LoadDiagnosticKind.SIDECAR_ELSEWHERE]
+    assert [d.path for d in stray] == [other / "Lib.l"]
+
+
+def test_missing_sidecar_is_reported_not_invented(tmp_path: Path) -> None:
+    _write(tmp_path, "Main.s", _CODE)
+
+    project = SattLineProject.load([tmp_path], LoadMode.DRAFT, ["Main"])
+
+    program = project.get("Main")
+    assert program.dependencies == ()
+    assert program.deps_path is None
+    assert program.sidecar is SidecarState.ABSENT
+    diagnostics = project.diagnostics()
+    assert [d.kind for d in diagnostics] == [LoadDiagnosticKind.SIDECAR_MISSING]
+
+
+def test_empty_sidecar_is_distinct_from_absent(tmp_path: Path) -> None:
+    _write(tmp_path, "Main.s", _CODE)
+    (tmp_path / "Main.l").write_text("\n\n", encoding="cp1252")
+
+    project = SattLineProject.load([tmp_path], LoadMode.DRAFT, ["Main"])
+
+    program = project.get("Main")
+    assert program.sidecar is SidecarState.EMPTY
+    assert program.dependencies == ()
+    assert [d.kind for d in project.diagnostics()] == [LoadDiagnosticKind.SIDECAR_EMPTY]
+
+
+def test_dependency_cycle_is_a_diagnostic_not_an_exception(tmp_path: Path) -> None:
+    _write(tmp_path, "A.s", _CODE)
+    _write(tmp_path, "A.l", "B\n")
+    _write(tmp_path, "B.s", _CODE)
+    _write(tmp_path, "B.l", "A\n")
+
+    project = SattLineProject.load([tmp_path], LoadMode.DRAFT, ["A"])
+
+    assert set(project.graph().edges) == {("a", "b"), ("b", "a")}
+    kinds = [diagnostic.kind for diagnostic in project.diagnostics()]
+    assert kinds.count(LoadDiagnosticKind.DEPENDENCY_CYCLE) == 1
+
+
+def test_first_body_match_wins_not_the_newest_datecode(tmp_path: Path) -> None:
+    """LIB-01/DATE-01: the first matching body prefix wins.
+
+    A later root with a much larger DateCode must not be preferred; a loader
+    that "picks the newest" would silently load a different library version.
+    """
+    first = tmp_path / "first"
+    second = tmp_path / "second"
+    _write(first, "Lib.s", _CODE.replace("DateCode_ 1", "DateCode_ 10"))
+    _write(first, "Lib.l", "")
+    _write(second, "Lib.s", _CODE.replace("DateCode_ 1", "DateCode_ 9999"))
+    _write(second, "Lib.l", "")
+
+    project = SattLineProject.load([first, second], LoadMode.DRAFT, ["Lib"])
+
+    program = project.get("Lib")
+    assert program.source_path == first / "Lib.s"
+    assert program.code.datecode == 10

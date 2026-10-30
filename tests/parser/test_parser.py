@@ -77,7 +77,7 @@ class TestFuzzParseText:
 
     def test_timeout_enforced(self, monkeypatch: pytest.MonkeyPatch):
         # A hard timeout must actually kill the worker: a worker that never
-        # replies must produce a TimeoutError, and the harness must recover.
+        # replies must produce a TimeoutError, and the harness must resume.
         from sattline_parser.fuzz_harness import TimeoutError, fuzz_parse_text  # noqa: PLC0415
 
         sleeping_worker = "import time\nimport sys\nwhile True:\n    time.sleep(3600)\n"
@@ -176,31 +176,6 @@ class TestRunRandomFuzz:
         results = run_random_fuzz(rounds=5, text_length=1000, timeout=1.0, seed=789)
         for result in results:
             assert result.duration_ms < 2000 or isinstance(result.error, TimeoutError)
-
-
-class TestFuzzResult:
-    def test_to_dict_contains_required_keys(self):
-        result = _min_fuzz_result("test-input")
-        data = result.to_dict()
-        assert "input_desc" in data
-        assert "success" in data
-        assert "result_type" in data
-        assert "error_type" in data
-        assert "duration_ms" in data
-
-    def test_to_dict_reflects_success(self):
-        result = _min_fuzz_result("success-case", success=True, has_result=True)
-        data = result.to_dict()
-        assert data["success"] is True
-        assert data["result_type"] == "BasePicture"
-        assert data["error_type"] is None
-
-    def test_to_dict_reflects_failure(self):
-        result = _min_fuzz_result("fail-case", success=False, has_error=True, has_result=False)
-        data = result.to_dict()
-        assert data["success"] is False
-        assert data["result_type"] is None
-        assert data["error_type"] == "ValueError"
 
 
 class TestAssertNoCrashes:

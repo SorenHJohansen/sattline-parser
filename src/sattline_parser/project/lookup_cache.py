@@ -1,9 +1,8 @@
 """Parser-owned file-lookup cache.
 
 Persists ``(kind, name, mode) -> (base_dir, ext)`` resolutions so consecutive
-project loads skip filesystem scans for stable layouts. This is the parser's own
-on-disk namespace and version — independent of any consumer-tooling cache
-identifiers (Q7, plan §6) — and SattLint stops reading it once the adapter lands.
+project loads skip filesystem scans for stable layouts. The namespace and
+version belong to this package.
 """
 
 from __future__ import annotations
@@ -12,6 +11,8 @@ import json
 import os
 from pathlib import Path
 from typing import cast
+
+from ._atomic import temp_path_for as _temp_path_for
 
 LOOKUP_CACHE_VERSION = 1
 
@@ -130,12 +131,16 @@ class FileLookupCache:
             "version": LOOKUP_CACHE_VERSION,
             "entries": self._data.get("entries", {}),
         }
-        temp_path = self.path.with_name(f"{self.path.name}.tmp")
-        with temp_path.open("w", encoding="utf-8") as f:
-            json.dump(payload, f, ensure_ascii=True, indent=2, sort_keys=True)
-            f.flush()
-            os.fsync(f.fileno())
-        os.replace(temp_path, self.path)
+        temp_path = _temp_path_for(self.path)
+        try:
+            with temp_path.open("w", encoding="utf-8") as f:
+                json.dump(payload, f, ensure_ascii=True, indent=2, sort_keys=True)
+                f.flush()
+                os.fsync(f.fileno())
+            os.replace(temp_path, self.path)
+        except OSError:
+            _remove_file(temp_path)
+            raise
 
     def _record_mutation(self) -> None:
         self._dirty = True
@@ -183,7 +188,12 @@ class FileLookupCache:
     def flush(self) -> None:
         if not self._dirty:
             return
-        self._save()
+        try:
+            self._save()
+        except OSError:
+            # The cache is an optimisation: keep the data in memory and retry on
+            # the next flush rather than failing the load that triggered it.
+            return
         self._dirty = False
         self._pending_mutations = 0
 

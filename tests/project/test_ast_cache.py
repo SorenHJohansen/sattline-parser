@@ -7,6 +7,7 @@ import hashlib
 import hmac
 import os
 import shutil
+import time
 from pathlib import Path
 from unittest.mock import patch
 
@@ -28,6 +29,8 @@ from sattline_parser.project.ast_cache import (
     _remove_file,
     _safe_stat,
     _save_pickle_payload,
+    _temp_file_is_abandoned,
+    _temp_path_for,
 )
 
 _AC_PATH = "sattline_parser.project.ast_cache"
@@ -222,7 +225,14 @@ def test_save_pickle_payload_replace_failure(tmp_path: Path) -> None:
     with patch(f"{_AC_PATH}.os.replace", side_effect=OSError("boom")), pytest.raises(OSError, match="boom"):
         _save_pickle_payload(target, {"version": 1})
     assert not target.exists()
-    assert not (tmp_path / "e.pickle.tmp").exists()
+    assert not list(tmp_path.glob("*.tmp"))
+
+
+def test_temp_paths_are_unique_per_write(tmp_path: Path) -> None:
+    """Two writers must never share a temporary path."""
+    target = tmp_path / "e.pickle"
+
+    assert _temp_path_for(target) != _temp_path_for(target)
 
 
 def test_save_pickle_payload_key_failure(tmp_path: Path) -> None:
@@ -399,6 +409,8 @@ def test_prune_stale_entries(tmp_path: Path) -> None:
     foreign.write_bytes(b"no magic")
     tmp = cache.cache_dir / "leftover.pickle.tmp"
     tmp.write_bytes(b"x")
+    abandoned = time.time() - 7200
+    os.utime(tmp, (abandoned, abandoned))
     subdir = cache.cache_dir / "subdir"
     subdir.mkdir()
 
@@ -410,6 +422,15 @@ def test_prune_stale_entries(tmp_path: Path) -> None:
     assert not foreign.exists()
     assert not tmp.exists()
     assert subdir.is_dir()
+
+
+def test_prune_keeps_a_temporary_file_a_writer_may_still_own(tmp_path: Path) -> None:
+    cache = FileASTCache(tmp_path)
+    inflight = cache.cache_dir / "inflight.pickle.tmp"
+    inflight.write_bytes(b"x")
+
+    assert cache.prune_stale_entries() == 0
+    assert inflight.exists()
 
 
 def test_prune_missing_directory(tmp_path: Path) -> None:
@@ -431,3 +452,10 @@ def test_drain_startup_pruned_entries(tmp_path: Path) -> None:
     cache = FileASTCache(cache_dir)
     assert cache.drain_startup_pruned_entries() == 1
     assert cache.drain_startup_pruned_entries() == 0
+
+
+def test_temp_file_without_a_stat_is_abandoned(tmp_path: Path) -> None:
+    path = tmp_path / "gone.pickle.tmp"
+
+    with patch(f"{_AC_PATH}._safe_stat", return_value=None):
+        assert _temp_file_is_abandoned(path)

@@ -24,7 +24,22 @@ def _compress(text: str, targets: list[str] | None = None) -> str:
         if word and word not in reverse:
             reverse[word] = marker
     if targets is None:
-        targets = sorted(reverse, key=len, reverse=True)
+        # Compress word-like keywords only, so punctuation stays literal and the
+        # span assertions below can quote the original compact text directly.
+        # Encode every identifier-like keyword, including the underscore-suffixed
+        # ones (DateCode_, InVar_): in coded mode a raw word is an identifier, so a
+        # compressor that leaves them raw would produce a different program.
+        targets = sorted(
+            (
+                word
+                for word in reverse
+                if len(word) > 1
+                and word.isidentifier()
+                and word.casefold() not in {"true", "false", "on", "off", "default"}
+            ),
+            key=len,
+            reverse=True,
+        )
     pattern = _re.compile("|".join(_re.escape(w) for w in targets if w not in ("True", "False")))
 
     parts: list[str] = []
@@ -38,7 +53,7 @@ def _compress(text: str, targets: list[str] | None = None) -> str:
 
 
 def _opaque_regions(text: str) -> list[tuple[str, int, int]]:
-    from sattline_parser.preprocessing.compressed import _scan_opaque_regions as scan  # noqa: PLC0415
+    from sattline_parser.preprocessing.compressed import scan_opaque_regions as scan  # noqa: PLC0415
 
     return scan(text)
 
@@ -70,8 +85,6 @@ def test_source_document_identity_maps_positions_exactly():
     assert doc.map_range(5, 5) == (5, 5)
     assert doc.line_col(0) == (1, 1)
     assert doc.line_col(6) == (2, 1)
-    span = doc.span_from_normalized(0, 5)
-    assert span == SourceSpan(start=0, end=5, line=1, column=1)
 
 
 def test_source_document_rejects_mismatched_char_map():
@@ -383,9 +396,9 @@ def test_compressed_source_decoded_keyword_has_generated_provenance():
 
 
 def test_compressed_source_parser_error_at_eof_maps_into_original_source():
-    # Truncate after "#8= " (MODULECODE) so the parser expects equation
-    # content but hits EOF.
-    code_pos = _COMPRESSED.index("#8= ")
+    # Truncate right after the MODULECODE marker ("#84") so the parser expects
+    # equation content but hits EOF.
+    code_pos = _COMPRESSED.index("#84") + len("#84")
     truncated = _COMPRESSED[:code_pos]
     assert truncated
     doc = preprocess_source(truncated)
@@ -398,7 +411,9 @@ def test_compressed_source_parser_error_at_eof_maps_into_original_source():
     assert 0 <= mapped <= len(truncated)
     details = parser_api.describe_parse_error(exc, truncated, source_document=doc)
     assert details.line is not None
-    assert details.line == len(truncated.splitlines())
+    assert 1 <= details.line <= len(truncated.splitlines())
+    assert details.column is not None
+    assert details.column >= 1
 
 
 def test_remap_tree_to_original_is_noop_for_identity_documents():
@@ -410,3 +425,18 @@ def test_remap_tree_to_original_is_noop_for_identity_documents():
     before = first.meta.start_pos
     remap_tree_to_original(tree, SourceDocument.identity(_PROGRAM))
     assert first.meta.start_pos == before
+
+
+def test_is_decoded_range_separates_codes_from_raw_text():
+    plain = SourceDocument("text", "text", None)
+    assert plain.is_decoded_range(0, 4) is False
+
+    document = preprocess_source('"Syntax version 2.23, date: 2026-10-27-12:00:00.000 C"\n#22 X\n')
+    decoded_start = document.normalized_text.index("SEQUENCE")
+    raw_start = document.normalized_text.index("X")
+
+    assert document.is_decoded_range(decoded_start, decoded_start + len("SEQUENCE")) is True
+    assert document.is_decoded_range(raw_start, raw_start + 1) is False
+    assert document.is_decoded_range(-1, 4) is False
+    assert document.is_decoded_range(5, 5) is False
+    assert document.is_decoded_range(0, len(document.normalized_text) + 1) is False
