@@ -242,7 +242,7 @@ class ProjectLookup:
         extensions: Sequence[str],
         *,
         ordered: Sequence[Path],
-    ) -> Path | None:
+    ) -> tuple[Path, Path] | None:
         """Trust a cached resolution only when it still holds under current ordering.
 
         The cached base must be a configured root that is still present in the
@@ -271,7 +271,7 @@ class ProjectLookup:
         for outranking in ordered[:position]:
             found = self._find_in_base(name, extensions, outranking, kind=kind)
             if found is not None:
-                return found
+                return found, outranking
         # Extension *preference* wins over the extension recorded in the cache:
         # an artifact that appeared after the cache was written must not be
         # shadowed by the cached one, or a warm lookup would disagree with a cold
@@ -282,7 +282,7 @@ class ProjectLookup:
             if path.exists():
                 self._dbg(f"Using cached {kind} file: {path}")
                 self._remember(kind, name, base, ext)
-                return path
+                return path, base
         self._cache.forget(kind, name, self._mode.value)
         return None
 
@@ -290,13 +290,14 @@ class ProjectLookup:
         if self._cache is not None:
             self._cache.set(kind, name, self._mode.value, base, ext)
 
-    def find(self, name: str, kind: ArtifactKind, *, requester_dir: Path | None = None) -> Path | None:
-        """Resolve ``name`` of ``kind`` across the ordered roots, or ``None``.
-
-        The cache is consulted first (when present) so a stable layout skips the
-        ordered scan entirely; only on a miss is the full ordered scan run, and
-        every successful resolution refreshes the cache.
-        """
+    def _find_with_base(
+        self,
+        name: str,
+        kind: ArtifactKind,
+        *,
+        requester_dir: Path | None = None,
+    ) -> tuple[Path, Path] | None:
+        """Resolve ``name`` and return ``(path, resolving_base)``, or ``None``."""
         extensions = candidate_extensions(kind, self._mode)
         kind_value = kind.value
         ordered = ordered_lookup_bases(self._roots, requester_dir)
@@ -306,12 +307,31 @@ class ProjectLookup:
         for base in ordered:
             found = self._find_in_base(name, extensions, base, kind=kind_value)
             if found is not None:
-                return found
+                return found, base
         self._dbg(f"No {kind_value} file found for {name!r} in mode={self._mode.value}")
         return None
 
+    def find(self, name: str, kind: ArtifactKind, *, requester_dir: Path | None = None) -> Path | None:
+        """Resolve ``name`` of ``kind`` across the ordered roots, or ``None``.
+
+        The cache is consulted first (when present) so a stable layout skips the
+        ordered scan entirely; only on a miss is the full ordered scan run, and
+        every successful resolution refreshes the cache.
+        """
+        result = self._find_with_base(name, kind, requester_dir=requester_dir)
+        return None if result is None else result[0]
+
     def find_code(self, name: str, *, requester_dir: Path | None = None) -> Path | None:
         return self.find(name, ArtifactKind.CODE, requester_dir=requester_dir)
+
+    def find_code_with_base(
+        self,
+        name: str,
+        *,
+        requester_dir: Path | None = None,
+    ) -> tuple[Path, Path] | None:
+        """Resolve a code file and the root directory that resolved it."""
+        return self._find_with_base(name, ArtifactKind.CODE, requester_dir=requester_dir)
 
     def find_deps_beside(self, code_path: Path, name: str, *, requester_dir: Path | None = None) -> Path | None:
         """Resolve the dependency sidecar at the selected body's own prefix.

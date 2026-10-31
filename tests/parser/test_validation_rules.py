@@ -317,3 +317,9 @@ def test_assignment_to_plain_string_is_rejected() -> None:
 def test_temporal_numeric_pair_rejects_none() -> None:
     assert _temporal_numeric_pair(None, "integer") is False
     assert _temporal_numeric_pair("integer", None) is False
+
+
+def test_allow_unresolved_external_datatypes_suppresses_unknown_names() -> None:
+    bp = _bp(variables=[_var("Bad", "NotAType")])
+    assert _codes(bp) == ["SL-V020"]
+    assert validate_basepicture(bp, allow_unresolved_external_datatypes=True) == ()

@@ -13,6 +13,7 @@ from pathlib import Path
 from typing import Literal
 
 from sattline_parser.models.ast_model import BasePicture, GraphicsBinding, SourceSpan
+from sattline_parser.validation.diagnostics import Diagnostic
 
 
 class LoadMode(Enum):
@@ -20,6 +21,18 @@ class LoadMode(Enum):
 
     DRAFT = "draft"
     OFFICIAL = "official"
+
+
+class LoadValidation(StrEnum):
+    """Whether the loader runs semantic validation while loading.
+
+    ``NONE`` parses only and leaves every program's diagnostics empty. ``FULL``
+    runs :func:`sattline_parser.validation.validate_basepicture` per program with
+    the definitions visible from already-loaded dependencies.
+    """
+
+    NONE = "none"
+    FULL = "full"
 
 
 @dataclass(frozen=True, slots=True)
@@ -166,6 +179,11 @@ class SattLineProgram:
     the resolved code file, exposed as provenance for consumer-side
     diagnostics and indexing; the artifact paths themselves remain on
     ``format`` and are otherwise internal to the loader.
+
+    ``library`` is the name of the root directory that resolved the body, and
+    ``resolved_base`` is that directory. ``diagnostics`` holds this program's
+    validation findings, including tentative ones produced when a part of its
+    dependency closure could not be loaded.
     """
 
     name: str
@@ -178,6 +196,12 @@ class SattLineProgram:
     deps_path: Path | None = None
     #: Whether that sidecar was absent, empty, or carried dependency names.
     sidecar: SidecarState = SidecarState.ABSENT
+    #: Root directory name that resolved the body.
+    library: str | None = None
+    #: Root directory that resolved the body.
+    resolved_base: Path | None = None
+    #: Validation findings for this program, in emission order.
+    diagnostics: tuple[Diagnostic, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -212,6 +236,7 @@ __all__ = [
     "LoadDiagnostic",
     "LoadDiagnosticKind",
     "LoadMode",
+    "LoadValidation",
     "ProgramFormat",
     "SattLineProgram",
     "SidecarState",

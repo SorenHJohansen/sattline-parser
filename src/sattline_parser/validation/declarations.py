@@ -194,18 +194,37 @@ def check_sibling_submodules(submodules: list[Submodule], errors: list[Diagnosti
 
 
 def check_variable_declarations(
-    variables: list[Variable], records: dict[str, DataType], errors: list[Diagnostic]
+    variables: list[Variable],
+    records: dict[str, DataType],
+    errors: list[Diagnostic],
+    *,
+    allow_unresolved_external_datatypes: bool = False,
 ) -> None:
     """Run per-variable datatype-reference and modifier checks (all scopes and fields)."""
     for variable in variables:
-        _check_datatype_reference(variable, records, errors)
+        _check_datatype_reference(
+            variable,
+            records,
+            errors,
+            allow_unresolved_external_datatypes=allow_unresolved_external_datatypes,
+        )
         _check_attribute_combination(variable, errors)
 
 
-def check_record_fields(records: dict[str, DataType], errors: list[Diagnostic]) -> None:
+def check_record_fields(
+    records: dict[str, DataType],
+    errors: list[Diagnostic],
+    *,
+    allow_unresolved_external_datatypes: bool = False,
+) -> None:
     """Validate each record field's declaration."""
     for record in records.values():
-        check_variable_declarations(record.var_list, records, errors)
+        check_variable_declarations(
+            record.var_list,
+            records,
+            errors,
+            allow_unresolved_external_datatypes=allow_unresolved_external_datatypes,
+        )
 
 
 # The OpSave rule is order-sensitive rather than a symmetric pair:
@@ -245,7 +264,13 @@ def _check_attribute_combination(variable: Variable, errors: list[Diagnostic]) -
             return
 
 
-def _check_datatype_reference(variable: Variable, records: dict[str, DataType], errors: list[Diagnostic]) -> None:
+def _check_datatype_reference(
+    variable: Variable,
+    records: dict[str, DataType],
+    errors: list[Diagnostic],
+    *,
+    allow_unresolved_external_datatypes: bool = False,
+) -> None:
     if isinstance(variable.datatype, Simple_DataType):
         return
     name = variable.datatype_text
@@ -261,6 +286,8 @@ def _check_datatype_reference(variable: Variable, records: dict[str, DataType], 
                 span=variable.declaration_span,
             )
         )
+        return
+    if allow_unresolved_external_datatypes:
         return
     errors.append(
         Diagnostic(

@@ -2,12 +2,16 @@
 
 This subpackage owns the project-level domain model and the loading behavior:
 how a set of SattLine artifacts resolves into ``SattLineProgram`` instances with
-a ``SattLineProject`` registry and a resolved ``DependencyGraph``.
+a ``SattLineProject`` registry, a resolved ``DependencyGraph``, and per-program
+validation findings.
 
-Phases 1-4 deliver the domain skeleton, file discovery and lookup, the
-parser-owned caches, wired ``SattLineProject.load`` with recursive dependency
-resolution, and ``.g`` / ``.y`` graphics companion parsing
-(see ``PARSER_PROJECT_LAYER_PLAN.md``).
+``SattLineProject.load`` resolves targets across ordered roots, reads dependency
+sidecars, loads dependencies first, parses ``.g`` / ``.y`` companions, and (with
+``validate=FULL``) runs the single-file validator against the definitions visible
+from already-loaded dependencies. The loader records library and origin
+provenance, marks external-dependent findings tentative when a non-strict load
+skips part of the closure, reports definition datecode conflicts, and returns
+dependency cycles as paths.
 """
 
 from __future__ import annotations
@@ -44,6 +48,7 @@ from .models import (
     LoadDiagnostic,
     LoadDiagnosticKind,
     LoadMode,
+    LoadValidation,
     ProgramFormat,
     SattLineProgram,
     SidecarState,
@@ -69,6 +74,7 @@ __all__ = [
     "LoadDiagnostic",
     "LoadDiagnosticKind",
     "LoadMode",
+    "LoadValidation",
     "ProgramFormat",
     "ProjectLoadError",
     "ProjectLoader",
