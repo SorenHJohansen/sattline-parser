@@ -155,4 +155,11 @@ where = ["src"]
 version = { attr = "sattline_parser.__version__.__version__" }
 
 [tool.setuptools.package-data]
-sattline_parser = ["py.typed", "grammar/*.lark", "preprocessing/*.json", "validation/*.json"]
+sattline_parser = [
+    "py.typed",
+    "grammar/*.lark",
+    "preprocessing/*.json",
+    "validation/*.json",
+    "builtins/*.json",
+    "builtins/*.md",
+]

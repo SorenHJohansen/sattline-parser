@@ -1,0 +1,5653 @@
+{
+  "meta": {
+    "generated_by": "scripts/gen_builtin_catalogue.py",
+    "documented_total": 171,
+    "carried_total": 180,
+    "typed_entries": 178,
+    "untyped_entries": 2,
+    "omissions": [],
+    "primary_source": {
+      "title": "SattLine Language User manual",
+      "edition": "System Version 3.1",
+      "sections": "Chapter 2, System procedures and functions (sections 2.6-2.35)"
+    },
+    "additional_sources": [
+      {
+        "title": "SattLine I/O and Communication User manual",
+        "edition": "System Version 3.1",
+        "names": [
+          "definestaticrouting",
+          "removestaticrouting"
+        ]
+      },
+      {
+        "title": "SattLine General and Graphics User manual",
+        "edition": "System Version 3.1",
+        "names": [
+          "savevariablecoded",
+          "vssgetlasterror"
+        ]
+      },
+      {
+        "title": "SattLine 3.1 Additional features",
+        "edition": "System Version 3.1-2",
+        "names": [
+          "getuseridletime"
+        ]
+      }
+    ],
+    "not_located": {
+      "count": 9,
+      "names": [
+        "getrecordcompnosort",
+        "getsystemtype",
+        "getthissystemname",
+        "getuserfullname",
+        "graycodetointeger",
+        "integertograycode",
+        "isinsimulate",
+        "putrecordcompnosort",
+        "setbooleanvalue"
+      ],
+      "reason": "Carried from the transcribed table so arity checks keep working for them; no public manual in the reference set documents these names."
+    },
+    "aliases": {
+      "EqualString": "equalstrings"
+    }
+  },
+  "functions": {
+    "abs": {
+      "kind": "function",
+      "return_type": "AnyType",
+      "precision_scangroup": true,
+      "typed": true,
+      "parameters": [
+        {
+          "name": "Argument",
+          "datatype": "AnyType",
+          "direction": "in",
+          "sorting": "RS",
+          "ownership": "RO"
+        }
+      ]
+    },
+    "acof1": {
+      "kind": "function",
+      "return_type": "Boolean",
+      "precision_scangroup": true,
+      "typed": true,
+      "parameters": [
+        {
+          "name": "Acof",
+          "datatype": "AcofType",
+          "direction": "inout",
+          "sorting": "RS/WS",
+          "ownership": "RO/WO"
+        },
+        {
+          "name": "OO",
+          "datatype": "Boolean",
+          "direction": "in",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "OC",
+          "datatype": "Boolean",
+          "direction": "in",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "O",
+          "datatype": "Boolean",
+          "direction": "in",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "C",
+          "datatype": "Boolean",
+          "direction": "in",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "Time",
+          "datatype": "Duration",
+          "direction": "in var",
+          "sorting": "RS",
+          "ownership": "RO"
+        }
+      ]
+    },
+    "acof2": {
+      "kind": "function",
+      "return_type": "Boolean",
+      "precision_scangroup": true,
+      "typed": true,
+      "parameters": [
+        {
+          "name": "Acof",
+          "datatype": "AcofType",
+          "direction": "inout",
+          "sorting": "RS/WS",
+          "ownership": "RO/WO"
+        },
+        {
+          "name": "OO",
+          "datatype": "Boolean",
+          "direction": "in",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "O",
+          "datatype": "Boolean",
+          "direction": "in",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "C",
+          "datatype": "Boolean",
+          "direction": "in",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "Time",
+          "datatype": "Duration",
+          "direction": "in var",
+          "sorting": "RS",
+          "ownership": "RO"
+        }
+      ]
+    },
+    "acof3": {
+      "kind": "function",
+      "return_type": "Boolean",
+      "precision_scangroup": true,
+      "typed": true,
+      "parameters": [
+        {
+          "name": "Acof",
+          "datatype": "AcofType",
+          "direction": "inout",
+          "sorting": "RS/WS",
+          "ownership": "RO/WO"
+        },
+        {
+          "name": "OO",
+          "datatype": "Boolean",
+          "direction": "in",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "O",
+          "datatype": "Boolean",
+          "direction": "in",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "Time",
+          "datatype": "Duration",
+          "direction": "in var",
+          "sorting": "RS",
+          "ownership": "RO"
+        }
+      ]
+    },
+    "acof4": {
+      "kind": "function",
+      "return_type": "Boolean",
+      "precision_scangroup": true,
+      "typed": true,
+      "parameters": [
+        {
+          "name": "Acof",
+          "datatype": "AcofType",
+          "direction": "inout",
+          "sorting": "RS/WS",
+          "ownership": "RO/WO"
+        },
+        {
+          "name": "OO",
+          "datatype": "Boolean",
+          "direction": "in",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "OH",
+          "datatype": "Boolean",
+          "direction": "in",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "O",
+          "datatype": "Boolean",
+          "direction": "in",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "C",
+          "datatype": "Boolean",
+          "direction": "in",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "Time",
+          "datatype": "Duration",
+          "direction": "in var",
+          "sorting": "RS",
+          "ownership": "RO"
+        }
+      ]
+    },
+    "acof5": {
+      "kind": "function",
+      "return_type": "Boolean",
+      "precision_scangroup": true,
+      "typed": true,
+      "parameters": [
+        {
+          "name": "Acof",
+          "datatype": "AcofType",
+          "direction": "inout",
+          "sorting": "RS/WS",
+          "ownership": "RO/WO"
+        },
+        {
+          "name": "OO",
+          "datatype": "Boolean",
+          "direction": "in",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "C",
+          "datatype": "Boolean",
+          "direction": "in",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "Time",
+          "datatype": "Duration",
+          "direction": "in var",
+          "sorting": "RS",
+          "ownership": "RO"
+        }
+      ]
+    },
+    "acof8": {
+      "kind": "function",
+      "return_type": "Boolean",
+      "precision_scangroup": true,
+      "typed": true,
+      "parameters": [
+        {
+          "name": "Acof",
+          "datatype": "AcofType",
+          "direction": "inout",
+          "sorting": "RS/WS",
+          "ownership": "RO/WO"
+        },
+        {
+          "name": "OO",
+          "datatype": "Boolean",
+          "direction": "in",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "OC",
+          "datatype": "Boolean",
+          "direction": "in",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "O",
+          "datatype": "Boolean",
+          "direction": "in",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "Time",
+          "datatype": "Duration",
+          "direction": "in var",
+          "sorting": "RS",
+          "ownership": "RO"
+        }
+      ]
+    },
+    "acof9": {
+      "kind": "function",
+      "return_type": "Boolean",
+      "precision_scangroup": true,
+      "typed": true,
+      "parameters": [
+        {
+          "name": "Acof",
+          "datatype": "AcofType",
+          "direction": "inout",
+          "sorting": "RS/WS",
+          "ownership": "RO/WO"
+        },
+        {
+          "name": "OO",
+          "datatype": "Boolean",
+          "direction": "in",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "OC",
+          "datatype": "Boolean",
+          "direction": "in",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "C",
+          "datatype": "Boolean",
+          "direction": "in",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "Time",
+          "datatype": "Duration",
+          "direction": "in var",
+          "sorting": "RS",
+          "ownership": "RO"
+        }
+      ]
+    },
+    "adddurations": {
+      "kind": "procedure",
+      "return_type": null,
+      "precision_scangroup": true,
+      "typed": true,
+      "parameters": [
+        {
+          "name": "Duration",
+          "datatype": "Duration",
+          "direction": "in var",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "Duration",
+          "datatype": "Duration",
+          "direction": "in var",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "DurationSum",
+          "datatype": "Duration",
+          "direction": "out",
+          "sorting": "WS",
+          "ownership": "WO"
+        },
+        {
+          "name": "Status",
+          "datatype": "Integer",
+          "direction": "out",
+          "sorting": "WS",
+          "ownership": "WO"
+        }
+      ]
+    },
+    "addtimeandduration": {
+      "kind": "procedure",
+      "return_type": null,
+      "precision_scangroup": true,
+      "typed": true,
+      "parameters": [
+        {
+          "name": "Time",
+          "datatype": "Time",
+          "direction": "in var",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "Duration",
+          "datatype": "Duration",
+          "direction": "in var",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "Time",
+          "datatype": "Time",
+          "direction": "out",
+          "sorting": "WS",
+          "ownership": "WO"
+        },
+        {
+          "name": "Status",
+          "datatype": "Integer",
+          "direction": "out",
+          "sorting": "WS",
+          "ownership": "WO"
+        }
+      ]
+    },
+    "arctan": {
+      "kind": "function",
+      "return_type": "Real",
+      "precision_scangroup": true,
+      "typed": true,
+      "parameters": [
+        {
+          "name": "Argument",
+          "datatype": "Real",
+          "direction": "in",
+          "sorting": "RS",
+          "ownership": "RO"
+        }
+      ]
+    },
+    "asciirecordtostring": {
+      "kind": "procedure",
+      "return_type": null,
+      "precision_scangroup": false,
+      "typed": true,
+      "parameters": [
+        {
+          "name": "IntegerRecord",
+          "datatype": "AnyType",
+          "direction": "in var",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "NoOfCharacters",
+          "datatype": "Integer",
+          "direction": "in",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "NoOfCharsPerInteger",
+          "datatype": "Integer",
+          "direction": "in",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "String",
+          "datatype": "String",
+          "direction": "out",
+          "sorting": "WS",
+          "ownership": "WO"
+        },
+        {
+          "name": "Status",
+          "datatype": "Integer",
+          "direction": "out",
+          "sorting": "WS",
+          "ownership": "WO"
+        }
+      ]
+    },
+    "assignsystemboolean": {
+      "kind": "procedure",
+      "return_type": null,
+      "precision_scangroup": false,
+      "typed": true,
+      "parameters": [
+        {
+          "name": "SysVarId",
+          "datatype": "String",
+          "direction": "in",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "SystemVarBoolVal",
+          "datatype": "Boolean",
+          "direction": "in",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "Status",
+          "datatype": "Integer",
+          "direction": "out",
+          "sorting": "WS",
+          "ownership": "WO"
+        }
+      ]
+    },
+    "assignsysteminteger": {
+      "kind": "procedure",
+      "return_type": null,
+      "precision_scangroup": false,
+      "typed": true,
+      "parameters": [
+        {
+          "name": "SysVarId",
+          "datatype": "String",
+          "direction": "in",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "SystemVarIntVal",
+          "datatype": "Integer",
+          "direction": "in",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "Status",
+          "datatype": "Integer",
+          "direction": "out",
+          "sorting": "WS",
+          "ownership": "WO"
+        }
+      ]
+    },
+    "assignsystemreal": {
+      "kind": "procedure",
+      "return_type": null,
+      "precision_scangroup": false,
+      "typed": true,
+      "parameters": [
+        {
+          "name": "SysVarId",
+          "datatype": "String",
+          "direction": "in",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "SystemVarRealVal",
+          "datatype": "Real",
+          "direction": "in",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "Status",
+          "datatype": "Integer",
+          "direction": "out",
+          "sorting": "WS",
+          "ownership": "WO"
+        }
+      ]
+    },
+    "assignsystemstring": {
+      "kind": "procedure",
+      "return_type": null,
+      "precision_scangroup": false,
+      "typed": true,
+      "parameters": [
+        {
+          "name": "SysVarId",
+          "datatype": "String",
+          "direction": "in",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "SystemVarStringVal",
+          "datatype": "String",
+          "direction": "in",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "Status",
+          "datatype": "Integer",
+          "direction": "out",
+          "sorting": "WS",
+          "ownership": "WO"
+        }
+      ]
+    },
+    "bcdtointeger": {
+      "kind": "procedure",
+      "return_type": null,
+      "precision_scangroup": true,
+      "typed": true,
+      "parameters": [
+        {
+          "name": "BCD",
+          "datatype": "Integer",
+          "direction": "in",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "Int",
+          "datatype": "Integer",
+          "direction": "out",
+          "sorting": "WS",
+          "ownership": "WO"
+        },
+        {
+          "name": "Status",
+          "datatype": "Integer",
+          "direction": "out",
+          "sorting": "WS",
+          "ownership": "WO"
+        }
+      ]
+    },
+    "boolean16tointeger": {
+      "kind": "procedure",
+      "return_type": null,
+      "precision_scangroup": true,
+      "typed": true,
+      "parameters": [
+        {
+          "name": "BooleanRecord",
+          "datatype": "AnyType",
+          "direction": "in var",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "Int",
+          "datatype": "Integer",
+          "direction": "out",
+          "sorting": "WS",
+          "ownership": "WO"
+        },
+        {
+          "name": "Status",
+          "datatype": "Integer",
+          "direction": "out",
+          "sorting": "WS",
+          "ownership": "WO"
+        }
+      ]
+    },
+    "boolean32tointeger": {
+      "kind": "procedure",
+      "return_type": null,
+      "precision_scangroup": true,
+      "typed": true,
+      "parameters": [
+        {
+          "name": "BooleanRecord",
+          "datatype": "AnyType",
+          "direction": "in var",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "Int",
+          "datatype": "Integer",
+          "direction": "out",
+          "sorting": "WS",
+          "ownership": "WO"
+        },
+        {
+          "name": "Status",
+          "datatype": "Integer",
+          "direction": "out",
+          "sorting": "WS",
+          "ownership": "WO"
+        }
+      ]
+    },
+    "checksum": {
+      "kind": "procedure",
+      "return_type": null,
+      "precision_scangroup": false,
+      "typed": true,
+      "parameters": [
+        {
+          "name": "Data",
+          "datatype": "AnyType",
+          "direction": "in var",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "StartPos",
+          "datatype": "Integer",
+          "direction": "in",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "StopPos",
+          "datatype": "Integer",
+          "direction": "in",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "Type",
+          "datatype": "Integer",
+          "direction": "in",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "Result",
+          "datatype": "Integer",
+          "direction": "out",
+          "sorting": "WS",
+          "ownership": "WO"
+        },
+        {
+          "name": "Status",
+          "datatype": "Integer",
+          "direction": "out",
+          "sorting": "WS",
+          "ownership": "WO"
+        }
+      ]
+    },
+    "clearqueue": {
+      "kind": "procedure",
+      "return_type": null,
+      "precision_scangroup": false,
+      "typed": true,
+      "parameters": [
+        {
+          "name": "Queue",
+          "datatype": "QueueObject",
+          "direction": "in var",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "Status",
+          "datatype": "Integer",
+          "direction": "out",
+          "sorting": "WS",
+          "ownership": "WO"
+        }
+      ]
+    },
+    "clearstring": {
+      "kind": "procedure",
+      "return_type": null,
+      "precision_scangroup": false,
+      "typed": true,
+      "parameters": [
+        {
+          "name": "String",
+          "datatype": "String",
+          "direction": "out",
+          "sorting": "WS",
+          "ownership": "WO"
+        }
+      ]
+    },
+    "closedevice": {
+      "kind": "procedure",
+      "return_type": null,
+      "precision_scangroup": false,
+      "typed": true,
+      "parameters": [
+        {
+          "name": "DeviceRef",
+          "datatype": "tObject",
+          "direction": "in",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "AsyncOperation",
+          "datatype": "AsyncOperation",
+          "direction": "inout",
+          "sorting": "RS/WS",
+          "ownership": "RO/WO"
+        },
+        {
+          "name": "DebugStatus",
+          "datatype": "Integer",
+          "direction": "out",
+          "sorting": "WS",
+          "ownership": "WO"
+        }
+      ]
+    },
+    "closefile": {
+      "kind": "procedure",
+      "return_type": null,
+      "precision_scangroup": false,
+      "typed": true,
+      "parameters": [
+        {
+          "name": "FileRef",
+          "datatype": "tObject",
+          "direction": "in var",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "AsyncOperation",
+          "datatype": "AsyncOperation",
+          "direction": "inout",
+          "sorting": "RS/WS",
+          "ownership": "RO/WO"
+        },
+        {
+          "name": "DebugStatus",
+          "datatype": "Integer",
+          "direction": "out",
+          "sorting": "WS",
+          "ownership": "WO"
+        }
+      ]
+    },
+    "comlidial": {
+      "kind": "procedure",
+      "return_type": null,
+      "precision_scangroup": false,
+      "typed": true,
+      "parameters": [
+        {
+          "name": "ComliMaster",
+          "datatype": "tObject",
+          "direction": "in",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "TelePhoneNo",
+          "datatype": "String",
+          "direction": "in",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "AsyncOperation",
+          "datatype": "AsyncOperation",
+          "direction": "inout",
+          "sorting": "RS/WS",
+          "ownership": "RO/WO"
+        },
+        {
+          "name": "DebugStatus",
+          "datatype": "Integer",
+          "direction": "out",
+          "sorting": "WS",
+          "ownership": "WO"
+        }
+      ]
+    },
+    "comlihangup": {
+      "kind": "procedure",
+      "return_type": null,
+      "precision_scangroup": false,
+      "typed": true,
+      "parameters": [
+        {
+          "name": "ComliMaster",
+          "datatype": "tObject",
+          "direction": "in",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "AsyncOperation",
+          "datatype": "AsyncOperation",
+          "direction": "inout",
+          "sorting": "RS/WS",
+          "ownership": "RO/WO"
+        },
+        {
+          "name": "DebugStatus",
+          "datatype": "Integer",
+          "direction": "out",
+          "sorting": "WS",
+          "ownership": "WO"
+        }
+      ]
+    },
+    "concatenate": {
+      "kind": "procedure",
+      "return_type": null,
+      "precision_scangroup": false,
+      "typed": true,
+      "parameters": [
+        {
+          "name": "String1",
+          "datatype": "String",
+          "direction": "in var",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "String2",
+          "datatype": "String",
+          "direction": "in var",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "Result",
+          "datatype": "String",
+          "direction": "out",
+          "sorting": "WS",
+          "ownership": "WO"
+        },
+        {
+          "name": "Status",
+          "datatype": "Integer",
+          "direction": "out",
+          "sorting": "WS",
+          "ownership": "WO"
+        }
+      ]
+    },
+    "copyduration": {
+      "kind": "procedure",
+      "return_type": null,
+      "precision_scangroup": true,
+      "typed": true,
+      "parameters": [
+        {
+          "name": "Source",
+          "datatype": "Duration",
+          "direction": "in var",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "Destination",
+          "datatype": "Duration",
+          "direction": "out",
+          "sorting": "WS",
+          "ownership": "WO"
+        }
+      ]
+    },
+    "copystring": {
+      "kind": "procedure",
+      "return_type": null,
+      "precision_scangroup": true,
+      "typed": true,
+      "parameters": [
+        {
+          "name": "Source",
+          "datatype": "String",
+          "direction": "in",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "Destination",
+          "datatype": "String",
+          "direction": "out",
+          "sorting": "WS",
+          "ownership": "WO"
+        },
+        {
+          "name": "Status",
+          "datatype": "Integer",
+          "direction": "out",
+          "sorting": "WS",
+          "ownership": "WO"
+        }
+      ]
+    },
+    "copystringnosort": {
+      "kind": "procedure",
+      "return_type": null,
+      "precision_scangroup": true,
+      "typed": true,
+      "parameters": [
+        {
+          "name": "Source",
+          "datatype": "String",
+          "direction": "in var",
+          "sorting": "NoS",
+          "ownership": "RO"
+        },
+        {
+          "name": "Destination",
+          "datatype": "String",
+          "direction": "out",
+          "sorting": "NoS",
+          "ownership": "WO"
+        },
+        {
+          "name": "Status",
+          "datatype": "Integer",
+          "direction": "out",
+          "sorting": "WS",
+          "ownership": "WO"
+        }
+      ]
+    },
+    "copytime": {
+      "kind": "procedure",
+      "return_type": null,
+      "precision_scangroup": true,
+      "typed": true,
+      "parameters": [
+        {
+          "name": "Source",
+          "datatype": "Time",
+          "direction": "in var",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "Destination",
+          "datatype": "Time",
+          "direction": "out",
+          "sorting": "WS",
+          "ownership": "WO"
+        }
+      ]
+    },
+    "copyvariable": {
+      "kind": "procedure",
+      "return_type": null,
+      "precision_scangroup": true,
+      "typed": true,
+      "parameters": [
+        {
+          "name": "Source",
+          "datatype": "AnyType",
+          "direction": "in var",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "Destination",
+          "datatype": "AnyType",
+          "direction": "out",
+          "sorting": "WS",
+          "ownership": "WO"
+        },
+        {
+          "name": "Status",
+          "datatype": "Integer",
+          "direction": "out",
+          "sorting": "WS",
+          "ownership": "WO"
+        }
+      ]
+    },
+    "copyvarnosort": {
+      "kind": "procedure",
+      "return_type": null,
+      "precision_scangroup": true,
+      "typed": true,
+      "parameters": [
+        {
+          "name": "Source",
+          "datatype": "AnyType",
+          "direction": "in var",
+          "sorting": "NoS",
+          "ownership": "RO"
+        },
+        {
+          "name": "Destination",
+          "datatype": "AnyType",
+          "direction": "out",
+          "sorting": "NoS",
+          "ownership": "WO"
+        },
+        {
+          "name": "Status",
+          "datatype": "Integer",
+          "direction": "out",
+          "sorting": "WS",
+          "ownership": "WO"
+        }
+      ]
+    },
+    "cos": {
+      "kind": "function",
+      "return_type": "Real",
+      "precision_scangroup": true,
+      "typed": true,
+      "parameters": [
+        {
+          "name": "Argument",
+          "datatype": "Real",
+          "direction": "in",
+          "sorting": "RS",
+          "ownership": "RO"
+        }
+      ]
+    },
+    "createarray": {
+      "kind": "procedure",
+      "return_type": null,
+      "precision_scangroup": false,
+      "typed": true,
+      "parameters": [
+        {
+          "name": "Array",
+          "datatype": "ArrayObject",
+          "direction": "out",
+          "sorting": "WS",
+          "ownership": "WO"
+        },
+        {
+          "name": "FirstIndex",
+          "datatype": "Integer",
+          "direction": "in",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "LastIndex",
+          "datatype": "Integer",
+          "direction": "in",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "ArrayElement",
+          "datatype": "AnyType",
+          "direction": "in var",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "Status",
+          "datatype": "Integer",
+          "direction": "out",
+          "sorting": "WS",
+          "ownership": "WO"
+        }
+      ]
+    },
+    "createdevice": {
+      "kind": "procedure",
+      "return_type": null,
+      "precision_scangroup": false,
+      "typed": true,
+      "parameters": [
+        {
+          "name": "Device",
+          "datatype": "String",
+          "direction": "in",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "Status",
+          "datatype": "Integer",
+          "direction": "out",
+          "sorting": "WS",
+          "ownership": "WO"
+        }
+      ]
+    },
+    "createqueue": {
+      "kind": "procedure",
+      "return_type": null,
+      "precision_scangroup": false,
+      "typed": true,
+      "parameters": [
+        {
+          "name": "Queue",
+          "datatype": "QueueObject",
+          "direction": "out",
+          "sorting": "WS",
+          "ownership": "WO"
+        },
+        {
+          "name": "Size",
+          "datatype": "Integer",
+          "direction": "in",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "QueueElement",
+          "datatype": "AnyType",
+          "direction": "in var",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "Status",
+          "datatype": "Integer",
+          "direction": "out",
+          "sorting": "WS",
+          "ownership": "WO"
+        }
+      ]
+    },
+    "createwritefile": {
+      "kind": "procedure",
+      "return_type": null,
+      "precision_scangroup": false,
+      "typed": true,
+      "parameters": [
+        {
+          "name": "FileRef",
+          "datatype": "tObject",
+          "direction": "out",
+          "sorting": "WS",
+          "ownership": "WO"
+        },
+        {
+          "name": "FileName",
+          "datatype": "String",
+          "direction": "in",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "AsyncOperation",
+          "datatype": "AsyncOperation",
+          "direction": "inout",
+          "sorting": "RS/WS",
+          "ownership": "RO/WO"
+        },
+        {
+          "name": "DebugStatus",
+          "datatype": "Integer",
+          "direction": "out",
+          "sorting": "WS",
+          "ownership": "WO"
+        }
+      ]
+    },
+    "currentqueuesize": {
+      "kind": "function",
+      "return_type": "Integer",
+      "precision_scangroup": false,
+      "typed": true,
+      "parameters": [
+        {
+          "name": "Queue",
+          "datatype": "QueueObject",
+          "direction": "in var",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "Status",
+          "datatype": "Integer",
+          "direction": "out",
+          "sorting": "WS",
+          "ownership": "WO"
+        }
+      ]
+    },
+    "currentuser": {
+      "kind": "procedure",
+      "return_type": null,
+      "precision_scangroup": false,
+      "typed": true,
+      "parameters": [
+        {
+          "name": "UserName",
+          "datatype": "String",
+          "direction": "out",
+          "sorting": "WS",
+          "ownership": "WO"
+        },
+        {
+          "name": "UserClassName",
+          "datatype": "String",
+          "direction": "out",
+          "sorting": "WS",
+          "ownership": "WO"
+        }
+      ]
+    },
+    "cutstring": {
+      "kind": "procedure",
+      "return_type": null,
+      "precision_scangroup": false,
+      "typed": true,
+      "parameters": [
+        {
+          "name": "String",
+          "datatype": "String",
+          "direction": "out",
+          "sorting": "WS",
+          "ownership": "WO"
+        },
+        {
+          "name": "Length",
+          "datatype": "Integer",
+          "direction": "in",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "Status",
+          "datatype": "Integer",
+          "direction": "out",
+          "sorting": "WS",
+          "ownership": "WO"
+        }
+      ]
+    },
+    "definestaticrouting": {
+      "kind": "procedure",
+      "return_type": null,
+      "precision_scangroup": false,
+      "typed": true,
+      "parameters": [
+        {
+          "name": "RedundantRoutingInfo",
+          "datatype": "Boolean",
+          "direction": "in",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "RemoteSystem",
+          "datatype": "String",
+          "direction": "in",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "LocalPort",
+          "datatype": "String",
+          "direction": "in",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "PortInNextSystem",
+          "datatype": "String",
+          "direction": "in",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "Status",
+          "datatype": "Integer",
+          "direction": "out",
+          "sorting": "WS",
+          "ownership": "WO"
+        }
+      ]
+    },
+    "deletearray": {
+      "kind": "procedure",
+      "return_type": null,
+      "precision_scangroup": false,
+      "typed": true,
+      "parameters": [
+        {
+          "name": "Array",
+          "datatype": "ArrayObject",
+          "direction": "out",
+          "sorting": "WS",
+          "ownership": "WO"
+        },
+        {
+          "name": "Status",
+          "datatype": "Integer",
+          "direction": "out",
+          "sorting": "WS",
+          "ownership": "WO"
+        }
+      ]
+    },
+    "deleteeditfile": {
+      "kind": "procedure",
+      "return_type": null,
+      "precision_scangroup": false,
+      "typed": true,
+      "parameters": [
+        {
+          "name": "FileName",
+          "datatype": "String",
+          "direction": "in",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "Status",
+          "datatype": "Integer",
+          "direction": "out",
+          "sorting": "WS",
+          "ownership": "WO"
+        }
+      ]
+    },
+    "deletefile": {
+      "kind": "procedure",
+      "return_type": null,
+      "precision_scangroup": false,
+      "typed": true,
+      "parameters": [
+        {
+          "name": "FileName",
+          "datatype": "String",
+          "direction": "in",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "AsyncOperation",
+          "datatype": "AsyncOperation",
+          "direction": "inout",
+          "sorting": "RS/WS",
+          "ownership": "RO/WO"
+        },
+        {
+          "name": "DebugStatus",
+          "datatype": "Integer",
+          "direction": "out",
+          "sorting": "WS",
+          "ownership": "WO"
+        }
+      ]
+    },
+    "deletequeue": {
+      "kind": "procedure",
+      "return_type": null,
+      "precision_scangroup": false,
+      "typed": true,
+      "parameters": [
+        {
+          "name": "Queue",
+          "datatype": "QueueObject",
+          "direction": "out",
+          "sorting": "WS",
+          "ownership": "WO"
+        },
+        {
+          "name": "Status",
+          "datatype": "Integer",
+          "direction": "out",
+          "sorting": "WS",
+          "ownership": "WO"
+        }
+      ]
+    },
+    "deletewindow": {
+      "kind": "procedure",
+      "return_type": null,
+      "precision_scangroup": false,
+      "typed": true,
+      "parameters": [
+        {
+          "name": "ModulePath",
+          "datatype": "String",
+          "direction": "in",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "SelectClass",
+          "datatype": "Integer",
+          "direction": "in",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "Status",
+          "datatype": "Integer",
+          "direction": "out",
+          "sorting": "WS",
+          "ownership": "WO"
+        }
+      ]
+    },
+    "durationgreaterthan": {
+      "kind": "function",
+      "return_type": "Boolean",
+      "precision_scangroup": true,
+      "typed": true,
+      "parameters": [
+        {
+          "name": "Duration",
+          "datatype": "Duration",
+          "direction": "in var",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "Duration",
+          "datatype": "Duration",
+          "direction": "in var",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "Status",
+          "datatype": "Integer",
+          "direction": "out",
+          "sorting": "WS",
+          "ownership": "WO"
+        }
+      ]
+    },
+    "durationtodurrec": {
+      "kind": "procedure",
+      "return_type": null,
+      "precision_scangroup": true,
+      "typed": true,
+      "parameters": [
+        {
+          "name": "Duration",
+          "datatype": "Duration",
+          "direction": "in var",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "DurationRecord",
+          "datatype": "DurationRecord",
+          "direction": "out",
+          "sorting": "WS",
+          "ownership": "WO"
+        },
+        {
+          "name": "Status",
+          "datatype": "Integer",
+          "direction": "out",
+          "sorting": "WS",
+          "ownership": "WO"
+        }
+      ]
+    },
+    "durationtostring": {
+      "kind": "procedure",
+      "return_type": null,
+      "precision_scangroup": false,
+      "typed": true,
+      "parameters": [
+        {
+          "name": "Duration",
+          "datatype": "Duration",
+          "direction": "in var",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "DurationString",
+          "datatype": "String",
+          "direction": "out",
+          "sorting": "WS",
+          "ownership": "WO"
+        },
+        {
+          "name": "Status",
+          "datatype": "Integer",
+          "direction": "out",
+          "sorting": "WS",
+          "ownership": "WO"
+        }
+      ]
+    },
+    "durrectoduration": {
+      "kind": "procedure",
+      "return_type": null,
+      "precision_scangroup": true,
+      "typed": true,
+      "parameters": [
+        {
+          "name": "DurationRecord",
+          "datatype": "DurationRecord",
+          "direction": "in var",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "Duration",
+          "datatype": "Duration",
+          "direction": "out",
+          "sorting": "WS",
+          "ownership": "WO"
+        },
+        {
+          "name": "Status",
+          "datatype": "Integer",
+          "direction": "out",
+          "sorting": "WS",
+          "ownership": "WO"
+        }
+      ]
+    },
+    "elapsed": {
+      "kind": "function",
+      "return_type": "Integer",
+      "precision_scangroup": true,
+      "typed": true,
+      "parameters": [
+        {
+          "name": "Timer",
+          "datatype": "Timer",
+          "direction": "in var",
+          "sorting": "RS",
+          "ownership": "RO"
+        }
+      ]
+    },
+    "equal": {
+      "kind": "function",
+      "return_type": "Boolean",
+      "precision_scangroup": true,
+      "typed": true,
+      "parameters": [
+        {
+          "name": "Variable",
+          "datatype": "AnyType",
+          "direction": "in var",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "Variable",
+          "datatype": "AnyType",
+          "direction": "in var",
+          "sorting": "RS",
+          "ownership": "RO"
+        }
+      ]
+    },
+    "equalstrings": {
+      "kind": "function",
+      "return_type": "Boolean",
+      "precision_scangroup": true,
+      "typed": true,
+      "parameters": [
+        {
+          "name": "String1",
+          "datatype": "String",
+          "direction": "in",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "String2",
+          "datatype": "String",
+          "direction": "in",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "CaseSensitive",
+          "datatype": "Boolean",
+          "direction": "in",
+          "sorting": "RS",
+          "ownership": "RO"
+        }
+      ]
+    },
+    "equalvariables": {
+      "kind": "function",
+      "return_type": "Boolean",
+      "precision_scangroup": true,
+      "typed": true,
+      "parameters": [
+        {
+          "name": "Variable",
+          "datatype": "AnyType",
+          "direction": "in var",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "Variable",
+          "datatype": "AnyType",
+          "direction": "in var",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "Status",
+          "datatype": "Integer",
+          "direction": "out",
+          "sorting": "WS",
+          "ownership": "WO"
+        }
+      ]
+    },
+    "exp": {
+      "kind": "function",
+      "return_type": "Real",
+      "precision_scangroup": true,
+      "typed": true,
+      "parameters": [
+        {
+          "name": "Argument",
+          "datatype": "Real",
+          "direction": "in",
+          "sorting": "RS",
+          "ownership": "RO"
+        }
+      ]
+    },
+    "extractstring": {
+      "kind": "procedure",
+      "return_type": null,
+      "precision_scangroup": false,
+      "typed": true,
+      "parameters": [
+        {
+          "name": "String",
+          "datatype": "String",
+          "direction": "out",
+          "sorting": "WS",
+          "ownership": "WO"
+        },
+        {
+          "name": "String2",
+          "datatype": "String",
+          "direction": "in var",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "Length",
+          "datatype": "Integer",
+          "direction": "in",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "Status",
+          "datatype": "Integer",
+          "direction": "out",
+          "sorting": "WS",
+          "ownership": "WO"
+        }
+      ]
+    },
+    "fdurationtostring": {
+      "kind": "procedure",
+      "return_type": null,
+      "precision_scangroup": false,
+      "typed": true,
+      "parameters": [
+        {
+          "name": "Duration",
+          "datatype": "Duration",
+          "direction": "in var",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "DurationFormat",
+          "datatype": "String",
+          "direction": "in",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "DurationString",
+          "datatype": "String",
+          "direction": "out",
+          "sorting": "WS",
+          "ownership": "WO"
+        },
+        {
+          "name": "Status",
+          "datatype": "Integer",
+          "direction": "out",
+          "sorting": "WS",
+          "ownership": "WO"
+        }
+      ]
+    },
+    "fileexists": {
+      "kind": "procedure",
+      "return_type": null,
+      "precision_scangroup": false,
+      "typed": true,
+      "parameters": [
+        {
+          "name": "FileName",
+          "datatype": "String",
+          "direction": "in",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "AsyncOperation",
+          "datatype": "AsyncOperation",
+          "direction": "inout",
+          "sorting": "RS/WS",
+          "ownership": "RO/WO"
+        },
+        {
+          "name": "DebugStatus",
+          "datatype": "Integer",
+          "direction": "out",
+          "sorting": "WS",
+          "ownership": "WO"
+        }
+      ]
+    },
+    "getarray": {
+      "kind": "procedure",
+      "return_type": null,
+      "precision_scangroup": false,
+      "typed": true,
+      "parameters": [
+        {
+          "name": "Array",
+          "datatype": "ArrayObject",
+          "direction": "in var",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "Index",
+          "datatype": "Integer",
+          "direction": "in",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "ArrayElement",
+          "datatype": "AnyType",
+          "direction": "out",
+          "sorting": "WS",
+          "ownership": "WO"
+        },
+        {
+          "name": "Status",
+          "datatype": "Integer",
+          "direction": "out",
+          "sorting": "WS",
+          "ownership": "WO"
+        }
+      ]
+    },
+    "getascii": {
+      "kind": "function",
+      "return_type": "Integer",
+      "precision_scangroup": false,
+      "typed": true,
+      "parameters": [
+        {
+          "name": "Str",
+          "datatype": "String",
+          "direction": "in var",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "Status",
+          "datatype": "Integer",
+          "direction": "out",
+          "sorting": "WS",
+          "ownership": "WO"
+        }
+      ]
+    },
+    "getfirstqueue": {
+      "kind": "procedure",
+      "return_type": null,
+      "precision_scangroup": false,
+      "typed": true,
+      "parameters": [
+        {
+          "name": "Queue",
+          "datatype": "QueueObject",
+          "direction": "in var",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "QueueElement",
+          "datatype": "AnyType",
+          "direction": "out",
+          "sorting": "WS",
+          "ownership": "WO"
+        },
+        {
+          "name": "Status",
+          "datatype": "Integer",
+          "direction": "out",
+          "sorting": "WS",
+          "ownership": "WO"
+        }
+      ]
+    },
+    "getlastqueue": {
+      "kind": "procedure",
+      "return_type": null,
+      "precision_scangroup": false,
+      "typed": true,
+      "parameters": [
+        {
+          "name": "Queue",
+          "datatype": "QueueObject",
+          "direction": "in var",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "QueueElement",
+          "datatype": "AnyType",
+          "direction": "out",
+          "sorting": "WS",
+          "ownership": "WO"
+        },
+        {
+          "name": "Status",
+          "datatype": "Integer",
+          "direction": "out",
+          "sorting": "WS",
+          "ownership": "WO"
+        }
+      ]
+    },
+    "getprivilegeflag": {
+      "kind": "function",
+      "return_type": "Boolean",
+      "precision_scangroup": false,
+      "typed": false,
+      "parameters": []
+    },
+    "getrecordcompnosort": {
+      "kind": "procedure",
+      "return_type": null,
+      "precision_scangroup": false,
+      "typed": true,
+      "parameters": [
+        {
+          "name": "Rec",
+          "datatype": "AnyType",
+          "direction": "in var",
+          "sorting": "NoS",
+          "ownership": "RO"
+        },
+        {
+          "name": "ComponentIndex",
+          "datatype": "Integer",
+          "direction": "in",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "ResultRec",
+          "datatype": "AnyType",
+          "direction": "out",
+          "sorting": "NoS",
+          "ownership": "WO"
+        },
+        {
+          "name": "Status",
+          "datatype": "Integer",
+          "direction": "out",
+          "sorting": "NoS",
+          "ownership": "WO"
+        }
+      ]
+    },
+    "getrecordcomponent": {
+      "kind": "procedure",
+      "return_type": null,
+      "precision_scangroup": false,
+      "typed": true,
+      "parameters": [
+        {
+          "name": "Rec",
+          "datatype": "AnyType",
+          "direction": "in var",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "ComponentIndex",
+          "datatype": "Integer",
+          "direction": "in",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "ResultRec",
+          "datatype": "AnyType",
+          "direction": "out",
+          "sorting": "WS",
+          "ownership": "WO"
+        },
+        {
+          "name": "Status",
+          "datatype": "Integer",
+          "direction": "out",
+          "sorting": "WS",
+          "ownership": "WO"
+        }
+      ]
+    },
+    "getremotefile": {
+      "kind": "procedure",
+      "return_type": null,
+      "precision_scangroup": false,
+      "typed": true,
+      "parameters": [
+        {
+          "name": "RemoteSystemIdentity",
+          "datatype": "String",
+          "direction": "in",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "RemoteFileName",
+          "datatype": "String",
+          "direction": "in",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "LocalFileName",
+          "datatype": "String",
+          "direction": "in",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "AsyncOperation",
+          "datatype": "AsyncOperation",
+          "direction": "inout",
+          "sorting": "RS/WS",
+          "ownership": "RO/WO"
+        },
+        {
+          "name": "DebugStatus",
+          "datatype": "Integer",
+          "direction": "out",
+          "sorting": "WS",
+          "ownership": "WO"
+        }
+      ]
+    },
+    "getremotesinglefile": {
+      "kind": "procedure",
+      "return_type": null,
+      "precision_scangroup": false,
+      "typed": true,
+      "parameters": [
+        {
+          "name": "RemoteSystemIdentity",
+          "datatype": "String",
+          "direction": "in",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "RemoteFileName",
+          "datatype": "String",
+          "direction": "in",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "LocalFileName",
+          "datatype": "String",
+          "direction": "in",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "AsyncOperation",
+          "datatype": "AsyncOperation",
+          "direction": "inout",
+          "sorting": "RS/WS",
+          "ownership": "RO/WO"
+        },
+        {
+          "name": "DebugStatus",
+          "datatype": "Integer",
+          "direction": "out",
+          "sorting": "WS",
+          "ownership": "WO"
+        }
+      ]
+    },
+    "getstringpos": {
+      "kind": "function",
+      "return_type": "Integer",
+      "precision_scangroup": false,
+      "typed": true,
+      "parameters": [
+        {
+          "name": "String",
+          "datatype": "String",
+          "direction": "inout",
+          "sorting": "NoS",
+          "ownership": "NoO"
+        }
+      ]
+    },
+    "getsystemtype": {
+      "kind": "function",
+      "return_type": "Integer",
+      "precision_scangroup": false,
+      "typed": true,
+      "parameters": []
+    },
+    "getthissystemname": {
+      "kind": "procedure",
+      "return_type": null,
+      "precision_scangroup": false,
+      "typed": true,
+      "parameters": [
+        {
+          "name": "ThisSystem",
+          "datatype": "String",
+          "direction": "out",
+          "sorting": "WS",
+          "ownership": "WO"
+        },
+        {
+          "name": "Status",
+          "datatype": "Integer",
+          "direction": "out",
+          "sorting": "WS",
+          "ownership": "WO"
+        }
+      ]
+    },
+    "gettime": {
+      "kind": "procedure",
+      "return_type": null,
+      "precision_scangroup": true,
+      "typed": true,
+      "parameters": [
+        {
+          "name": "Time",
+          "datatype": "Time",
+          "direction": "out",
+          "sorting": "WS",
+          "ownership": "WO"
+        },
+        {
+          "name": "Status",
+          "datatype": "Integer",
+          "direction": "out",
+          "sorting": "WS",
+          "ownership": "WO"
+        }
+      ]
+    },
+    "getuserfullname": {
+      "kind": "procedure",
+      "return_type": null,
+      "precision_scangroup": false,
+      "typed": true,
+      "parameters": [
+        {
+          "name": "UserName",
+          "datatype": "String",
+          "direction": "in",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "FullName",
+          "datatype": "String",
+          "direction": "out",
+          "sorting": "WS",
+          "ownership": "WO"
+        },
+        {
+          "name": "Status",
+          "datatype": "Integer",
+          "direction": "out",
+          "sorting": "WS",
+          "ownership": "WO"
+        }
+      ]
+    },
+    "getuseridletime": {
+      "kind": "function",
+      "return_type": "Integer",
+      "precision_scangroup": false,
+      "typed": true,
+      "parameters": []
+    },
+    "graycodetointeger": {
+      "kind": "procedure",
+      "return_type": null,
+      "precision_scangroup": true,
+      "typed": true,
+      "parameters": [
+        {
+          "name": "BooleanRecord",
+          "datatype": "AnyType",
+          "direction": "in var",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "Int",
+          "datatype": "Integer",
+          "direction": "out",
+          "sorting": "WS",
+          "ownership": "WO"
+        }
+      ]
+    },
+    "initvariable": {
+      "kind": "procedure",
+      "return_type": null,
+      "precision_scangroup": false,
+      "typed": true,
+      "parameters": [
+        {
+          "name": "Rec",
+          "datatype": "AnyType",
+          "direction": "out",
+          "sorting": "WS",
+          "ownership": "WO"
+        },
+        {
+          "name": "InitRec",
+          "datatype": "AnyType",
+          "direction": "in var",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "Status",
+          "datatype": "Integer",
+          "direction": "out",
+          "sorting": "WS",
+          "ownership": "WO"
+        }
+      ]
+    },
+    "insertarray": {
+      "kind": "procedure",
+      "return_type": null,
+      "precision_scangroup": false,
+      "typed": true,
+      "parameters": [
+        {
+          "name": "Array",
+          "datatype": "ArrayObject",
+          "direction": "in var",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "Index",
+          "datatype": "Integer",
+          "direction": "in",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "ArrayElement",
+          "datatype": "AnyType",
+          "direction": "in var",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "Status",
+          "datatype": "Integer",
+          "direction": "out",
+          "sorting": "WS",
+          "ownership": "WO"
+        }
+      ]
+    },
+    "insertascii": {
+      "kind": "procedure",
+      "return_type": null,
+      "precision_scangroup": false,
+      "typed": true,
+      "parameters": [
+        {
+          "name": "ASCII",
+          "datatype": "Integer",
+          "direction": "in",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "Str",
+          "datatype": "String",
+          "direction": "out",
+          "sorting": "WS",
+          "ownership": "WO"
+        },
+        {
+          "name": "Status",
+          "datatype": "Integer",
+          "direction": "out",
+          "sorting": "WS",
+          "ownership": "WO"
+        }
+      ]
+    },
+    "insertstring": {
+      "kind": "procedure",
+      "return_type": null,
+      "precision_scangroup": false,
+      "typed": true,
+      "parameters": [
+        {
+          "name": "String",
+          "datatype": "String",
+          "direction": "out",
+          "sorting": "WS",
+          "ownership": "WO"
+        },
+        {
+          "name": "String2",
+          "datatype": "String",
+          "direction": "in var",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "Length",
+          "datatype": "Integer",
+          "direction": "in",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "Status",
+          "datatype": "Integer",
+          "direction": "out",
+          "sorting": "WS",
+          "ownership": "WO"
+        }
+      ]
+    },
+    "integertobcd": {
+      "kind": "procedure",
+      "return_type": null,
+      "precision_scangroup": true,
+      "typed": true,
+      "parameters": [
+        {
+          "name": "Int",
+          "datatype": "Integer",
+          "direction": "in",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "BCD",
+          "datatype": "Integer",
+          "direction": "out",
+          "sorting": "WS",
+          "ownership": "WO"
+        },
+        {
+          "name": "Status",
+          "datatype": "Integer",
+          "direction": "out",
+          "sorting": "WS",
+          "ownership": "WO"
+        }
+      ]
+    },
+    "integertoboolean16": {
+      "kind": "procedure",
+      "return_type": null,
+      "precision_scangroup": true,
+      "typed": true,
+      "parameters": [
+        {
+          "name": "Int",
+          "datatype": "Integer",
+          "direction": "in",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "BooleanRecord",
+          "datatype": "AnyType",
+          "direction": "out",
+          "sorting": "WS",
+          "ownership": "WO"
+        },
+        {
+          "name": "Status",
+          "datatype": "Integer",
+          "direction": "out",
+          "sorting": "WS",
+          "ownership": "WO"
+        }
+      ]
+    },
+    "integertoboolean32": {
+      "kind": "procedure",
+      "return_type": null,
+      "precision_scangroup": true,
+      "typed": true,
+      "parameters": [
+        {
+          "name": "Int",
+          "datatype": "Integer",
+          "direction": "in",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "BooleanRecord",
+          "datatype": "AnyType",
+          "direction": "out",
+          "sorting": "WS",
+          "ownership": "WO"
+        },
+        {
+          "name": "Status",
+          "datatype": "Integer",
+          "direction": "out",
+          "sorting": "WS",
+          "ownership": "WO"
+        }
+      ]
+    },
+    "integertograycode": {
+      "kind": "procedure",
+      "return_type": null,
+      "precision_scangroup": true,
+      "typed": true,
+      "parameters": [
+        {
+          "name": "Int",
+          "datatype": "Integer",
+          "direction": "in",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "BooleanRecord",
+          "datatype": "AnyType",
+          "direction": "out",
+          "sorting": "WS",
+          "ownership": "WO"
+        }
+      ]
+    },
+    "integertooctalstring": {
+      "kind": "procedure",
+      "return_type": null,
+      "precision_scangroup": false,
+      "typed": true,
+      "parameters": [
+        {
+          "name": "String",
+          "datatype": "String",
+          "direction": "out",
+          "sorting": "WS",
+          "ownership": "WO"
+        },
+        {
+          "name": "Value",
+          "datatype": "Integer",
+          "direction": "in",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "Width",
+          "datatype": "Integer",
+          "direction": "in",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "Status",
+          "datatype": "Integer",
+          "direction": "out",
+          "sorting": "WS",
+          "ownership": "WO"
+        }
+      ]
+    },
+    "integertostring": {
+      "kind": "procedure",
+      "return_type": null,
+      "precision_scangroup": false,
+      "typed": true,
+      "parameters": [
+        {
+          "name": "String",
+          "datatype": "String",
+          "direction": "out",
+          "sorting": "WS",
+          "ownership": "WO"
+        },
+        {
+          "name": "Value",
+          "datatype": "Integer",
+          "direction": "in",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "Width",
+          "datatype": "Integer",
+          "direction": "in",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "Status",
+          "datatype": "Integer",
+          "direction": "out",
+          "sorting": "WS",
+          "ownership": "WO"
+        }
+      ]
+    },
+    "isinsimulate": {
+      "kind": "function",
+      "return_type": "Boolean",
+      "precision_scangroup": false,
+      "typed": true,
+      "parameters": []
+    },
+    "limit": {
+      "kind": "function",
+      "return_type": "Boolean",
+      "precision_scangroup": true,
+      "typed": true,
+      "parameters": [
+        {
+          "name": "Timer",
+          "datatype": "Timer",
+          "direction": "in var",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "Value",
+          "datatype": "Integer",
+          "direction": "in",
+          "sorting": "RS",
+          "ownership": "RO"
+        }
+      ]
+    },
+    "ln": {
+      "kind": "function",
+      "return_type": "Real",
+      "precision_scangroup": true,
+      "typed": true,
+      "parameters": [
+        {
+          "name": "Argument",
+          "datatype": "Real",
+          "direction": "in",
+          "sorting": "RS",
+          "ownership": "RO"
+        }
+      ]
+    },
+    "loggedin": {
+      "kind": "function",
+      "return_type": "Boolean",
+      "precision_scangroup": false,
+      "typed": true,
+      "parameters": [
+        {
+          "name": "UserSign",
+          "datatype": "String",
+          "direction": "in",
+          "sorting": "RS",
+          "ownership": "RO"
+        }
+      ]
+    },
+    "maxlim": {
+      "kind": "procedure",
+      "return_type": null,
+      "precision_scangroup": true,
+      "typed": true,
+      "parameters": [
+        {
+          "name": "In",
+          "datatype": "Real",
+          "direction": "in",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "OnLim",
+          "datatype": "Real",
+          "direction": "in",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "Hyst",
+          "datatype": "Real",
+          "direction": "in",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "Q",
+          "datatype": "Boolean",
+          "direction": "out",
+          "sorting": "WS",
+          "ownership": "WO"
+        }
+      ]
+    },
+    "maxstringlength": {
+      "kind": "function",
+      "return_type": "Integer",
+      "precision_scangroup": false,
+      "typed": true,
+      "parameters": [
+        {
+          "name": "String",
+          "datatype": "String",
+          "direction": "in var",
+          "sorting": "NoS",
+          "ownership": "RO"
+        }
+      ]
+    },
+    "minlim": {
+      "kind": "procedure",
+      "return_type": null,
+      "precision_scangroup": true,
+      "typed": true,
+      "parameters": [
+        {
+          "name": "In",
+          "datatype": "Real",
+          "direction": "in",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "OnLim",
+          "datatype": "Real",
+          "direction": "in",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "Hyst",
+          "datatype": "Real",
+          "direction": "in",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "Q",
+          "datatype": "Boolean",
+          "direction": "out",
+          "sorting": "WS",
+          "ownership": "WO"
+        }
+      ]
+    },
+    "mod": {
+      "kind": "function",
+      "return_type": "Integer",
+      "precision_scangroup": true,
+      "typed": true,
+      "parameters": [
+        {
+          "name": "Argument",
+          "datatype": "Integer",
+          "direction": "in",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "Argument",
+          "datatype": "Integer",
+          "direction": "in",
+          "sorting": "RS",
+          "ownership": "RO"
+        }
+      ]
+    },
+    "movefile": {
+      "kind": "procedure",
+      "return_type": null,
+      "precision_scangroup": false,
+      "typed": true,
+      "parameters": [
+        {
+          "name": "FileName",
+          "datatype": "String",
+          "direction": "in",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "FileName",
+          "datatype": "String",
+          "direction": "in",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "Delete",
+          "datatype": "Boolean",
+          "direction": "in",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "AsyncOperation",
+          "datatype": "AsyncOperation",
+          "direction": "inout",
+          "sorting": "RS/WS",
+          "ownership": "RO/WO"
+        },
+        {
+          "name": "DebugStatus",
+          "datatype": "Integer",
+          "direction": "out",
+          "sorting": "WS",
+          "ownership": "WO"
+        }
+      ]
+    },
+    "nationallowercase": {
+      "kind": "procedure",
+      "return_type": null,
+      "precision_scangroup": false,
+      "typed": true,
+      "parameters": [
+        {
+          "name": "SourceString",
+          "datatype": "String",
+          "direction": "in var",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "DestinationString",
+          "datatype": "String",
+          "direction": "out",
+          "sorting": "WS",
+          "ownership": "WO"
+        },
+        {
+          "name": "NationCode",
+          "datatype": "Integer",
+          "direction": "in",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "Status",
+          "datatype": "Integer",
+          "direction": "out",
+          "sorting": "WS",
+          "ownership": "WO"
+        }
+      ]
+    },
+    "nationaluppercase": {
+      "kind": "procedure",
+      "return_type": null,
+      "precision_scangroup": false,
+      "typed": true,
+      "parameters": [
+        {
+          "name": "SourceString",
+          "datatype": "String",
+          "direction": "in var",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "DestinationString",
+          "datatype": "String",
+          "direction": "out",
+          "sorting": "WS",
+          "ownership": "WO"
+        },
+        {
+          "name": "NationCode",
+          "datatype": "Integer",
+          "direction": "in",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "Status",
+          "datatype": "Integer",
+          "direction": "out",
+          "sorting": "WS",
+          "ownership": "WO"
+        }
+      ]
+    },
+    "neweditfile": {
+      "kind": "procedure",
+      "return_type": null,
+      "precision_scangroup": false,
+      "typed": true,
+      "parameters": [
+        {
+          "name": "FileName",
+          "datatype": "String",
+          "direction": "in",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "ReadOnly",
+          "datatype": "Boolean",
+          "direction": "in",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "xPos",
+          "datatype": "Real",
+          "direction": "in",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "yPos",
+          "datatype": "Real",
+          "direction": "in",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "RelativePos",
+          "datatype": "Boolean",
+          "direction": "in",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "NoOfRows",
+          "datatype": "Integer",
+          "direction": "in",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "NoOfColumns",
+          "datatype": "Integer",
+          "direction": "in",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "FontKind",
+          "datatype": "Integer",
+          "direction": "in",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "FontSize",
+          "datatype": "Integer",
+          "direction": "in",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "Status",
+          "datatype": "Integer",
+          "direction": "out",
+          "sorting": "WS",
+          "ownership": "WO"
+        }
+      ]
+    },
+    "newwindow": {
+      "kind": "procedure",
+      "return_type": null,
+      "precision_scangroup": false,
+      "typed": true,
+      "parameters": [
+        {
+          "name": "ModulePath",
+          "datatype": "String",
+          "direction": "in",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "WindowTitle",
+          "datatype": "String",
+          "direction": "in",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "RelativePos",
+          "datatype": "Boolean",
+          "direction": "in",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "xPos",
+          "datatype": "Real",
+          "direction": "in",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "yPos",
+          "datatype": "Real",
+          "direction": "in",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "xSize",
+          "datatype": "Real",
+          "direction": "in",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "ySize",
+          "datatype": "Real",
+          "direction": "in",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "HierarchicRoot",
+          "datatype": "Boolean",
+          "direction": "in",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "SelectClass",
+          "datatype": "Integer",
+          "direction": "in",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "TimeOut",
+          "datatype": "Integer",
+          "direction": "in",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "WindowDisplayed",
+          "datatype": "Boolean",
+          "direction": "out",
+          "sorting": "NoS",
+          "ownership": "WO"
+        },
+        {
+          "name": "Status",
+          "datatype": "Integer",
+          "direction": "out",
+          "sorting": "WS",
+          "ownership": "WO"
+        }
+      ]
+    },
+    "octalstringtointeger": {
+      "kind": "function",
+      "return_type": "Integer",
+      "precision_scangroup": false,
+      "typed": true,
+      "parameters": [
+        {
+          "name": "String",
+          "datatype": "String",
+          "direction": "in var",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "Status",
+          "datatype": "Integer",
+          "direction": "out",
+          "sorting": "WS",
+          "ownership": "WO"
+        }
+      ]
+    },
+    "offtimer": {
+      "kind": "function",
+      "return_type": "Boolean",
+      "precision_scangroup": true,
+      "typed": true,
+      "parameters": [
+        {
+          "name": "Timer",
+          "datatype": "OnOffTimerType",
+          "direction": "inout",
+          "sorting": "RS/WS",
+          "ownership": "RO/WO"
+        },
+        {
+          "name": "Enable",
+          "datatype": "Boolean",
+          "direction": "in",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "PresetTime",
+          "datatype": "Duration",
+          "direction": "in var",
+          "sorting": "RS",
+          "ownership": "RO"
+        }
+      ]
+    },
+    "ontimer": {
+      "kind": "function",
+      "return_type": "Boolean",
+      "precision_scangroup": true,
+      "typed": true,
+      "parameters": [
+        {
+          "name": "Timer",
+          "datatype": "OnOffTimerType",
+          "direction": "inout",
+          "sorting": "RS/WS",
+          "ownership": "RO/WO"
+        },
+        {
+          "name": "Enable",
+          "datatype": "Boolean",
+          "direction": "in",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "PresetTime",
+          "datatype": "Duration",
+          "direction": "in var",
+          "sorting": "RS",
+          "ownership": "RO"
+        }
+      ]
+    },
+    "opendevice": {
+      "kind": "procedure",
+      "return_type": null,
+      "precision_scangroup": false,
+      "typed": true,
+      "parameters": [
+        {
+          "name": "Device",
+          "datatype": "String",
+          "direction": "in",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "DeviceRef",
+          "datatype": "tObject",
+          "direction": "out",
+          "sorting": "WS",
+          "ownership": "WO"
+        },
+        {
+          "name": "AsyncOperation",
+          "datatype": "AsyncOperation",
+          "direction": "inout",
+          "sorting": "RS/WS",
+          "ownership": "RO/WO"
+        },
+        {
+          "name": "DebugStatus",
+          "datatype": "Integer",
+          "direction": "out",
+          "sorting": "WS",
+          "ownership": "WO"
+        }
+      ]
+    },
+    "openreadfile": {
+      "kind": "procedure",
+      "return_type": null,
+      "precision_scangroup": false,
+      "typed": true,
+      "parameters": [
+        {
+          "name": "FileRef",
+          "datatype": "tObject",
+          "direction": "out",
+          "sorting": "WS",
+          "ownership": "WO"
+        },
+        {
+          "name": "FileName",
+          "datatype": "String",
+          "direction": "in",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "AsyncOperation",
+          "datatype": "AsyncOperation",
+          "direction": "inout",
+          "sorting": "RS/WS",
+          "ownership": "RO/WO"
+        },
+        {
+          "name": "DebugStatus",
+          "datatype": "Integer",
+          "direction": "out",
+          "sorting": "WS",
+          "ownership": "WO"
+        }
+      ]
+    },
+    "openwritefile": {
+      "kind": "procedure",
+      "return_type": null,
+      "precision_scangroup": false,
+      "typed": true,
+      "parameters": [
+        {
+          "name": "FileRef",
+          "datatype": "tObject",
+          "direction": "out",
+          "sorting": "WS",
+          "ownership": "WO"
+        },
+        {
+          "name": "FileName",
+          "datatype": "String",
+          "direction": "in",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "AsyncOperation",
+          "datatype": "AsyncOperation",
+          "direction": "inout",
+          "sorting": "RS/WS",
+          "ownership": "RO/WO"
+        },
+        {
+          "name": "DebugStatus",
+          "datatype": "Integer",
+          "direction": "out",
+          "sorting": "WS",
+          "ownership": "WO"
+        }
+      ]
+    },
+    "operatorinteraction": {
+      "kind": "procedure",
+      "return_type": null,
+      "precision_scangroup": false,
+      "typed": true,
+      "parameters": [
+        {
+          "name": "Tag",
+          "datatype": "String",
+          "direction": "in var",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "Severity",
+          "datatype": "Integer",
+          "direction": "in",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "Class",
+          "datatype": "Integer",
+          "direction": "in",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "Description",
+          "datatype": "String",
+          "direction": "in var",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "OldValue",
+          "datatype": "AnyType",
+          "direction": "in var",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "NewValue",
+          "datatype": "AnyType",
+          "direction": "in var",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "Status",
+          "datatype": "Integer",
+          "direction": "out",
+          "sorting": "WS",
+          "ownership": "WO"
+        }
+      ]
+    },
+    "printfile": {
+      "kind": "procedure",
+      "return_type": null,
+      "precision_scangroup": false,
+      "typed": true,
+      "parameters": [
+        {
+          "name": "RemotePrinterSysId",
+          "datatype": "String",
+          "direction": "in",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "PrinterName",
+          "datatype": "String",
+          "direction": "in",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "RemoteFileNameSave",
+          "datatype": "String",
+          "direction": "in",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "LocalFileName",
+          "datatype": "String",
+          "direction": "in",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "LocalFileDelete",
+          "datatype": "Boolean",
+          "direction": "in",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "AsyncOperation",
+          "datatype": "AsyncOperation",
+          "direction": "inout",
+          "sorting": "RS/WS",
+          "ownership": "RO/WO"
+        },
+        {
+          "name": "DebugStatus",
+          "datatype": "Integer",
+          "direction": "out",
+          "sorting": "WS",
+          "ownership": "WO"
+        }
+      ]
+    },
+    "pulsetimer": {
+      "kind": "function",
+      "return_type": "Boolean",
+      "precision_scangroup": true,
+      "typed": true,
+      "parameters": [
+        {
+          "name": "Timer",
+          "datatype": "OnOffTimerType",
+          "direction": "inout",
+          "sorting": "RS/WS",
+          "ownership": "RO/WO"
+        },
+        {
+          "name": "PeriodTime",
+          "datatype": "Integer",
+          "direction": "in",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "OnTime",
+          "datatype": "Integer",
+          "direction": "in",
+          "sorting": "RS",
+          "ownership": "RO"
+        }
+      ]
+    },
+    "putarray": {
+      "kind": "procedure",
+      "return_type": null,
+      "precision_scangroup": false,
+      "typed": true,
+      "parameters": [
+        {
+          "name": "Array",
+          "datatype": "ArrayObject",
+          "direction": "in var",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "Index",
+          "datatype": "Integer",
+          "direction": "in",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "ArrayElement",
+          "datatype": "AnyType",
+          "direction": "in var",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "Status",
+          "datatype": "Integer",
+          "direction": "out",
+          "sorting": "WS",
+          "ownership": "WO"
+        }
+      ]
+    },
+    "putblanks": {
+      "kind": "procedure",
+      "return_type": null,
+      "precision_scangroup": false,
+      "typed": true,
+      "parameters": [
+        {
+          "name": "String",
+          "datatype": "String",
+          "direction": "out",
+          "sorting": "WS",
+          "ownership": "WO"
+        },
+        {
+          "name": "NumberOfSpaces",
+          "datatype": "Integer",
+          "direction": "in",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "Status",
+          "datatype": "Integer",
+          "direction": "out",
+          "sorting": "WS",
+          "ownership": "WO"
+        }
+      ]
+    },
+    "putfirstqueue": {
+      "kind": "procedure",
+      "return_type": null,
+      "precision_scangroup": false,
+      "typed": true,
+      "parameters": [
+        {
+          "name": "Queue",
+          "datatype": "QueueObject",
+          "direction": "in var",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "QueueElement",
+          "datatype": "AnyType",
+          "direction": "in var",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "Status",
+          "datatype": "Integer",
+          "direction": "out",
+          "sorting": "WS",
+          "ownership": "WO"
+        }
+      ]
+    },
+    "putlastqueue": {
+      "kind": "procedure",
+      "return_type": null,
+      "precision_scangroup": false,
+      "typed": true,
+      "parameters": [
+        {
+          "name": "Queue",
+          "datatype": "QueueObject",
+          "direction": "in var",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "QueueElement",
+          "datatype": "AnyType",
+          "direction": "in var",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "Status",
+          "datatype": "Integer",
+          "direction": "out",
+          "sorting": "WS",
+          "ownership": "WO"
+        }
+      ]
+    },
+    "putrecordcompnosort": {
+      "kind": "procedure",
+      "return_type": null,
+      "precision_scangroup": false,
+      "typed": true,
+      "parameters": [
+        {
+          "name": "Rec",
+          "datatype": "AnyType",
+          "direction": "out",
+          "sorting": "NoS",
+          "ownership": "WO"
+        },
+        {
+          "name": "ComponentIndex",
+          "datatype": "Integer",
+          "direction": "in",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "InputRec",
+          "datatype": "AnyType",
+          "direction": "in var",
+          "sorting": "NoS",
+          "ownership": "RO"
+        },
+        {
+          "name": "Status",
+          "datatype": "Integer",
+          "direction": "out",
+          "sorting": "NoS",
+          "ownership": "WO"
+        }
+      ]
+    },
+    "putrecordcomponent": {
+      "kind": "procedure",
+      "return_type": null,
+      "precision_scangroup": false,
+      "typed": true,
+      "parameters": [
+        {
+          "name": "Rec",
+          "datatype": "AnyType",
+          "direction": "out",
+          "sorting": "WS",
+          "ownership": "WO"
+        },
+        {
+          "name": "ComponentIndex",
+          "datatype": "Integer",
+          "direction": "in",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "InputRec",
+          "datatype": "AnyType",
+          "direction": "in var",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "Status",
+          "datatype": "Integer",
+          "direction": "out",
+          "sorting": "WS",
+          "ownership": "WO"
+        }
+      ]
+    },
+    "putremotefile": {
+      "kind": "procedure",
+      "return_type": null,
+      "precision_scangroup": false,
+      "typed": true,
+      "parameters": [
+        {
+          "name": "RemoteSystemIdentity",
+          "datatype": "String",
+          "direction": "in",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "RemoteFileName",
+          "datatype": "String",
+          "direction": "in",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "LocalFileName",
+          "datatype": "String",
+          "direction": "in",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "AsyncOperation",
+          "datatype": "AsyncOperation",
+          "direction": "inout",
+          "sorting": "RS/WS",
+          "ownership": "RO/WO"
+        },
+        {
+          "name": "DebugStatus",
+          "datatype": "Integer",
+          "direction": "out",
+          "sorting": "WS",
+          "ownership": "WO"
+        }
+      ]
+    },
+    "putremotesinglefile": {
+      "kind": "procedure",
+      "return_type": null,
+      "precision_scangroup": false,
+      "typed": true,
+      "parameters": [
+        {
+          "name": "RemoteSystemIdentity",
+          "datatype": "String",
+          "direction": "in",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "RemoteFileName",
+          "datatype": "String",
+          "direction": "in",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "LocalFileName",
+          "datatype": "String",
+          "direction": "in",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "AsyncOperation",
+          "datatype": "AsyncOperation",
+          "direction": "inout",
+          "sorting": "RS/WS",
+          "ownership": "RO/WO"
+        },
+        {
+          "name": "DebugStatus",
+          "datatype": "Integer",
+          "direction": "out",
+          "sorting": "WS",
+          "ownership": "WO"
+        }
+      ]
+    },
+    "randomnorm": {
+      "kind": "function",
+      "return_type": "Real",
+      "precision_scangroup": true,
+      "typed": true,
+      "parameters": [
+        {
+          "name": "RandomGenerator",
+          "datatype": "RandomGenerator",
+          "direction": "inout",
+          "sorting": "RS/WS",
+          "ownership": "RO/WO"
+        }
+      ]
+    },
+    "randomrect": {
+      "kind": "function",
+      "return_type": "Real",
+      "precision_scangroup": true,
+      "typed": true,
+      "parameters": [
+        {
+          "name": "RandomGenerator",
+          "datatype": "RandomGenerator",
+          "direction": "inout",
+          "sorting": "RS/WS",
+          "ownership": "RO/WO"
+        }
+      ]
+    },
+    "randomseed": {
+      "kind": "procedure",
+      "return_type": null,
+      "precision_scangroup": true,
+      "typed": true,
+      "parameters": [
+        {
+          "name": "RandomGenerator",
+          "datatype": "RandomGenerator",
+          "direction": "inout",
+          "sorting": "RS/WS",
+          "ownership": "RO/WO"
+        }
+      ]
+    },
+    "readline": {
+      "kind": "procedure",
+      "return_type": null,
+      "precision_scangroup": false,
+      "typed": true,
+      "parameters": [
+        {
+          "name": "FileRef",
+          "datatype": "tObject",
+          "direction": "in",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "String",
+          "datatype": "String",
+          "direction": "out",
+          "sorting": "WS",
+          "ownership": "WO"
+        },
+        {
+          "name": "AsyncOperation",
+          "datatype": "AsyncOperation",
+          "direction": "inout",
+          "sorting": "RS/WS",
+          "ownership": "RO/WO"
+        },
+        {
+          "name": "DebugStatus",
+          "datatype": "Integer",
+          "direction": "out",
+          "sorting": "WS",
+          "ownership": "WO"
+        }
+      ]
+    },
+    "readlinedevice": {
+      "kind": "procedure",
+      "return_type": null,
+      "precision_scangroup": false,
+      "typed": true,
+      "parameters": [
+        {
+          "name": "DeviceRef",
+          "datatype": "tObject",
+          "direction": "in",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "Data",
+          "datatype": "AnyType",
+          "direction": "out",
+          "sorting": "WS",
+          "ownership": "WO"
+        },
+        {
+          "name": "AsyncOperation",
+          "datatype": "AsyncOperation",
+          "direction": "inout",
+          "sorting": "RS/WS",
+          "ownership": "RO/WO"
+        },
+        {
+          "name": "DebugStatus",
+          "datatype": "Integer",
+          "direction": "out",
+          "sorting": "WS",
+          "ownership": "WO"
+        }
+      ]
+    },
+    "readqueue": {
+      "kind": "procedure",
+      "return_type": null,
+      "precision_scangroup": false,
+      "typed": true,
+      "parameters": [
+        {
+          "name": "Queue",
+          "datatype": "QueueObject",
+          "direction": "in var",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "Number",
+          "datatype": "Integer",
+          "direction": "in",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "QueueElement",
+          "datatype": "AnyType",
+          "direction": "out",
+          "sorting": "WS",
+          "ownership": "WO"
+        },
+        {
+          "name": "Status",
+          "datatype": "Integer",
+          "direction": "out",
+          "sorting": "WS",
+          "ownership": "WO"
+        }
+      ]
+    },
+    "readstringdevice": {
+      "kind": "procedure",
+      "return_type": null,
+      "precision_scangroup": false,
+      "typed": true,
+      "parameters": [
+        {
+          "name": "DeviceRef",
+          "datatype": "tObject",
+          "direction": "in",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "Data",
+          "datatype": "AnyType",
+          "direction": "out",
+          "sorting": "WS",
+          "ownership": "WO"
+        },
+        {
+          "name": "AsyncOperation",
+          "datatype": "AsyncOperation",
+          "direction": "inout",
+          "sorting": "RS/WS",
+          "ownership": "RO/WO"
+        },
+        {
+          "name": "DebugStatus",
+          "datatype": "Integer",
+          "direction": "out",
+          "sorting": "WS",
+          "ownership": "WO"
+        }
+      ]
+    },
+    "readsystemstring": {
+      "kind": "procedure",
+      "return_type": null,
+      "precision_scangroup": false,
+      "typed": true,
+      "parameters": [
+        {
+          "name": "SystemVarId",
+          "datatype": "String",
+          "direction": "in",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "SystemVarStringVal",
+          "datatype": "String",
+          "direction": "out",
+          "sorting": "WS",
+          "ownership": "WO"
+        },
+        {
+          "name": "Status",
+          "datatype": "Integer",
+          "direction": "out",
+          "sorting": "WS",
+          "ownership": "WO"
+        }
+      ]
+    },
+    "readvar": {
+      "kind": "procedure",
+      "return_type": null,
+      "precision_scangroup": false,
+      "typed": true,
+      "parameters": [
+        {
+          "name": "RemoteVariable",
+          "datatype": "AnyType",
+          "direction": "inout",
+          "sorting": "NoS",
+          "ownership": "NoO"
+        },
+        {
+          "name": "LocalVariable",
+          "datatype": "AnyType",
+          "direction": "out",
+          "sorting": "NoS",
+          "ownership": "WO"
+        },
+        {
+          "name": "AsyncOperation",
+          "datatype": "AsyncOperation",
+          "direction": "inout",
+          "sorting": "RS/WS",
+          "ownership": "RO/WO"
+        },
+        {
+          "name": "DebugStatus",
+          "datatype": "Integer",
+          "direction": "out",
+          "sorting": "WS",
+          "ownership": "WO"
+        }
+      ]
+    },
+    "realtostring": {
+      "kind": "procedure",
+      "return_type": null,
+      "precision_scangroup": false,
+      "typed": true,
+      "parameters": [
+        {
+          "name": "String",
+          "datatype": "String",
+          "direction": "out",
+          "sorting": "WS",
+          "ownership": "WO"
+        },
+        {
+          "name": "Value",
+          "datatype": "Real",
+          "direction": "in",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "Width",
+          "datatype": "Integer",
+          "direction": "in",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "Fraction",
+          "datatype": "Integer",
+          "direction": "in",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "Status",
+          "datatype": "Integer",
+          "direction": "out",
+          "sorting": "WS",
+          "ownership": "WO"
+        }
+      ]
+    },
+    "removestaticrouting": {
+      "kind": "procedure",
+      "return_type": null,
+      "precision_scangroup": false,
+      "typed": true,
+      "parameters": [
+        {
+          "name": "RedundantRoutingInfo",
+          "datatype": "Boolean",
+          "direction": "in",
+          "sorting": "RS",
+          "ownership": "RO"
+        }
+      ]
+    },
+    "resetprivilegeflag": {
+      "kind": "procedure",
+      "return_type": null,
+      "precision_scangroup": false,
+      "typed": false,
+      "parameters": []
+    },
+    "restorevariable": {
+      "kind": "procedure",
+      "return_type": null,
+      "precision_scangroup": false,
+      "typed": true,
+      "parameters": [
+        {
+          "name": "Variable",
+          "datatype": "AnyType",
+          "direction": "out",
+          "sorting": "WS",
+          "ownership": "WO"
+        },
+        {
+          "name": "RestoreFile",
+          "datatype": "String",
+          "direction": "in",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "Status",
+          "datatype": "Integer",
+          "direction": "out",
+          "sorting": "WS",
+          "ownership": "WO"
+        }
+      ]
+    },
+    "restorevariablematch": {
+      "kind": "procedure",
+      "return_type": null,
+      "precision_scangroup": false,
+      "typed": true,
+      "parameters": [
+        {
+          "name": "Variable",
+          "datatype": "AnyType",
+          "direction": "out",
+          "sorting": "WS",
+          "ownership": "WO"
+        },
+        {
+          "name": "RestoreFile",
+          "datatype": "String",
+          "direction": "in",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "Status",
+          "datatype": "Integer",
+          "direction": "out",
+          "sorting": "WS",
+          "ownership": "WO"
+        }
+      ]
+    },
+    "round": {
+      "kind": "function",
+      "return_type": "Integer",
+      "precision_scangroup": true,
+      "typed": true,
+      "parameters": [
+        {
+          "name": "Argument",
+          "datatype": "Real",
+          "direction": "in",
+          "sorting": "RS",
+          "ownership": "RO"
+        }
+      ]
+    },
+    "savetovss": {
+      "kind": "procedure",
+      "return_type": null,
+      "precision_scangroup": false,
+      "typed": true,
+      "parameters": [
+        {
+          "name": "FileName",
+          "datatype": "String",
+          "direction": "in",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "Comment",
+          "datatype": "String",
+          "direction": "in",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "AsyncOperation",
+          "datatype": "AsyncOperation",
+          "direction": "inout",
+          "sorting": "RS/WS",
+          "ownership": "RO/WO"
+        },
+        {
+          "name": "DebugStatus",
+          "datatype": "Integer",
+          "direction": "out",
+          "sorting": "WS",
+          "ownership": "WO"
+        }
+      ]
+    },
+    "savevariable": {
+      "kind": "procedure",
+      "return_type": null,
+      "precision_scangroup": false,
+      "typed": true,
+      "parameters": [
+        {
+          "name": "Variable",
+          "datatype": "AnyType",
+          "direction": "in var",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "SaveFile",
+          "datatype": "String",
+          "direction": "in",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "Status",
+          "datatype": "Integer",
+          "direction": "out",
+          "sorting": "WS",
+          "ownership": "WO"
+        }
+      ]
+    },
+    "savevariablecoded": {
+      "kind": "procedure",
+      "return_type": null,
+      "precision_scangroup": false,
+      "typed": true,
+      "parameters": [
+        {
+          "name": "Variable",
+          "datatype": "AnyType",
+          "direction": "in var",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "SaveFile",
+          "datatype": "String",
+          "direction": "in",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "Status",
+          "datatype": "Integer",
+          "direction": "out",
+          "sorting": "WS",
+          "ownership": "WO"
+        }
+      ]
+    },
+    "searcharray": {
+      "kind": "function",
+      "return_type": "Boolean",
+      "precision_scangroup": false,
+      "typed": true,
+      "parameters": [
+        {
+          "name": "Array",
+          "datatype": "ArrayObject",
+          "direction": "in var",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "SearchIndex",
+          "datatype": "Integer",
+          "direction": "inout",
+          "sorting": "RS/WS",
+          "ownership": "RO/WO"
+        },
+        {
+          "name": "SearchCount",
+          "datatype": "Integer",
+          "direction": "in",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "SearchElement",
+          "datatype": "AnyType",
+          "direction": "in var",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "SearchComponent",
+          "datatype": "AnyType",
+          "direction": "in var",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "FoundElement",
+          "datatype": "AnyType",
+          "direction": "out",
+          "sorting": "WS",
+          "ownership": "WO"
+        },
+        {
+          "name": "Status",
+          "datatype": "Integer",
+          "direction": "out",
+          "sorting": "WS",
+          "ownership": "WO"
+        }
+      ]
+    },
+    "searchreccomponent": {
+      "kind": "function",
+      "return_type": "Boolean",
+      "precision_scangroup": false,
+      "typed": true,
+      "parameters": [
+        {
+          "name": "Rec",
+          "datatype": "AnyType",
+          "direction": "in var",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "SearchIndex",
+          "datatype": "Integer",
+          "direction": "inout",
+          "sorting": "RS/WS",
+          "ownership": "RO/WO"
+        },
+        {
+          "name": "SearchCount",
+          "datatype": "Integer",
+          "direction": "in",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "SearchRecord",
+          "datatype": "AnyType",
+          "direction": "in var",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "SearchComponent",
+          "datatype": "AnyType",
+          "direction": "in var",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "FoundRec",
+          "datatype": "AnyType",
+          "direction": "out",
+          "sorting": "WS",
+          "ownership": "WO"
+        },
+        {
+          "name": "Status",
+          "datatype": "Integer",
+          "direction": "out",
+          "sorting": "WS",
+          "ownership": "WO"
+        }
+      ]
+    },
+    "setbooleanvalue": {
+      "kind": "procedure",
+      "return_type": null,
+      "precision_scangroup": false,
+      "typed": true,
+      "parameters": [
+        {
+          "name": "Variable",
+          "datatype": "Boolean",
+          "direction": "out",
+          "sorting": "WS",
+          "ownership": "WO"
+        },
+        {
+          "name": "Value",
+          "datatype": "Boolean",
+          "direction": "in",
+          "sorting": "RS",
+          "ownership": "RO"
+        }
+      ]
+    },
+    "setseed": {
+      "kind": "procedure",
+      "return_type": null,
+      "precision_scangroup": true,
+      "typed": true,
+      "parameters": [
+        {
+          "name": "Seed",
+          "datatype": "Integer",
+          "direction": "in",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "RandomGenerator",
+          "datatype": "RandomGenerator",
+          "direction": "out",
+          "sorting": "WS",
+          "ownership": "WO"
+        }
+      ]
+    },
+    "setshowprogram": {
+      "kind": "procedure",
+      "return_type": null,
+      "precision_scangroup": false,
+      "typed": true,
+      "parameters": [
+        {
+          "name": "Enable",
+          "datatype": "Boolean",
+          "direction": "in",
+          "sorting": "RS",
+          "ownership": "RO"
+        }
+      ]
+    },
+    "setstringpos": {
+      "kind": "procedure",
+      "return_type": null,
+      "precision_scangroup": false,
+      "typed": true,
+      "parameters": [
+        {
+          "name": "String",
+          "datatype": "String",
+          "direction": "inout",
+          "sorting": "NoS",
+          "ownership": "NoO"
+        },
+        {
+          "name": "Position",
+          "datatype": "Integer",
+          "direction": "in",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "Status",
+          "datatype": "Integer",
+          "direction": "out",
+          "sorting": "WS",
+          "ownership": "WO"
+        }
+      ]
+    },
+    "settime": {
+      "kind": "procedure",
+      "return_type": null,
+      "precision_scangroup": true,
+      "typed": true,
+      "parameters": [
+        {
+          "name": "Time",
+          "datatype": "Time",
+          "direction": "in var",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "Status",
+          "datatype": "Integer",
+          "direction": "out",
+          "sorting": "WS",
+          "ownership": "WO"
+        }
+      ]
+    },
+    "setupdevice": {
+      "kind": "procedure",
+      "return_type": null,
+      "precision_scangroup": false,
+      "typed": true,
+      "parameters": [
+        {
+          "name": "Device",
+          "datatype": "String",
+          "direction": "in",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "Values",
+          "datatype": "AnyType",
+          "direction": "inout",
+          "sorting": "RS/WS",
+          "ownership": "RO/WO"
+        },
+        {
+          "name": "Status",
+          "datatype": "Integer",
+          "direction": "out",
+          "sorting": "WS",
+          "ownership": "WO"
+        }
+      ]
+    },
+    "sin": {
+      "kind": "function",
+      "return_type": "Real",
+      "precision_scangroup": true,
+      "typed": true,
+      "parameters": [
+        {
+          "name": "Argument",
+          "datatype": "Real",
+          "direction": "in",
+          "sorting": "RS",
+          "ownership": "RO"
+        }
+      ]
+    },
+    "sqrt": {
+      "kind": "function",
+      "return_type": "Real",
+      "precision_scangroup": true,
+      "typed": true,
+      "parameters": [
+        {
+          "name": "Argument",
+          "datatype": "Real",
+          "direction": "in",
+          "sorting": "RS",
+          "ownership": "RO"
+        }
+      ]
+    },
+    "standalonewindow": {
+      "kind": "procedure",
+      "return_type": null,
+      "precision_scangroup": false,
+      "typed": true,
+      "parameters": [
+        {
+          "name": "ModulePath",
+          "datatype": "String",
+          "direction": "in",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "EnableTitle",
+          "datatype": "Boolean",
+          "direction": "in",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "WindowTitle",
+          "datatype": "String",
+          "direction": "in",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "xPos",
+          "datatype": "Real",
+          "direction": "in",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "yPos",
+          "datatype": "Real",
+          "direction": "in",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "xSize",
+          "datatype": "Real",
+          "direction": "in",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "ySize",
+          "datatype": "Real",
+          "direction": "in",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "SelectClass",
+          "datatype": "Integer",
+          "direction": "in",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "TimeOut",
+          "datatype": "Integer",
+          "direction": "in",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "WindowDisplayed",
+          "datatype": "Boolean",
+          "direction": "out",
+          "sorting": "NoS",
+          "ownership": "WO"
+        },
+        {
+          "name": "Status",
+          "datatype": "Integer",
+          "direction": "out",
+          "sorting": "WS",
+          "ownership": "WO"
+        }
+      ]
+    },
+    "stringlength": {
+      "kind": "function",
+      "return_type": "Integer",
+      "precision_scangroup": false,
+      "typed": true,
+      "parameters": [
+        {
+          "name": "String",
+          "datatype": "String",
+          "direction": "in var",
+          "sorting": "NoS",
+          "ownership": "RO"
+        }
+      ]
+    },
+    "stringmatch": {
+      "kind": "function",
+      "return_type": "Boolean",
+      "precision_scangroup": false,
+      "typed": true,
+      "parameters": [
+        {
+          "name": "Pattern",
+          "datatype": "String",
+          "direction": "in var",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "Searchstring",
+          "datatype": "String",
+          "direction": "in var",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "CaseSensitive",
+          "datatype": "Boolean",
+          "direction": "in",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "Status",
+          "datatype": "Integer",
+          "direction": "out",
+          "sorting": "WS",
+          "ownership": "WO"
+        }
+      ]
+    },
+    "stringtoasciirecord": {
+      "kind": "procedure",
+      "return_type": null,
+      "precision_scangroup": false,
+      "typed": true,
+      "parameters": [
+        {
+          "name": "String",
+          "datatype": "String",
+          "direction": "in var",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "NoOfCharsPerInteger",
+          "datatype": "Integer",
+          "direction": "in",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "IntegerRecord",
+          "datatype": "AnyType",
+          "direction": "out",
+          "sorting": "WS",
+          "ownership": "WO"
+        },
+        {
+          "name": "Status",
+          "datatype": "Integer",
+          "direction": "out",
+          "sorting": "WS",
+          "ownership": "WO"
+        }
+      ]
+    },
+    "stringtoduration": {
+      "kind": "procedure",
+      "return_type": null,
+      "precision_scangroup": false,
+      "typed": true,
+      "parameters": [
+        {
+          "name": "DurationString",
+          "datatype": "String",
+          "direction": "in",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "Duration",
+          "datatype": "Duration",
+          "direction": "out",
+          "sorting": "WS",
+          "ownership": "WO"
+        },
+        {
+          "name": "Status",
+          "datatype": "Integer",
+          "direction": "out",
+          "sorting": "WS",
+          "ownership": "WO"
+        }
+      ]
+    },
+    "stringtointeger": {
+      "kind": "function",
+      "return_type": "Integer",
+      "precision_scangroup": false,
+      "typed": true,
+      "parameters": [
+        {
+          "name": "String",
+          "datatype": "String",
+          "direction": "in var",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "Status",
+          "datatype": "Integer",
+          "direction": "out",
+          "sorting": "WS",
+          "ownership": "WO"
+        }
+      ]
+    },
+    "stringtoreal": {
+      "kind": "function",
+      "return_type": "Real",
+      "precision_scangroup": false,
+      "typed": true,
+      "parameters": [
+        {
+          "name": "String",
+          "datatype": "String",
+          "direction": "in var",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "Status",
+          "datatype": "Integer",
+          "direction": "out",
+          "sorting": "WS",
+          "ownership": "WO"
+        }
+      ]
+    },
+    "stringtotime": {
+      "kind": "procedure",
+      "return_type": null,
+      "precision_scangroup": false,
+      "typed": true,
+      "parameters": [
+        {
+          "name": "TimeString",
+          "datatype": "String",
+          "direction": "in",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "TimeFormat",
+          "datatype": "String",
+          "direction": "in",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "Time",
+          "datatype": "Time",
+          "direction": "out",
+          "sorting": "WS",
+          "ownership": "WO"
+        },
+        {
+          "name": "Status",
+          "datatype": "Integer",
+          "direction": "out",
+          "sorting": "WS",
+          "ownership": "WO"
+        }
+      ]
+    },
+    "stringtotimerecord": {
+      "kind": "procedure",
+      "return_type": null,
+      "precision_scangroup": false,
+      "typed": true,
+      "parameters": [
+        {
+          "name": "TimeString",
+          "datatype": "String",
+          "direction": "in",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "TimeFormat",
+          "datatype": "String",
+          "direction": "in",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "TimeRecord",
+          "datatype": "TimeRecord",
+          "direction": "out",
+          "sorting": "WS",
+          "ownership": "WO"
+        },
+        {
+          "name": "Status",
+          "datatype": "Integer",
+          "direction": "out",
+          "sorting": "WS",
+          "ownership": "WO"
+        }
+      ]
+    },
+    "subdurationfromtime": {
+      "kind": "procedure",
+      "return_type": null,
+      "precision_scangroup": true,
+      "typed": true,
+      "parameters": [
+        {
+          "name": "Time",
+          "datatype": "Time",
+          "direction": "in var",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "Duration",
+          "datatype": "Duration",
+          "direction": "in var",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "Time",
+          "datatype": "Time",
+          "direction": "out",
+          "sorting": "WS",
+          "ownership": "WO"
+        },
+        {
+          "name": "Status",
+          "datatype": "Integer",
+          "direction": "out",
+          "sorting": "WS",
+          "ownership": "WO"
+        }
+      ]
+    },
+    "subdurations": {
+      "kind": "procedure",
+      "return_type": null,
+      "precision_scangroup": true,
+      "typed": true,
+      "parameters": [
+        {
+          "name": "Duration",
+          "datatype": "Duration",
+          "direction": "in var",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "Duration",
+          "datatype": "Duration",
+          "direction": "in var",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "DurationSum",
+          "datatype": "Duration",
+          "direction": "out",
+          "sorting": "WS",
+          "ownership": "WO"
+        },
+        {
+          "name": "Status",
+          "datatype": "Integer",
+          "direction": "out",
+          "sorting": "WS",
+          "ownership": "WO"
+        }
+      ]
+    },
+    "subtimerecords": {
+      "kind": "procedure",
+      "return_type": null,
+      "precision_scangroup": true,
+      "typed": true,
+      "parameters": [
+        {
+          "name": "TimeRecord",
+          "datatype": "TimeRecord",
+          "direction": "in var",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "TimeRecord",
+          "datatype": "TimeRecord",
+          "direction": "in var",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "Duration",
+          "datatype": "Duration",
+          "direction": "out",
+          "sorting": "WS",
+          "ownership": "WO"
+        },
+        {
+          "name": "Status",
+          "datatype": "Integer",
+          "direction": "out",
+          "sorting": "WS",
+          "ownership": "WO"
+        }
+      ]
+    },
+    "subtimes": {
+      "kind": "procedure",
+      "return_type": null,
+      "precision_scangroup": true,
+      "typed": true,
+      "parameters": [
+        {
+          "name": "Time",
+          "datatype": "Time",
+          "direction": "in var",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "Time",
+          "datatype": "Time",
+          "direction": "in var",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "Duration",
+          "datatype": "Duration",
+          "direction": "out",
+          "sorting": "WS",
+          "ownership": "WO"
+        },
+        {
+          "name": "Status",
+          "datatype": "Integer",
+          "direction": "out",
+          "sorting": "WS",
+          "ownership": "WO"
+        }
+      ]
+    },
+    "systemboolean": {
+      "kind": "function",
+      "return_type": "Boolean",
+      "precision_scangroup": false,
+      "typed": true,
+      "parameters": [
+        {
+          "name": "SystemVarId",
+          "datatype": "String",
+          "direction": "in",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "Status",
+          "datatype": "Integer",
+          "direction": "out",
+          "sorting": "WS",
+          "ownership": "WO"
+        }
+      ]
+    },
+    "systemcommand": {
+      "kind": "procedure",
+      "return_type": null,
+      "precision_scangroup": false,
+      "typed": true,
+      "parameters": [
+        {
+          "name": "Command",
+          "datatype": "String",
+          "direction": "in",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "AsyncOperation",
+          "datatype": "AsyncOperation",
+          "direction": "inout",
+          "sorting": "RS/WS",
+          "ownership": "RO/WO"
+        },
+        {
+          "name": "DebugStatus",
+          "datatype": "Integer",
+          "direction": "out",
+          "sorting": "WS",
+          "ownership": "WO"
+        }
+      ]
+    },
+    "systeminteger": {
+      "kind": "function",
+      "return_type": "Integer",
+      "precision_scangroup": false,
+      "typed": true,
+      "parameters": [
+        {
+          "name": "SystemVarId",
+          "datatype": "String",
+          "direction": "in",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "Status",
+          "datatype": "Integer",
+          "direction": "out",
+          "sorting": "WS",
+          "ownership": "WO"
+        }
+      ]
+    },
+    "systemreal": {
+      "kind": "function",
+      "return_type": "Real",
+      "precision_scangroup": false,
+      "typed": true,
+      "parameters": [
+        {
+          "name": "SystemVarId",
+          "datatype": "String",
+          "direction": "in",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "Status",
+          "datatype": "Integer",
+          "direction": "out",
+          "sorting": "WS",
+          "ownership": "WO"
+        }
+      ]
+    },
+    "timebefore": {
+      "kind": "function",
+      "return_type": "Boolean",
+      "precision_scangroup": true,
+      "typed": true,
+      "parameters": [
+        {
+          "name": "Time",
+          "datatype": "Time",
+          "direction": "in var",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "Time",
+          "datatype": "Time",
+          "direction": "in var",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "Status",
+          "datatype": "Integer",
+          "direction": "out",
+          "sorting": "WS",
+          "ownership": "WO"
+        }
+      ]
+    },
+    "timer": {
+      "kind": "procedure",
+      "return_type": null,
+      "precision_scangroup": true,
+      "typed": true,
+      "parameters": [
+        {
+          "name": "Timer",
+          "datatype": "Timer",
+          "direction": "out",
+          "sorting": "WS",
+          "ownership": "WO"
+        },
+        {
+          "name": "Enable",
+          "datatype": "Boolean",
+          "direction": "in",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "Hold",
+          "datatype": "Boolean",
+          "direction": "in",
+          "sorting": "RS",
+          "ownership": "RO"
+        }
+      ]
+    },
+    "timerclear": {
+      "kind": "procedure",
+      "return_type": null,
+      "precision_scangroup": true,
+      "typed": true,
+      "parameters": [
+        {
+          "name": "Timer",
+          "datatype": "Timer",
+          "direction": "out",
+          "sorting": "WS",
+          "ownership": "WO"
+        }
+      ]
+    },
+    "timerecordbefore": {
+      "kind": "function",
+      "return_type": "Boolean",
+      "precision_scangroup": true,
+      "typed": true,
+      "parameters": [
+        {
+          "name": "TimeRecord",
+          "datatype": "TimeRecord",
+          "direction": "in var",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "TimeRecord",
+          "datatype": "TimeRecord",
+          "direction": "in var",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "Status",
+          "datatype": "Integer",
+          "direction": "out",
+          "sorting": "WS",
+          "ownership": "WO"
+        }
+      ]
+    },
+    "timerecordtostring": {
+      "kind": "procedure",
+      "return_type": null,
+      "precision_scangroup": false,
+      "typed": true,
+      "parameters": [
+        {
+          "name": "TimeRecord",
+          "datatype": "TimeRecord",
+          "direction": "in var",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "TimeFormat",
+          "datatype": "String",
+          "direction": "in",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "TimeString",
+          "datatype": "String",
+          "direction": "out",
+          "sorting": "WS",
+          "ownership": "WO"
+        },
+        {
+          "name": "Status",
+          "datatype": "Integer",
+          "direction": "out",
+          "sorting": "WS",
+          "ownership": "WO"
+        }
+      ]
+    },
+    "timerecordtotime": {
+      "kind": "procedure",
+      "return_type": null,
+      "precision_scangroup": true,
+      "typed": true,
+      "parameters": [
+        {
+          "name": "TimeRecord",
+          "datatype": "TimeRecord",
+          "direction": "in var",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "Time",
+          "datatype": "Time",
+          "direction": "out",
+          "sorting": "WS",
+          "ownership": "WO"
+        },
+        {
+          "name": "Status",
+          "datatype": "Integer",
+          "direction": "out",
+          "sorting": "WS",
+          "ownership": "WO"
+        }
+      ]
+    },
+    "timerstart": {
+      "kind": "procedure",
+      "return_type": null,
+      "precision_scangroup": true,
+      "typed": true,
+      "parameters": [
+        {
+          "name": "Timer",
+          "datatype": "Timer",
+          "direction": "out",
+          "sorting": "WS",
+          "ownership": "WO"
+        }
+      ]
+    },
+    "timerstop": {
+      "kind": "procedure",
+      "return_type": null,
+      "precision_scangroup": true,
+      "typed": true,
+      "parameters": [
+        {
+          "name": "Timer",
+          "datatype": "Timer",
+          "direction": "out",
+          "sorting": "WS",
+          "ownership": "WO"
+        }
+      ]
+    },
+    "timetocalendarrecord": {
+      "kind": "procedure",
+      "return_type": null,
+      "precision_scangroup": true,
+      "typed": true,
+      "parameters": [
+        {
+          "name": "Time",
+          "datatype": "Time",
+          "direction": "in var",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "CalendarRecord",
+          "datatype": "CalendarRecord",
+          "direction": "out",
+          "sorting": "WS",
+          "ownership": "WO"
+        },
+        {
+          "name": "Status",
+          "datatype": "Integer",
+          "direction": "out",
+          "sorting": "WS",
+          "ownership": "WO"
+        }
+      ]
+    },
+    "timetostring": {
+      "kind": "procedure",
+      "return_type": null,
+      "precision_scangroup": false,
+      "typed": true,
+      "parameters": [
+        {
+          "name": "Time",
+          "datatype": "Time",
+          "direction": "in var",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "TimeFormat",
+          "datatype": "String",
+          "direction": "in",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "TimeString",
+          "datatype": "String",
+          "direction": "out",
+          "sorting": "WS",
+          "ownership": "WO"
+        },
+        {
+          "name": "Status",
+          "datatype": "Integer",
+          "direction": "out",
+          "sorting": "WS",
+          "ownership": "WO"
+        }
+      ]
+    },
+    "timetotimerecord": {
+      "kind": "procedure",
+      "return_type": null,
+      "precision_scangroup": true,
+      "typed": true,
+      "parameters": [
+        {
+          "name": "Time",
+          "datatype": "Time",
+          "direction": "in var",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "TimeRecord",
+          "datatype": "TimeRecord",
+          "direction": "out",
+          "sorting": "WS",
+          "ownership": "WO"
+        },
+        {
+          "name": "Status",
+          "datatype": "Integer",
+          "direction": "out",
+          "sorting": "WS",
+          "ownership": "WO"
+        }
+      ]
+    },
+    "toggleeditfile": {
+      "kind": "procedure",
+      "return_type": null,
+      "precision_scangroup": false,
+      "typed": true,
+      "parameters": [
+        {
+          "name": "FileName",
+          "datatype": "String",
+          "direction": "in",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "ReadOnly",
+          "datatype": "Boolean",
+          "direction": "in",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "xPos",
+          "datatype": "Real",
+          "direction": "in",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "yPos",
+          "datatype": "Real",
+          "direction": "in",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "RelativePos",
+          "datatype": "Boolean",
+          "direction": "in",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "NoOfRows",
+          "datatype": "Integer",
+          "direction": "in",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "NoOfColumns",
+          "datatype": "Integer",
+          "direction": "in",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "FontKind",
+          "datatype": "Integer",
+          "direction": "in",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "FontSize",
+          "datatype": "Integer",
+          "direction": "in",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "Status",
+          "datatype": "Integer",
+          "direction": "out",
+          "sorting": "WS",
+          "ownership": "WO"
+        }
+      ]
+    },
+    "togglewindow": {
+      "kind": "procedure",
+      "return_type": null,
+      "precision_scangroup": false,
+      "typed": true,
+      "parameters": [
+        {
+          "name": "ModulePath",
+          "datatype": "String",
+          "direction": "in",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "WindowTitle",
+          "datatype": "String",
+          "direction": "in",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "RelativePos",
+          "datatype": "Boolean",
+          "direction": "in",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "xPos",
+          "datatype": "Real",
+          "direction": "in",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "yPos",
+          "datatype": "Real",
+          "direction": "in",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "xSize",
+          "datatype": "Real",
+          "direction": "in",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "ySize",
+          "datatype": "Real",
+          "direction": "in",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "HierarchicRoot",
+          "datatype": "Boolean",
+          "direction": "in",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "SelectClass",
+          "datatype": "Integer",
+          "direction": "in",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "TimeOut",
+          "datatype": "Integer",
+          "direction": "in",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "WindowDisplayed",
+          "datatype": "Boolean",
+          "direction": "out",
+          "sorting": "NoS",
+          "ownership": "WO"
+        },
+        {
+          "name": "Status",
+          "datatype": "Integer",
+          "direction": "out",
+          "sorting": "WS",
+          "ownership": "WO"
+        }
+      ]
+    },
+    "vssgetlasterror": {
+      "kind": "procedure",
+      "return_type": null,
+      "precision_scangroup": false,
+      "typed": true,
+      "parameters": [
+        {
+          "name": "ErrorCode",
+          "datatype": "Integer",
+          "direction": "out",
+          "sorting": "WS",
+          "ownership": "WO"
+        },
+        {
+          "name": "ErrorText",
+          "datatype": "String",
+          "direction": "out",
+          "sorting": "WS",
+          "ownership": "WO"
+        }
+      ]
+    },
+    "writeline": {
+      "kind": "procedure",
+      "return_type": null,
+      "precision_scangroup": false,
+      "typed": true,
+      "parameters": [
+        {
+          "name": "FileRef",
+          "datatype": "tObject",
+          "direction": "in",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "String",
+          "datatype": "String",
+          "direction": "in",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "AsyncOperation",
+          "datatype": "AsyncOperation",
+          "direction": "inout",
+          "sorting": "RS/WS",
+          "ownership": "RO/WO"
+        },
+        {
+          "name": "DebugStatus",
+          "datatype": "Integer",
+          "direction": "out",
+          "sorting": "WS",
+          "ownership": "WO"
+        }
+      ]
+    },
+    "writelinedevice": {
+      "kind": "procedure",
+      "return_type": null,
+      "precision_scangroup": false,
+      "typed": true,
+      "parameters": [
+        {
+          "name": "DeviceRef",
+          "datatype": "tObject",
+          "direction": "in",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "Data",
+          "datatype": "AnyType",
+          "direction": "in var",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "EndOfSection",
+          "datatype": "Boolean",
+          "direction": "in",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "AsyncOperation",
+          "datatype": "AsyncOperation",
+          "direction": "inout",
+          "sorting": "RS/WS",
+          "ownership": "RO/WO"
+        },
+        {
+          "name": "DebugStatus",
+          "datatype": "Integer",
+          "direction": "out",
+          "sorting": "WS",
+          "ownership": "WO"
+        }
+      ]
+    },
+    "writelongvar": {
+      "kind": "procedure",
+      "return_type": null,
+      "precision_scangroup": false,
+      "typed": true,
+      "parameters": [
+        {
+          "name": "RemoteVariable",
+          "datatype": "AnyType",
+          "direction": "inout",
+          "sorting": "NoS",
+          "ownership": "NoO"
+        },
+        {
+          "name": "LocalVariable",
+          "datatype": "AnyType",
+          "direction": "in var",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "AsyncOperation",
+          "datatype": "AsyncOperation",
+          "direction": "inout",
+          "sorting": "RS/WS",
+          "ownership": "RO/WO"
+        },
+        {
+          "name": "DebugStatus",
+          "datatype": "Integer",
+          "direction": "out",
+          "sorting": "WS",
+          "ownership": "WO"
+        }
+      ]
+    },
+    "writestring": {
+      "kind": "procedure",
+      "return_type": null,
+      "precision_scangroup": false,
+      "typed": true,
+      "parameters": [
+        {
+          "name": "FileRef",
+          "datatype": "tObject",
+          "direction": "in",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "String",
+          "datatype": "String",
+          "direction": "in",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "AsyncOperation",
+          "datatype": "AsyncOperation",
+          "direction": "inout",
+          "sorting": "RS/WS",
+          "ownership": "RO/WO"
+        },
+        {
+          "name": "DebugStatus",
+          "datatype": "Integer",
+          "direction": "out",
+          "sorting": "WS",
+          "ownership": "WO"
+        }
+      ]
+    },
+    "writestringdevice": {
+      "kind": "procedure",
+      "return_type": null,
+      "precision_scangroup": false,
+      "typed": true,
+      "parameters": [
+        {
+          "name": "DeviceRef",
+          "datatype": "tObject",
+          "direction": "in",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "Data",
+          "datatype": "AnyType",
+          "direction": "in var",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "EndOfSection",
+          "datatype": "Boolean",
+          "direction": "in",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "AsyncOperation",
+          "datatype": "AsyncOperation",
+          "direction": "inout",
+          "sorting": "RS/WS",
+          "ownership": "RO/WO"
+        },
+        {
+          "name": "DebugStatus",
+          "datatype": "Integer",
+          "direction": "out",
+          "sorting": "WS",
+          "ownership": "WO"
+        }
+      ]
+    },
+    "writevar": {
+      "kind": "procedure",
+      "return_type": null,
+      "precision_scangroup": false,
+      "typed": true,
+      "parameters": [
+        {
+          "name": "RemoteVariable",
+          "datatype": "AnyType",
+          "direction": "inout",
+          "sorting": "NoS",
+          "ownership": "NoO"
+        },
+        {
+          "name": "LocalVariable",
+          "datatype": "AnyType",
+          "direction": "in var",
+          "sorting": "RS",
+          "ownership": "RO"
+        },
+        {
+          "name": "AsyncOperation",
+          "datatype": "AsyncOperation",
+          "direction": "inout",
+          "sorting": "RS/WS",
+          "ownership": "RO/WO"
+        },
+        {
+          "name": "DebugStatus",
+          "datatype": "Integer",
+          "direction": "out",
+          "sorting": "WS",
+          "ownership": "WO"
+        }
+      ]
+    }
+  }
+}
