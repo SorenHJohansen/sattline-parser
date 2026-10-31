@@ -19,7 +19,7 @@ from __future__ import annotations
 import re
 from collections.abc import Sequence as AbcSequence
 from enum import StrEnum
-from typing import cast
+from typing import Protocol, cast
 
 from sattline_parser.builtins.functions import get_function_signature
 from sattline_parser.grammar import constants as const
@@ -162,10 +162,23 @@ def split_dotted_name(name: str) -> tuple[str, tuple[str, ...]]:
     return parts[0], parts[1:]
 
 
+class FieldSpec(Protocol):
+    """Structural view of one record field, for graph implementations."""
+
+    @property
+    def datatype(self) -> Simple_DataType | str: ...
+
+
+class FieldGraph(Protocol):
+    """Structural view of a record field graph."""
+
+    def field(self, record_type: str, field_name: str) -> FieldSpec | None: ...
+
+
 def resolve_variable_field_datatype(
     variable: Variable,
     field_path: tuple[str, ...],
-    type_graph: TypeGraph,
+    type_graph: FieldGraph,
 ) -> Simple_DataType | str | None:
     current: Simple_DataType | str = variable.datatype
     for field_name in field_path:
@@ -181,7 +194,7 @@ def resolve_variable_field_datatype(
 def resolve_ref_datatype(
     ref: VarRef,
     scope: Scope,
-    type_graph: TypeGraph,
+    type_graph: FieldGraph,
 ) -> Simple_DataType | str | None:
     base_name, field_path = split_dotted_name(ref.name)
     if not base_name:
