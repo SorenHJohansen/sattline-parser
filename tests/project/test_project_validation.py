@@ -192,3 +192,19 @@ def test_registry_post_order_assertion_catches_a_consumer_first(tmp_path: Path) 
     loader._registry["b"] = SattLineProgram(name="B", code=dependency)
     with pytest.raises(RuntimeError, match="not in post-order"):
         loader._assert_registry_post_order()
+
+
+def test_cycles_fall_back_to_edges_for_directly_built_projects() -> None:
+    code = parse_source_text(_source("X"))
+    a = SattLineProgram(name="A", code=code, dependencies=("B",))
+    b = SattLineProgram(name="B", code=code, dependencies=("A",))
+    project = SattLineProject._from_programs({"A": a, "B": b})
+    assert project.cycles() == (("a", "b", "a"),)
+
+
+def test_cycles_fall_back_reports_no_cycle_for_a_dag() -> None:
+    code = parse_source_text(_source("X"))
+    a = SattLineProgram(name="A", code=code, dependencies=("B",))
+    b = SattLineProgram(name="B", code=code)
+    project = SattLineProject._from_programs({"A": a, "B": b})
+    assert project.cycles() == ()
