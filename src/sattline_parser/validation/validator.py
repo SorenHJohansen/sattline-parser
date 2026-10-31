@@ -2,14 +2,17 @@
 
 Walks the transformed AST and reports intra-file, well-formedness diagnostics
 that a SattLine compiler would reject at its "validation" stage. Project-graph
-and cross-module concerns (contract mismatches, graphics correlation) are
-deliberately out of scope and remain with the consumer.
+concerns (contract mismatches, graphics correlation, datecode conflicts) are
+deliberately out of scope and are added by the project loader.
 
 Use :func:`validate_basepicture` directly, or the ``parse_and_validate`` entry
 point in :mod:`sattline_parser.api`.
 """
 
 from __future__ import annotations
+
+from collections.abc import Sequence
+from dataclasses import dataclass
 
 from sattline_parser.models.ast_model import (
     BasePicture,
@@ -28,7 +31,7 @@ from sattline_parser.validation.declarations import (
     check_sibling_submodules,
     check_variable_declarations,
 )
-from sattline_parser.validation.diagnostics import Diagnostic
+from sattline_parser.validation.diagnostics import Diagnostic, DiagnosticCode
 from sattline_parser.validation.names import fold_identifier
 from sattline_parser.validation.parameter_mappings import check_parameter_mappings
 from sattline_parser.validation.symbols import Scope, build_scope
@@ -38,28 +41,64 @@ from sattline_parser.validation.type_graph import TypeGraph
 Submodule = SingleModule | FrameModule | ModuleTypeInstance
 
 
-def validate_basepicture(bp: BasePicture) -> tuple[Diagnostic, ...]:
-    """Validate a transformed BasePicture; returns all findings (empty when valid)."""
+@dataclass(frozen=True)
+class _ValidationContext:
+    records: dict[str, DataType]
+    moduletypes: dict[str, ModuleTypeDef]
+    type_graph: TypeGraph
+    allow_unresolved_external_datatypes: bool
+
+
+def validate_basepicture(
+    bp: BasePicture,
+    *,
+    external_datatypes: Sequence[DataType] = (),
+    external_moduletype_defs: Sequence[ModuleTypeDef] = (),
+    allow_unresolved_external_datatypes: bool = False,
+) -> tuple[Diagnostic, ...]:
+    """Validate a transformed BasePicture; returns all findings (empty when valid).
+
+    ``external_datatypes`` and ``external_moduletype_defs`` are the definitions
+    visible from already-loaded dependencies. The project loader passes them and
+    never sets ``allow_unresolved_external_datatypes``: it marks external
+    findings tentative instead. The flag exists for the standalone single-file
+    path, where an unknown name may genuinely be external; it suppresses only
+    the unknown-name findings, not typo suggestions or local rules.
+    """
     errors: list[Diagnostic] = []
-    records = {fold_identifier(datatype.name): datatype for datatype in bp.datatype_defs}
-    moduletypes = {fold_identifier(moduletype.name): moduletype for moduletype in bp.moduletype_defs}
-    type_graph = TypeGraph.from_datatypes(bp.datatype_defs)
+    available_datatypes = [*bp.datatype_defs, *external_datatypes]
+    available_moduletypes = [*bp.moduletype_defs, *external_moduletype_defs]
+    context = _ValidationContext(
+        records={fold_identifier(datatype.name): datatype for datatype in available_datatypes},
+        moduletypes={fold_identifier(moduletype.name): moduletype for moduletype in available_moduletypes},
+        type_graph=TypeGraph.from_datatypes(available_datatypes),
+        allow_unresolved_external_datatypes=allow_unresolved_external_datatypes,
+    )
 
     check_reserved_name_declarations(bp, errors)
     check_identifiers(bp, errors)
     base_scope = build_scope(None, bp.localvariables)
-    check_variable_declarations(bp.localvariables, records, errors)
-    check_record_fields(records, errors)
+    check_variable_declarations(
+        bp.localvariables,
+        context.records,
+        errors,
+        allow_unresolved_external_datatypes=allow_unresolved_external_datatypes,
+    )
+    check_record_fields(
+        context.records,
+        errors,
+        allow_unresolved_external_datatypes=allow_unresolved_external_datatypes,
+    )
     check_sibling_submodules(bp.submodules, errors)
     for module_def in bp.moduledefs:
-        check_coordinate_tail_types(module_def, base_scope, records, errors)
+        check_coordinate_tail_types(module_def, base_scope, context.records, errors)
 
     for code in bp.modulecodes:
-        walk_module_code(code, base_scope, records, errors)
+        walk_module_code(code, base_scope, context.records, errors)
     for child in bp.submodules:
-        _walk_submodule(child, base_scope, records, moduletypes, type_graph, errors)
+        _walk_submodule(child, base_scope, context, errors)
     for moduletype in bp.moduletype_defs:
-        _walk_moduletype_def(moduletype, records, moduletypes, type_graph, errors)
+        _walk_moduletype_def(moduletype, context, errors)
 
     return tuple(errors)
 
@@ -67,36 +106,49 @@ def validate_basepicture(bp: BasePicture) -> tuple[Diagnostic, ...]:
 def _walk_submodule(
     child: Submodule,
     parent: Scope,
-    records: dict[str, DataType],
-    moduletypes: dict[str, ModuleTypeDef],
-    type_graph: TypeGraph,
+    context: _ValidationContext,
     errors: list[Diagnostic],
 ) -> None:
     if isinstance(child, ModuleTypeInstance):
-        moduletype = moduletypes.get(fold_identifier(child.moduletype_name))
-        if moduletype is not None:
-            check_moduletype_transfers(child, moduletype, parent, records, errors)
-            expected = {fold_identifier(parameter.name): parameter for parameter in moduletype.moduleparameters}
-            check_parameter_mappings(child.parametermappings, expected, parent, type_graph, errors)
+        moduletype = context.moduletypes.get(fold_identifier(child.moduletype_name))
+        if moduletype is None:
+            if not context.allow_unresolved_external_datatypes:
+                errors.append(
+                    Diagnostic(
+                        code=DiagnosticCode.UNKNOWN_MODULETYPE_NAME,
+                        message=(
+                            f"Module type {child.moduletype_name!r} is neither declared in this file "
+                            "nor visible from a loaded dependency"
+                        ),
+                        span=child.header.declaration_span,
+                    )
+                )
+            return
+        check_moduletype_transfers(child, moduletype, parent, context.records, errors)
+        expected = {fold_identifier(parameter.name): parameter for parameter in moduletype.moduleparameters}
+        check_parameter_mappings(child.parametermappings, expected, parent, context.type_graph, errors)
         return
     scope = _child_scope(child, parent)
-    _walk_definition(child, scope, records, moduletypes, type_graph, errors)
+    _walk_definition(child, scope, context, errors)
 
 
 def _walk_moduletype_def(
     moduletype: ModuleTypeDef,
-    records: dict[str, DataType],
-    moduletypes: dict[str, ModuleTypeDef],
-    type_graph: TypeGraph,
+    context: _ValidationContext,
     errors: list[Diagnostic],
 ) -> None:
     scope = build_scope(None, [*moduletype.moduleparameters, *moduletype.localvariables])
-    check_variable_declarations([*moduletype.moduleparameters, *moduletype.localvariables], records, errors)
+    check_variable_declarations(
+        [*moduletype.moduleparameters, *moduletype.localvariables],
+        context.records,
+        errors,
+        allow_unresolved_external_datatypes=context.allow_unresolved_external_datatypes,
+    )
     check_sibling_submodules(moduletype.submodules, errors)
     for code in moduletype.modulecodes:
-        walk_module_code(code, scope, records, errors)
+        walk_module_code(code, scope, context.records, errors)
     for child in moduletype.submodules:
-        _walk_submodule(child, scope, records, moduletypes, type_graph, errors)
+        _walk_submodule(child, scope, context, errors)
 
 
 def _child_scope(child: SingleModule | FrameModule, parent: Scope) -> Scope:
@@ -118,18 +170,21 @@ def _local_variables(child: SingleModule | FrameModule) -> list[Variable]:
 def _walk_definition(
     child: SingleModule | FrameModule,
     scope: Scope,
-    records: dict[str, DataType],
-    moduletypes: dict[str, ModuleTypeDef],
-    type_graph: TypeGraph,
+    context: _ValidationContext,
     errors: list[Diagnostic],
 ) -> None:
     parameters = _module_parameters(child)
     notes = _local_variables(child)
-    check_variable_declarations([*parameters, *notes], records, errors)
+    check_variable_declarations(
+        [*parameters, *notes],
+        context.records,
+        errors,
+        allow_unresolved_external_datatypes=context.allow_unresolved_external_datatypes,
+    )
     check_sibling_submodules(child.submodules, errors)
     for module_def in child.moduledefs:
-        check_coordinate_tail_types(module_def, scope, records, errors)
+        check_coordinate_tail_types(module_def, scope, context.records, errors)
     for code in child.modulecodes:
-        walk_module_code(code, scope, records, errors)
+        walk_module_code(code, scope, context.records, errors)
     for sub in child.submodules:
-        _walk_submodule(sub, scope, records, moduletypes, type_graph, errors)
+        _walk_submodule(sub, scope, context, errors)

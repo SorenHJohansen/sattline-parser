@@ -13,7 +13,7 @@ from pathlib import Path
 from types import MappingProxyType
 
 from .loader import ProjectLoader
-from .models import DependencyGraph, LoadDiagnostic, LoadMode, SattLineProgram
+from .models import DependencyGraph, LoadDiagnostic, LoadMode, LoadValidation, SattLineProgram
 
 
 class SattLineProject:
@@ -27,6 +27,7 @@ class SattLineProject:
     def __init__(self) -> None:
         self._programs: dict[str, SattLineProgram] = {}
         self._diagnostics: tuple[LoadDiagnostic, ...] = ()
+        self._cycles: tuple[tuple[str, ...], ...] = ()
 
     @classmethod
     def _from_programs(cls, programs: Mapping[str, SattLineProgram]) -> SattLineProject:
@@ -49,8 +50,9 @@ class SattLineProject:
         strict: bool = True,
         debug: Callable[[str], None] | None = None,
         cache_dir: Path | None = None,
+        validate: LoadValidation = LoadValidation.FULL,
     ) -> SattLineProject:
-        """Load a project from ``roots`` plus ``targets`` (Phases 3-4).
+        """Load a project from ``roots`` plus ``targets``.
 
         Each target is resolved across the ordered roots, its ``.l`` / ``.z``
         dependency file (when present) is read, and dependencies are loaded
@@ -62,15 +64,27 @@ class SattLineProject:
         unparseable artifacts; ``strict=False`` skips the failing program and
         continues.
 
+        ``validate=FULL`` (default) runs the single-file validator per program
+        with the definitions visible from already-loaded dependencies and stores
+        the findings on each program. ``validate=NONE`` parses only.
+
         ``cache_dir`` optionally enables the parser-owned lookup and AST caches
         so repeated loads skip re-discovery and re-parsing. When ``None`` the
         load is fully in-memory and hermetic.
         """
-        loader = ProjectLoader(roots=roots, mode=mode, strict=strict, debug=debug, cache_dir=cache_dir)
+        loader = ProjectLoader(
+            roots=roots,
+            mode=mode,
+            strict=strict,
+            debug=debug,
+            cache_dir=cache_dir,
+            validate=validate,
+        )
         program_registry = loader.resolve(targets)
         project = cls()
         project._programs = program_registry
         project._diagnostics = loader.diagnostics
+        project._cycles = loader.cycles
         return project
 
     def get(self, name: str) -> SattLineProgram:
@@ -98,6 +112,20 @@ class SattLineProject:
         ``strict=True`` contract (missing *bodies* fail) is unchanged.
         """
         return self._diagnostics
+
+    def cycles(self) -> tuple[tuple[str, ...], ...]:
+        """Dependency cycle paths recorded during the load, in discovery order.
+
+        Each path starts at the dependency that closed the loop and ends at the
+        same name, for example ``("alpha", "beta", "alpha")``. The loader also
+        records a ``dependency-cycle`` load diagnostic; this view is the data
+        form consumers can render or compare.
+        """
+        return self._cycles
+
+    def libraries(self) -> tuple[str, ...]:
+        """Library names that resolved at least one loaded program, sorted."""
+        return tuple(sorted({program.library for program in self._programs.values() if program.library is not None}))
 
     def dependencies_of(self, name: str) -> tuple[str, ...]:
         """Declared dependencies (as spelled) of ``name``, in declaration order."""

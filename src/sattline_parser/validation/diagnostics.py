@@ -70,6 +70,8 @@ class DiagnosticCode(StrEnum):
     SUBSEQTRANSITION_STARTS_WITH_STEP = "SL-V054"
     SEQUENCE_REQUIRES_INIT_STEP = "SL-V055"
     SEQUENCE_AMBIGUOUS_FORK_TARGET = "SL-V056"
+    DATECODE_CONFLICT = "SL-V057"
+    UNKNOWN_MODULETYPE_NAME = "SL-V058"
 
 
 #: Codes that are not enforced. They were implemented on the strength of the
@@ -97,9 +99,15 @@ RETIRED_CODES: dict[DiagnosticCode, str] = {
 
 @dataclass(frozen=True, slots=True)
 class Diagnostic:
-    """A single validation finding, tied to a source span when available."""
+    """A single validation finding, tied to a source span when available.
+
+    ``tentative`` means the finding depends on definitions from a part of the
+    closure that failed to load, so it is not final. The project loader sets it;
+    the validator never does.
+    """
 
     code: DiagnosticCode
     message: str
     severity: DiagnosticSeverity = DiagnosticSeverity.ERROR
     span: SourceSpan | None = None
+    tentative: bool = False

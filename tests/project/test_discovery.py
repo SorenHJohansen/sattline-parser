@@ -287,11 +287,11 @@ def test_find_in_cached_base_direct(tmp_path: Path) -> None:
     assert plain._find_in_cached_base("code", "Cached", (".x",), ordered=ordered) is None
 
     cache.set("code", "Cached", LoadMode.OFFICIAL.value, root, ".x")
-    assert lookup._find_in_cached_base("code", "Cached", (".x",), ordered=ordered) == root / "Cached.x"
+    assert lookup._find_in_cached_base("code", "Cached", (".x",), ordered=ordered) == (root / "Cached.x", root)
 
     cache.set("code", "Cached", LoadMode.OFFICIAL.value, root, ".y")
     hit_stale = lookup._find_in_cached_base("code", "Cached", (".x",), ordered=ordered)
-    assert hit_stale == root / "Cached.x"
+    assert hit_stale == (root / "Cached.x", root)
 
     cache.set("code", "Other", LoadMode.OFFICIAL.value, root, ".z")
     assert cache.get("code", "Other", LoadMode.OFFICIAL.value) is not None
@@ -334,7 +334,7 @@ def test_find_in_cached_base_prefers_outranking_base(tmp_path: Path) -> None:
     ordered = ordered_lookup_bases([requester, dep_root], requester)
     assert ordered[0] == requester.resolve()
     cache.set("code", "A", LoadMode.OFFICIAL.value, dep_root, ".x")
-    assert lookup._find_in_cached_base("code", "A", (".x",), ordered=ordered) == requester / "A.x"
+    assert lookup._find_in_cached_base("code", "A", (".x",), ordered=ordered) == (requester / "A.x", requester)
     assert cache.get("code", "A", LoadMode.OFFICIAL.value) == {
         "base_dir": str(requester.resolve()),
         "ext": ".x",
@@ -352,7 +352,7 @@ def test_find_in_cached_base_falls_through_to_cached_base(tmp_path: Path) -> Non
     lookup = ProjectLookup([requester, dep_root], LoadMode.OFFICIAL, cache=cache)
     ordered = ordered_lookup_bases([requester, dep_root], requester)
     cache.set("code", "B", LoadMode.OFFICIAL.value, dep_root, ".x")
-    assert lookup._find_in_cached_base("code", "B", (".x",), ordered=ordered) == dep_root / "B.x"
+    assert lookup._find_in_cached_base("code", "B", (".x",), ordered=ordered) == (dep_root / "B.x", dep_root)
 
 
 def _raise_if_called(
