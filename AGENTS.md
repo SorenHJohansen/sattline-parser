@@ -36,15 +36,16 @@
 
 ## Public Tree Rule
 
-This repository is public.
+This repository is public. Describe behavior, not origin.
 
-- Describe behavior, never origin: "the syntax accepts `X`" is correct, "the
-  reader at `<address>` accepts `X`" is not.
-- Keep out code addresses, build or version numbers, library, unit, project and
-  person names, and any note about probing, disassembly or how a rule was
-  found.
-- This applies to comments, docstrings, test names, fixture headers, the
-  changelog, commit messages, branch names, PR text and issues.
+- Say what the syntax or tool does ("the syntax accepts `X`"), never where it
+  was learned. Keep out code addresses, third-party build numbers, and the
+  names of customer libraries, projects or people.
+- Back every new rule or data table with something reproducible: a fixture, a
+  public manual, or a black-box check against the real tool. Never add data
+  extracted from third-party binaries.
+- This project is unofficial. Use "SattLine" only to name the file format; do
+  not imply affiliation with ABB.
 
 ## Workflow
 
