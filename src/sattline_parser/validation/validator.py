@@ -22,6 +22,7 @@ from sattline_parser.models.ast_model import (
 )
 from sattline_parser.validation.code import check_coordinate_tail_types, walk_module_code
 from sattline_parser.validation.declarations import (
+    check_identifiers,
     check_record_fields,
     check_reserved_name_declarations,
     check_sibling_submodules,
@@ -29,8 +30,10 @@ from sattline_parser.validation.declarations import (
 )
 from sattline_parser.validation.diagnostics import Diagnostic
 from sattline_parser.validation.names import fold_identifier
+from sattline_parser.validation.parameter_mappings import check_parameter_mappings
 from sattline_parser.validation.symbols import Scope, build_scope
 from sattline_parser.validation.transfers import check_moduletype_transfers
+from sattline_parser.validation.type_graph import TypeGraph
 
 Submodule = SingleModule | FrameModule | ModuleTypeInstance
 
@@ -40,8 +43,10 @@ def validate_basepicture(bp: BasePicture) -> tuple[Diagnostic, ...]:
     errors: list[Diagnostic] = []
     records = {fold_identifier(datatype.name): datatype for datatype in bp.datatype_defs}
     moduletypes = {fold_identifier(moduletype.name): moduletype for moduletype in bp.moduletype_defs}
+    type_graph = TypeGraph.from_datatypes(bp.datatype_defs)
 
     check_reserved_name_declarations(bp, errors)
+    check_identifiers(bp, errors)
     base_scope = build_scope(None, bp.localvariables)
     check_variable_declarations(bp.localvariables, records, errors)
     check_record_fields(records, errors)
@@ -52,9 +57,9 @@ def validate_basepicture(bp: BasePicture) -> tuple[Diagnostic, ...]:
     for code in bp.modulecodes:
         walk_module_code(code, base_scope, records, errors)
     for child in bp.submodules:
-        _walk_submodule(child, base_scope, records, moduletypes, errors)
+        _walk_submodule(child, base_scope, records, moduletypes, type_graph, errors)
     for moduletype in bp.moduletype_defs:
-        _walk_moduletype_def(moduletype, records, moduletypes, errors)
+        _walk_moduletype_def(moduletype, records, moduletypes, type_graph, errors)
 
     return tuple(errors)
 
@@ -64,21 +69,25 @@ def _walk_submodule(
     parent: Scope,
     records: dict[str, DataType],
     moduletypes: dict[str, ModuleTypeDef],
+    type_graph: TypeGraph,
     errors: list[Diagnostic],
 ) -> None:
     if isinstance(child, ModuleTypeInstance):
         moduletype = moduletypes.get(fold_identifier(child.moduletype_name))
         if moduletype is not None:
             check_moduletype_transfers(child, moduletype, parent, records, errors)
+            expected = {fold_identifier(parameter.name): parameter for parameter in moduletype.moduleparameters}
+            check_parameter_mappings(child.parametermappings, expected, parent, type_graph, errors)
         return
     scope = _child_scope(child, parent)
-    _walk_definition(child, scope, records, moduletypes, errors)
+    _walk_definition(child, scope, records, moduletypes, type_graph, errors)
 
 
 def _walk_moduletype_def(
     moduletype: ModuleTypeDef,
     records: dict[str, DataType],
     moduletypes: dict[str, ModuleTypeDef],
+    type_graph: TypeGraph,
     errors: list[Diagnostic],
 ) -> None:
     scope = build_scope(None, [*moduletype.moduleparameters, *moduletype.localvariables])
@@ -87,7 +96,7 @@ def _walk_moduletype_def(
     for code in moduletype.modulecodes:
         walk_module_code(code, scope, records, errors)
     for child in moduletype.submodules:
-        _walk_submodule(child, scope, records, moduletypes, errors)
+        _walk_submodule(child, scope, records, moduletypes, type_graph, errors)
 
 
 def _child_scope(child: SingleModule | FrameModule, parent: Scope) -> Scope:
@@ -111,6 +120,7 @@ def _walk_definition(
     scope: Scope,
     records: dict[str, DataType],
     moduletypes: dict[str, ModuleTypeDef],
+    type_graph: TypeGraph,
     errors: list[Diagnostic],
 ) -> None:
     parameters = _module_parameters(child)
@@ -122,4 +132,4 @@ def _walk_definition(
     for code in child.modulecodes:
         walk_module_code(code, scope, records, errors)
     for sub in child.submodules:
-        _walk_submodule(sub, scope, records, moduletypes, errors)
+        _walk_submodule(sub, scope, records, moduletypes, type_graph, errors)
