@@ -15,30 +15,16 @@ from sattline_parser.models.ast_model import (
     DataType,
     ModuleTypeDef,
     ModuleTypeInstance,
-    Simple_DataType,
     Variable,
 )
 from sattline_parser.validation.diagnostics import Diagnostic, DiagnosticCode
 from sattline_parser.validation.names import fold_identifier
 from sattline_parser.validation.symbols import Scope, resolve_var
-
-_ANYTYPE = fold_identifier("anytype")
-
-_NUMERIC_TYPES: frozenset[Simple_DataType] = frozenset({Simple_DataType.INTEGER, Simple_DataType.REAL})
+from sattline_parser.validation.typing import builtin_type_matches
 
 
 def _source_type_compatible(source: Variable, formal: Variable) -> bool:
-    if fold_identifier(formal.datatype_text) == _ANYTYPE:
-        return True
-    source_builtin = isinstance(source.datatype, Simple_DataType)
-    formal_builtin = isinstance(formal.datatype, Simple_DataType)
-    if source_builtin and formal_builtin:
-        if source.datatype == formal.datatype:
-            return True
-        return source.datatype in _NUMERIC_TYPES and formal.datatype in _NUMERIC_TYPES
-    if source_builtin or formal_builtin:
-        return False
-    return fold_identifier(source.datatype_text) == fold_identifier(formal.datatype_text)
+    return builtin_type_matches(source.datatype, formal.datatype, direction="in")
 
 
 def check_moduletype_transfers(

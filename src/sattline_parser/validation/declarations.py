@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import re
 
+from sattline_parser.builtins.records import BUILTIN_RECORD_SPECS
 from sattline_parser.grammar import constants as const
 from sattline_parser.models.ast_model import (
     BasePicture,
@@ -45,7 +46,11 @@ Submodule = SingleModule | FrameModule | ModuleTypeInstance
 # Datatype names the SattLine language accepts that are not modelled as
 # Simple_DataType nor declared via TYPEDEFINITIONS. GroupData is the reserved
 # scan-group connection type used by module definitions with a GroupConn tail.
-_VALID_UNRESOLVED_DATATYPES = frozenset({fold_identifier("groupdata")})
+_VALID_UNRESOLVED_DATATYPES = frozenset({fold_identifier("groupdata"), fold_identifier("anytype")})
+
+#: Builtin record names are declared datatypes too; a variable may name one
+#: without a local DATATYPE definition.
+_BUILTIN_RECORD_KEYS = frozenset(fold_identifier(name) for name in BUILTIN_RECORD_SPECS)
 
 _MAX_IDENTIFIER_LENGTH = 20
 _IDENTIFIER_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*\Z")
@@ -275,7 +280,7 @@ def _check_datatype_reference(
         return
     name = variable.datatype_text
     folded = fold_identifier(name)
-    if folded in records or folded in _VALID_UNRESOLVED_DATATYPES:
+    if folded in records or folded in _BUILTIN_RECORD_KEYS or folded in _VALID_UNRESOLVED_DATATYPES:
         return
     suggestion = builtin_datatype_typo(name)
     if suggestion is not None:
