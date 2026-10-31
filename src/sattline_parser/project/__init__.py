@@ -36,8 +36,11 @@ from .loader import ProjectLoader, read_dependency_names
 from .lookup_cache import DEFAULT_LOOKUP_CACHE_FLUSH_INTERVAL, LOOKUP_CACHE_VERSION, FileLookupCache
 from .models import (
     DependencyGraph,
+    GraphicsCompositeRecord,
     GraphicsMessage,
     GraphicsModel,
+    GraphicsPathRow,
+    GraphicsPictureDisplayRecord,
     LoadDiagnostic,
     LoadDiagnosticKind,
     LoadMode,
@@ -58,8 +61,11 @@ __all__ = [
     "DependencyParseError",
     "FileASTCache",
     "FileLookupCache",
+    "GraphicsCompositeRecord",
     "GraphicsMessage",
     "GraphicsModel",
+    "GraphicsPathRow",
+    "GraphicsPictureDisplayRecord",
     "LoadDiagnostic",
     "LoadDiagnosticKind",
     "LoadMode",
