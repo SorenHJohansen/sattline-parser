@@ -1,0 +1,68 @@
+{
+  "differences": [
+    {
+      "id": "division-by-zero",
+      "parser": "Accepts a literal zero divisor and reports nothing.",
+      "sattlint": "Rejects a literal zero divisor.",
+      "decision": "parser",
+      "reason": "The valid corpus fixture evaluates 1/0 and 1.0/0.0 and the real tool accepts it, so the parser must not reject it.",
+      "fixture": "valid/CompressedFullGrammar.s"
+    },
+    {
+      "id": "real-to-integer-narrowing",
+      "parser": "Accepts a real value assigned to an integer target.",
+      "sattlint": "Rejects the narrowing assignment.",
+      "decision": "parser",
+      "reason": "No probe establishes that narrowing is rejected; the valid corpus assigns a real expression to an integer target.",
+      "fixture": "valid/CoordinateInvarTailRealExpr.s"
+    },
+    {
+      "id": "temporal-vs-numeric-comparison",
+      "parser": "Accepts one temporal operand compared with a numeric operand.",
+      "sattlint": "Requires both comparison operands to be numeric.",
+      "decision": "parser",
+      "reason": "Probes accept Elapsed == 5, Elapsed > 2.5 and Stamp == 5; the corpus pins the accepted forms.",
+      "fixture": "valid/TemporalVsNumericCompare.s"
+    },
+    {
+      "id": "string-assignment-family",
+      "parser": "Rejects assignment to a plain string target only.",
+      "sattlint": "Rejects assignment to every string-like target.",
+      "decision": "parser",
+      "reason": "The parser accepts Tag = Label for identstring/tagstring pairs; the corpus keeps those assignments clean.",
+      "fixture": "valid/CompressedFullGrammar.s"
+    },
+    {
+      "id": "datatype-min-fields",
+      "parser": "Accepts a DATATYPE with one field.",
+      "sattlint": "Rejects a DATATYPE with fewer than two fields.",
+      "decision": "parser",
+      "reason": "Single-field records are used by the parser's own fixtures and load from disk; the editor UI guard is not a parser rule.",
+      "fixture": "valid/CompressedFullGrammar.s"
+    },
+    {
+      "id": "program-name-length",
+      "parser": "Does not apply the 20-character identifier limit to the header program name.",
+      "sattlint": "Applies the identifier limit to the header program name.",
+      "decision": "parser",
+      "reason": "Corpus program names longer than 20 characters are accepted, so the program name is a label rather than a language identifier.",
+      "fixture": "valid/TemporalVsNumericCompare.s"
+    },
+    {
+      "id": "retired-codes",
+      "parser": "Emits none of the retired diagnostic codes.",
+      "sattlint": "Emits some findings the parser retired.",
+      "decision": "parser",
+      "reason": "Each retired code was disproved by loading the same source from disk; see RETIRED_CODES.",
+      "fixture": "invalid/DuplicateDatatypeName.s"
+    },
+    {
+      "id": "sfc-init-step-placement",
+      "parser": "Accepts a sequence that does not start with exactly one SEQINITSTEP.",
+      "sattlint": "Requires exactly one SEQINITSTEP at the first position.",
+      "decision": "parser",
+      "reason": "The retired-code fixtures load from disk, so the editor UI guard is not a parser rule.",
+      "fixture": "invalid/SFCInitStepNotFirst.s"
+    }
+  ]
+}

@@ -1,0 +1,549 @@
+{
+  "fixtures": {
+    "edge_cases/ArithmeticPrecedence.s": [],
+    "edge_cases/BareDurationZero.s": [],
+    "edge_cases/CaseInsensitiveIdentifiers.s": [],
+    "edge_cases/CommentInsideEquation.s": [],
+    "edge_cases/ConstStringSetGetPos.s": [],
+    "edge_cases/DeeplyNestedComments.s": [],
+    "edge_cases/DurationInParameterMapping.s": [],
+    "edge_cases/DurationVariousFormats.s": [],
+    "edge_cases/ElsifExpression.s": [],
+    "edge_cases/EmptyCodeBlocks.s": [],
+    "edge_cases/EmptyRecordType.s": [],
+    "edge_cases/FrameModuleInvocation.s": [],
+    "edge_cases/GlobalParameterMapping.s": [],
+    "edge_cases/KeywordPrefixedIdentifiers.s": [],
+    "edge_cases/LegacySequenceNoInitStep.s": [],
+    "edge_cases/MinimalSequence.s": [],
+    "edge_cases/ModuleOptions.s": [],
+    "edge_cases/NegativeDurationValue.s": [],
+    "edge_cases/OldNewOnDottedStateField.s": [],
+    "edge_cases/QuotedIdentifierMaxLength.s": [],
+    "edge_cases/ScanGroupClause.s": [],
+    "edge_cases/SeqBreak.s": [],
+    "edge_cases/SeqForkMultipleTargets.s": [],
+    "edge_cases/SequenceAlternative.s": [],
+    "edge_cases/SimpleModuleTypeInvocation.s": [],
+    "edge_cases/SubSequenceTransition.s": [],
+    "edge_cases/TimeValueInit.s": [],
+    "edge_cases/UnicodeIdentifiers.s": [],
+    "invalid/AssignmentFamilyMismatch.s": [
+      {
+        "code": "SL-V029",
+        "column": 7,
+        "length": 14,
+        "line": 29,
+        "severity": "error"
+      },
+      {
+        "code": "SL-V029",
+        "column": 7,
+        "length": 14,
+        "line": 31,
+        "severity": "error"
+      }
+    ],
+    "invalid/BadBareDurationString.s": [],
+    "invalid/BadBareTimeString.s": [],
+    "invalid/BadDurationLiteral.s": [],
+    "invalid/BadTimeLiteral.s": [],
+    "invalid/BuiltinDatatypeTypo.s": [
+      {
+        "code": "SL-V018",
+        "column": 4,
+        "length": 7,
+        "line": 14,
+        "severity": "error"
+      }
+    ],
+    "invalid/BuiltinOutArgNotVariable.s": [
+      {
+        "code": "SL-V014",
+        "column": 7,
+        "length": 71,
+        "line": 26,
+        "severity": "error"
+      }
+    ],
+    "invalid/BuiltinWrongArity.s": [
+      {
+        "code": "SL-V013",
+        "column": 15,
+        "length": 26,
+        "line": 22,
+        "severity": "error"
+      }
+    ],
+    "invalid/CodedRawKeyword.s": [
+      {
+        "parse_error": "Unexpected token Token('NAME', 'SeqControl') at line 22, column 19.\nExpected one of: \n\t* COMMA\n\t* RPAR\n\t* SEQTIMER\n\t* SEQCONTROL\n"
+      }
+    ],
+    "invalid/ConsecutiveSeqSteps.s": [
+      {
+        "code": "SL-V016",
+        "column": 7,
+        "length": 57,
+        "line": 27,
+        "severity": "error"
+      }
+    ],
+    "invalid/ConstVarAsBuiltinOutArg.s": [
+      {
+        "code": "SL-V007",
+        "column": 7,
+        "length": 27,
+        "line": 22,
+        "severity": "error"
+      }
+    ],
+    "invalid/CoordInVarTail.s": [
+      {
+        "parse_error": "Unexpected token Token('NAME', 'PanelX') at line 38, column 22.\nExpected one of: \n\t* ON_KW\n\t* STRING\n\t* SIGNED_INT\n\t* REAL\n\t* BOOL\n\t* OFF_KW\n\t* LITSTRING\nPrevious tokens: [Token('INVAR_PREFIX', 'InVar_')]\n"
+      }
+    ],
+    "invalid/CoordinateInvarTail.s": [
+      {
+        "code": "SL-V032",
+        "column": 28,
+        "length": 10,
+        "line": 21,
+        "severity": "error"
+      }
+    ],
+    "invalid/CrossModuleContractMismatch.s": [
+      {
+        "code": "SL-V027",
+        "column": 7,
+        "length": 26,
+        "line": 37,
+        "severity": "error"
+      }
+    ],
+    "invalid/DatatypeShadowsBuiltinName.s": [],
+    "invalid/DuplicateDatatypeName.s": [],
+    "invalid/DuplicateModuletypeName.s": [],
+    "invalid/DuplicateRecordFieldName.s": [],
+    "invalid/DuplicateSFCElementNames.s": [
+      {
+        "code": "SL-V021",
+        "column": 7,
+        "length": 56,
+        "line": 28,
+        "severity": "error"
+      }
+    ],
+    "invalid/DuplicateSiblingSubmodules.s": [
+      {
+        "code": "SL-V004",
+        "column": 4,
+        "length": 63,
+        "line": 28,
+        "severity": "error"
+      }
+    ],
+    "invalid/DuplicateVariableNames.s": [],
+    "invalid/EncodingStress.s": [
+      {
+        "parse_error": "Unexpected token Token('NAME', 'EncodingStress_') at line 4, column 65.\nExpected one of: \n\t* MODULEDEF\n\t* SUBMODULES\n\t* MODULEPARAMETERS\n\t* DATECODE_PREFIX\n\t* LOCALVARIABLES\n\t* LPAR\n\t* TYPEDEFINITIONS\nPrevious tokens: [Token('MODULEDEFINITION', 'MODULEDEFINITION')]\n"
+      }
+    ],
+    "invalid/FreestandingCommentInModuleCode.s": [
+      {
+        "parse_error": "Unexpected token Token('COMMENT_START', '(*') at line 20, column 4.\nExpected one of: \n\t* EQUATIONBLOCK\n\t* OPENSEQUENCE\n\t* SEQUENCE\n\t* EQUATIONS\nPrevious tokens: [Token('MODULECODE', 'ModuleCode')]\n"
+      }
+    ],
+    "invalid/GraphObjectsDoubleLayer.s": [
+      {
+        "parse_error": "Unexpected token Token('LAYER_PREFIX', 'Layer_') at line 14, column 16.\nExpected one of: \n\t* COMMENT_START\n\t* COMPOSITEOBJECT\n\t* SEGMENTOBJECT\n\t* CONNECTIONNODE\n\t* TEXTOBJECT\n\t* RECTANGLEOBJECT\n\t* OVALOBJECT\n\t* POLYGONOBJECT\n\t* LINEOBJECT\nPrevious tokens: [Token('COLON', ':')]\n"
+      }
+    ],
+    "invalid/GraphObjectsSectionLayer.s": [
+      {
+        "parse_error": "Unexpected token Token('LAYER_PREFIX', 'Layer_') at line 24, column 16.\nExpected one of: \n\t* COMMENT_START\n\t* COMPOSITEOBJECT\n\t* SEGMENTOBJECT\n\t* CONNECTIONNODE\n\t* TEXTOBJECT\n\t* RECTANGLEOBJECT\n\t* OVALOBJECT\n\t* POLYGONOBJECT\n\t* LINEOBJECT\nPrevious tokens: [Token('COLON', ':')]\n"
+      }
+    ],
+    "invalid/IfConditionNotBoolean.s": [
+      {
+        "code": "SL-V030",
+        "column": 10,
+        "length": 1,
+        "line": 24,
+        "severity": "error"
+      },
+      {
+        "code": "SL-V030",
+        "column": 13,
+        "length": 5,
+        "line": 26,
+        "severity": "error"
+      }
+    ],
+    "invalid/InitValueTypeMismatch.s": [],
+    "invalid/Malformed.s": [
+      {
+        "parse_error": "Unexpected token Token('NAME', 'BasePicture') at line 1, column 1.\nExpected one of: \n\t* STRING\nPrevious tokens: [None]\n"
+      }
+    ],
+    "invalid/ModuleCodeWithoutModuleDef.s": [
+      {
+        "parse_error": "Unexpected token Token('NAME', 'ModuleCode') at line 12, column 1.\nExpected one of: \n\t* MODULEDEF\n\t* SUBMODULES\n\t* MODULEPARAMETERS\n\t* LOCALVARIABLES\n\t* LPAR\n\t* TYPEDEFINITIONS\n"
+      }
+    ],
+    "invalid/ModuleDefNoTrailingEnddef.s": [
+      {
+        "parse_error": "Unexpected token Token('$END', '') at line 21, column 1.\nExpected one of: \n\t* SEMICOLON\n\t* COMMENT_START\n"
+      }
+    ],
+    "invalid/NonNumericComparisonOperand.s": [
+      {
+        "code": "SL-V028",
+        "column": 14,
+        "length": 9,
+        "line": 27,
+        "severity": "error"
+      },
+      {
+        "code": "SL-V028",
+        "column": 27,
+        "length": 18,
+        "line": 27,
+        "severity": "error"
+      },
+      {
+        "code": "SL-V028",
+        "column": 27,
+        "length": 18,
+        "line": 27,
+        "severity": "error"
+      }
+    ],
+    "invalid/NotSattLine.s": [
+      {
+        "parse_error": "Unexpected token Token('NAME', 'This') at line 1, column 1.\nExpected one of: \n\t* STRING\nPrevious tokens: [None]\n"
+      }
+    ],
+    "invalid/OldNewOnNonState.s": [
+      {
+        "code": "SL-V005",
+        "column": 10,
+        "length": 11,
+        "line": 20,
+        "severity": "error"
+      }
+    ],
+    "invalid/OldNewOnNonStateRecordField.s": [
+      {
+        "code": "SL-V006",
+        "column": 16,
+        "length": 13,
+        "line": 30,
+        "severity": "error"
+      }
+    ],
+    "invalid/OpSaveAndStateCombined.s": [
+      {
+        "code": "SL-V031",
+        "column": 4,
+        "length": 13,
+        "line": 19,
+        "severity": "error"
+      },
+      {
+        "code": "SL-V031",
+        "column": 4,
+        "length": 14,
+        "line": 20,
+        "severity": "error"
+      }
+    ],
+    "invalid/OpSaveConstCombined.s": [
+      {
+        "code": "SL-V031",
+        "column": 4,
+        "length": 5,
+        "line": 25,
+        "severity": "error"
+      }
+    ],
+    "invalid/OversizedInput.s": [
+      {
+        "parse_error": "Unexpected token Token('NAME', 'OversizedInput_') at line 4, column 65.\nExpected one of: \n\t* MODULEDEF\n\t* SUBMODULES\n\t* MODULEPARAMETERS\n\t* DATECODE_PREFIX\n\t* LOCALVARIABLES\n\t* LPAR\n\t* TYPEDEFINITIONS\nPrevious tokens: [Token('MODULEDEFINITION', 'MODULEDEFINITION')]\n"
+      }
+    ],
+    "invalid/PropertyInVarBareName.s": [
+      {
+        "parse_error": "Unexpected token Token('NAME', 'Flag') at line 27, column 34.\nExpected one of: \n\t* ON_KW\n\t* SIGNED_INT\n\t* REAL\n\t* BOOL\n\t* OFF_KW\n\t* STRING\nPrevious tokens: [Token('INVAR_PREFIX', 'InVar_')]\n"
+      }
+    ],
+    "invalid/ReservedNameVarOff.s": [
+      {
+        "code": "SL-V034",
+        "column": 4,
+        "length": 3,
+        "line": 18,
+        "severity": "error"
+      }
+    ],
+    "invalid/ReservedNameVarOn.s": [
+      {
+        "code": "SL-V034",
+        "column": 4,
+        "length": 2,
+        "line": 18,
+        "severity": "error"
+      }
+    ],
+    "invalid/SFCAlternativeBranchStartsWithStep.s": [
+      {
+        "code": "SL-V036",
+        "column": 7,
+        "length": 224,
+        "line": 25,
+        "severity": "error"
+      },
+      {
+        "code": "SL-V036",
+        "column": 7,
+        "length": 34,
+        "line": 33,
+        "severity": "error"
+      },
+      {
+        "code": "SL-V023",
+        "column": 10,
+        "length": 73,
+        "line": 26,
+        "severity": "error"
+      }
+    ],
+    "invalid/SFCInitStepNotFirst.s": [],
+    "invalid/SFCInitStepRepeated.s": [],
+    "invalid/SFCParallelBranchStartsWithTransition.s": [
+      {
+        "code": "SL-V024",
+        "column": 10,
+        "length": 37,
+        "line": 25,
+        "severity": "error"
+      }
+    ],
+    "invalid/SeqForkUnknownTarget.s": [
+      {
+        "code": "SL-V017",
+        "column": 10,
+        "length": 80,
+        "line": 30,
+        "severity": "error"
+      }
+    ],
+    "invalid/SequenceParallel.s": [
+      {
+        "code": "SL-V033",
+        "column": 7,
+        "length": 12,
+        "line": 27,
+        "severity": "error"
+      }
+    ],
+    "invalid/StandaloneSeqBreak.s": [
+      {
+        "parse_error": "Unexpected token Token('NAME', 'SEQBREAK') at line 31, column 7.\nExpected one of: \n\t* SUBSEQUENCE\n\t* PARALLELSEQ\n\t* COMMENT_START\n\t* ENDSEQUENCE\n\t* SEQINITSTEP\n\t* SEQTRANSITION\n\t* SEQSTEP\n\t* SUBSEQSTEP\n\t* ALTERNATIVESEQ\n\t* ENDOPENSEQUENCE\n\t* SEQFORK\n\t* SUBSEQTRANSITION\n"
+      }
+    ],
+    "invalid/StringLiteralInCallArgument.s": [
+      {
+        "code": "SL-V015",
+        "column": 17,
+        "length": 37,
+        "line": 22,
+        "severity": "error"
+      }
+    ],
+    "invalid/SubSequenceDefinition.s": [
+      {
+        "code": "SL-V033",
+        "column": 7,
+        "length": 14,
+        "line": 24,
+        "severity": "error"
+      }
+    ],
+    "invalid/TemporalVsTemporalCompare.s": [
+      {
+        "code": "SL-V028",
+        "column": 14,
+        "length": 19,
+        "line": 44,
+        "severity": "error"
+      },
+      {
+        "code": "SL-V028",
+        "column": 14,
+        "length": 19,
+        "line": 44,
+        "severity": "error"
+      },
+      {
+        "code": "SL-V028",
+        "column": 14,
+        "length": 18,
+        "line": 45,
+        "severity": "error"
+      },
+      {
+        "code": "SL-V028",
+        "column": 14,
+        "length": 18,
+        "line": 45,
+        "severity": "error"
+      },
+      {
+        "code": "SL-V028",
+        "column": 14,
+        "length": 19,
+        "line": 46,
+        "severity": "error"
+      },
+      {
+        "code": "SL-V028",
+        "column": 14,
+        "length": 19,
+        "line": 46,
+        "severity": "error"
+      },
+      {
+        "code": "SL-V028",
+        "column": 14,
+        "length": 18,
+        "line": 47,
+        "severity": "error"
+      },
+      {
+        "code": "SL-V028",
+        "column": 14,
+        "length": 18,
+        "line": 47,
+        "severity": "error"
+      },
+      {
+        "code": "SL-V028",
+        "column": 14,
+        "length": 20,
+        "line": 48,
+        "severity": "error"
+      },
+      {
+        "code": "SL-V028",
+        "column": 14,
+        "length": 20,
+        "line": 48,
+        "severity": "error"
+      },
+      {
+        "code": "SL-V028",
+        "column": 14,
+        "length": 19,
+        "line": 49,
+        "severity": "error"
+      },
+      {
+        "code": "SL-V028",
+        "column": 14,
+        "length": 19,
+        "line": 49,
+        "severity": "error"
+      }
+    ],
+    "invalid/TerminalSeqStep.s": [
+      {
+        "code": "SL-V033",
+        "column": 7,
+        "length": 12,
+        "line": 20,
+        "severity": "error"
+      }
+    ],
+    "invalid/UndefinedVariableRef.s": [
+      {
+        "code": "SL-V019",
+        "column": 24,
+        "length": 5,
+        "line": 22,
+        "severity": "error"
+      }
+    ],
+    "invalid/UnknownDatatypeName.s": [
+      {
+        "code": "SL-V020",
+        "column": 4,
+        "length": 4,
+        "line": 14,
+        "severity": "error"
+      }
+    ],
+    "invalid/UnterminatedComment.s": [
+      {
+        "parse_error": "Unexpected token Token('$END', '') at line 14, column 23.\nExpected one of: \n\t* COMMENT_END\n\t* COMMENT_START\n\t* COMMENT_TEXT\n"
+      }
+    ],
+    "invalid/WriteToConstVariable.s": [
+      {
+        "code": "SL-V007",
+        "column": 7,
+        "length": 20,
+        "line": 21,
+        "severity": "error"
+      }
+    ],
+    "invalid/WriteToOldState.s": [
+      {
+        "code": "SL-V035",
+        "column": 7,
+        "length": 11,
+        "line": 27,
+        "severity": "error"
+      }
+    ],
+    "valid/AllDatatypes.s": [],
+    "valid/BuiltinCalls.s": [],
+    "valid/CompressedFullGrammar.s": [],
+    "valid/ControlFlow.s": [],
+    "valid/CoordinateInvarTailRealExpr.s": [],
+    "valid/DefaultInitOnRecord.s": [],
+    "valid/DurationAndTime.s": [],
+    "valid/GraphObjectEnableTails.s": [],
+    "valid/GraphObjectEnableVariants.s": [],
+    "valid/GraphObjectShapes.s": [],
+    "valid/GraphObjectsObjectLayer.s": [],
+    "valid/GraphicsObjects.s": [],
+    "valid/InteractEnableParenTail.s": [],
+    "valid/InteractEnableTails.s": [],
+    "valid/InteractWidgets.s": [],
+    "valid/MinimalProgram.s": [],
+    "valid/ModuleDefTrailingEnddefSemicolon.s": [],
+    "valid/MultiEquationBlocks.s": [],
+    "valid/MultiTypedefBlocks.s": [],
+    "valid/MultipleModuleDefBlocks.s": [],
+    "valid/NestedSubmodules.s": [],
+    "valid/OldNewOnStateField.s": [],
+    "valid/OpenSequenceSeqFork.s": [],
+    "valid/QuotedIdentifiers.s": [],
+    "valid/RecordTypeAccess.s": [],
+    "valid/SFCUnnamedElements.s": [],
+    "valid/SequenceAlternative.s": [],
+    "valid/SequenceBasic.s": [],
+    "valid/SequenceParallel.s": [],
+    "valid/SubSeqTransition.s": [],
+    "valid/SubSeqTransitionAlt.s": [],
+    "valid/SubmoduleParams.s": [],
+    "valid/SubsequenceBlock.s": [],
+    "valid/TemporalVsNumericCompare.s": [],
+    "valid/TypedExpressions.s": [],
+    "valid/UnCompressedFullGrammar.s": [],
+    "valid/VariableModifiers.s": []
+  },
+  "generated_by": "scripts/export_parity_expectations.py",
+  "validator": "parser"
+}
