@@ -12,13 +12,24 @@ declaration while the same source loads and parses from disk; see
 
 from __future__ import annotations
 
+import re
+
+from sattline_parser.grammar import constants as const
 from sattline_parser.models.ast_model import (
     BasePicture,
     DataType,
     FrameModule,
+    ModuleCode,
     ModuleHeader,
     ModuleTypeDef,
     ModuleTypeInstance,
+    SFCAlternative,
+    SFCBodyItem,
+    SFCParallel,
+    SFCStep,
+    SFCSubsequence,
+    SFCTransition,
+    SFCTransitionSub,
     Simple_DataType,
     SingleModule,
     SourceSpan,
@@ -35,6 +46,134 @@ Submodule = SingleModule | FrameModule | ModuleTypeInstance
 # Simple_DataType nor declared via TYPEDEFINITIONS. GroupData is the reserved
 # scan-group connection type used by module definitions with a GroupConn tail.
 _VALID_UNRESOLVED_DATATYPES = frozenset({fold_identifier("groupdata")})
+
+_MAX_IDENTIFIER_LENGTH = 20
+_IDENTIFIER_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*\Z")
+_ALLOWED_IDENTIFIER_KEYWORDS = frozenset(fold_identifier(name) for name in ("colour", "newwindow"))
+#: On/Off have their own rule (RESERVED_NAME_DECLARED), so keep them out of
+#: the general keyword set to avoid reporting the same declaration twice.
+_SPECIAL_RESERVED_NAMES = frozenset(fold_identifier(name) for name in ("on", "off"))
+
+
+def _build_reserved_identifier_keywords() -> frozenset[str]:
+    reserved: set[str] = set()
+    for name in dir(const):
+        if not name.startswith("GRAMMAR_VALUE_"):
+            continue
+        value = getattr(const, name)
+        if not isinstance(value, str) or _IDENTIFIER_RE.fullmatch(value) is None:
+            continue
+        folded = fold_identifier(value)
+        if folded in _ALLOWED_IDENTIFIER_KEYWORDS or folded in _SPECIAL_RESERVED_NAMES:
+            continue
+        reserved.add(folded)
+    return frozenset(reserved)
+
+
+_RESERVED_IDENTIFIER_KEYWORDS = _build_reserved_identifier_keywords()
+
+
+def _identifier_length(name: str) -> int:
+    if len(name) >= 2 and name.startswith("'") and name.endswith("'"):
+        return len(name[1:-1])
+    return len(name)
+
+
+def check_identifier(
+    name: str | None,
+    what: str,
+    span: SourceSpan | None,
+    errors: list[Diagnostic],
+    *,
+    check_reserved_keywords: bool = True,
+) -> None:
+    """Flag identifiers that exceed the language limit or reuse a keyword."""
+    if not name:
+        return
+    if _identifier_length(name) > _MAX_IDENTIFIER_LENGTH:
+        errors.append(
+            Diagnostic(
+                code=DiagnosticCode.IDENTIFIER_TOO_LONG,
+                message=f"{what} name {name!r} exceeds {_MAX_IDENTIFIER_LENGTH} characters",
+                span=span,
+            )
+        )
+    quoted = len(name) >= 2 and name.startswith("'") and name.endswith("'")
+    if check_reserved_keywords and not quoted and fold_identifier(name) in _RESERVED_IDENTIFIER_KEYWORDS:
+        errors.append(
+            Diagnostic(
+                code=DiagnosticCode.RESERVED_KEYWORD_NAME,
+                message=f"{what} name {name!r} is a reserved SattLine keyword",
+                span=span,
+            )
+        )
+
+
+def check_identifiers(bp: BasePicture, errors: list[Diagnostic]) -> None:
+    """Check every named declaration and SFC element in the picture."""
+    check_identifier(bp.header.name, "BasePicture", bp.header.declaration_span, errors, check_reserved_keywords=False)
+    for datatype in bp.datatype_defs:
+        check_identifier(datatype.name, "Datatype", datatype.declaration_span, errors)
+        for variable in datatype.var_list:
+            check_identifier(variable.name, "Variable", variable.declaration_span, errors)
+    for moduletype in bp.moduletype_defs:
+        check_identifier(moduletype.name, "Moduletype", moduletype.declaration_span, errors)
+        _check_variable_names(moduletype.moduleparameters, errors)
+        _check_variable_names(moduletype.localvariables, errors)
+        _check_modulecode_identifiers(moduletype.modulecode, errors)
+        for submodule in moduletype.submodules:
+            _check_submodule_identifiers(submodule, errors)
+    _check_variable_names(bp.localvariables, errors)
+    _check_modulecode_identifiers(bp.modulecode, errors)
+    for submodule in bp.submodules:
+        _check_submodule_identifiers(submodule, errors)
+
+
+def _check_variable_names(variables: list[Variable], errors: list[Diagnostic]) -> None:
+    for variable in variables:
+        check_identifier(variable.name, "Variable", variable.declaration_span, errors)
+
+
+def _check_submodule_identifiers(submodule: Submodule, errors: list[Diagnostic]) -> None:
+    check_identifier(submodule.header.name, "Submodule", submodule.header.declaration_span, errors)
+    if isinstance(submodule, ModuleTypeInstance):
+        check_identifier(submodule.moduletype_name, "Module type reference", submodule.header.declaration_span, errors)
+        return
+    if isinstance(submodule, SingleModule):
+        _check_variable_names(submodule.moduleparameters, errors)
+        _check_variable_names(submodule.localvariables, errors)
+        _check_modulecode_identifiers(submodule.modulecode, errors)
+    for nested in submodule.submodules:
+        _check_submodule_identifiers(nested, errors)
+
+
+def _check_modulecode_identifiers(modulecode: ModuleCode | None, errors: list[Diagnostic]) -> None:
+    if modulecode is None:
+        return
+    for equation in modulecode.equations or ():
+        check_identifier(equation.name, "Equation", None, errors)
+    for sequence in modulecode.sequences or ():
+        check_identifier(sequence.name, "Sequence", None, errors)
+        _check_sequence_identifiers(sequence.code, errors)
+
+
+def _check_sequence_identifiers(items: list[SFCBodyItem], errors: list[Diagnostic]) -> None:
+    for item in items:
+        name: str | None = None
+        span: SourceSpan | None = None
+        if isinstance(item, SFCStep | SFCTransition | SFCTransitionSub | SFCSubsequence):
+            name = item.name
+            span = item.span
+        if name:
+            check_identifier(name, "Sequence element", span, errors)
+        if isinstance(item, SFCStep | SFCTransition) and item.fork is not None:
+            for target in item.fork.targets:
+                check_identifier(target, "Fork target", span, errors)
+        if isinstance(item, SFCAlternative | SFCParallel):
+            for branch in item.branches:
+                _check_sequence_identifiers(branch, errors)
+        elif isinstance(item, SFCSubsequence | SFCTransitionSub):
+            _check_sequence_identifiers(item.body, errors)
 
 
 def check_sibling_submodules(submodules: list[Submodule], errors: list[Diagnostic]) -> None:

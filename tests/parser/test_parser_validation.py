@@ -489,7 +489,7 @@ def test_builtin_arity_and_out_arg_checks():
     codes = {d.code.value for d in validate_basepicture(bp)}
     assert "SL-V013" in codes
     assert "SL-V014" in codes
-    assert codes == {"SL-V013", "SL-V014"}
+    assert codes == {"SL-V013", "SL-V014", "SL-V043", "SL-V047"}
 
 
 def test_expression_walk_covers_all_node_kinds():
@@ -945,12 +945,20 @@ def test_operand_rule_allows_temporal_against_numeric_literal_only():
     assert [d.code.value for d in validate_basepicture(temporal_side)] == ["SL-V028"] * 4
 
 
-def test_operand_rule_still_flags_boolean_operands():
+def test_operand_rule_allows_boolean_equality():
     boolean = _typed_bp(
         [_var("Run", "boolean"), _var("Sink", "boolean")],
         Assignment(VarRef("Sink"), Compare(VarRef("Run"), "==", VarRef("Run"))),
     )
-    assert [d.code.value for d in validate_basepicture(boolean)] == ["SL-V028", "SL-V028"]
+    assert [d.code.value for d in validate_basepicture(boolean)] == []
+
+
+def test_operand_rule_flags_incompatible_equality():
+    mixed = _typed_bp(
+        [_var("Run", "boolean"), _var("Count", "integer"), _var("Sink", "boolean")],
+        Assignment(VarRef("Sink"), Compare(VarRef("Run"), "==", VarRef("Count"))),
+    )
+    assert [d.code.value for d in validate_basepicture(mixed)] == ["SL-V041"]
 
 
 def test_assignment_rule_allows_numeric_widening_and_same_family():
@@ -1005,15 +1013,15 @@ def test_condition_rule_skips_call_result_condition():
     assert [d.code.value for d in validate_basepicture(bp)] == []
 
 
-def test_ternary_condition_is_checked_and_branch_types_must_agree():
-    """An inline IF expression is condition-checked; mixed branch types are unproven."""
+def test_ternary_condition_is_checked_and_branch_types_merge():
+    """An inline IF expression is condition-checked; numeric branches merge to real."""
     bp = _typed_bp(
         [_var("Count", "integer"), _var("Rate", "real"), _var("Flag1", "boolean")],
         Assignment(
             VarRef("Flag1"), TernaryOp(branches=((VarRef("Count"), VarRef("Count")),), else_expr=VarRef("Rate"))
         ),
     )
-    assert [d.code.value for d in validate_basepicture(bp)] == ["SL-V030"]
+    assert [d.code.value for d in validate_basepicture(bp)] == ["SL-V029", "SL-V030"]
 
 
 def test_ternary_with_agreeing_branches_infers_type():

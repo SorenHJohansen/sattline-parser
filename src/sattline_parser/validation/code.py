@@ -11,6 +11,8 @@ element names.
 
 from __future__ import annotations
 
+from typing import cast
+
 from sattline_parser.grammar import constants as const
 from sattline_parser.models.ast_model import (
     DataType,
@@ -55,13 +57,18 @@ from sattline_parser.validation.symbols import (
 )
 from sattline_parser.validation.typing import (
     TypeFamily,
-    assignment_is_compatible,
+    assignment_type_matches,
     assignment_types,
+    builtin_type_matches,
     datatype_family,
     infer_expr_type,
+    is_anytype_datatype,
     is_boolean,
     is_numeric,
+    merge_compatible_types,
 )
+
+_EQUALITY_COMPARISON_OPERATORS = frozenset({"==", "=", "!=", "<>"})
 
 # Boolean constants the SattLine language provides but that resolve through the
 # grammar as plain name references rather than True/False literals.
@@ -96,11 +103,180 @@ def walk_module_code(mc: ModuleCode, scope: Scope, records: dict[str, DataType],
     sfc_names = all_known | {fold_identifier(sequence.name) for sequence in sequences if sequence.name}
     _check_duplicate_sfc_names(mc.sequences, errors)
     check_sequence_positions(mc.sequences, errors)
+    check_step_auto_variables(mc, scope, errors)
     for sequence in sequences:
         _check_fork_targets(sequence.code, step_names, transition_names, errors)
         walk_sequence_body(sequence.code, scope, records, sfc_names, errors)
     for equation in mc.equations or ():
         walk_equation_block(equation, scope, records, sfc_names, errors)
+
+
+def _iter_var_refs(node: object) -> list[VarRef]:
+    refs: list[VarRef] = []
+    if isinstance(node, VarRef):
+        return [node]
+    if isinstance(node, list | tuple):
+        for item in cast("list[object] | tuple[object, ...]", node):
+            refs.extend(_iter_var_refs(item))
+        return refs
+    if isinstance(node, Assignment):
+        refs.extend(_iter_var_refs(node.target))
+        refs.extend(_iter_var_refs(node.value))
+        return refs
+    if isinstance(node, FuncCallStmt):
+        return _iter_var_refs(node.call)
+    if isinstance(node, IfStmt):
+        for condition, body in node.branches:
+            refs.extend(_iter_var_refs(condition))
+            refs.extend(_iter_var_refs(body))
+        refs.extend(_iter_var_refs(node.else_block or ()))
+        return refs
+    if isinstance(node, BoolOp):
+        for operand in node.operands:
+            refs.extend(_iter_var_refs(operand))
+        return refs
+    if isinstance(node, NotOp | UnaryOp):
+        return _iter_var_refs(node.operand)
+    if isinstance(node, Compare | BinOp):
+        refs.extend(_iter_var_refs(node.left))
+        refs.extend(_iter_var_refs(node.right))
+        return refs
+    if isinstance(node, FuncCall):
+        for arg in node.args:
+            refs.extend(_iter_var_refs(arg))
+        return refs
+    if isinstance(node, TernaryOp):
+        for condition, value in node.branches:
+            refs.extend(_iter_var_refs(condition))
+            refs.extend(_iter_var_refs(value))
+        refs.extend(_iter_var_refs(node.else_expr) if node.else_expr is not None else ())
+        return refs
+    return refs
+
+
+def _iter_sfc_var_refs(items: list[SFCBodyItem]) -> list[VarRef]:
+    refs: list[VarRef] = []
+    for item in items:
+        if isinstance(item, SFCStep):
+            for block in (item.code.enter, item.code.active, item.code.exit):
+                refs.extend(_iter_var_refs(block))
+        elif isinstance(item, SFCTransition):
+            if item.condition is not None:
+                refs.extend(_iter_var_refs(item.condition))
+        elif isinstance(item, SFCTransitionSub):
+            refs.extend(_iter_sfc_var_refs(item.body))
+        elif isinstance(item, SFCAlternative | SFCParallel):
+            for branch in item.branches:
+                refs.extend(_iter_sfc_var_refs(branch))
+        elif isinstance(item, SFCSubsequence):
+            refs.extend(_iter_sfc_var_refs(item.body))
+    return refs
+
+
+def _collect_sequence_features(
+    sequences: list[Sequence],
+) -> tuple[dict[str, str], dict[str, set[str]], dict[str, str], dict[str, set[str]]]:
+    steps: dict[str, str] = {}
+    step_features: dict[str, set[str]] = {}
+    sequences_by_key: dict[str, str] = {}
+    sequence_features: dict[str, set[str]] = {}
+    for sequence in sequences:
+        sequence_key = fold_identifier(sequence.name or "")
+        sequences_by_key.setdefault(sequence_key, sequence.name or "")
+        features = sequence_features.setdefault(sequence_key, set())
+        if sequence.seqcontrol:
+            features.update({"hold", "reset"})
+        _collect_step_features(sequence.code, bool(sequence.seqcontrol), bool(sequence.seqtimer), steps, step_features)
+    return steps, step_features, sequences_by_key, sequence_features
+
+
+def _collect_step_features(
+    items: list[SFCBodyItem],
+    seqcontrol: bool,
+    seqtimer: bool,
+    steps: dict[str, str],
+    step_features: dict[str, set[str]],
+) -> None:
+    for item in items:
+        if isinstance(item, SFCStep):
+            key = fold_identifier(item.name or "")
+            steps.setdefault(key, item.name or "")
+            features = step_features.setdefault(key, set())
+            features.add("x")
+            if seqcontrol:
+                features.update({"hold", "reset"})
+            if seqtimer:
+                features.add("t")
+        elif isinstance(item, SFCAlternative | SFCParallel):
+            for branch in item.branches:
+                _collect_step_features(branch, seqcontrol, seqtimer, steps, step_features)
+        elif isinstance(item, SFCSubsequence | SFCTransitionSub):
+            _collect_step_features(item.body, seqcontrol, seqtimer, steps, step_features)
+
+
+def check_step_auto_variables(mc: ModuleCode, scope: Scope, errors: list[Diagnostic]) -> None:
+    """Check step/sequence runtime accessors such as ``Step.X`` and ``Step.Hold``.
+
+    A step always exposes ``.X``; ``.Hold``/``.Reset`` require ``SeqControl`` on
+    the enclosing sequence and ``.T`` requires ``SeqTimer``. A sequence exposes
+    ``.Hold``/``.Reset`` under the same condition. Unknown roots stay with the
+    undefined-variable rule, so this only reports known elements that lack the
+    requested feature.
+    """
+    sequences = mc.sequences or ()
+    if not sequences:
+        return
+    steps, step_features, sequences_by_key, sequence_features = _collect_sequence_features(sequences)
+    refs: list[VarRef] = []
+    for equation in mc.equations or ():
+        refs.extend(_iter_var_refs(equation.code))
+    for sequence in sequences:
+        refs.extend(_iter_sfc_var_refs(sequence.code))
+
+    for ref in refs:
+        base_name, field_path = ref.name.partition(".")[0], ref.name.partition(".")[2]
+        if not base_name or not field_path or "." in field_path:
+            continue
+        suffix = field_path.casefold()
+        if suffix not in {"x", "hold", "reset", "t"}:
+            continue
+        if scope.lookup(base_name) is not None:
+            continue
+        base_key = fold_identifier(base_name)
+        step_name = steps.get(base_key)
+        if step_name is None:
+            sequence_name = sequences_by_key.get(base_key)
+            if sequence_name is None or suffix not in {"hold", "reset"}:
+                continue
+            if suffix in sequence_features.get(base_key, set()):
+                continue
+            feature = "Hold" if suffix == "hold" else "Reset"
+            errors.append(
+                Diagnostic(
+                    code=DiagnosticCode.STEP_AUTO_VARIABLE_UNAVAILABLE,
+                    message=(
+                        f"Variable reference {ref.name!r} is not available: "
+                        f"sequence {sequence_name!r} only exposes .{feature} when it enables SeqControl"
+                    ),
+                    span=ref.span,
+                )
+            )
+            continue
+        features = step_features.get(base_key, set())
+        if suffix == "x" or suffix in features:
+            continue
+        feature = {"hold": "Hold", "reset": "Reset", "t": "T"}[suffix]
+        reason = "SeqTimer" if suffix == "t" else "SeqControl"
+        errors.append(
+            Diagnostic(
+                code=DiagnosticCode.STEP_AUTO_VARIABLE_UNAVAILABLE,
+                message=(
+                    f"Variable reference {ref.name!r} is not available: "
+                    f"step {step_name!r} only exposes .{feature} when its sequence enables {reason}"
+                ),
+                span=ref.span,
+            )
+        )
 
 
 def walk_code_item(
@@ -142,21 +318,25 @@ def walk_expression(
                 )
             )
     elif isinstance(expr, BoolOp):
+        _check_bool_operand(expr, scope, records, errors)
         for operand in expr.operands:
             walk_expression(operand, scope, records, sfc_names, errors)
     elif isinstance(expr, NotOp):
+        _check_bool_operand(expr, scope, records, errors)
         walk_expression(expr.operand, scope, records, sfc_names, errors)
     elif isinstance(expr, Compare | BinOp):
         _check_operands(expr, scope, records, errors)
         walk_expression(expr.left, scope, records, sfc_names, errors)
         walk_expression(expr.right, scope, records, sfc_names, errors)
     elif isinstance(expr, UnaryOp):
+        _check_unary_operand(expr, scope, records, errors)
         walk_expression(expr.operand, scope, records, sfc_names, errors)
     elif isinstance(expr, FuncCall):
         _check_call(expr, scope, records, sfc_names, errors)
         for arg in expr.args:
             walk_expression(arg, scope, records, sfc_names, errors)
     elif isinstance(expr, TernaryOp):
+        _check_ternary_branches(expr, scope, records, errors)
         for condition, then_expr in expr.branches:
             _check_condition(condition, scope, records, errors)
             walk_expression(condition, scope, records, sfc_names, errors)
@@ -184,31 +364,91 @@ def walk_sfc_item(
         walk_sequence_body(item.body, scope, records, sfc_names, errors)
 
 
+def _temporal_numeric_pair(left_type: str | None, right_type: str | None) -> bool:
+    """A temporal operand may be compared with a numeric one (``Elapsed == 5``)."""
+    if left_type is None or right_type is None:
+        return False
+    left_family = datatype_family(left_type)
+    right_family = datatype_family(right_type)
+    return (left_family is TypeFamily.TEMPORAL and is_numeric(right_type)) or (
+        right_family is TypeFamily.TEMPORAL and is_numeric(left_type)
+    )
+
+
 def _check_operands(
     expr: Compare | BinOp, scope: Scope, records: dict[str, DataType], errors: list[Diagnostic]
 ) -> None:
     """Operands of an operator must be of a type the operator accepts.
 
-    The diagnostic reads ``Only integer and real allowed for this operator
-    <expr>``.
-
-    A comparison also tolerates one temporal operand against a numeric one:
-    ``Elapsed == 5``, ``Elapsed > 2.5`` and ``Stamp == 5`` are accepted, while
-    two temporal operands such as ``ZeroDur == ZeroFull`` are rejected with the
-    same message. The rule is therefore "a numeric operand may be compared with
-    a temporal one", not "temporal operands are allowed".
-
-    Arithmetic keeps the strict numeric-only rule: the message is an arithmetic
-    one and no temporal operand is accepted there.
+    A comparison splits by operator: equality accepts any two compatible
+    types (two strings, two records of the same type, numeric pairs), while
+    ordering requires numeric operands. Arithmetic requires numeric operands
+    on both sides, and a literal zero divisor is rejected outright.
     """
-    operand_types = [infer_expr_type(operand, scope, records) for operand in (expr.left, expr.right)]
-    for position, operand_type in enumerate(operand_types):
-        if operand_type is None or is_numeric(operand_type):
-            continue
-        if datatype_family(operand_type) is TypeFamily.TEMPORAL:
-            other = operand_types[1 - position]
-            if isinstance(expr, Compare) and other is not None and is_numeric(other):
+    left_type = infer_expr_type(expr.left, scope, records)
+    right_type = infer_expr_type(expr.right, scope, records)
+
+    if isinstance(expr, Compare):
+        if expr.op in _EQUALITY_COMPARISON_OPERATORS:
+            both_temporal = (
+                left_type is not None
+                and right_type is not None
+                and datatype_family(left_type) is TypeFamily.TEMPORAL
+                and datatype_family(right_type) is TypeFamily.TEMPORAL
+            )
+            incompatible = (
+                left_type is not None
+                and right_type is not None
+                and not is_anytype_datatype(left_type)
+                and not is_anytype_datatype(right_type)
+                and merge_compatible_types((left_type, right_type)) is None
+                and not _temporal_numeric_pair(left_type, right_type)
+            )
+            if both_temporal:
+                for operand_type in (left_type, right_type):
+                    errors.append(
+                        Diagnostic(
+                            code=DiagnosticCode.OPERAND_NOT_NUMERIC,
+                            message=(
+                                f"Only integer and real allowed for this operator {expr.op}; "
+                                f"operand is of type {operand_type}"
+                            ),
+                            span=_expression_span(expr),
+                        )
+                    )
+            elif incompatible:
+                errors.append(
+                    Diagnostic(
+                        code=DiagnosticCode.COMPARE_INCOMPATIBLE_OPERANDS,
+                        message=(
+                            f"Comparison operator {expr.op!r} expects compatible operands but got "
+                            f"{left_type!r} and {right_type!r}"
+                        ),
+                        span=_expression_span(expr),
+                    )
+                )
+            return
+
+        for position, operand_type in enumerate((left_type, right_type)):
+            if operand_type is None or is_anytype_datatype(operand_type) or is_numeric(operand_type):
                 continue
+            other_type = (left_type, right_type)[1 - position]
+            if _temporal_numeric_pair(operand_type, other_type):
+                continue
+            errors.append(
+                Diagnostic(
+                    code=DiagnosticCode.OPERAND_NOT_NUMERIC,
+                    message=(
+                        f"Only integer and real allowed for this operator {expr.op}; operand is of type {operand_type}"
+                    ),
+                    span=_expression_span(expr),
+                )
+            )
+        return
+
+    for operand_type in (left_type, right_type):
+        if operand_type is None or is_anytype_datatype(operand_type) or is_numeric(operand_type):
+            continue
         errors.append(
             Diagnostic(
                 code=DiagnosticCode.OPERAND_NOT_NUMERIC,
@@ -218,6 +458,59 @@ def _check_operands(
                 span=_expression_span(expr),
             )
         )
+
+
+def _check_bool_operand(
+    expr: BoolOp | NotOp, scope: Scope, records: dict[str, DataType], errors: list[Diagnostic]
+) -> None:
+    """Logical operators require boolean operands."""
+    operands = expr.operands if isinstance(expr, BoolOp) else (expr.operand,)
+    operator = expr.op if isinstance(expr, BoolOp) else "NOT"
+    for operand in operands:
+        operand_type = infer_expr_type(operand, scope, records)
+        if operand_type is None or is_anytype_datatype(operand_type) or is_boolean(operand_type):
+            continue
+        errors.append(
+            Diagnostic(
+                code=DiagnosticCode.LOGICAL_OPERAND_NOT_BOOLEAN,
+                message=f"Logical operator {operator!r} expects boolean operands but got {operand_type!r}",
+                span=_expression_span(expr),
+            )
+        )
+
+
+def _check_unary_operand(expr: UnaryOp, scope: Scope, records: dict[str, DataType], errors: list[Diagnostic]) -> None:
+    """Unary plus and minus require a numeric operand."""
+    operand_type = infer_expr_type(expr.operand, scope, records)
+    if operand_type is None or is_anytype_datatype(operand_type) or is_numeric(operand_type):
+        return
+    errors.append(
+        Diagnostic(
+            code=DiagnosticCode.OPERAND_NOT_NUMERIC,
+            message=f"Unary operator {expr.op!r} expects a numeric operand but got {operand_type!r}",
+            span=_expression_span(expr),
+        )
+    )
+
+
+def _check_ternary_branches(
+    expr: TernaryOp, scope: Scope, records: dict[str, DataType], errors: list[Diagnostic]
+) -> None:
+    """IF-expression branches must have compatible datatypes."""
+    branch_types = [infer_expr_type(value, scope, records) for _condition, value in expr.branches]
+    if expr.else_expr is not None:
+        branch_types.append(infer_expr_type(expr.else_expr, scope, records))
+    known_types = [datatype for datatype in branch_types if datatype is not None]
+    if len(known_types) < 2 or merge_compatible_types(known_types) is not None:
+        return
+    joined = ", ".join(sorted(set(known_types)))
+    errors.append(
+        Diagnostic(
+            code=DiagnosticCode.TERNARY_BRANCH_TYPES_INCOMPATIBLE,
+            message=f"IF-expression branches must have compatible datatypes; got {joined}",
+            span=_expression_span(expr),
+        )
+    )
 
 
 def _check_condition(
@@ -303,8 +596,18 @@ def _check_assignment(
         )
     _check_old_new(assignment.target, resolved, errors)
     _check_old_write_target(assignment.target, resolved, errors)
+    if resolved.datatype == Simple_DataType.STRING:
+        errors.append(
+            Diagnostic(
+                code=DiagnosticCode.STRING_ASSIGNMENT_NOT_ALLOWED,
+                message=(
+                    f"Cannot assign to string variable {resolved.name}; use CopyString() or CopyVar() to copy strings"
+                ),
+                span=assignment.span,
+            )
+        )
     target_type, source_type = assignment_types(assignment, scope, records)
-    if target_type is not None and source_type is not None and not assignment_is_compatible(source_type, target_type):
+    if target_type is not None and source_type is not None and not assignment_type_matches(source_type, target_type):
         errors.append(
             Diagnostic(
                 code=DiagnosticCode.ASSIGNMENT_TYPE_MISMATCH,
@@ -380,12 +683,31 @@ def _check_call(
                 span=call.span,
             )
         )
-    for position in signature.out_arg_positions:
+    for position, parameter in enumerate(signature.parameters, start=1):
         index = position - 1
         if index >= len(call.args):
             continue
         arg = call.args[index]
-        if not isinstance(arg, VarRef):
+        if signature.name.casefold() in {"setstringpos", "getstringpos"} and position == 1:
+            # The first argument is the string cursor, not a data write, so a
+            # Const string is accepted here.
+            continue
+        if isinstance(arg, VarRef):
+            if parameter.direction in {"out", "inout"}:
+                resolved = resolve_var(arg, scope, records)
+                if resolved is not None and resolved.const:
+                    errors.append(
+                        Diagnostic(
+                            code=DiagnosticCode.WRITE_TO_CONST_VARIABLE,
+                            message=(
+                                f"Cannot use Const variable {arg.name!r} as output argument {position} "
+                                f"of built-in {signature.name}"
+                            ),
+                            span=call.span,
+                        )
+                    )
+                _check_old_write_target(arg, resolved, errors)
+        elif parameter.direction in {"out", "inout"}:
             errors.append(
                 Diagnostic(
                     code=DiagnosticCode.BUILTIN_OUT_ARG_NOT_VARIABLE,
@@ -397,19 +719,32 @@ def _check_call(
                 )
             )
             continue
-        resolved = resolve_var(arg, scope, records)
-        if resolved is not None and resolved.const:
+        elif parameter.direction == "in var":
             errors.append(
                 Diagnostic(
-                    code=DiagnosticCode.WRITE_TO_CONST_VARIABLE,
+                    code=DiagnosticCode.BUILTIN_ARG_NOT_VARIABLE,
                     message=(
-                        f"Cannot use Const variable {arg.name!r} as output argument {position} "
-                        f"of built-in {signature.name}"
+                        f"Argument {position} of built-in {signature.name} must be a variable reference "
+                        f"because parameter {parameter.name!r} is 'in var'"
                     ),
                     span=call.span,
                 )
             )
-        _check_old_write_target(arg, resolved, errors)
+            continue
+        actual_type = infer_expr_type(arg, scope, records)
+        if actual_type is not None and not builtin_type_matches(
+            actual_type, parameter.datatype, direction=parameter.direction
+        ):
+            errors.append(
+                Diagnostic(
+                    code=DiagnosticCode.BUILTIN_ARG_TYPE_MISMATCH,
+                    message=(
+                        f"Argument {position} of built-in {signature.name} has datatype {actual_type!r} "
+                        f"but parameter {parameter.name!r} expects {parameter.datatype!r}"
+                    ),
+                    span=call.span,
+                )
+            )
 
 
 def _is_sfc_runtime_accessor(ref: VarRef, sfc_names: set[str]) -> bool:
