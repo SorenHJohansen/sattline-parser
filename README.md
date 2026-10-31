@@ -41,7 +41,7 @@ This package owns the Lark grammar, the strict single-file syntax behavior, the 
 pip install sattline-parser
 ```
 
-Requires Python 3.13+.
+Requires Python 3.12+.
 
 ## Usage
 
