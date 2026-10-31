@@ -14,14 +14,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the builtin record field specifications (`records.py`). The catalogue is
   regenerable with `scripts/gen_builtin_catalogue.py` and records the manual
   edition, the documented total, and the names it carries without a public
-  source. The existing `validation/builtins.py` tables are unchanged in this
-  release; the validator switches to the new registry in a later phase.
+  source.
 - **Graphics structural records.** `GraphicsModel` now carries
   `composite_records` and `picture_display_records`, and the companion scanner
   reports an unterminated record and a missing trailing `KeepPictureShape` flag
   as structural messages. `parse_graphics_text`, `parse_graphics_file` and
   `resolve_graphics_companion_path` are re-exported from
   `sattline_parser.api`.
+- **Project load validation.** `SattLineProject.load` takes
+  `validate=FULL|NONE`, runs the single-file validator per program with the
+  definitions visible from already-loaded dependencies, and stores the findings
+  on `SattLineProgram.diagnostics`. Programs now carry `library`,
+  `resolved_base`, and `origin_file`/`origin_lib` provenance. The loader marks
+  external-dependent findings `tentative` when a non-strict load skips part of
+  the closure, reports definition datecode conflicts, and exposes
+  `SattLineProject.cycles()` and `libraries()` as data. `sattline project`
+  reports validation findings and accepts `--fail-on` and `--no-validate`.
 
 ### Changed
 
