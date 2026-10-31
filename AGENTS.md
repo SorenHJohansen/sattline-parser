@@ -18,7 +18,7 @@
 | `src/sattline_parser/transformer/` | Transformer mixins and `SLTransformer` |
 | `src/sattline_parser/fuzz_harness.py` | Standalone fuzz harness |
 | `src/sattline_parser/cli/` | Read-only `sattline` command line: one module per subcommand in `cli/cmds/` |
-| `src/sattline_parser/project/` | Project layer: discovery, resolution, `.g`/`.y` companions, caches, `SattLineProject` |
+| `src/sattline_parser/project/` | Project layer: discovery, resolution, `.g`/`.y` companions, per-program validation, provenance, caches, `SattLineProject` |
 | `src/sattline_parser/builtins/` | Builtin function signatures and record field specs (generated catalogue) |
 | `src/sattline_parser/validation/` | Validator rules, diagnostics, type graph, builtin call checks |
 | `src/sattline_parser/source_document.py` | Source provenance: original/normalized text + source map, span remapping |
