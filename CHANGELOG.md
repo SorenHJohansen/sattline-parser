@@ -5,6 +5,41 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **`sattline_parser.builtins`.** A language-data package with the documented
+  builtin function signatures (`functions.py`, generated `catalogue.json`) and
+  the builtin record field specifications (`records.py`). The catalogue is
+  regenerable with `scripts/gen_builtin_catalogue.py` and records the manual
+  edition, the documented total, and the names it carries without a public
+  source. The existing `validation/builtins.py` tables are unchanged in this
+  release; the validator switches to the new registry in a later phase.
+- **Graphics structural records.** `GraphicsModel` now carries
+  `composite_records` and `picture_display_records`, and the companion scanner
+  reports an unterminated record and a missing trailing `KeepPictureShape` flag
+  as structural messages. `parse_graphics_text`, `parse_graphics_file` and
+  `resolve_graphics_companion_path` are re-exported from
+  `sattline_parser.api`.
+
+### Changed
+
+- **Validation rule engine.** `validate_basepicture` now checks the full
+  documented builtin registry instead of the eight-entry subset: arity,
+  variable-reference requirements for `in var`/`out`/`inout` parameters, and
+  argument datatypes. It also applies identifier limits and reserved keywords,
+  logical-operand and unary-operand typing, equality compatibility, ternary
+  branch compatibility, module-type parameter mappings, and step/sequence
+  runtime accessor availability (`.Hold`, `.Reset`, `.T`). Record field
+  resolution moved to `validation/type_graph.py`; scalar rules and literal
+  inference live in `validation/typing.py`.
+- **Validation parity manifest.** `tests/fixtures/validation/expectations.json`
+  records the code, severity, and span of every diagnostic for every corpus
+  fixture. `tests/fixtures/validation/known-differences.json` records the
+  intentional differences from the previous consumer-layer validator, with a
+  reason per entry. The exporter is `scripts/export_parity_expectations.py`.
+
 ## [2026.10.1] - 2026-10-29
 
 ### Added
