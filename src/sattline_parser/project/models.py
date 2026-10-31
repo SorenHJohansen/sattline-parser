@@ -12,7 +12,7 @@ from enum import Enum, StrEnum
 from pathlib import Path
 from typing import Literal
 
-from sattline_parser.models.ast_model import BasePicture, GraphicsBinding
+from sattline_parser.models.ast_model import BasePicture, GraphicsBinding, SourceSpan
 
 
 class LoadMode(Enum):
@@ -48,15 +48,61 @@ class GraphicsMessage:
 
 
 @dataclass(frozen=True, slots=True)
+class GraphicsCompositeRecord:
+    """A serialized graphics record found in a companion file.
+
+    Records are delimited by a family-code line and a trailing ``0`` line.
+    ``start_line`` and ``end_line`` are one-based and inclusive.
+    """
+
+    record_index: int
+    family_code: str
+    start_line: int
+    end_line: int
+
+
+@dataclass(frozen=True, slots=True)
+class GraphicsPathRow:
+    """One path row inside a picture display record.
+
+    ``kind`` distinguishes a variable reference, a variable reference the
+    serialized file marked invalid, and a literal asset path.
+    """
+
+    record_index: int
+    index_token: str
+    index_value: int | None
+    kind: Literal["variable", "variable_invalid", "literal"]
+    raw_text: str
+    span: SourceSpan
+
+
+@dataclass(frozen=True, slots=True)
+class GraphicsPictureDisplayRecord:
+    """A picture display record and the path rows it carries.
+
+    ``start_line`` and ``end_line`` are one-based and inclusive.
+    """
+
+    record_index: int
+    start_line: int
+    end_line: int
+    path_rows: tuple[GraphicsPathRow, ...]
+
+
+@dataclass(frozen=True, slots=True)
 class GraphicsModel:
     """The parsed representation of a program's graphics companion file.
 
-    Holds the bindings and the messages the scanner produced. Semantic
-    validation against the program lives in the consumer layer.
+    Holds the bindings, the structural records, and the messages the scanner
+    produced. Semantic validation against the program, asset verification, and
+    correlation against the code picture live in the consumer layer.
     """
 
     bindings: tuple[GraphicsBinding, ...] = ()
     messages: tuple[GraphicsMessage, ...] = ()
+    composite_records: tuple[GraphicsCompositeRecord, ...] = ()
+    picture_display_records: tuple[GraphicsPictureDisplayRecord, ...] = ()
 
     @property
     def errors(self) -> tuple[GraphicsMessage, ...]:
@@ -158,8 +204,11 @@ class DependencyGraph:
 
 __all__ = [
     "DependencyGraph",
+    "GraphicsCompositeRecord",
     "GraphicsMessage",
     "GraphicsModel",
+    "GraphicsPathRow",
+    "GraphicsPictureDisplayRecord",
     "LoadDiagnostic",
     "LoadDiagnosticKind",
     "LoadMode",

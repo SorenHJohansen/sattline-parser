@@ -53,10 +53,13 @@ __all__ = [
     "describe_parse_error",
     "load_source_text",
     "parse_and_validate",
+    "parse_graphics_file",
+    "parse_graphics_text",
     "parse_source_file",
     "parse_source_text",
     "read_text_cp1252",
     "render_ide_text",
+    "resolve_graphics_companion_path",
     "source_text_for_parse",
     "validate_basepicture",
 ]
@@ -504,3 +507,13 @@ def parse_source_file(
         log_failures=log_failures,
         retain_parse_tree=retain_parse_tree,
     )
+
+
+# Graphics companion entry points are re-exported here so consumers have one
+# public door. Imported after the definitions above because the project layer
+# imports this module for text decoding.
+from sattline_parser.project import (  # noqa: E402
+    parse_graphics_file,
+    parse_graphics_text,
+    resolve_graphics_companion_path,
+)
