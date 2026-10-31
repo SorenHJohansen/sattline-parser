@@ -10,6 +10,7 @@ from sattline_parser.project import (
     LoadDiagnostic,
     LoadDiagnosticKind,
     LoadMode,
+    LoadValidation,
     SattLineProgram,
     SattLineProject,
     code_ext_candidates,
@@ -46,6 +47,17 @@ def register(subparsers: argparse._SubParsersAction[argparse.ArgumentParser]) ->
     parser.add_argument("--cache-dir", metavar="DIR", help="parser cache directory")
     parser.add_argument("--no-cache", action="store_true", help="bypass the parser caches")
     parser.add_argument("--lenient", action="store_true", help="continue past unreadable artifacts")
+    parser.add_argument(
+        "--no-validate",
+        action="store_true",
+        help="parse only; skip semantic validation of loaded programs",
+    )
+    parser.add_argument(
+        "--fail-on",
+        choices=("none", "error", "warning"),
+        default="error",
+        help="when validation findings make the command exit with a findings code (default: error)",
+    )
     parser.add_argument("--graph", action="store_true", help="only print the dependency edges")
     parser.add_argument("--of", metavar="NAME", help="restrict the graph to this program")
     parser.add_argument("--reverse", action="store_true", help="follow dependents instead of dependencies")
@@ -76,6 +88,7 @@ def run(args: argparse.Namespace) -> int:
     programs = project.programs()
     graph = project.graph()
     load_diagnostics = project.diagnostics()
+    validation_rows = _validation_rows(programs)
     cycles = _cycles(graph.edges)
     edges = _edges(project, args)
     if args.cycles:
@@ -83,12 +96,41 @@ def run(args: argparse.Namespace) -> int:
     elif args.graph:
         _emit_graph(edges, cycles, args=args)
     else:
-        _emit_programs(programs, edges, load_diagnostics, cycles, args=args)
+        _emit_programs(programs, edges, load_diagnostics, validation_rows, cycles, args=args)
     failing = bool(cycles) or any(
         diagnostic.kind in {LoadDiagnosticKind.DEPENDENCY_CYCLE, LoadDiagnosticKind.LOAD_SKIPPED}
         for diagnostic in load_diagnostics
     )
+    if _validation_fails(validation_rows, args.fail_on):
+        failing = True
     return int(ExitCode.FINDINGS if failing else ExitCode.OK)
+
+
+def _validation_rows(programs: Mapping[str, SattLineProgram]) -> list[dict[str, object]]:
+    rows: list[dict[str, object]] = []
+    for program in programs.values():
+        for diagnostic in program.diagnostics:
+            span = diagnostic.span
+            rows.append(
+                {
+                    "program": program.name,
+                    "code": diagnostic.code.value,
+                    "severity": diagnostic.severity.value,
+                    "message": diagnostic.message,
+                    "line": None if span is None else span.line,
+                    "column": None if span is None else span.column,
+                    "tentative": diagnostic.tentative,
+                }
+            )
+    return rows
+
+
+def _validation_fails(rows: Sequence[Mapping[str, object]], fail_on: str) -> bool:
+    if fail_on == "none":
+        return False
+    if fail_on == "warning":
+        return bool(rows)
+    return any(row["severity"] == "error" for row in rows)
 
 
 def _load(args: argparse.Namespace) -> SattLineProject:
@@ -111,6 +153,7 @@ def _load(args: argparse.Namespace) -> SattLineProject:
         targets=targets,
         strict=not args.lenient,
         cache_dir=None if args.no_cache else (Path(args.cache_dir) if args.cache_dir else None),
+        validate=LoadValidation.NONE if args.no_validate else LoadValidation.FULL,
     )
 
 
@@ -279,6 +322,8 @@ def _program_row(program: SattLineProgram) -> dict[str, object]:
         "sidecar": program.sidecar.value,
         "dependencies": list(program.dependencies),
         "source": str(program.source_path) if program.source_path is not None else None,
+        "library": program.library,
+        "resolved_base": str(program.resolved_base) if program.resolved_base is not None else None,
     }
 
 
@@ -295,6 +340,7 @@ def _emit_programs(
     programs: Mapping[str, SattLineProgram],
     edges: Sequence[Edge],
     diagnostics: Sequence[LoadDiagnostic],
+    validation: Sequence[Mapping[str, object]],
     cycles: Sequence[list[str]],
     *,
     args: argparse.Namespace,
@@ -309,15 +355,18 @@ def _emit_programs(
             "edges": list(edges),
             "cycles": list(cycles),
             "diagnostics": diagnostics_rows,
+            "validation": list(validation),
         }
         print(dumps(payload, compact=bool(args.jsonl)))
         return
     print(f"programs: {len(rows)}")
     for program in programs.values():
         dependencies = ", ".join(program.dependencies) if program.dependencies else "-"
+        library = program.library or "-"
         print(
-            f"  {program.name}  code={program.format.code_ext or '-'} graphics={program.format.graphics_ext or '-'} "
-            f"deps={program.format.deps_ext or '-'} sidecar={program.sidecar.value} depends on: {dependencies}"
+            f"  {program.name}  library={library} code={program.format.code_ext or '-'} "
+            f"graphics={program.format.graphics_ext or '-'} deps={program.format.deps_ext or '-'} "
+            f"sidecar={program.sidecar.value} depends on: {dependencies}"
         )
     print(f"edges: {len(edges)}")
     if cycles:
@@ -328,6 +377,14 @@ def _emit_programs(
         print("diagnostics:")
         for row in diagnostics_rows:
             print(f"  {row['kind']} {row['program']}: {row['detail']}")
+    if validation:
+        print("validation:")
+        for row in validation:
+            location = ""
+            if row["line"] is not None:
+                location = f" {row['line']}:{row['column']}"
+            tentative = " (tentative)" if row["tentative"] else ""
+            print(f"  {row['code']} {row['program']}{location}{tentative}: {row['message']}")
 
 
 def _emit_graph(edges: Sequence[Edge], cycles: Sequence[list[str]], *, args: argparse.Namespace) -> None:
