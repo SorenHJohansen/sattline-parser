@@ -417,7 +417,10 @@ def test_private_cache_dir_creates_a_private_directory(tmp_path):
     directory = tmp_path / "nested" / "lark-cache"
 
     assert parser_api._private_cache_dir(directory) == directory
-    assert directory.stat().st_mode & 0o777 == 0o700
+    if os.name == "posix":
+        # Windows has no POSIX permission bits; chmod only toggles the read-only
+        # attribute, so the mode is not asserted there.
+        assert directory.stat().st_mode & 0o777 == 0o700
 
 
 def test_private_cache_dir_tightens_existing_permissions(tmp_path):
@@ -426,12 +429,14 @@ def test_private_cache_dir_tightens_existing_permissions(tmp_path):
     directory.chmod(0o755)
 
     assert parser_api._private_cache_dir(directory) == directory
-    assert directory.stat().st_mode & 0o777 == 0o700
+    if os.name == "posix":
+        assert directory.stat().st_mode & 0o777 == 0o700
 
 
 def test_private_cache_dir_rejects_a_foreign_owner(monkeypatch, tmp_path):
-    real_uid = os.getuid()
-    monkeypatch.setattr(parser_api.os, "getuid", lambda: real_uid + 1)
+    # Driven through the resolved uid callable so the case runs everywhere: the
+    # current user never owns the synthetic uid.
+    monkeypatch.setattr(parser_api, "_getuid", lambda: -1)
 
     assert parser_api._private_cache_dir(tmp_path / "lark-cache") is None
 
@@ -444,12 +449,15 @@ def test_private_cache_dir_gives_up_when_it_cannot_be_created(tmp_path):
 
 
 def test_cache_owner_token_falls_back_without_getuid(monkeypatch):
-    def missing_getuid() -> int:
-        raise AttributeError("getuid")
-
-    monkeypatch.setattr(parser_api.os, "getuid", missing_getuid)
+    monkeypatch.setattr(parser_api, "_getuid", None)
 
     assert parser_api._cache_owner_token() == getpass.getuser()
+
+
+def test_cache_owner_token_uses_the_uid_when_available(monkeypatch):
+    monkeypatch.setattr(parser_api, "_getuid", lambda: 4242)
+
+    assert parser_api._cache_owner_token() == "4242"
 
 
 def test_decode_cp1252_tolerant_passes_clean_text_straight_through():

@@ -65,14 +65,16 @@ GRAMMAR_PATH = Path(__file__).resolve().parent / "grammar" / "sattline.lark"
 
 _CACHE_DIR_MODE = 0o700
 _CACHE_DIR_NAME = "sattline-parser"
+# ``os.getuid`` is POSIX-only. Resolving it once keeps the platform probe out of
+# the hot path and lets the tests drive both cases on any platform.
+_getuid: Callable[[], int] | None = getattr(os, "getuid", None)
 
 
 def _cache_owner_token() -> str:
     """A per-user token for the cache directory name."""
-    try:
-        return str(os.getuid())
-    except AttributeError:  # Windows has no getuid
+    if _getuid is None:
         return getpass.getuser()
+    return str(_getuid())
 
 
 def _private_cache_dir(path: Path) -> Path | None:
@@ -85,7 +87,7 @@ def _private_cache_dir(path: Path) -> Path | None:
     try:
         path.mkdir(mode=_CACHE_DIR_MODE, parents=True, exist_ok=True)
         info = path.stat()
-        if hasattr(os, "getuid") and info.st_uid != os.getuid():
+        if _getuid is not None and info.st_uid != _getuid():
             return None
         if info.st_mode & 0o077:
             path.chmod(_CACHE_DIR_MODE)
