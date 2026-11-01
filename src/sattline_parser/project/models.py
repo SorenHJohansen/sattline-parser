@@ -95,12 +95,16 @@ class GraphicsPictureDisplayRecord:
     """A picture display record and the path rows it carries.
 
     ``start_line`` and ``end_line`` are one-based and inclusive.
+    ``path_row_lines`` lists every one-based line in the record's path-row
+    section, including rows that did not parse into a ``GraphicsPathRow``, so
+    a consumer can tell section rows apart from other binding lines.
     """
 
     record_index: int
     start_line: int
     end_line: int
     path_rows: tuple[GraphicsPathRow, ...]
+    path_row_lines: tuple[int, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)

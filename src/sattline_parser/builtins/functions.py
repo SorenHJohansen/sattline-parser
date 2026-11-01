@@ -32,6 +32,8 @@ class BuiltinParameter:
     direction: BuiltinDirection
     sorting: BuiltinSorting
     ownership: BuiltinOwnership
+    #: Trailing parameters documented as optional may be left out of a call.
+    optional: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -73,6 +75,7 @@ def _parse_parameter(raw: object) -> BuiltinParameter:
         direction=cast("BuiltinDirection", entry["direction"]),
         sorting=cast("BuiltinSorting", entry["sorting"]),
         ownership=cast("BuiltinOwnership", entry["ownership"]),
+        optional=cast("bool", entry.get("optional", False)),
     )
 
 

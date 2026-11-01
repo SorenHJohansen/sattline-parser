@@ -305,6 +305,14 @@ def builtin_type_matches(
     normalized_expected = _normalize(expected)
     if is_anytype_datatype(normalized_expected):
         return True
+    expected_name = fold_identifier(format_datatype(normalized_expected))
+    if expected_name == "TOBJECT":
+        # tObject is the documented opaque base object; file handles and other
+        # builtin objects are passed where a tObject parameter is declared.
+        return True
+    if expected_name == "ASYNCOPERATION" and normalized_actual == Simple_DataType.INTEGER:
+        # The asynchronous-operation handle is integer-backed in source code.
+        return True
 
     if isinstance(normalized_expected, Simple_DataType):
         if not isinstance(normalized_actual, Simple_DataType):

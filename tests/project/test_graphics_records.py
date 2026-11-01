@@ -45,6 +45,7 @@ def test_picture_display_record_is_extracted() -> None:
     ]
     assert picture.path_rows[0].span.line == 9
     assert picture.path_rows[1].span.line == 10
+    assert picture.path_row_lines == (9, 10, 11)
 
 
 def test_non_picture_record_is_composite_only() -> None:
@@ -103,6 +104,14 @@ def test_literal_path_row_is_extracted() -> None:
 
     picture = model.picture_display_records[0]
     assert [(row.kind, row.index_value, row.raw_text) for row in picture.path_rows] == [("literal", 1, "scr:face.wmf")]
+
+
+def test_malformed_path_row_line_is_still_reported_as_a_section_line() -> None:
+    model = parse_graphics_text(_record("5", "a", "b", "c", "2", "d", "1 None True", "None True", "t", "0", ""))
+
+    picture = model.picture_display_records[0]
+    assert picture.path_row_lines == (7,)
+    assert picture.path_rows == ()
 
 
 def test_binding_warnings_and_structural_errors_share_the_message_list() -> None:

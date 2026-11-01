@@ -492,6 +492,27 @@ def test_builtin_arity_and_out_arg_checks():
     assert codes == {"SL-V013", "SL-V014", "SL-V043", "SL-V047"}
 
 
+def test_builtin_optional_trailing_arguments_are_accepted():
+    bp = _base_picture()
+    bp.localvariables = [
+        _var("File1", "textfile"),
+        _var("Text", "string", init_value=""),
+        _var("Async", "integer", init_value=0),
+    ]
+    call = FuncCallStmt(FuncCall(name="writeline", args=(VarRef("File1"), VarRef("Text"), VarRef("Async"))))
+    bp.modulecodes = [ModuleCode(equations=[_equation(call)])]
+    assert validate_basepicture(bp, allow_unresolved_external_datatypes=True) == ()
+
+
+def test_builtin_missing_required_argument_is_still_flagged():
+    bp = _base_picture()
+    bp.localvariables = [_var("File1", "textfile")]
+    call = FuncCallStmt(FuncCall(name="writeline", args=(VarRef("File1"),)))
+    bp.modulecodes = [ModuleCode(equations=[_equation(call)])]
+    codes = {d.code.value for d in validate_basepicture(bp)}
+    assert "SL-V013" in codes
+
+
 def test_expression_walk_covers_all_node_kinds():
     fn = FuncCallStmt(FuncCall(name="Equal", args=(VarRef("A"), VarRef("B"))))
     expression_nodes = FuncCall(

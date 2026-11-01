@@ -80,6 +80,17 @@ def test_untyped_entries_keep_their_arity() -> None:
     assert reset_flag.arity == 0
 
 
+def test_trailing_optional_parameters_are_marked() -> None:
+    signature = get_function_signature("writeline")
+    assert signature is not None
+    assert [(parameter.name, parameter.optional) for parameter in signature.parameters] == [
+        ("FileRef", False),
+        ("String", False),
+        ("AsyncOperation", True),
+        ("DebugStatus", True),
+    ]
+
+
 def test_precision_scangroup_flag_is_preserved() -> None:
     signature = get_function_signature("abs")
     assert signature is not None

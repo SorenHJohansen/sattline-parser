@@ -5,6 +5,29 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [2026.11.1] - 2026-11-01
+
+### Added
+
+- **Picture display path row lines.** `GraphicsPictureDisplayRecord` now
+  carries `path_row_lines`, the one-based lines of the record's path-row
+  section. It includes rows that do not parse into a `GraphicsPathRow`, so a
+  consumer can tell section rows apart from other binding lines.
+
+### Fixed
+
+- **Builtin call arity and handle types.** The trailing `AsyncOperation` and
+  `DebugStatus` parameters are now marked optional, so calls may omit them.
+  A `tObject` parameter accepts object handles such as file handles, and an
+  `AsyncOperation` parameter accepts its integer-backed handle.
+- **Datatype declarations and transfers.** `AnyType` and builtin record names
+  count as declared datatypes, and moduletype transfers use the shared builtin
+  compatibility rule so string families are interchangeable.
+- **Project cycles.** Projects assembled from programs directly now compute
+  cycle paths as well.
+- **Record field helpers.** The helpers accept a structural field graph, so
+  consumers can supply their own implementation without subclassing.
+
 ## [2026.11.0] - 2026-10-31
 
 ### Added
