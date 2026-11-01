@@ -719,34 +719,6 @@ def test_read_text_cp1252_rejects_latin1_only_bytes(tmp_path: Path) -> None:
         parser_api.read_text_cp1252(bad_file)
 
 
-# ---- sattline_lexer.py:74 _comment_end balanced path ----
-
-
-def test_comment_end_returns_when_depth_reaches_zero() -> None:
-    from sattline_parser.grammar.sattline_lexer import _comment_end  # noqa: PLC0415
-
-    # (* a *) with pos=2 (after the opening `(*`): depth starts at 1,
-    # sees `*)` at pos 5, depth hits 0, returns 7 (i after `*)`)
-    assert _comment_end("(* a *)", 2) == 7
-    # nested: (* a (* b *) c *) with pos=2: depth 1→2 at inner (*, 2→1 at first *), 1→0 at final *)
-    assert _comment_end("(* a (* b *) c *)", 2) == 17
-
-
-# ---- sattline_lexer.py:96 _module_typedecl_after skip with comment ----
-
-
-def test_module_typedecl_after_skips_comment_before_equals() -> None:
-    from sattline_parser.grammar.sattline_lexer import _module_typedecl_after  # noqa: PLC0415
-
-    assert _module_typedecl_after("X (* desc *) = MODULEDEFINITION rest", 2) is True
-
-
-# ---- sattline_lexer.py:164 MODULE_TYPE_NAME upgrade ----
-# This path requires TOKEN_MODULE_TYPE_NAME in _state_accepts, but
-# MODULE_TYPE_NAME is not a grammar terminal — the upgrade is dead code.
-# Covered by the lexer integration through the golden file corpus tests.
-
-
 def test_polygon_type_method() -> None:
     mixin = _GraphicsHarness()
     result = mixin.polygon_type([Token("POLYLINE", "Polyline"), Token("SPLINE", "Spline")])

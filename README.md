@@ -203,6 +203,9 @@ if program.graphics is not None:  # GraphicsMessage values, never raised
     print(program.graphics.errors)
 ```
 
+- A `SattLineProgram` is one loaded source artifact (one `.x` or `.s` file),
+  not one executable top-level program. A single target can therefore produce
+  many entries in `project.programs()` through its dependency closure.
 - Each target is resolved across ordered roots, its `.l` / `.z` dependency file
   is read, and dependencies load recursively before the target itself.
 - Programs are canonicalized by casefolded identity: each name is visited and
@@ -214,6 +217,10 @@ if program.graphics is not None:  # GraphicsMessage values, never raised
   `DependencyNotFoundError`, `DependencyParseError`), and a skipped program is
   recorded as a `LoadDiagnosticKind.LOAD_SKIPPED` diagnostic, so a partial load
   is never silent.
+- `validate=LoadValidation.FULL` validates every loaded program.
+  `validate=LoadValidation.INVOKED` validates each target in full and limits a
+  dependency file to the module types that target invokes, transitively, so an
+  imported library's unused module types are not checked. `NONE` parses only.
 - `cache_dir=...` optionally enables the parser-owned lookup and per-file AST
   caches (`FileLookupCache` / `FileASTCache`) so repeated loads skip
   re-discovery and re-parsing. When `cache_dir=None` (default) the load is
@@ -228,6 +235,21 @@ project = SattLineProject.load(
     cache_dir=None,
 )
 ```
+
+## Public API and versioning
+
+Releases use calendar versioning (`YYYY.M.N`). The version orders releases; it
+does not encode semantic-version compatibility.
+
+The supported public surface is the names listed in `sattline_parser.__all__`
+and `sattline_parser.api.__all__`, plus the documented `sattline` command and
+its JSON schemas. Submodule paths and names not listed there are internal and
+may change between releases.
+
+Within that surface, patch releases preserve existing names and behaviour. A
+breaking change is called out in the changelog and, where practical, deprecated
+for one release first. Adding a dataclass field is not considered breaking;
+removing or renaming one is.
 
 ## Development
 
@@ -250,10 +272,14 @@ FreeBSD only. Add it explicitly where it is supported:
 pip install -e ".[dev,fuzz]"                # Linux / FreeBSD only
 ```
 
-Line coverage is enforced at 100%; branch coverage is measured and gated by
-`scripts/check_branch_coverage.py` (both enforced in CI). The full test suite
-is run by CI via `pytest` (the project's configured `testpaths`), including the
-packaging tests in `tests/test_packaging.py` that live outside `tests/parser`.
+Line coverage is enforced at 100% after `pragma: no cover` and the configured
+`exclude_lines` are applied; branch coverage is measured and gated by
+`scripts/check_branch_coverage.py` (both enforced in CI). That script also
+prints how many executable lines the exclusion rules keep outside the line
+gate, so the 100% number is not mistaken for full-source coverage. The full
+test suite is run by CI via `pytest` (the project's configured `testpaths`),
+including the packaging tests in `tests/test_packaging.py` that live outside
+`tests/parser`.
 
 Fuzzing runs in three tiers, each enforced separately:
 
@@ -271,10 +297,12 @@ from the transformer is treated as a crash, not as ordinary invalid input.
 
 ## Dependencies
 
-The declared runtime dependencies are `lark[interegular]>=1.3.1,<2` and
-`regex`. CI tests both the locked minimum (lark 1.3.1) and the latest lark that
-satisfies the range, so the supported range is actually exercised. Installs use
-`uv.lock` for reproducibility.
+The declared runtime dependencies are `lark[interegular]>=1.3.1,<1.4` and
+`regex>=2023.12.25`. The parser does not call `regex` directly; Lark's `regex`
+engine does. The floor is the first release with the Python 3.12 wheels used by
+CI, not a feature requirement. CI tests both the locked minimum (lark 1.3.1)
+and the latest lark that satisfies the range, so the supported range is
+actually exercised. Installs use `uv.lock` for reproducibility.
 
 ## Project layout
 

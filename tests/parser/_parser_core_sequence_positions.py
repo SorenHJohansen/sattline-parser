@@ -1,8 +1,8 @@
 # pyright: reportUnusedImport=false
 """Sequence position rules (S/T/M productions) at parse+validate level.
 
-Each rejected shape below is one the real tool refuses: the probes that produced
-them are named in the test, so a future weakening is visible.
+Each rejected shape below is one the real tool refuses. The test body states
+the shape, so a future weakening is visible.
 """
 
 from __future__ import annotations
@@ -49,7 +49,7 @@ _TRANSITION = "      SEQTRANSITION T{n} WAIT_FOR Flag\n"
 
 
 def test_closed_body_requires_step_before_transition() -> None:
-    # Probe EdgeSeqAlt.x: ALTERNATIVESEQ immediately after a transition.
+    # ALTERNATIVESEQ may not immediately follow a transition.
     body = _sequence(
         _STEP.format(n=1)
         + _TRANSITION.format(n=1)
@@ -89,8 +89,8 @@ def test_alternative_branch_must_start_with_transition() -> None:
 
 
 def test_alternative_branch_must_not_end_with_step() -> None:
-    # Probe ValidSubSeqTransB.x: branch 1 is TRANSITION, STEP, then the next
-    # ALTERNATIVEBRANCH; the tool reports "Incorrect Syntax - Error 32" there.
+    # Branch 1 is TRANSITION, STEP, then the next ALTERNATIVEBRANCH. A branch
+    # must not end with a completed step pair.
     body = _sequence(
         _STEP.format(n=1)
         + "      ALTERNATIVESEQ\n"

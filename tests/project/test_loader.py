@@ -462,7 +462,7 @@ def test_load_dependency_graphics_read_failure_raises_dependency_parse_error(tmp
     assert exc_info.value.dependency == "Lib"
 
 
-# --- sidecar pairing invariant (LIB-05) -------------------------------------
+# --- sidecar pairing invariant ----------------------------------------------
 
 
 def test_load_dependency_sidecar_decode_failure_raises(tmp_path: Path) -> None:
@@ -533,7 +533,7 @@ def test_sidecar_is_not_paired_across_prefixes(tmp_path: Path) -> None:
 
     ``consumer`` holds the body but no sidecar; ``other`` holds a sidecar only.
     The old whole-root lookup paired the two and then resolved that library's
-    own dependencies relative to ``other``. LIB-05 reads the sidecar at
+    own dependencies relative to ``other``. The loader reads the sidecar at
     the selected body prefix and reports the failure instead, so the stray file
     becomes a diagnostic and no dependencies are invented.
     """

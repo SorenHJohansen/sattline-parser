@@ -60,7 +60,7 @@ class TokensMixin:
     def SIGNED_INT(self, tok: Token) -> IntLiteral:
         """Grammar SIGNED_INT terminal -> IntLiteral with source span.
 
-        Clamps to ABB 32-bit signed range [INT_MIN, INT_MAX].
+        Clamps to the documented 32-bit signed range [INT_MIN, INT_MAX].
         """
         raw = int(str(tok))
         clamped = max(const.INT_MIN, min(const.INT_MAX, raw))
@@ -73,7 +73,7 @@ class TokensMixin:
     def REAL(self, tok: Token) -> FloatLiteral:
         """Grammar REAL terminal -> FloatLiteral with source span.
 
-        Clamps magnitude to ABB REAL_MAX.
+        Clamps magnitude to the documented REAL_MAX.
         """
         raw = float(str(tok))
         clamped = max(-const.REAL_MAX, min(const.REAL_MAX, raw)) if raw != 0.0 else raw

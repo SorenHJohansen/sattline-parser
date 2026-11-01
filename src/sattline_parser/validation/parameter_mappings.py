@@ -3,8 +3,10 @@
 A mapping connects an actual source (a variable, a literal, or a global) to a
 formal module parameter. This module checks the target side (duplicates, field
 access, unknown fields) and the value side (literal and variable datatypes).
-It works on the loaded file's own module types; mappings that target an
-external typedef are left to the project layer, which can resolve them.
+Module types and datatypes visible from loaded dependencies are passed in by
+the project layer, so a mapping that targets an external typedef resolves the
+same way as a local one. An instance may omit mappings entirely; only the
+mappings that are present are checked.
 """
 
 from __future__ import annotations

@@ -109,6 +109,150 @@ def test_external_datatypes_are_visible_to_dependents(tmp_path: Path) -> None:
     assert program.diagnostics == ()
 
 
+def test_instance_may_omit_every_parameter_mapping(tmp_path: Path) -> None:
+    root = tmp_path / "libs"
+    root.mkdir()
+    moduletype = (
+        "TYPEDEFINITIONS\n"
+        "   ControllerType = MODULEDEFINITION DateCode_ 1\n"
+        "   MODULEPARAMETERS\n"
+        "      Setpoint: real := 0.0;\n"
+        "   ModuleDef\n"
+        "   ClippingBounds = ( -1.0 , -1.0 ) ( 1.0 , 1.0 )\n"
+        "   ENDDEF (*ControllerType*);\n"
+    )
+    body = "SUBMODULES\n   Child Invocation ( 0.1 , 0.1 , 0.0 , 0.4 , 0.4 ) : ControllerType;\n"
+    _write(root, "Main.s", _source("Main", typedefs=moduletype, body=body))
+    program = _load(root, "Main").get("Main")
+    assert program.diagnostics == ()
+
+
+def test_external_typedef_parameter_mapping_target_is_checked(tmp_path: Path) -> None:
+    root = tmp_path / "libs"
+    root.mkdir()
+    records = "TYPEDEFINITIONS\n   RecType = RECORD DateCode_ 1\n      Value: integer := 0;\n   ENDDEF (*RecType*);\n"
+    moduletype = (
+        "TYPEDEFINITIONS\n"
+        "   ChildType = MODULEDEFINITION DateCode_ 1\n"
+        "   MODULEPARAMETERS\n"
+        "      Param: RecType;\n"
+        "   ModuleDef\n"
+        "   ClippingBounds = ( -1.0 , -1.0 ) ( 1.0 , 1.0 )\n"
+        "   ENDDEF (*ChildType*);\n"
+    )
+    _write(root, "Dep.s", _source("Dep", typedefs=records + moduletype))
+    body = (
+        "SUBMODULES\n"
+        "   Child Invocation ( 0.1 , 0.1 , 0.0 , 0.4 , 0.4 ) : ChildType (\n"
+        '      Param.Value => "not an integer");\n'
+    )
+    _write(root, "Main.s", _source("Main", body=body))
+    _write(root, "Main.l", "Dep\n")
+    diagnostics = _load(root, "Main").get("Main").diagnostics
+    assert [diagnostic.code.value for diagnostic in diagnostics] == ["SL-V050"]
+    assert "Param.Value" in diagnostics[0].message
+
+
+def test_external_record_fields_belong_to_the_defining_program(tmp_path: Path) -> None:
+    root = tmp_path / "libs"
+    root.mkdir()
+    broken_record = (
+        "TYPEDEFINITIONS\n"
+        "   BrokenRecord = RECORD DateCode_ 1\n"
+        "      BadField: MissingFieldType := 0;\n"
+        "   ENDDEF (*BrokenRecord*);\n"
+    )
+    _write(root, "Dep.s", _source("Dep", typedefs=broken_record))
+    _write(root, "Main.s", _source("Main", locals_block="LOCALVARIABLES\n   Sensor: BrokenRecord;\n"))
+    _write(root, "Main.l", "Dep\n")
+    project = _load(root, "Main")
+    assert project.get("Main").diagnostics == ()
+    assert "MissingFieldType" in " ".join(d.message for d in project.get("Dep").diagnostics)
+
+
+def test_visible_definitions_come_from_the_dependency_closure(tmp_path: Path) -> None:
+    root = tmp_path / "libs"
+    root.mkdir()
+    hidden_type = (
+        "TYPEDEFINITIONS\n   HiddenType = RECORD DateCode_ 1\n      Value: integer := 0;\n   ENDDEF (*HiddenType*);\n"
+    )
+    _write(root, "Other.s", _source("Other", typedefs=hidden_type))
+    _write(root, "Main.s", _source("Main", locals_block="LOCALVARIABLES\n   Value: HiddenType;\n"))
+    project = SattLineProject.load([root], mode=LoadMode.DRAFT, targets=("Other", "Main"), strict=False)
+    assert project.get("Other").diagnostics == ()
+    assert [diagnostic.code.value for diagnostic in project.get("Main").diagnostics] == ["SL-V020"]
+
+
+def test_invoked_validation_limits_dependencies_to_used_moduletypes(tmp_path: Path) -> None:
+    root = tmp_path / "libs"
+    root.mkdir()
+    library_types = (
+        "TYPEDEFINITIONS\n"
+        "   UsedType = MODULEDEFINITION DateCode_ 1\n"
+        "   LOCALVARIABLES\n"
+        "      BadUsed: MissingUsedType;\n"
+        "   SUBMODULES\n"
+        "      Deep Invocation ( 0.1 , 0.1 , 0.0 , 0.4 , 0.4 ) : DeepType;\n"
+        "   ModuleDef\n"
+        "   ClippingBounds = ( -1.0 , -1.0 ) ( 1.0 , 1.0 )\n"
+        "   ENDDEF (*UsedType*);\n"
+        "   UnusedType = MODULEDEFINITION DateCode_ 1\n"
+        "   LOCALVARIABLES\n"
+        "      BadUnused: MissingUnusedType;\n"
+        "   ModuleDef\n"
+        "   ClippingBounds = ( -1.0 , -1.0 ) ( 1.0 , 1.0 )\n"
+        "   ENDDEF (*UnusedType*);\n"
+        "   DeepType = MODULEDEFINITION DateCode_ 1\n"
+        "   LOCALVARIABLES\n"
+        "      BadDeep: MissingDeepType;\n"
+        "   ModuleDef\n"
+        "   ClippingBounds = ( -1.0 , -1.0 ) ( 1.0 , 1.0 )\n"
+        "   ENDDEF (*DeepType*);\n"
+    )
+    own_type = (
+        "TYPEDEFINITIONS\n"
+        "   OwnType = MODULEDEFINITION DateCode_ 1\n"
+        "   LOCALVARIABLES\n"
+        "      BadOwn: MissingOwnType;\n"
+        "   ModuleDef\n"
+        "   ClippingBounds = ( -1.0 , -1.0 ) ( 1.0 , 1.0 )\n"
+        "   ENDDEF (*OwnType*);\n"
+    )
+    other_types = (
+        "TYPEDEFINITIONS\n"
+        "   OnlyUnused = MODULEDEFINITION DateCode_ 1\n"
+        "   LOCALVARIABLES\n"
+        "      BadOnlyUnused: MissingOtherType;\n"
+        "   ModuleDef\n"
+        "   ClippingBounds = ( -1.0 , -1.0 ) ( 1.0 , 1.0 )\n"
+        "   ENDDEF (*OnlyUnused*);\n"
+    )
+    body = (
+        "SUBMODULES\n"
+        "   Used Invocation ( 0.1 , 0.1 , 0.0 , 0.4 , 0.4 ) : UsedType;\n"
+        "   UsedAgain Invocation ( 0.6 , 0.1 , 0.0 , 0.4 , 0.4 ) : UsedType;\n"
+    )
+    _write(root, "Lib.s", _source("Lib", typedefs=library_types))
+    _write(root, "Other.s", _source("Other", typedefs=other_types))
+    _write(root, "Main.s", _source("Main", typedefs=own_type, body=body))
+    _write(root, "Main.l", "Lib\nOther\n")
+
+    full = _load(root, "Main", validate=LoadValidation.FULL)
+    full_library = " ".join(d.message for d in full.get("Lib").diagnostics)
+    assert "MissingUsedType" in full_library
+    assert "MissingUnusedType" in full_library
+    assert "MissingDeepType" in full_library
+    assert "MissingOtherType" in " ".join(d.message for d in full.get("Other").diagnostics)
+
+    invoked = _load(root, "Main", validate=LoadValidation.INVOKED)
+    invoked_library = " ".join(d.message for d in invoked.get("Lib").diagnostics)
+    assert "MissingUsedType" in invoked_library
+    assert "MissingDeepType" in invoked_library
+    assert "MissingUnusedType" not in invoked_library
+    assert invoked.get("Other").diagnostics == ()
+    assert "MissingOwnType" in " ".join(d.message for d in invoked.get("Main").diagnostics)
+
+
 def test_missing_dependency_marks_external_findings_tentative(tmp_path: Path) -> None:
     root = tmp_path / "libs"
     root.mkdir()
@@ -118,6 +262,10 @@ def test_missing_dependency_marks_external_findings_tentative(tmp_path: Path) ->
     program = project.get("Main")
     assert [diagnostic.code.value for diagnostic in program.diagnostics] == ["SL-V020"]
     assert program.diagnostics[0].tentative is True
+
+    invoked = _load(root, "Main", strict=False, validate=LoadValidation.INVOKED).get("Main")
+    assert [diagnostic.code.value for diagnostic in invoked.diagnostics] == ["SL-V020"]
+    assert invoked.diagnostics[0].tentative is True
 
 
 def test_datecode_conflict_is_reported_on_the_later_program(tmp_path: Path) -> None:

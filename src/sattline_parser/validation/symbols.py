@@ -16,10 +16,10 @@ from sattline_parser.validation.names import fold_identifier
 
 #: Names that mean an SFC *runtime* thing rather than a user-chosen identifier.
 #: ``On`` and ``Off`` are readable wherever a boolean is expected, which is why
-#: reads are exempt from SL-V019 - but they may never be *declared*. The real
-#: parser rejects ``On: boolean := False;`` in LOCALVARIABLES with
-#: ``>>>On<<< AliasSym Expected`` (`ViolVarOn.x`, `ViolVarOff.x`): at that
-#: position it wanted an alias and found the reserved word instead.
+#: reads are exempt from the undefined-variable rule, but they may never be
+#: *declared*. The invalid corpus fixtures ``ReservedNameVarOn.s`` and
+#: ``ReservedNameVarOff.s`` pin that a LOCALVARIABLES declaration of either
+#: name is rejected as a reserved name.
 #:
 #: ``GroupData`` is deliberately NOT in this set. It is a reserved *datatype*
 #: used by a module definition's ``GroupConn=`` tail, and it is intentionally

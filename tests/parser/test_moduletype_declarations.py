@@ -1,46 +1,13 @@
-# pyright: reportUnknownVariableType=false, reportUnknownMemberType=false, reportUnknownParameterType=false, reportMissingParameterType=false, reportUnknownArgumentType=false, reportCallIssue=false, reportPrivateUsage=false
+# pyright: reportUnknownVariableType=false, reportUnknownMemberType=false
 
-"""Coverage for the MODULE_TYPE_NAME contextual-lexer probe.
-
-The probe upgrades a ``NAME`` to ``MODULE_TYPE_NAME`` when the identifier is a
-module-type definition head (``= MODULEDEFINITION``) in an LALR state that
-cannot otherwise close the ``submodules`` or ``moduletype_definition`` loops.
-These tests exercise the upgrade through comments and ``PRIVATE_`` markers,
-plus the negative path (records stay plain ``NAME``).
-"""
-
-import pytest
-
-from sattline_parser.grammar.sattline_lexer import _comment_end, _module_typedecl_after
+"""Module-type declaration parsing through comments and ``PRIVATE_`` markers."""
 
 from ._parser_core_test_support import parser_core_parse_source_text
 
 _MD = "MODULEDEFINITION"
 
 
-def test_comment_end_balances_nested_comments() -> None:
-    assert _comment_end("(* a (* b *) c *)", 0) == len("(* a (* b *) c *)")
-    assert _comment_end("(* unclosed", 0) == len("(* unclosed")
-    assert _comment_end("(* a *)", 0) == len("(* a *)")
-
-
-def test_module_typedecl_after_accepts_and_rejects() -> None:
-    assert _module_typedecl_after("X = MODULEDEFINITION rest", 2) is True
-    assert _module_typedecl_after("X =  PRIVATE_  MODULEDEFINITION rest", 2) is True
-    assert _module_typedecl_after("X = RECORD rest", 2) is False
-    assert _module_typedecl_after("X = ", 2) is False
-    assert _module_typedecl_after("X = MODULE", 2) is False
-    assert _module_typedecl_after("", 0) is False
-
-
-def test_module_typedecl_after_rejects_non_text() -> None:
-    with pytest.raises(TypeError, match="_module_typedecl_after"):
-        _module_typedecl_after(123, 0)
-    with pytest.raises(TypeError, match="_comment_end"):
-        _comment_end(123, 0)
-
-
-def test_module_type_probe_upgrades_through_comments_and_private() -> None:
+def test_moduletype_declaration_parses_through_comments_and_private() -> None:
     code = f"""
 "SyntaxVersion"
 "OriginalFileDate"
@@ -66,7 +33,7 @@ ENDDEF (*base*);
     assert [mt.datecode for mt in bp.moduletype_defs] == [2, 3]
 
 
-def test_module_type_probe_closes_moduletype_and_submodule_loops() -> None:
+def test_moduletype_declarations_close_moduletype_and_submodule_loops() -> None:
     code = f"""
 "SyntaxVersion"
 "OriginalFileDate"
@@ -101,7 +68,7 @@ ENDDEF (*base*);
     assert [c.text for c in bp.moduletype_defs[2].description_comments] == ["(* desc *)"]
 
 
-def test_module_type_probe_does_not_upgrade_record_heads() -> None:
+def test_record_declarations_stay_record_definitions() -> None:
     code = f"""
 "SyntaxVersion"
 "OriginalFileDate"

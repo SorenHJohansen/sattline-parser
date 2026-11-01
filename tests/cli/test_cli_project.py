@@ -77,7 +77,7 @@ def test_missing_root_and_empty_tree_are_usage_errors(tmp_path, capsys) -> None:
 
 
 def test_sources_nested_below_a_root_are_not_discovered(tmp_path, capsys) -> None:
-    library = tmp_path / "ABBLib"
+    library = tmp_path / "Library"
     library.mkdir()
     _program(library, "Base")
 

@@ -96,9 +96,8 @@ def test_graph_objects_propagates_section_level_layer_to_objects():
 
 
 def test_graph_object_layer_is_per_object_not_section_level():
-    # Probe 2026-10-01: the real parser rejects a section-level layer clause with
-    # "GraphObjects : >>>Layer_<<< 2 AliasSym Expected". A layer belongs to the
-    # object that declares it, so there is nothing to propagate.
+    # The real parser rejects a section-level layer clause. A layer belongs to
+    # the object that declares it, so there is nothing to propagate.
     bp = parser_core_parse_source_text(
         '"SyntaxVersion"\n'
         '"OriginalFileDate"\n'

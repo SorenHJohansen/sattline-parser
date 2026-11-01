@@ -126,7 +126,7 @@ def test_is_compressed_covers_false_and_true_heuristics() -> None:
 
 
 def test_undefined_byte_inside_an_unterminated_comment_still_fails(tmp_path: pathlib.Path) -> None:
-    """Tolerant decoding is scoped to *closed* comments (HighByteInvalid.x).
+    """Tolerant decoding is scoped to *closed* comments.
 
     An undefined CP1252 byte inside an unterminated comment cannot be repaired,
     so the strict decode error survives instead of the file being guessed at.

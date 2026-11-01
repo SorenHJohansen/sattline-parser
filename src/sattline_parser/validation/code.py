@@ -55,6 +55,7 @@ from sattline_parser.validation.symbols import (
     is_sfc_runtime_constant,
     resolve_var,
 )
+from sattline_parser.validation.type_graph import TypeGraph
 from sattline_parser.validation.typing import (
     TypeFamily,
     assignment_type_matches,
@@ -78,37 +79,46 @@ def walk_equation_block(
     equation: Equation,
     scope: Scope,
     records: dict[str, DataType],
+    type_graph: TypeGraph,
     sfc_names: set[str],
     errors: list[Diagnostic],
 ) -> None:
     for item in equation.code:
-        walk_code_item(item, scope, records, sfc_names, errors)
+        walk_code_item(item, scope, records, type_graph, sfc_names, errors)
 
 
 def walk_sequence_body(
     items: list[SFCBodyItem],
     scope: Scope,
     records: dict[str, DataType],
+    type_graph: TypeGraph,
     sfc_names: set[str],
     errors: list[Diagnostic],
 ) -> None:
     for item in items:
-        walk_sfc_item(item, scope, records, sfc_names, errors)
+        walk_sfc_item(item, scope, records, type_graph, sfc_names, errors)
 
 
-def walk_module_code(mc: ModuleCode, scope: Scope, records: dict[str, DataType], errors: list[Diagnostic]) -> None:
+def walk_module_code(
+    mc: ModuleCode,
+    scope: Scope,
+    records: dict[str, DataType],
+    type_graph: TypeGraph,
+    errors: list[Diagnostic],
+) -> None:
     sequences = mc.sequences or ()
     step_names, transition_names = _collect_module_jump_targets(mc.sequences)
+    name_counts = _collect_module_sfc_name_counts(mc.sequences)
     all_known = step_names | transition_names
     sfc_names = all_known | {fold_identifier(sequence.name) for sequence in sequences if sequence.name}
     _check_duplicate_sfc_names(mc.sequences, errors)
     check_sequence_positions(mc.sequences, errors)
     check_step_auto_variables(mc, scope, errors)
     for sequence in sequences:
-        _check_fork_targets(sequence.code, step_names, transition_names, errors)
-        walk_sequence_body(sequence.code, scope, records, sfc_names, errors)
+        _check_fork_targets(sequence.code, step_names, transition_names, name_counts, errors)
+        walk_sequence_body(sequence.code, scope, records, type_graph, sfc_names, errors)
     for equation in mc.equations or ():
-        walk_equation_block(equation, scope, records, sfc_names, errors)
+        walk_equation_block(equation, scope, records, type_graph, sfc_names, errors)
 
 
 def _iter_var_refs(node: object) -> list[VarRef]:
@@ -280,33 +290,44 @@ def check_step_auto_variables(mc: ModuleCode, scope: Scope, errors: list[Diagnos
 
 
 def walk_code_item(
-    item: object, scope: Scope, records: dict[str, DataType], sfc_names: set[str], errors: list[Diagnostic]
+    item: object,
+    scope: Scope,
+    records: dict[str, DataType],
+    type_graph: TypeGraph,
+    sfc_names: set[str],
+    errors: list[Diagnostic],
 ) -> None:
     if isinstance(item, Assignment):
-        _check_assignment(item, scope, records, errors)
-        walk_expression(item.value, scope, records, sfc_names, errors)
+        _check_assignment(item, scope, records, type_graph, sfc_names, errors)
+        walk_expression(item.value, scope, records, type_graph, sfc_names, errors)
     elif isinstance(item, FuncCallStmt):
-        _check_call(item.call, scope, records, sfc_names, errors)
+        _check_call(item.call, scope, records, type_graph, sfc_names, errors)
         for arg in item.call.args:
-            walk_expression(arg, scope, records, sfc_names, errors)
+            walk_expression(arg, scope, records, type_graph, sfc_names, errors)
     elif isinstance(item, IfStmt):
         for condition, body in item.branches:
-            _check_condition(condition, scope, records, errors)
-            walk_expression(condition, scope, records, sfc_names, errors)
+            _check_condition(condition, scope, records, type_graph, errors)
+            walk_expression(condition, scope, records, type_graph, sfc_names, errors)
             for nested in body:
-                walk_code_item(nested, scope, records, sfc_names, errors)
+                walk_code_item(nested, scope, records, type_graph, sfc_names, errors)
         for nested in item.else_block or ():
-            walk_code_item(nested, scope, records, sfc_names, errors)
+            walk_code_item(nested, scope, records, type_graph, sfc_names, errors)
 
 
 def walk_expression(
-    expr: SLExpression, scope: Scope, records: dict[str, DataType], sfc_names: set[str], errors: list[Diagnostic]
+    expr: SLExpression,
+    scope: Scope,
+    records: dict[str, DataType],
+    type_graph: TypeGraph,
+    sfc_names: set[str],
+    errors: list[Diagnostic],
 ) -> None:
     if isinstance(expr, VarRef):
         resolved = resolve_var(expr, scope, records)
         _check_old_new(expr, resolved, errors)
         if (
             resolved is None
+            and _ref_needs_undefined_diagnostic(expr, scope)
             and not is_sfc_runtime_constant(expr.name)
             and not _is_sfc_runtime_accessor(expr, sfc_names)
         ):
@@ -318,50 +339,55 @@ def walk_expression(
                 )
             )
     elif isinstance(expr, BoolOp):
-        _check_bool_operand(expr, scope, records, errors)
+        _check_bool_operand(expr, scope, records, type_graph, errors)
         for operand in expr.operands:
-            walk_expression(operand, scope, records, sfc_names, errors)
+            walk_expression(operand, scope, records, type_graph, sfc_names, errors)
     elif isinstance(expr, NotOp):
-        _check_bool_operand(expr, scope, records, errors)
-        walk_expression(expr.operand, scope, records, sfc_names, errors)
+        _check_bool_operand(expr, scope, records, type_graph, errors)
+        walk_expression(expr.operand, scope, records, type_graph, sfc_names, errors)
     elif isinstance(expr, Compare | BinOp):
-        _check_operands(expr, scope, records, errors)
-        walk_expression(expr.left, scope, records, sfc_names, errors)
-        walk_expression(expr.right, scope, records, sfc_names, errors)
+        _check_operands(expr, scope, records, type_graph, errors)
+        walk_expression(expr.left, scope, records, type_graph, sfc_names, errors)
+        walk_expression(expr.right, scope, records, type_graph, sfc_names, errors)
     elif isinstance(expr, UnaryOp):
-        _check_unary_operand(expr, scope, records, errors)
-        walk_expression(expr.operand, scope, records, sfc_names, errors)
+        _check_unary_operand(expr, scope, records, type_graph, errors)
+        walk_expression(expr.operand, scope, records, type_graph, sfc_names, errors)
     elif isinstance(expr, FuncCall):
-        _check_call(expr, scope, records, sfc_names, errors)
+        _check_call(expr, scope, records, type_graph, sfc_names, errors)
         for arg in expr.args:
-            walk_expression(arg, scope, records, sfc_names, errors)
+            walk_expression(arg, scope, records, type_graph, sfc_names, errors)
     elif isinstance(expr, TernaryOp):
-        _check_ternary_branches(expr, scope, records, errors)
+        _check_ternary_branches(expr, scope, records, type_graph, errors)
         for condition, then_expr in expr.branches:
-            _check_condition(condition, scope, records, errors)
-            walk_expression(condition, scope, records, sfc_names, errors)
-            walk_expression(then_expr, scope, records, sfc_names, errors)
+            _check_condition(condition, scope, records, type_graph, errors)
+            walk_expression(condition, scope, records, type_graph, sfc_names, errors)
+            walk_expression(then_expr, scope, records, type_graph, sfc_names, errors)
         if expr.else_expr is not None:
-            walk_expression(expr.else_expr, scope, records, sfc_names, errors)
+            walk_expression(expr.else_expr, scope, records, type_graph, sfc_names, errors)
 
 
 def walk_sfc_item(
-    item: SFCBodyItem, scope: Scope, records: dict[str, DataType], sfc_names: set[str], errors: list[Diagnostic]
+    item: SFCBodyItem,
+    scope: Scope,
+    records: dict[str, DataType],
+    type_graph: TypeGraph,
+    sfc_names: set[str],
+    errors: list[Diagnostic],
 ) -> None:
     if isinstance(item, SFCStep):
         for block in (item.code.enter, item.code.active, item.code.exit):
             for code_item in block:
-                walk_code_item(code_item, scope, records, sfc_names, errors)
+                walk_code_item(code_item, scope, records, type_graph, sfc_names, errors)
     elif isinstance(item, SFCTransition):
         if item.condition is not None:
-            walk_expression(item.condition, scope, records, sfc_names, errors)
+            walk_expression(item.condition, scope, records, type_graph, sfc_names, errors)
     elif isinstance(item, SFCTransitionSub):
-        walk_sequence_body(item.body, scope, records, sfc_names, errors)
+        walk_sequence_body(item.body, scope, records, type_graph, sfc_names, errors)
     elif isinstance(item, SFCAlternative | SFCParallel):
         for branch in item.branches:
-            walk_sequence_body(branch, scope, records, sfc_names, errors)
+            walk_sequence_body(branch, scope, records, type_graph, sfc_names, errors)
     elif isinstance(item, SFCSubsequence):
-        walk_sequence_body(item.body, scope, records, sfc_names, errors)
+        walk_sequence_body(item.body, scope, records, type_graph, sfc_names, errors)
 
 
 def _temporal_numeric_pair(left_type: str | None, right_type: str | None) -> bool:
@@ -376,7 +402,11 @@ def _temporal_numeric_pair(left_type: str | None, right_type: str | None) -> boo
 
 
 def _check_operands(
-    expr: Compare | BinOp, scope: Scope, records: dict[str, DataType], errors: list[Diagnostic]
+    expr: Compare | BinOp,
+    scope: Scope,
+    records: dict[str, DataType],
+    type_graph: TypeGraph,
+    errors: list[Diagnostic],
 ) -> None:
     """Operands of an operator must be of a type the operator accepts.
 
@@ -385,8 +415,8 @@ def _check_operands(
     ordering requires numeric operands. Arithmetic requires numeric operands
     on both sides, and a literal zero divisor is rejected outright.
     """
-    left_type = infer_expr_type(expr.left, scope, records)
-    right_type = infer_expr_type(expr.right, scope, records)
+    left_type = infer_expr_type(expr.left, scope, records, type_graph)
+    right_type = infer_expr_type(expr.right, scope, records, type_graph)
 
     if isinstance(expr, Compare):
         if expr.op in _EQUALITY_COMPARISON_OPERATORS:
@@ -461,13 +491,17 @@ def _check_operands(
 
 
 def _check_bool_operand(
-    expr: BoolOp | NotOp, scope: Scope, records: dict[str, DataType], errors: list[Diagnostic]
+    expr: BoolOp | NotOp,
+    scope: Scope,
+    records: dict[str, DataType],
+    type_graph: TypeGraph,
+    errors: list[Diagnostic],
 ) -> None:
     """Logical operators require boolean operands."""
     operands = expr.operands if isinstance(expr, BoolOp) else (expr.operand,)
     operator = expr.op if isinstance(expr, BoolOp) else "NOT"
     for operand in operands:
-        operand_type = infer_expr_type(operand, scope, records)
+        operand_type = infer_expr_type(operand, scope, records, type_graph)
         if operand_type is None or is_anytype_datatype(operand_type) or is_boolean(operand_type):
             continue
         errors.append(
@@ -479,9 +513,15 @@ def _check_bool_operand(
         )
 
 
-def _check_unary_operand(expr: UnaryOp, scope: Scope, records: dict[str, DataType], errors: list[Diagnostic]) -> None:
+def _check_unary_operand(
+    expr: UnaryOp,
+    scope: Scope,
+    records: dict[str, DataType],
+    type_graph: TypeGraph,
+    errors: list[Diagnostic],
+) -> None:
     """Unary plus and minus require a numeric operand."""
-    operand_type = infer_expr_type(expr.operand, scope, records)
+    operand_type = infer_expr_type(expr.operand, scope, records, type_graph)
     if operand_type is None or is_anytype_datatype(operand_type) or is_numeric(operand_type):
         return
     errors.append(
@@ -494,12 +534,16 @@ def _check_unary_operand(expr: UnaryOp, scope: Scope, records: dict[str, DataTyp
 
 
 def _check_ternary_branches(
-    expr: TernaryOp, scope: Scope, records: dict[str, DataType], errors: list[Diagnostic]
+    expr: TernaryOp,
+    scope: Scope,
+    records: dict[str, DataType],
+    type_graph: TypeGraph,
+    errors: list[Diagnostic],
 ) -> None:
     """IF-expression branches must have compatible datatypes."""
-    branch_types = [infer_expr_type(value, scope, records) for _condition, value in expr.branches]
+    branch_types = [infer_expr_type(value, scope, records, type_graph) for _condition, value in expr.branches]
     if expr.else_expr is not None:
-        branch_types.append(infer_expr_type(expr.else_expr, scope, records))
+        branch_types.append(infer_expr_type(expr.else_expr, scope, records, type_graph))
     known_types = [datatype for datatype in branch_types if datatype is not None]
     if len(known_types) < 2 or merge_compatible_types(known_types) is not None:
         return
@@ -514,13 +558,17 @@ def _check_ternary_branches(
 
 
 def _check_condition(
-    condition: SLExpression, scope: Scope, records: dict[str, DataType], errors: list[Diagnostic]
+    condition: SLExpression,
+    scope: Scope,
+    records: dict[str, DataType],
+    type_graph: TypeGraph,
+    errors: list[Diagnostic],
 ) -> None:
     """An IF / ELSIF / ternary condition must be boolean.
 
     Real message: ``Condition in IF-sentence is not boolean``.
     """
-    condition_type = infer_expr_type(condition, scope, records)
+    condition_type = infer_expr_type(condition, scope, records, type_graph)
     if condition_type is not None and not is_boolean(condition_type):
         errors.append(
             Diagnostic(
@@ -538,7 +586,11 @@ def _expression_span(expr: SLExpression) -> SourceSpan | None:
 
 
 def check_coordinate_tail_types(
-    module_def: ModuleDef, scope: Scope, records: dict[str, DataType], errors: list[Diagnostic]
+    module_def: ModuleDef,
+    scope: Scope,
+    records: dict[str, DataType],
+    type_graph: TypeGraph,
+    errors: list[Diagnostic],
 ) -> None:
     """A coordinate position must be real, never integer (SL-V032).
 
@@ -560,7 +612,7 @@ def check_coordinate_tail_types(
         if id(tail) in seen:
             continue
         seen.add(id(tail))
-        inferred = infer_expr_type(tail, scope, records)
+        inferred = infer_expr_type(tail, scope, records, type_graph)
         if inferred is not None and fold_identifier(inferred) != fold_identifier(Simple_DataType.REAL.value):
             errors.append(
                 Diagnostic(
@@ -574,17 +626,25 @@ def check_coordinate_tail_types(
 
 
 def _check_assignment(
-    assignment: Assignment, scope: Scope, records: dict[str, DataType], errors: list[Diagnostic]
+    assignment: Assignment,
+    scope: Scope,
+    records: dict[str, DataType],
+    type_graph: TypeGraph,
+    sfc_names: set[str],
+    errors: list[Diagnostic],
 ) -> None:
     resolved = resolve_var(assignment.target, scope, records)
     if resolved is None:
-        errors.append(
-            Diagnostic(
-                code=DiagnosticCode.UNDEFINED_VARIABLE,
-                message=f"Assignment to undefined variable {assignment.target.name!r}",
-                span=assignment.span,
+        if _is_sfc_runtime_accessor(assignment.target, sfc_names):
+            return
+        if _ref_needs_undefined_diagnostic(assignment.target, scope):
+            errors.append(
+                Diagnostic(
+                    code=DiagnosticCode.UNDEFINED_VARIABLE,
+                    message=f"Assignment to undefined variable {assignment.target.name!r}",
+                    span=assignment.span,
+                )
             )
-        )
         return
     if resolved.const:
         errors.append(
@@ -606,7 +666,7 @@ def _check_assignment(
                 span=assignment.span,
             )
         )
-    target_type, source_type = assignment_types(assignment, scope, records)
+    target_type, source_type = assignment_types(assignment, scope, records, type_graph)
     if target_type is not None and source_type is not None and not assignment_type_matches(source_type, target_type):
         errors.append(
             Diagnostic(
@@ -657,7 +717,12 @@ def _check_old_new(ref: VarRef, resolved: Variable | None, errors: list[Diagnost
 
 
 def _check_call(
-    call: FuncCall, scope: Scope, records: dict[str, DataType], sfc_names: set[str], errors: list[Diagnostic]
+    call: FuncCall,
+    scope: Scope,
+    records: dict[str, DataType],
+    type_graph: TypeGraph,
+    sfc_names: set[str],
+    errors: list[Diagnostic],
 ) -> None:
     for arg in call.args:
         if isinstance(arg, str):
@@ -731,7 +796,7 @@ def _check_call(
                 )
             )
             continue
-        actual_type = infer_expr_type(arg, scope, records)
+        actual_type = infer_expr_type(arg, scope, records, type_graph)
         if actual_type is not None and not builtin_type_matches(
             actual_type, parameter.datatype, direction=parameter.direction
         ):
@@ -745,6 +810,23 @@ def _check_call(
                     span=call.span,
                 )
             )
+
+
+def _ref_needs_undefined_diagnostic(ref: VarRef, scope: Scope) -> bool:
+    """A missing root is undefined; an unresolved field is not proven undefined.
+
+    A field access on a record whose shape is unknown (an opaque system type or
+    a record from a library that is not loaded) stays silent. A field access on
+    a scalar is provably invalid, so it keeps the undefined-variable finding.
+    """
+    base_name = ref.name.partition(".")[0]
+    base = scope.lookup(base_name)
+    if base is None:
+        return True
+    if base.datatype in {Simple_DataType.TIME, Simple_DataType.DURATION}:
+        # Temporal values expose date/time/duration component accessors.
+        return False
+    return isinstance(base.datatype, Simple_DataType)
 
 
 def _is_sfc_runtime_accessor(ref: VarRef, sfc_names: set[str]) -> bool:
@@ -786,14 +868,40 @@ def _collect_jump_targets(items: list[SFCBodyItem], step_names: set[str], transi
             _collect_jump_targets(item.body, step_names, transition_names)
 
 
+def _collect_module_sfc_name_counts(sequences: list[Sequence] | None) -> dict[str, int]:
+    """Count every named SFC element across the module code block."""
+    counts: dict[str, int] = {}
+    for sequence in sequences or ():
+        _count_sfc_names(sequence.code, counts)
+    return counts
+
+
+def _count_sfc_names(items: list[SFCBodyItem], counts: dict[str, int]) -> None:
+    for item in items:
+        name = _named_sfc_element_name(item)
+        if name is not None:
+            folded = fold_identifier(name)
+            counts[folded] = counts.get(folded, 0) + 1
+        if isinstance(item, SFCAlternative | SFCParallel):
+            for branch in item.branches:
+                _count_sfc_names(branch, counts)
+        elif isinstance(item, SFCSubsequence | SFCTransitionSub):
+            _count_sfc_names(item.body, counts)
+
+
 def _check_fork_targets(
-    items: list[SFCBodyItem], step_names: set[str], transition_names: set[str], errors: list[Diagnostic]
+    items: list[SFCBodyItem],
+    step_names: set[str],
+    transition_names: set[str],
+    name_counts: dict[str, int],
+    errors: list[Diagnostic],
 ) -> None:
     """Resolve every SEQFORK target and check its kind.
 
     Unresolved or wrong-kind targets are rejected. A fork hosted on a step must
     name transitions, and a fork hosted on a transition must name steps; a rule
-    that merely required every target to be a step would be wrong.
+    that merely required every target to be a step would be wrong. A target
+    declared more than once is ambiguous before either kind rule applies.
     """
 
     def _check_fork(fork: SFCFork | None, host: str, span: SourceSpan | None) -> None:
@@ -804,6 +912,15 @@ def _check_fork_targets(
         expected_kind = "transition" if host == "step" else "step"
         for target in fork.targets:
             folded = fold_identifier(target)
+            if name_counts.get(folded, 0) > 1:
+                errors.append(
+                    Diagnostic(
+                        code=DiagnosticCode.SEQUENCE_AMBIGUOUS_FORK_TARGET,
+                        message=f"SEQFORK target {target!r} is declared more than once in the module",
+                        span=span,
+                    )
+                )
+                continue
             if folded in expected:
                 continue
             if folded in other:
@@ -833,9 +950,9 @@ def _check_fork_targets(
             _check_fork(item.fork, "transition", item.span)
         elif isinstance(item, SFCAlternative | SFCParallel):
             for branch in item.branches:
-                _check_fork_targets(branch, step_names, transition_names, errors)
+                _check_fork_targets(branch, step_names, transition_names, name_counts, errors)
         elif isinstance(item, SFCSubsequence | SFCTransitionSub):
-            _check_fork_targets(item.body, step_names, transition_names, errors)
+            _check_fork_targets(item.body, step_names, transition_names, name_counts, errors)
 
 
 def _check_duplicate_sfc_names(sequences: list[Sequence] | None, errors: list[Diagnostic]) -> None:

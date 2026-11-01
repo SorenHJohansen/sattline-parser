@@ -7,13 +7,15 @@ import os
 from ._parser_core_test_support import *
 
 
-def test_parser_api_import_raises_when_grammar_file_is_missing(monkeypatch: pytest.MonkeyPatch):
-    module_path = Path(parser_api.__file__)
-    module_name = "sattline_parser.api_missing_grammar_test"
+def test_resolved_grammar_import_raises_when_grammar_file_is_missing(monkeypatch: pytest.MonkeyPatch):
+    from sattline_parser.grammar import resolved as resolved_module  # noqa: PLC0415
+
+    module_path = Path(resolved_module.__file__)
+    module_name = "sattline_parser.grammar.resolved_missing_grammar_test"
     original_exists = Path.exists
 
     def fake_exists(path: Path) -> bool:
-        if path == parser_api.GRAMMAR_PATH:
+        if path == resolved_module.GRAMMAR_PATH:
             return False
         return original_exists(path)
 
@@ -178,9 +180,9 @@ def test_read_text_cp1252_rejects_bytes_invalid_in_cp1252(tmp_path):
         parser_api.read_text_cp1252(source_file)
 
 
-# Proved 2026-10-05 by HighByteInvalid.x: the real editor compiles a file whose
-# undefined Windows-1252 byte 0x81 sits inside a (* ... *) comment. The tolerance
-# is scoped to comment bodies; read_text_cp1252 keeps its strict contract.
+# The real editor accepts a file whose undefined Windows-1252 byte 0x81 sits
+# inside a (* ... *) comment. The tolerance is scoped to comment bodies;
+# read_text_cp1252 keeps its strict contract.
 
 
 def test_read_text_cp1252_tolerates_undefined_byte_inside_comment(tmp_path):

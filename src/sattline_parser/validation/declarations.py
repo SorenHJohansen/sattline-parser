@@ -46,7 +46,23 @@ Submodule = SingleModule | FrameModule | ModuleTypeInstance
 # Datatype names the SattLine language accepts that are not modelled as
 # Simple_DataType nor declared via TYPEDEFINITIONS. GroupData is the reserved
 # scan-group connection type used by module definitions with a GroupConn tail.
-_VALID_UNRESOLVED_DATATYPES = frozenset({fold_identifier("groupdata"), fold_identifier("anytype")})
+#: System datatypes the language accepts without a local definition. The field
+#: lists are not needed for the declaration rule; field access on an opaque
+#: system type stays silent rather than guessing a shape.
+_VALID_UNRESOLVED_DATATYPES = frozenset(
+    fold_identifier(name)
+    for name in (
+        "anytype",
+        "eventinteract",
+        "jchanneltype",
+        "memoryinforec",
+        "scangroupinfo",
+        "schedulerobjectinfo",
+        "schedulersysteminfo",
+        "textfile",
+        "window",
+    )
+)
 
 #: Builtin record names are declared datatypes too; a variable may name one
 #: without a local DATATYPE definition.
@@ -220,10 +236,16 @@ def check_record_fields(
     records: dict[str, DataType],
     errors: list[Diagnostic],
     *,
+    owned_records: dict[str, DataType],
     allow_unresolved_external_datatypes: bool = False,
 ) -> None:
-    """Validate each record field's declaration."""
-    for record in records.values():
+    """Validate the fields of records this file owns.
+
+    ``records`` carries every visible record so field datatypes resolve across
+    dependencies. ``owned_records`` limits which definitions are validated, so a
+    consumer does not repeat findings that belong to a library file.
+    """
+    for record in owned_records.values():
         check_variable_declarations(
             record.var_list,
             records,

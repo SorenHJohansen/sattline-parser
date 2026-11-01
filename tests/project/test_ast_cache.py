@@ -13,7 +13,9 @@ from unittest.mock import patch
 
 import pytest
 
+from sattline_parser.__version__ import __version__
 from sattline_parser.api import parse_source_file
+from sattline_parser.grammar.resolved import grammar_fingerprint
 from sattline_parser.models.ast_model import BasePicture
 from sattline_parser.project import FILE_AST_CACHE_VERSION, FileASTCache
 from sattline_parser.project.ast_cache import (
@@ -246,6 +248,37 @@ def test_load_missing_entry_returns_none(tmp_path: Path) -> None:
     assert cache.load(code_path, "draft") is None
 
 
+def test_startup_prune_removes_abandoned_temp_when_identity_matches(tmp_path: Path) -> None:
+    cache = FileASTCache(tmp_path)
+    abandoned = cache.cache_dir / "leftover.pickle.tmp"
+    abandoned.write_bytes(b"x")
+    old = time.time() - 7200
+    os.utime(abandoned, (old, old))
+
+    restarted = FileASTCache(tmp_path)
+
+    assert restarted.drain_startup_pruned_entries() == 1
+    assert not abandoned.exists()
+
+
+def test_prune_temporary_files_missing_directory(tmp_path: Path) -> None:
+    cache = FileASTCache(tmp_path)
+    shutil.rmtree(cache.cache_dir)
+    assert cache._prune_temporary_files() == 0
+
+
+def test_startup_prune_is_skipped_when_identity_marker_matches(tmp_path: Path) -> None:
+    code_path = _write_code(tmp_path)
+    cache = FileASTCache(tmp_path)
+    cache.save(code_path, "draft", _picture(code_path))
+
+    with patch(f"{_AC_PATH}._load_pickle_payload", side_effect=AssertionError("must not unpickle at startup")):
+        restarted = FileASTCache(tmp_path)
+
+    assert restarted.drain_startup_pruned_entries() == 0
+    assert restarted.load(code_path, "draft") == _picture(code_path)
+
+
 def test_save_and_load_round_trip(tmp_path: Path) -> None:
     code_path = _write_code(tmp_path)
     cache = FileASTCache(tmp_path)
@@ -275,12 +308,54 @@ def test_load_rejects_version_mismatch(tmp_path: Path) -> None:
             "meta": {
                 "path": str(code_path),
                 "mode": "draft",
+                "parser_version": __version__,
+                "grammar": grammar_fingerprint(),
                 "mtime_ns": stat_result.st_mtime_ns,
                 "size": stat_result.st_size,
             },
             "ast": _picture(code_path),
         },
     )
+    assert cache.load(code_path, "draft") is None
+
+
+def test_cache_key_includes_package_version_and_grammar(tmp_path: Path) -> None:
+    code_path = _write_code(tmp_path)
+    cache = FileASTCache(tmp_path)
+    key = cache._key(code_path, "draft")
+
+    with patch(f"{_AC_PATH}.__version__", "0.0.0"):
+        assert cache._key(code_path, "draft") != key
+    with patch(f"{_AC_PATH}.grammar_fingerprint", return_value="0" * 64):
+        assert cache._key(code_path, "draft") != key
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [("parser_version", "0.0.0"), ("grammar", "0" * 64)],
+)
+def test_load_rejects_identity_mismatch(tmp_path: Path, field: str, value: str) -> None:
+    code_path = _write_code(tmp_path)
+    cache = FileASTCache(tmp_path)
+    stat_result = code_path.stat()
+    meta: dict[str, object] = {
+        "path": str(code_path),
+        "mode": "draft",
+        "parser_version": __version__,
+        "grammar": grammar_fingerprint(),
+        "mtime_ns": stat_result.st_mtime_ns,
+        "size": stat_result.st_size,
+    }
+    meta[field] = value
+    _save_pickle_payload(
+        cache._path(code_path, "draft"),
+        {
+            "version": FILE_AST_CACHE_VERSION,
+            "meta": meta,
+            "ast": _picture(code_path),
+        },
+    )
+
     assert cache.load(code_path, "draft") is None
 
 
@@ -296,6 +371,8 @@ def test_load_rejects_meta_and_payload_shape(tmp_path: Path) -> None:
             "meta": {
                 "path": str(code_path),
                 "mode": mode,
+                "parser_version": __version__,
+                "grammar": grammar_fingerprint(),
                 "mtime_ns": stat_result.st_mtime_ns,
                 "size": stat_result.st_size,
             },
@@ -405,6 +482,14 @@ def test_prune_stale_entries(tmp_path: Path) -> None:
     cache.save(code_path, "draft", _picture(code_path))
     stale = cache.cache_dir / "stale.pickle"
     _save_pickle_payload(stale, {"version": FILE_AST_CACHE_VERSION + 7, "ast": 1})
+    old_identity = cache.cache_dir / "old-identity.pickle"
+    _save_pickle_payload(
+        old_identity,
+        {
+            "version": FILE_AST_CACHE_VERSION,
+            "meta": {"parser_version": "0.0.0", "grammar": grammar_fingerprint()},
+        },
+    )
     foreign = cache.cache_dir / "foreign.pickle"
     foreign.write_bytes(b"no magic")
     tmp = cache.cache_dir / "leftover.pickle.tmp"
@@ -416,9 +501,10 @@ def test_prune_stale_entries(tmp_path: Path) -> None:
 
     removed = cache.prune_stale_entries()
 
-    assert removed == 3
+    assert removed == 4
     assert cache.load(code_path, "draft") is not None
     assert not stale.exists()
+    assert not old_identity.exists()
     assert not foreign.exists()
     assert not tmp.exists()
     assert subdir.is_dir()

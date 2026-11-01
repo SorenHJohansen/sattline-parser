@@ -1,4 +1,4 @@
-"""Binary framing and stream decoding for ABB coded SattLine sources.
+"""Binary framing and stream decoding for coded SattLine sources.
 
 A coded file is a binary stream:
 

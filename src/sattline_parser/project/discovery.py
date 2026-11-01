@@ -336,7 +336,7 @@ class ProjectLookup:
     def find_deps_beside(self, code_path: Path, name: str, *, requester_dir: Path | None = None) -> Path | None:
         """Resolve the dependency sidecar at the selected body's own prefix.
 
-        A SattLine library is a body plus a sidecar at *one* prefix (LIB-05).
+        A SattLine library is a body plus a sidecar at *one* prefix.
         Resolving the sidecar through the whole ordered root list can pair a
         body with an unrelated library's sidecar, so the
         body prefix decides; the cache still short-circuits an already-known

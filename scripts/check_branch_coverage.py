@@ -19,8 +19,8 @@ from pathlib import Path
 
 LINE_MIN = 100.0
 # Branch coverage is measured as a depth complement to line coverage. The gate
-# sits below the current level (93.12%) so it catches regressions without
-# demanding coverage of purely-defensive branches.
+# sits below the current level so it catches regressions without demanding
+# coverage of purely-defensive branches.
 BRANCH_MIN = 93.0
 
 _REPO_ROOT = Path(__file__).resolve().parents[1]
@@ -51,14 +51,21 @@ def main() -> int:
 
     statements = int(totals["num_statements"])
     covered_lines = int(totals["covered_lines"])
+    excluded_lines = int(totals.get("excluded_lines", 0))
     branches = int(totals["num_branches"])
     covered_branches = int(totals["covered_branches"])
 
     line_pct = (covered_lines / statements * 100) if statements else 100.0
     branch_pct = (covered_branches / branches * 100) if branches else 100.0
+    executable_lines = statements + excluded_lines
+    excluded_pct = (excluded_lines / executable_lines * 100) if executable_lines else 0.0
 
     print(f"line coverage:   {line_pct:.2f}% (min {LINE_MIN:.2f}%)")
     print(f"branch coverage: {branch_pct:.2f}% (min {BRANCH_MIN:.2f}%)")
+    print(
+        f"excluded lines:  {excluded_lines} of {executable_lines} executable lines "
+        f"({excluded_pct:.2f}%) are outside the line gate"
+    )
 
     failures: list[str] = []
     if line_pct < LINE_MIN:
