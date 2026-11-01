@@ -28,11 +28,14 @@ class LoadValidation(StrEnum):
 
     ``NONE`` parses only and leaves every program's diagnostics empty. ``FULL``
     runs :func:`sattline_parser.validation.validate_basepicture` per program with
-    the definitions visible from already-loaded dependencies.
+    the definitions visible from already-loaded dependencies. ``INVOKED``
+    validates a target program in full but limits dependency programs to the
+    module types that target actually invokes, transitively.
     """
 
     NONE = "none"
     FULL = "full"
+    INVOKED = "invoked"
 
 
 @dataclass(frozen=True, slots=True)
@@ -135,8 +138,8 @@ class GraphicsModel:
 class SidecarState(StrEnum):
     """What the dependency sidecar looked like for a loaded program.
 
-    A library is a body *and* a sidecar at one prefix (LIB-05), so the
-    three cases are distinct: absent (no file), empty (file, no names) and
+    A library is a body *and* a sidecar at one prefix, so the three cases are
+    distinct: absent (no file), empty (file, no names) and
     present. Conflating absent with empty would silently drop a dependency chain.
     """
 
@@ -161,9 +164,9 @@ class LoadDiagnosticKind(StrEnum):
 class LoadDiagnostic:
     """One non-fatal load finding.
 
-    These are conditions the loader reports and an operator can continue past
-    (answer 11: Continue/Cancel); raising would be stricter than the tool, so
-    they are surfaced instead of thrown.
+    These are conditions the loader reports and an operator can continue past;
+    raising would be stricter than the tool, so they are surfaced instead of
+    thrown.
     """
 
     kind: LoadDiagnosticKind
@@ -174,7 +177,11 @@ class LoadDiagnostic:
 
 @dataclass(frozen=True, slots=True)
 class SattLineProgram:
-    """A fully loaded SattLine program within a project.
+    """One loaded source artifact within a project.
+
+    A program is a single ``.x`` or ``.s`` file, not an executable top-level
+    program. Loading one target can therefore produce many of these through the
+    dependency closure.
 
     ``name`` is the program identity, ``code`` the parsed SattLine source
     picture, ``graphics`` the parsed companion file (``None`` when absent),

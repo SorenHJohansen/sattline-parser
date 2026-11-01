@@ -76,8 +76,9 @@ jobs:
 
       # Runs the complete configured test suite (pyproject testpaths =
       # ["tests"]), including tests/test_packaging.py outside tests/parser,
-      # and enforces both coverage gates: 100% line coverage (the project's
-      # documented guarantee) and a minimum branch coverage.
+      # and enforces both coverage gates: 100% line coverage after exclusions
+      # and a minimum branch coverage. It also prints how many executable
+      # lines the exclusion rules keep outside the line gate.
       - name: Run full suite and enforce line + branch coverage gates
         run: uv run python scripts/check_branch_coverage.py
 

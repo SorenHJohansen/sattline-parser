@@ -75,7 +75,7 @@ _INVALID_VALIDATION_FIXTURES: dict[str, str] = {
 #: Fixtures for rules the real parser does NOT enforce. Kept as files so the
 #: retirement stays visible and re-testable: the code must emit nothing for
 #: these, because the editor refuses to CREATE such a declaration but its
-#: parser ACCEPTS the same source loaded from disk (2026-10-05 batch run).
+#: parser ACCEPTS the same source loaded from disk.
 _RETIRED_VALIDATION_FIXTURES: dict[str, str] = {
     "DuplicateDatatypeName": "SL-V001",
     "DuplicateModuletypeName": "SL-V002",
@@ -210,11 +210,11 @@ def test_valid_and_edge_corpus_have_no_validation_diagnostics():
             assert bp is not None
 
 
-# These pairings were previously pinned by reading probes/*.x straight out of
-# the probe tree. The evidence now travels in each fixture's header comment, so
-# CI has no dependency on probes/. Every case asserts BOTH sides: relaxing one
-# half of a rule without its counter-case fails here even though the generic
-# valid-corpus loop and the _INVALID_VALIDATION_FIXTURES table would still pass.
+# The evidence for each pairing travels in the fixture's header comment, so CI
+# has no dependency on any external probe tree. Every case asserts BOTH sides:
+# relaxing one half of a rule without its counter-case fails here even though
+# the generic valid-corpus loop and the _INVALID_VALIDATION_FIXTURES table
+# would still pass.
 
 
 def _codes(subdir: str, stem: str) -> set[str]:
@@ -222,28 +222,33 @@ def _codes(subdir: str, stem: str) -> set[str]:
 
 
 def test_temporal_comparison_keeps_both_sides():
-    """A duration/time against a NUMERIC LITERAL is clean (EdgeDurCmpInt,
-    EdgeDurCmpReal, EdgeTimeCmpInt); against another temporal operand it is
-    still SL-V028 (EdgeBareDurZero, EdgeNegDurVal, ValidDurAndTime)."""
+    """A duration or time against a numeric literal is clean; two temporal
+    operands are rejected by the same operand rule.
+
+    The valid fixture ``TemporalVsNumericCompare.s`` and the invalid fixture
+    ``TemporalVsTemporalCompare.s`` pin both sides.
+    """
     assert _codes("valid", "TemporalVsNumericCompare") == set()
     assert _codes("invalid", "TemporalVsTemporalCompare") == {"SL-V028"}
 
 
 def test_opsave_modifier_order_keeps_both_sides():
-    """`State OpSave` compiles (OpSaveStateReversed); the `OpSave State` and
-    `OpSave Const` spellings are both an illegal attribute mix
-    (EdgeOpSaveAndState, OpSaveConst)."""
+    """``State OpSave`` is accepted; ``OpSave State`` and ``OpSave Const`` are
+    illegal attribute mixes. The valid fixture ``VariableModifiers.s`` and the
+    invalid fixtures ``OpSaveAndStateCombined.s`` and ``OpSaveConstCombined.s``
+    pin the three forms.
+    """
     assert _codes("valid", "VariableModifiers") == set()
     assert _codes("invalid", "OpSaveAndStateCombined") == {"SL-V031"}
     assert _codes("invalid", "OpSaveConstCombined") == {"SL-V031"}
 
 
 def test_enable_paren_tail_is_accepted_on_graph_and_interact_objects():
-    """Graph objects take Enable_ bare and with a paren tail (EdgePropEnable,
-    EdgePropParenTail). Interactors do too: ABB's own libraries use
-    `Enable_ = True : (EnableAck AND …)` on ComBut_ (GC/ABBLib/EventLib.x), so the
-    single-probe verdict that made the InVar_ tail mandatory there is superseded
-    by corpus evidence."""
+    """Graph objects and interactors take ``Enable_`` bare or with a paren tail.
+
+    The valid fixtures ``GraphObjectEnableVariants.s`` and
+    ``InteractEnableParenTail.s`` pin both object kinds.
+    """
     assert _codes("valid", "GraphObjectEnableVariants") == set()
     assert _codes("valid", "InteractEnableParenTail") == set()
 
@@ -511,6 +516,55 @@ def test_builtin_missing_required_argument_is_still_flagged():
     bp.modulecodes = [ModuleCode(equations=[_equation(call)])]
     codes = {d.code.value for d in validate_basepicture(bp)}
     assert "SL-V013" in codes
+
+
+def test_builtin_record_field_access_resolves_without_undefined_finding():
+    bp = _base_picture()
+    bp.localvariables = [
+        _var("AsyncOperation1", "AsyncOperation"),
+        _var("Sink", "integer", init_value=0),
+    ]
+    assignment = Assignment(VarRef("Sink"), VarRef("AsyncOperation1.Status"), span=None)
+    bp.modulecodes = [ModuleCode(equations=[_equation(assignment)])]
+    codes = {d.code.value for d in validate_basepicture(bp)}
+    assert "SL-V019" not in codes
+
+
+def test_unresolved_field_on_opaque_or_builtin_record_stays_silent():
+    bp = _base_picture()
+    bp.localvariables = [
+        _var("Group", "GroupData"),
+        _var("File", "TextFile"),
+        _var("Sink", "boolean", init_value=False),
+    ]
+    first = Assignment(VarRef("Sink"), VarRef("Group.Executing"), span=None)
+    second = Assignment(VarRef("Sink"), VarRef("File.Name"), span=None)
+    bp.modulecodes = [ModuleCode(equations=[_equation(first, second)])]
+    codes = {d.code.value for d in validate_basepicture(bp)}
+    assert "SL-V019" not in codes
+
+
+def test_temporal_component_accessors_are_not_undefined():
+    bp = _base_picture()
+    bp.localvariables = [
+        _var("Stamp", "time"),
+        _var("Elapsed", "duration"),
+        _var("Sink", "integer", init_value=0),
+    ]
+    first = Assignment(VarRef("Sink"), VarRef("Stamp.Time"), span=None)
+    second = Assignment(VarRef("Sink"), VarRef("Elapsed.Milliseconds"), span=None)
+    bp.modulecodes = [ModuleCode(equations=[_equation(first, second)])]
+    codes = {d.code.value for d in validate_basepicture(bp)}
+    assert "SL-V019" not in codes
+
+
+def test_assignment_to_sequence_runtime_accessor_is_not_undefined():
+    bp = _base_picture()
+    step = SFCStep(kind="init", name="Init", code=SFCCodeBlocks(active=[Assignment(VarRef("Seq.Reset"), True)]))
+    sequence = _sequence(step, name="Seq")
+    bp.modulecodes = [ModuleCode(sequences=[sequence])]
+    codes = {d.code.value for d in validate_basepicture(bp)}
+    assert "SL-V019" not in codes
 
 
 def test_expression_walk_covers_all_node_kinds():
@@ -937,16 +991,15 @@ def test_operand_rule_skips_call_results_and_record_fields():
 
 
 def test_operand_rule_allows_temporal_against_numeric_literal_only():
-    """Proved 2026-10-05 by six probes, and the rule is narrower than "temporal ok".
+    """The rule is narrower than "temporal is always fine".
 
-    ACCEPTED: ``Elapsed == 5``, ``Elapsed > 2.5``, ``Stamp == 5`` - a duration or
-    time compared against an integer/real LITERAL (EdgeDurCmpInt/Real,
-    EdgeTimeCmpInt).
-    REJECTED with this same code: ``ZeroDur == ZeroFull``, ``NegFive == NegHour``,
-    ``DurFull == DurBare`` - temporal against temporal (EdgeBareDurZero,
-    EdgeNegDurVal, ValidDurAndTime).
+    A duration or time compared against an integer or real literal is accepted:
+    ``Elapsed == 5``, ``Elapsed > 2.5`` and ``Stamp == 5``. Two temporal
+    operands are rejected with the same code: ``ZeroDur == ZeroFull``,
+    ``NegFive == NegHour`` and ``DurFull == DurBare``.
 
-    So a numeric operand may meet a temporal one; two temporal operands may not.
+    The valid fixture ``TemporalVsNumericCompare.s`` and the invalid fixture
+    ``TemporalVsTemporalCompare.s`` pin both sides.
     """
     numeric_side = _typed_bp(
         [_var("Elapsed", "duration"), _var("Stamp", "time"), _var("Sink", "boolean")],
@@ -983,7 +1036,7 @@ def test_operand_rule_flags_incompatible_equality():
 
 
 def test_assignment_rule_allows_numeric_widening_and_same_family():
-    """integer into real and same-family assignment are probed-accept, so silent."""
+    """Integer into real and same-family assignment are accepted, so silent."""
     bp = _typed_bp(
         [
             _var("Count", "integer"),
@@ -1075,7 +1128,7 @@ def test_ternary_with_unknown_branch_type_is_unproven():
 
 
 def test_assignment_between_custom_types_is_left_permissive():
-    """Record identity is not part of any probed rule, so same-name records pass."""
+    """Record identity is not part of this rule, so same-name records pass."""
     assert assignment_is_compatible("Rec", "Rec") is True
     assert assignment_is_compatible("Rec", "integer") is True
     assert assignment_is_compatible("integer", "Rec") is True
@@ -1087,11 +1140,12 @@ def test_assignment_between_custom_types_is_left_permissive():
 
 
 def test_attribute_combination_rejects_opsave_followed_by_state_or_const():
-    """ORDER-SENSITIVE, corrected 2026-10-05 by OpSaveStateReversed.x.
+    """The attribute order is significant.
 
-    `OpSave State` is rejected (EdgeOpSaveAndState.x) but `State OpSave`
-    COMPILES, so the earlier belief that the pair was invalid "in either order"
-    was wrong. `OpSave Const` is rejected (OpSaveConst.x).
+    ``OpSave State`` is rejected, ``State OpSave`` is accepted, and
+    ``OpSave Const`` is rejected. The invalid corpus fixtures
+    ``OpSaveAndStateCombined.s`` and ``OpSaveConstCombined.s`` and the valid
+    fixture ``VariableModifiers.s`` pin the three forms.
     """
     opsave_state = Variable(
         name="SavedStateVar", datatype="integer", opsave=True, state=True, attribute_order=("opsave", "state")
@@ -1105,7 +1159,7 @@ def test_attribute_combination_rejects_opsave_followed_by_state_or_const():
 
 
 def test_attribute_combination_allows_state_before_opsave():
-    """OpSaveStateReversed.x compiles, so reversed order must stay clean."""
+    """``State OpSave`` is accepted, so the reversed order must stay clean."""
     reversed_order = Variable(
         name="Mixed", datatype="integer", state=True, opsave=True, attribute_order=("state", "opsave")
     )
@@ -1219,14 +1273,14 @@ def test_trailing_enddef_requires_a_semicolon():
 
 
 def test_reserved_runtime_names_cannot_be_declared():
-    """SL-V034: `On`/`Off` are readable but never declarable.
+    """``On`` and ``Off`` are readable but never declarable.
 
-    The real parser rejects `On: boolean := False;` with `>>>On<<< AliasSym
-    Expected`. Reads stay exempt from SL-V019, so the same names must still be
-    usable in expressions - only the declaration is illegal.
+    The real parser rejects a declaration such as ``On: boolean := False;``.
+    Reads stay exempt from the undefined-variable rule, so the same names must
+    still be usable in expressions; only the declaration is illegal.
     """
     reserved = SFC_RUNTIME_CONSTANTS
-    assert reserved == {"on", "off"}, "reserved set changed - re-check the probes"
+    assert reserved == {"on", "off"}, "reserved set changed - update the fixtures and this expectation"
 
     header = (
         '"Syntax version 2.23, date: 2026-08-19-12:00:00.000 N"\n'

@@ -424,8 +424,8 @@ def generate_random_text(
     while current_length < length:
         remaining_length = length - current_length
         fitting_tokens = [token for token in tokens if len(token) <= remaining_length]
-        if not fitting_tokens:
-            break
+        # Single-character tokens are always in the table, so remaining_length
+        # of at least one guarantees a fit.
         # Fuzz harness intentionally uses non-cryptographic randomness.
         token = rng.choice(fitting_tokens)  # nosec B311
         result.append(token)

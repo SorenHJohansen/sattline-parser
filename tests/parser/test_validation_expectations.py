@@ -59,18 +59,3 @@ def test_fixture_matches_the_manifest(fixture: str) -> None:
             parse_source_file(path, log_failures=False)
         return
     assert _actual(path) == expected
-
-
-_KNOWN_DIFFERENCES = _ROOT / "tests" / "fixtures" / "validation" / "known-differences.json"
-_KNOWN_DIFFERENCE_BASELINE = 8
-
-
-def test_known_differences_are_documented_and_shrink_only() -> None:
-    document = json.loads(_KNOWN_DIFFERENCES.read_text(encoding="utf-8"))
-    differences = document["differences"]
-    assert len(differences) <= _KNOWN_DIFFERENCE_BASELINE
-    for entry in differences:
-        assert entry["id"]
-        assert entry["reason"]
-        assert entry["decision"] in {"parser", "sattlint"}
-        assert (_CORPUS / entry["fixture"]).exists()

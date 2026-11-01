@@ -83,17 +83,17 @@ class DiagnosticCode(StrEnum):
 #: valid, but nothing emits them. Each entry is a pending question for the
 #: editors, not a gap in our parser.
 RETIRED_CODES: dict[DiagnosticCode, str] = {
-    DiagnosticCode.DUPLICATE_DATATYPE_NAME: "BadDupDatatypeName.x",
-    DiagnosticCode.DUPLICATE_MODULETYPE_NAME: "BadDupModTypeName.x",
-    DiagnosticCode.DUPLICATE_VARIABLE_NAME: "BadDupVariaNames.x",
-    DiagnosticCode.DUPLICATE_RECORD_FIELD_NAME: "BadDupRecFldName.x",
-    DiagnosticCode.BUILTIN_DATATYPE_SHADOWED: "BadDatatypeShadows.x",
-    DiagnosticCode.INIT_VALUE_TYPE_MISMATCH: "BadInitValType.x",
-    DiagnosticCode.BARE_DURATION_INIT: "BadBareDurStr.x",
-    DiagnosticCode.BARE_TIME_INIT: "BadBareTimeStr.x",
-    DiagnosticCode.MALFORMED_DURATION_LITERAL: "BadDurLit.x",
-    DiagnosticCode.MALFORMED_TIME_LITERAL: "BadTimeLit.x",
-    DiagnosticCode.SFC_INIT_STEP_PLACEMENT: "BadSfcInitStepNot.x, BadSfcInitStep.x",
+    DiagnosticCode.DUPLICATE_DATATYPE_NAME: "a datatype name may be declared twice",
+    DiagnosticCode.DUPLICATE_MODULETYPE_NAME: "a module-type name may be declared twice",
+    DiagnosticCode.DUPLICATE_VARIABLE_NAME: "a variable name may be declared twice",
+    DiagnosticCode.DUPLICATE_RECORD_FIELD_NAME: "a record field may be declared twice",
+    DiagnosticCode.BUILTIN_DATATYPE_SHADOWED: "a declaration may reuse a builtin datatype name",
+    DiagnosticCode.INIT_VALUE_TYPE_MISMATCH: "an init value may have a different datatype from its variable",
+    DiagnosticCode.BARE_DURATION_INIT: "a duration variable may be initialized with a bare string",
+    DiagnosticCode.BARE_TIME_INIT: "a time variable may be initialized with a bare string",
+    DiagnosticCode.MALFORMED_DURATION_LITERAL: "an invalid duration literal may load",
+    DiagnosticCode.MALFORMED_TIME_LITERAL: "an invalid time literal may load",
+    DiagnosticCode.SFC_INIT_STEP_PLACEMENT: "a sequence may omit or misplace its init step",
 }
 
 

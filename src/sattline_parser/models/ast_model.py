@@ -11,7 +11,6 @@ from ..grammar import constants as const
 from ._ast_model_support import (
     InitValue,
     PropertyMap,
-    UsageLocation,
     any_list,
     code_comment_list,
     code_item_list,
@@ -33,7 +32,6 @@ from ._ast_model_support import (
     render_single_module,
     sfc_body_list,
     submodule_list,
-    usage_location_list,
     variable_list,
 )
 from .expressions import (
@@ -213,10 +211,11 @@ class Variable:
     description: str | None = None
     declaration_span: SourceSpan | None = None
     init_is_duration: bool = False
-    # Declaration modifiers in SOURCE ORDER, lowercased. The order matters to
-    # the editor: `OpSave State` is an invalid combination while `State OpSave`
-    # compiles (EdgeOpSaveAndState.x vs OpSaveStateReversed.x, both 2026-10-05),
-    # so the flags above cannot express the rule and the order has to be kept.
+    # Declaration modifiers in SOURCE ORDER, lowercased. The order matters:
+    # `State OpSave` loads, while `OpSave State` and `OpSave Const` are invalid
+    # attribute mixes. The corpus fixtures `OpSaveAndStateCombined.s` and
+    # `OpSaveConstCombined.s` pin the invalid forms, so the flags above cannot
+    # express the rule and the order has to be kept.
     attribute_order: tuple[str, ...] = ()
 
     @property
@@ -248,9 +247,6 @@ class DataType:
     description: str | None
     datecode: int | None
     var_list: list[Variable] = field(default_factory=variable_list)
-    read: bool | None = False
-    written: bool | None = False
-    usage_locations: list[UsageLocation] = field(default_factory=usage_location_list)
     origin_file: str | None = None
     origin_lib: str | None = None
     declaration_span: SourceSpan | None = None
@@ -510,13 +506,19 @@ class BasePicture:
     origin_file: str | None = None
     origin_lib: str | None = None
     graphics_file: str | None = None
-    graphics_bindings: list[GraphicsBinding] = field(default_factory=any_list)
-    graphics_messages: list[Any] = field(default_factory=any_list)
-    graphics_composite_records: list[Any] = field(default_factory=any_list)
-    graphics_composite_occurrences: list[Any] = field(default_factory=any_list)
-    graphics_picture_display_records: list[Any] = field(default_factory=any_list)
-    graphics_picture_display_occurrences: list[Any] = field(default_factory=any_list)
-    library_dependencies: dict[str, list[str]] = field(default_factory=library_dependency_map)
+    #: Deprecated consumer transport. The parser never writes these fields;
+    #: graphics data lives on ``SattLineProgram.graphics``. They stay declared
+    #: only so consumers that attach their own views to the AST keep working
+    #: until they move that state into their own graph model.
+    graphics_bindings: list[GraphicsBinding] = field(default_factory=any_list, metadata={"deprecated": True})
+    graphics_messages: list[Any] = field(default_factory=any_list, metadata={"deprecated": True})
+    graphics_composite_records: list[Any] = field(default_factory=any_list, metadata={"deprecated": True})
+    graphics_composite_occurrences: list[Any] = field(default_factory=any_list, metadata={"deprecated": True})
+    graphics_picture_display_records: list[Any] = field(default_factory=any_list, metadata={"deprecated": True})
+    graphics_picture_display_occurrences: list[Any] = field(default_factory=any_list, metadata={"deprecated": True})
+    library_dependencies: dict[str, list[str]] = field(
+        default_factory=library_dependency_map, metadata={"deprecated": True}
+    )
     trailing_comments: list[CodeComment] = field(default_factory=code_comment_list)
     #: Explicit DateCode_ attribute of the root module definition, when present.
     #: Absent is preserved as ``None``; stamping an import date is a separate

@@ -2,7 +2,7 @@
 
 DEFAULT_INIT = object()
 
-# ABB numeric limits (SattLine manual)
+# Documented SattLine numeric limits
 INT_MIN = -2147483648
 INT_MAX = 2147483647
 REAL_MAX = 1.7014117e38
@@ -251,12 +251,6 @@ TOKEN_VARNAME = "VARNAME"  # nosec B105 - grammar token literal, not a credentia
 TOKEN_COMMENT_START = "COMMENT_START"  # nosec B105 - grammar token literal
 TOKEN_COMMENT_END = "COMMENT_END"  # nosec B105 - grammar token literal
 TOKEN_COMMENT_TEXT = "COMMENT_TEXT"  # nosec B105 - grammar token literal
-#: Terminal emitted by the contextual lexer when an identifier is directly
-#: followed by ``=`` (skipping whitespace and comments): the module-type /
-#: record definition head. Kept distinct from NAME so the LALR table can
-#: terminate a submodule run on it (a new definition is never a submodule
-#: invocation), which a bare NAME cannot express.
-TOKEN_MODULE_TYPE_NAME = "MODULE_TYPE_NAME"  # nosec B105 - grammar token literal
 TOKEN_NAME = "NAME"  # nosec B105 - grammar token literal
 
 COMMENT_TERMINALS = frozenset({TOKEN_COMMENT_START, TOKEN_COMMENT_END, TOKEN_COMMENT_TEXT})

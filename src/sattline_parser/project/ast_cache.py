@@ -3,9 +3,12 @@
 Each parsed ``BasePicture`` is stored in an HMAC-signed pickle envelope keyed by
 code path and source mode. The cache namespace and version belong to
 ``sattline-parser`` (``FILE_AST_CACHE_VERSION``, a distinct file-format magic),
-so a cache written by another tool never cross-reads. Path, mode, and a
-``mtime_ns`` + ``size`` stat snapshot are validated before a cached AST is
-trusted; entries outside the parser namespace are pruned.
+so a cache written by another tool never cross-reads. The key also includes the
+package version and the resolved grammar fingerprint, so an upgrade that
+changes the AST shape or fixes a transformer cannot serve an old entry. Path,
+mode, and a ``mtime_ns`` + ``size`` stat snapshot are validated before a cached
+AST is trusted; entries outside the parser namespace or built by another
+version/grammar are pruned.
 
 The HMAC key lives beside the entries, so the signature only proves that an
 entry was written by whoever could write that directory. It is not a defence
@@ -27,6 +30,8 @@ import time
 from pathlib import Path
 from typing import cast
 
+from sattline_parser.__version__ import __version__
+from sattline_parser.grammar.resolved import grammar_fingerprint
 from sattline_parser.models.ast_model import BasePicture
 
 from ._atomic import TEMP_SUFFIX
@@ -38,6 +43,7 @@ _PICKLE_CACHE_MAGIC = b"SATTLINE-PARSER-PICKLE-V1\n"
 _PICKLE_HMAC_KEY_NAME = ".pickle-hmac-key"
 _PICKLE_HMAC_SIZE = 32
 _PICKLE_KEY_DIR_NAME = "file_ast"
+_IDENTITY_MARKER_NAME = ".parser-identity"
 
 #: The cache holds an HMAC key beside its entries, so it must stay private.
 _CACHE_DIR_MODE = 0o700
@@ -215,13 +221,43 @@ class FileASTCache:
         self.cache_dir.mkdir(mode=_CACHE_DIR_MODE, parents=True, exist_ok=True)
         with contextlib.suppress(OSError):
             self.cache_dir.chmod(_CACHE_DIR_MODE)
-        self._startup_pruned_entries = self.prune_stale_entries()
+        self._startup_pruned_entries = self._initial_prune()
+
+    @staticmethod
+    def _identity_text() -> str:
+        return f"{__version__}\n{grammar_fingerprint()}\n"
+
+    def _initial_prune(self) -> int:
+        """Prune fully only when the cache identity changed since last startup."""
+        marker = self.cache_dir / _IDENTITY_MARKER_NAME
+        try:
+            if marker.read_text(encoding="ascii") == self._identity_text():
+                return self._prune_temporary_files()
+        except OSError:
+            pass
+        removed = self.prune_stale_entries()
+        with contextlib.suppress(OSError):
+            marker.write_text(self._identity_text(), encoding="ascii")
+        return removed
+
+    def _prune_temporary_files(self) -> int:
+        removed = 0
+        if not self.cache_dir.exists():
+            return 0
+        for path in self.cache_dir.iterdir():
+            if not path.is_file() or not path.name.endswith(TEMP_SUFFIX):
+                continue
+            if _temp_file_is_abandoned(path) and _remove_file(path):
+                removed += 1
+        return removed
 
     @staticmethod
     def _key(code_path: Path, mode: str) -> str:
         digest = hashlib.sha256()
         digest.update(_code_path_key(code_path).encode("utf-8", errors="ignore"))
         digest.update(mode.encode("utf-8", errors="ignore"))
+        digest.update(__version__.encode("ascii"))
+        digest.update(grammar_fingerprint().encode("ascii"))
         return digest.hexdigest()
 
     def _path(self, code_path: Path, mode: str) -> Path:
@@ -247,6 +283,10 @@ class FileASTCache:
             return None
         if meta.get("mode") != mode:
             return None
+        if meta.get("parser_version") != __version__:
+            return None
+        if meta.get("grammar") != grammar_fingerprint():
+            return None
         if not _matches_stat_snapshot(code_path, mtime_ns=meta.get("mtime_ns"), size=meta.get("size")):
             return None
         ast = payload_map.get("ast")
@@ -263,6 +303,8 @@ class FileASTCache:
             "meta": {
                 "path": _code_path_key(code_path),
                 "mode": mode,
+                "parser_version": __version__,
+                "grammar": grammar_fingerprint(),
                 "mtime_ns": stat_result.st_mtime_ns,
                 "size": stat_result.st_size,
             },
@@ -292,10 +334,19 @@ class FileASTCache:
                 continue
             payload = _load_pickle_payload(path)
             payload_map = _as_data_dict(payload)
-            if payload_map is not None and payload_map.get("version") == FILE_AST_CACHE_VERSION:
+            meta = _as_data_dict(payload_map.get("meta")) if payload_map is not None else None
+            if (
+                payload_map is not None
+                and payload_map.get("version") == FILE_AST_CACHE_VERSION
+                and meta is not None
+                and meta.get("parser_version") == __version__
+                and meta.get("grammar") == grammar_fingerprint()
+            ):
                 continue
             if _remove_file(path):
                 removed += 1
+        with contextlib.suppress(OSError):
+            (directory / _IDENTITY_MARKER_NAME).write_text(self._identity_text(), encoding="ascii")
         return removed
 
     def drain_startup_pruned_entries(self) -> int:

@@ -37,8 +37,8 @@ from .errors import (
 from .errors import (
     _unexpected_input_summary as _unexpected_input_summary,  # pyright: ignore[reportPrivateUsage]  # re-exported as a test seam
 )
-from .grammar import constants as const
-from .grammar.keywords import make_keywords_case_insensitive
+from .grammar.resolved import grammar_fingerprint
+from .grammar.resolved import resolved_grammar as _resolved_grammar
 from .grammar.sattline_lexer import SattLineLexer, compact_provenance
 from .preprocessing import is_coded, is_compressed, preprocess_source, render_ide_text
 from .preprocessing.coded import decode_coded_stream
@@ -63,8 +63,6 @@ __all__ = [
     "source_text_for_parse",
     "validate_basepicture",
 ]
-
-GRAMMAR_PATH = Path(__file__).resolve().parent / "grammar" / "sattline.lark"
 
 _CACHE_DIR_MODE = 0o700
 _CACHE_DIR_NAME = "sattline-parser"
@@ -111,10 +109,6 @@ def _parser_cache_dir() -> Path | None:
     return _private_cache_dir(directory)
 
 
-if not GRAMMAR_PATH.exists():
-    raise RuntimeError(f"Grammar file missing: {GRAMMAR_PATH}")
-
-
 class _ParserProtocol(Protocol):
     def parse(
         self,
@@ -124,26 +118,6 @@ class _ParserProtocol(Protocol):
     ) -> Tree[Token]: ...
 
 
-@lru_cache(maxsize=1)
-def _resolved_grammar() -> str:
-    """Return the single authoritative SattLine grammar with constants applied.
-
-    ``sattline.lark`` is the canonical grammar; it is a template whose
-    ``{GRAMMAR_VALUE_*}`` / ``{GRAMMAR_REGEX_*}`` placeholders are filled from
-    :mod:`sattline_parser.grammar.constants` so the terminal spellings live in
-    exactly one place. No grammar is generated or manipulated beyond this
-    substitution: comments are explicit grammar elements in ``sattline.lark``
-    and are legal exactly where the grammar places them.
-    """
-    grammar_text = GRAMMAR_PATH.read_text(encoding="utf-8")
-    grammar_substitutions = {
-        name: getattr(const, name)
-        for name in dir(const)
-        if name.startswith("GRAMMAR_VALUE_") or name.startswith("GRAMMAR_REGEX_")
-    }
-    return make_keywords_case_insensitive(grammar_text.format(**grammar_substitutions))
-
-
 def _parser_cache_path(
     *,
     start: str,
@@ -151,7 +125,7 @@ def _parser_cache_path(
 ) -> str | None:
     """The cache file for this grammar and parser shape, or ``None`` if disabled."""
     cache_key = sha256()
-    cache_key.update(_resolved_grammar().encode("utf-8"))
+    cache_key.update(grammar_fingerprint().encode("ascii"))
     cache_key.update(start.encode("utf-8"))
     cache_key.update(str(propagate_positions).encode("ascii"))
     cache_key.update(lark_version.encode("utf-8"))

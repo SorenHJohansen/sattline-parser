@@ -3,7 +3,85 @@
 All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
-and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+and this project uses calendar versioning (`YYYY.M.N`). The version orders
+releases; it is not a compatibility contract. The public API and its stability
+policy are documented in the README.
+
+## [2026.11.2] - 2026-11-01
+
+### Added
+
+- **Ambiguous SEQFORK targets.** A fork target that is declared more than once
+  in a module now reports an ambiguous-target finding in addition to the
+  duplicate element name. The target is not resolved by guessing a kind.
+- **Grammar fingerprint module.** The resolved grammar and its SHA-256 are now
+  available from `sattline_parser.grammar.resolved`, and the Lark cache uses the
+  same fingerprint.
+
+### Changed
+
+- **AST cache identity.** Per-file AST cache keys and metadata now include the
+  package version and grammar fingerprint, so an upgrade cannot serve an AST
+  from an older parser or grammar. Entries built by another identity are pruned.
+- **Dependency visibility.** Each program is validated against the datatypes and
+  module types from its own transitive dependency closure, not every program
+  loaded before it. A second target can no longer hide an unknown-name finding
+  in an unrelated program.
+- **Validation performance.** The type graph is built once per program
+  validation instead of once per expression, and idle cache startup skips the
+  full identity prune when the cache marker already matches. A warm 46-file
+  project load with `INVOKED` validation dropped from about 216 seconds to
+  about 10 seconds.
+- **Invoked validation scope.** `LoadValidation.INVOKED` validates each target
+  in full and limits a dependency file to the module types that target invokes,
+  transitively. Unused library module types and their bodies are no longer
+  checked.
+- **Record ownership.** A consumer no longer reports field findings from a
+  dependency's record definitions. Those findings stay with the defining
+  program.
+- **Field resolution.** Builtin record fields resolve through their field
+  specifications. Unresolved fields on opaque or system record types, temporal
+  component accessors, and SFC runtime accessors stay silent instead of being
+  reported as undefined variables.
+- **Imported version drift.** Datecode conflicts are reported for explicitly
+  selected programs, not for library files pulled in as dependencies.
+- **Opaque system datatypes.** System datatype names that no loaded source
+  declares are accepted as opaque declarations. Field access on them stays
+  silent because their shape is not known.
+- **Coverage reporting.** The coverage gate prints how many executable lines the
+  exclusion rules keep outside the 100% line gate. The dead grammar-promotion
+  probe and its exclusions are gone.
+- **Versioning policy.** The changelog now states calendar versioning, and the
+  README defines the supported public surface and its stability expectations.
+- **Dependency floor.** The `regex` lower bound is relaxed to `2023.12.25`, the
+  first declared release with the Python 3.12 wheels used by CI. No parser
+  feature needs a newer release.
+- **Parity manifest stability.** Parse failures are recorded as a stable marker
+  instead of the exception text, whose expected-token list is unordered and
+  changed between runs.
+- **Project-layer mapping coverage.** Tests now pin that a module instance may
+  omit every parameter mapping and that a mapping target field resolves through
+  a datatype declared in a loaded dependency.
+
+### Removed
+
+- **Consumer parity mode.** The parity exporter no longer builds a SattLint
+  manifest, and the historical known-differences file is removed. SattLint
+  consumes parser diagnostics directly, so the parser manifest is the only
+  oracle.
+- **Unused datatype usage fields.** `DataType.read`, `DataType.written` and
+  `DataType.usage_locations` are removed; consumers keep usage in their own
+  models.
+- **Dead lexer probe.** The `MODULE_TYPE_NAME` promotion branch and its helpers
+  are removed. The grammar has no such terminal, so the branch could never run.
+
+### Deprecated
+
+- **AST graphics transport fields.** `BasePicture` still declares the
+  consumer-owned graphics lists and `library_dependencies` so existing consumers
+  keep working, but the parser never writes them. Graphics data is on
+  `SattLineProgram.graphics`; the fields carry deprecation metadata and will be
+  removed once consumers move that state into their own graph model.
 
 ## [2026.11.1] - 2026-11-01
 

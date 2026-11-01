@@ -3,10 +3,13 @@
 The loader resolves a target across ordered roots, reads its dependency sidecar,
 loads dependencies first, parses the body, and (when ``validate=FULL``) runs the
 single-file validator with the definitions visible from already-loaded programs.
+``validate=INVOKED`` validates each target in full and limits dependency files
+to the module types that target invokes, transitively.
 
 Post-order is an invariant: the registry is built dependencies-first, so a
 program's diagnostics are computed against a complete prefix of its closure.
-The loader asserts that invariant for acyclic loads.
+The loader asserts that invariant for acyclic loads. Invoked-scope validation
+runs after the graph is complete because it needs the whole invocation graph.
 
 ``tentative`` marking is owned here. When a non-strict load skips a dependency,
 every program whose closure includes that dependency gets tentative findings for
@@ -45,6 +48,7 @@ from .models import (
     SattLineProgram,
     SidecarState,
 )
+from .reachability import invoked_moduletypes
 
 _PARSE_FAILURES = (
     LarkError,  # grammar/matcher/framework/transform failures
@@ -102,8 +106,6 @@ class ProjectLoader:
         self._diagnostics: list[LoadDiagnostic] = []
         self._cycles: list[tuple[str, ...]] = []
         self._incomplete: set[str] = set()
-        self._visible_datatypes: list[DataType] = []
-        self._visible_moduletypes: list[ModuleTypeDef] = []
         self._moduletype_versions: dict[str, dict[int, set[str]]] = {}
         self._datatype_versions: dict[str, dict[int, set[str]]] = {}
 
@@ -132,6 +134,8 @@ class ProjectLoader:
                 self._visit(target, requester_dir=None, declared_by=None)
             if not self._cycles:
                 self._assert_registry_post_order()
+            if self._validate is LoadValidation.INVOKED:
+                self._validate_invoked(targets)
             return self._registry
         finally:
             if self._lookup_cache is not None:
@@ -155,7 +159,7 @@ class ProjectLoader:
             return
         if key in self._loading:
             # A dependency loop. The loader reports it through its library-error
-            # handling and an operator may continue (answer 11), so it becomes a
+            # handling and an operator may continue past it, so it becomes a
             # diagnostic and the graph keeps the edge. The path is also recorded
             # as data for consumers that want to display it.
             start = self._loading.index(key)
@@ -190,7 +194,7 @@ class ProjectLoader:
             code_path, resolved_base = resolved
             library = resolved_base.name
             # The sidecar belongs to the selected body's prefix; see
-            # ProjectLookup.find_deps_beside and LIB-05.
+            # ProjectLookup.find_deps_beside.
             deps_path = self._lookup.find_deps_beside(code_path, name, requester_dir=requester_dir)
             sidecar = SidecarState.ABSENT
             if deps_path is None:
@@ -227,7 +231,23 @@ class ProjectLoader:
 
             basepicture = self._load_ast(code_path, program_name=program_name, dependency=dependency)
             _set_origin(basepicture, file_name=code_path.name, library=library)
-            diagnostics = self._program_diagnostics(basepicture, library=library, file_name=code_path.name, key=key)
+            if self._validate is LoadValidation.INVOKED:
+                # Module diagnostics need the whole graph. Datecode findings
+                # belong to an explicitly selected program; a library import is
+                # not the place to report its own version drift.
+                diagnostics = (
+                    ()
+                    if declared_by is not None
+                    else tuple(self._datecode_conflicts(basepicture, library=library, file_name=code_path.name))
+                )
+            else:
+                diagnostics = self._program_diagnostics(
+                    basepicture,
+                    dependencies=dep_names,
+                    library=library,
+                    file_name=code_path.name,
+                    key=key,
+                )
             self._remember_definitions(basepicture, library=library, file_name=code_path.name)
 
             graphics_path = resolve_graphics_companion_path(code_path, mode=self._mode)
@@ -263,21 +283,97 @@ class ProjectLoader:
             self._incomplete.add(key)
             self._diagnose(LoadDiagnosticKind.LOAD_SKIPPED, name, f"skipped {name!r}: {exc}")
 
+    def _visible_definitions(
+        self, dependencies: tuple[str, ...]
+    ) -> tuple[tuple[DataType, ...], tuple[ModuleTypeDef, ...]]:
+        """Definitions from this program's transitive dependency closure.
+
+        The registry is dependency-first, so filtering it by the closure keeps
+        a deterministic order. Using the whole registry here would let an
+        unrelated target's types hide an unknown-name finding.
+        """
+        closure: set[str] = set()
+        pending = [dependency.casefold() for dependency in dependencies]
+        while pending:
+            key = pending.pop()
+            if key in closure:
+                continue
+            closure.add(key)
+            program = self._registry.get(key)
+            if program is not None:
+                pending.extend(dependency.casefold() for dependency in program.dependencies)
+        datatypes: list[DataType] = []
+        moduletypes: list[ModuleTypeDef] = []
+        for key, program in self._registry.items():
+            if key not in closure:
+                continue
+            datatypes.extend(program.code.datatype_defs)
+            moduletypes.extend(program.code.moduletype_defs)
+        return tuple(datatypes), tuple(moduletypes)
+
+    def _validate_invoked(self, targets: Sequence[str]) -> None:
+        """Add diagnostics for the module types each target actually invokes."""
+        target_keys = {target.casefold() for target in targets}
+        reachable = invoked_moduletypes(self._registry, targets)
+        for key, program in list(self._registry.items()):
+            if key in target_keys:
+                module_diagnostics = self._validate_code(program.code, dependencies=program.dependencies)
+            else:
+                names = reachable.get(key)
+                if not names:
+                    continue
+                module_diagnostics = self._validate_code(
+                    self._invoked_view(program.code, names),
+                    dependencies=program.dependencies,
+                )
+            diagnostics = [*program.diagnostics, *module_diagnostics]
+            if key in self._incomplete:
+                diagnostics = [
+                    replace(item, tentative=True) if item.code in _TENTATIVE_CODES else item for item in diagnostics
+                ]
+            self._registry[key] = replace(program, diagnostics=tuple(diagnostics))
+
+    def _validate_code(self, code: BasePicture, *, dependencies: tuple[str, ...]) -> tuple[Diagnostic, ...]:
+        visible_datatypes, visible_moduletypes = self._visible_definitions(dependencies)
+        return validate_basepicture(
+            code,
+            external_datatypes=visible_datatypes,
+            external_moduletype_defs=visible_moduletypes,
+        )
+
+    @staticmethod
+    def _invoked_view(basepicture: BasePicture, names: set[str]) -> BasePicture:
+        """A copy that contains only the invoked module types from one file."""
+        selected = [moduletype for moduletype in basepicture.moduletype_defs if moduletype.name.casefold() in names]
+        return replace(
+            basepicture,
+            moduletype_defs=selected,
+            submodules=[],
+            moduledef=None,
+            moduledefs=[],
+            modulecode=None,
+            modulecodes=[],
+            localvariables=[],
+            parse_tree=None,
+        )
+
     def _program_diagnostics(
         self,
         basepicture: BasePicture,
         *,
+        dependencies: tuple[str, ...],
         library: str,
         file_name: str,
         key: str,
     ) -> tuple[Diagnostic, ...]:
         if self._validate is LoadValidation.NONE:
             return ()
+        visible_datatypes, visible_moduletypes = self._visible_definitions(dependencies)
         diagnostics = list(
             validate_basepicture(
                 basepicture,
-                external_datatypes=tuple(self._visible_datatypes),
-                external_moduletype_defs=tuple(self._visible_moduletypes),
+                external_datatypes=visible_datatypes,
+                external_moduletype_defs=visible_moduletypes,
             )
         )
         diagnostics.extend(self._datecode_conflicts(basepicture, library=library, file_name=file_name))
@@ -317,13 +413,11 @@ class ProjectLoader:
     def _remember_definitions(self, basepicture: BasePicture, *, library: str, file_name: str) -> None:
         label = f"{library}/{file_name}"
         for moduletype in basepicture.moduletype_defs:
-            self._visible_moduletypes.append(moduletype)
             if moduletype.datecode is not None:
                 self._moduletype_versions.setdefault(fold_identifier(moduletype.name), {}).setdefault(
                     moduletype.datecode, set()
                 ).add(label)
         for datatype in basepicture.datatype_defs:
-            self._visible_datatypes.append(datatype)
             if datatype.datecode is not None:
                 self._datatype_versions.setdefault(fold_identifier(datatype.name), {}).setdefault(
                     datatype.datecode, set()

@@ -13,7 +13,9 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass
+from functools import lru_cache
 
+from sattline_parser.builtins.records import BUILTIN_RECORD_SPECS
 from sattline_parser.models.ast_model import (
     BasePicture,
     DataType,
@@ -39,6 +41,20 @@ from sattline_parser.validation.transfers import check_moduletype_transfers
 from sattline_parser.validation.type_graph import TypeGraph
 
 Submodule = SingleModule | FrameModule | ModuleTypeInstance
+
+
+@lru_cache(maxsize=1)
+def _builtin_record_datatypes() -> tuple[DataType, ...]:
+    """Builtin records as AST datatypes, so dotted references resolve."""
+    return tuple(
+        DataType(
+            name=name,
+            description=None,
+            datecode=None,
+            var_list=[Variable(name=field_name, datatype=datatype) for field_name, datatype in specs],
+        )
+        for name, specs in BUILTIN_RECORD_SPECS.items()
+    )
 
 
 @dataclass(frozen=True)
@@ -68,8 +84,11 @@ def validate_basepicture(
     errors: list[Diagnostic] = []
     available_datatypes = [*bp.datatype_defs, *external_datatypes]
     available_moduletypes = [*bp.moduletype_defs, *external_moduletype_defs]
+    records = {fold_identifier(datatype.name): datatype for datatype in available_datatypes}
+    for builtin in _builtin_record_datatypes():
+        records.setdefault(fold_identifier(builtin.name), builtin)
     context = _ValidationContext(
-        records={fold_identifier(datatype.name): datatype for datatype in available_datatypes},
+        records=records,
         moduletypes={fold_identifier(moduletype.name): moduletype for moduletype in available_moduletypes},
         type_graph=TypeGraph.from_datatypes(available_datatypes),
         allow_unresolved_external_datatypes=allow_unresolved_external_datatypes,
@@ -87,14 +106,15 @@ def validate_basepicture(
     check_record_fields(
         context.records,
         errors,
+        owned_records={fold_identifier(datatype.name): datatype for datatype in bp.datatype_defs},
         allow_unresolved_external_datatypes=allow_unresolved_external_datatypes,
     )
     check_sibling_submodules(bp.submodules, errors)
     for module_def in bp.moduledefs:
-        check_coordinate_tail_types(module_def, base_scope, context.records, errors)
+        check_coordinate_tail_types(module_def, base_scope, context.records, context.type_graph, errors)
 
     for code in bp.modulecodes:
-        walk_module_code(code, base_scope, context.records, errors)
+        walk_module_code(code, base_scope, context.records, context.type_graph, errors)
     for child in bp.submodules:
         _walk_submodule(child, base_scope, context, errors)
     for moduletype in bp.moduletype_defs:
@@ -146,7 +166,7 @@ def _walk_moduletype_def(
     )
     check_sibling_submodules(moduletype.submodules, errors)
     for code in moduletype.modulecodes:
-        walk_module_code(code, scope, context.records, errors)
+        walk_module_code(code, scope, context.records, context.type_graph, errors)
     for child in moduletype.submodules:
         _walk_submodule(child, scope, context, errors)
 
@@ -183,8 +203,8 @@ def _walk_definition(
     )
     check_sibling_submodules(child.submodules, errors)
     for module_def in child.moduledefs:
-        check_coordinate_tail_types(module_def, scope, context.records, errors)
+        check_coordinate_tail_types(module_def, scope, context.records, context.type_graph, errors)
     for code in child.modulecodes:
-        walk_module_code(code, scope, context.records, errors)
+        walk_module_code(code, scope, context.records, context.type_graph, errors)
     for sub in child.submodules:
         _walk_submodule(sub, scope, context, errors)

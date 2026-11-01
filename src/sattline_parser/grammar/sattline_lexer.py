@@ -31,7 +31,7 @@ from collections.abc import Callable, Collection, Generator, Iterator
 from contextlib import contextmanager
 from contextvars import ContextVar
 from copy import copy
-from typing import Any, cast
+from typing import Any
 
 from lark.exceptions import UnexpectedCharacters, UnexpectedToken
 from lark.lexer import BasicLexer, ContextualLexer, LexerState, Token
@@ -41,7 +41,6 @@ from sattline_parser.grammar.constants import (
     TOKEN_COMMENT_END,
     TOKEN_COMMENT_START,
     TOKEN_COMMENT_TEXT,
-    TOKEN_MODULE_TYPE_NAME,
     TOKEN_NAME,
 )
 
@@ -77,69 +76,6 @@ def compact_provenance(predicate: _Provenance | None) -> Generator[None]:
 
 #: Terminals that must never be lexed by a per-state (code) lexer.
 _COMMENT_BODY_TERMINALS = frozenset({TOKEN_COMMENT_END, TOKEN_COMMENT_TEXT})
-
-#: Whitespace that may separate a definition head from its ``=``.
-_WS = " \t\f\r\n"
-
-
-def _comment_end(text: object, pos: int) -> int:
-    """Return the position just past the ``(* ... *)`` comment at ``pos``.
-
-    Comments may nest; the closing run is the first ``*)`` that balances the
-    opening runs.
-    """
-    text = getattr(text, "text", text)
-    if not isinstance(text, str):
-        raise TypeError("_comment_end requires a str or lark TextSlice")
-    depth = 1
-    i = pos
-    end = len(text)
-    while i < end:
-        if text.startswith("(*", i):
-            depth += 1
-            i += 2
-        elif text.startswith("*)", i):
-            depth -= 1
-            i += 2
-            if depth == 0:
-                return i
-        else:
-            i += 1
-    return end
-
-
-def _module_typedecl_after(text: object, pos: int) -> bool:
-    """True when the next code run is ``= MODULEDEFINITION`` (optionally with
-    a ``PRIVATE_`` between ``=`` and ``MODULEDEFINITION``), ignoring
-    whitespace and comments in between. Used to upgrade a ``NAME`` to
-    ``MODULE_TYPE_NAME`` only for genuine module-type definition heads."""
-    text = getattr(text, "text", text)
-    if not isinstance(text, str):
-        raise TypeError("_module_typedecl_after requires a str or lark TextSlice")
-    end = len(text)
-
-    def skip() -> None:
-        nonlocal pos
-        while pos < end:
-            if text[pos] in _WS:
-                pos += 1
-            elif text.startswith("(*", pos):
-                pos = _comment_end(text, pos + 2)
-            else:
-                return
-
-    skip()
-    if pos >= end or text[pos] != "=":
-        return False
-    pos += 1
-    skip()
-    if text.startswith("PRIVATE_", pos):
-        pos += len("PRIVATE_")
-        skip()
-    if not text.startswith("MODULEDEFINITION", pos):
-        return False
-    pos += len("MODULEDEFINITION")
-    return pos >= end or text[pos] in _WS
 
 
 def _retype_raw_keyword(token: Token, token_type: str) -> str:
@@ -187,8 +123,6 @@ class SattLineLexer(ContextualLexer):
             {state: list(accepts) for state, accepts in stripped_states.items()},
             always_accept=always_accept,
         )
-        #: Accepted-terminal set per LALR state (comment-body terminals removed).
-        self._state_accepts = {state: set(accepts) for state, accepts in stripped_states.items()}
         self.root_lexer = self.BasicLexer(self._stripped_conf)
 
         comment_conf = copy(conf)
@@ -212,14 +146,6 @@ class SattLineLexer(ContextualLexer):
                 token_type = token.type
                 if comment_depth == 0:
                     token_type = _retype_raw_keyword(token, token_type)
-                if (
-                    comment_depth == 0
-                    and token_type == TOKEN_NAME
-                    and TOKEN_MODULE_TYPE_NAME in self._state_accepts[parser_state.position]
-                    and token.end_pos is not None
-                    and _module_typedecl_after(cast(str, getattr(lexer_state, "text", "")), token.end_pos)
-                ):
-                    token_type = token.type = TOKEN_MODULE_TYPE_NAME  # pragma: no cover
                 if token_type == TOKEN_COMMENT_START:
                     comment_depth += 1
                 elif token_type == TOKEN_COMMENT_END:

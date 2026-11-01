@@ -1232,7 +1232,7 @@ requires-dist = [
     { name = "pytest-mock", marker = "extra == 'test'", specifier = ">=3.10.0" },
     { name = "pytest-timeout", marker = "extra == 'test'", specifier = ">=2.3.1" },
     { name = "pytest-xdist", marker = "extra == 'test'", specifier = ">=3.0.0" },
-    { name = "regex", specifier = ">=2026.7.19" },
+    { name = "regex", specifier = ">=2023.12.25" },
     { name = "ruff", marker = "extra == 'dev'", specifier = "==0.15.20" },
     { name = "sattline-parser", extras = ["test"], marker = "extra == 'dev'" },
     { name = "twine", marker = "extra == 'dev'", specifier = ">=5.1.1" },

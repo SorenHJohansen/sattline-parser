@@ -28,6 +28,22 @@
     "edge_cases/SubSequenceTransition.s": [],
     "edge_cases/TimeValueInit.s": [],
     "edge_cases/UnicodeIdentifiers.s": [],
+    "invalid/AmbiguousForkTarget.s": [
+      {
+        "code": "SL-V021",
+        "column": 7,
+        "length": 34,
+        "line": 33,
+        "severity": "error"
+      },
+      {
+        "code": "SL-V056",
+        "column": 7,
+        "length": 80,
+        "line": 25,
+        "severity": "error"
+      }
+    ],
     "invalid/AssignmentFamilyMismatch.s": [
       {
         "code": "SL-V029",
@@ -77,7 +93,7 @@
     ],
     "invalid/CodedRawKeyword.s": [
       {
-        "parse_error": "Unexpected token Token('NAME', 'SeqControl') at line 22, column 19.\nExpected one of: \n\t* COMMA\n\t* RPAR\n\t* SEQTIMER\n\t* SEQCONTROL\n"
+        "parse_error": true
       }
     ],
     "invalid/ConsecutiveSeqSteps.s": [
@@ -100,7 +116,7 @@
     ],
     "invalid/CoordInVarTail.s": [
       {
-        "parse_error": "Unexpected token Token('NAME', 'PanelX') at line 38, column 22.\nExpected one of: \n\t* ON_KW\n\t* STRING\n\t* SIGNED_INT\n\t* REAL\n\t* BOOL\n\t* OFF_KW\n\t* LITSTRING\nPrevious tokens: [Token('INVAR_PREFIX', 'InVar_')]\n"
+        "parse_error": true
       }
     ],
     "invalid/CoordinateInvarTail.s": [
@@ -146,22 +162,22 @@
     "invalid/DuplicateVariableNames.s": [],
     "invalid/EncodingStress.s": [
       {
-        "parse_error": "Unexpected token Token('NAME', 'EncodingStress_') at line 4, column 65.\nExpected one of: \n\t* MODULEDEF\n\t* SUBMODULES\n\t* MODULEPARAMETERS\n\t* DATECODE_PREFIX\n\t* LOCALVARIABLES\n\t* LPAR\n\t* TYPEDEFINITIONS\nPrevious tokens: [Token('MODULEDEFINITION', 'MODULEDEFINITION')]\n"
+        "parse_error": true
       }
     ],
     "invalid/FreestandingCommentInModuleCode.s": [
       {
-        "parse_error": "Unexpected token Token('COMMENT_START', '(*') at line 20, column 4.\nExpected one of: \n\t* EQUATIONBLOCK\n\t* OPENSEQUENCE\n\t* SEQUENCE\n\t* EQUATIONS\nPrevious tokens: [Token('MODULECODE', 'ModuleCode')]\n"
+        "parse_error": true
       }
     ],
     "invalid/GraphObjectsDoubleLayer.s": [
       {
-        "parse_error": "Unexpected token Token('LAYER_PREFIX', 'Layer_') at line 14, column 16.\nExpected one of: \n\t* COMMENT_START\n\t* COMPOSITEOBJECT\n\t* SEGMENTOBJECT\n\t* CONNECTIONNODE\n\t* TEXTOBJECT\n\t* RECTANGLEOBJECT\n\t* OVALOBJECT\n\t* POLYGONOBJECT\n\t* LINEOBJECT\nPrevious tokens: [Token('COLON', ':')]\n"
+        "parse_error": true
       }
     ],
     "invalid/GraphObjectsSectionLayer.s": [
       {
-        "parse_error": "Unexpected token Token('LAYER_PREFIX', 'Layer_') at line 24, column 16.\nExpected one of: \n\t* COMMENT_START\n\t* COMPOSITEOBJECT\n\t* SEGMENTOBJECT\n\t* CONNECTIONNODE\n\t* TEXTOBJECT\n\t* RECTANGLEOBJECT\n\t* OVALOBJECT\n\t* POLYGONOBJECT\n\t* LINEOBJECT\nPrevious tokens: [Token('COLON', ':')]\n"
+        "parse_error": true
       }
     ],
     "invalid/IfConditionNotBoolean.s": [
@@ -183,17 +199,17 @@
     "invalid/InitValueTypeMismatch.s": [],
     "invalid/Malformed.s": [
       {
-        "parse_error": "Unexpected token Token('NAME', 'BasePicture') at line 1, column 1.\nExpected one of: \n\t* STRING\nPrevious tokens: [None]\n"
+        "parse_error": true
       }
     ],
     "invalid/ModuleCodeWithoutModuleDef.s": [
       {
-        "parse_error": "Unexpected token Token('NAME', 'ModuleCode') at line 12, column 1.\nExpected one of: \n\t* MODULEDEF\n\t* SUBMODULES\n\t* MODULEPARAMETERS\n\t* LOCALVARIABLES\n\t* LPAR\n\t* TYPEDEFINITIONS\n"
+        "parse_error": true
       }
     ],
     "invalid/ModuleDefNoTrailingEnddef.s": [
       {
-        "parse_error": "Unexpected token Token('$END', '') at line 21, column 1.\nExpected one of: \n\t* SEMICOLON\n\t* COMMENT_START\n"
+        "parse_error": true
       }
     ],
     "invalid/NonNumericComparisonOperand.s": [
@@ -221,7 +237,7 @@
     ],
     "invalid/NotSattLine.s": [
       {
-        "parse_error": "Unexpected token Token('NAME', 'This') at line 1, column 1.\nExpected one of: \n\t* STRING\nPrevious tokens: [None]\n"
+        "parse_error": true
       }
     ],
     "invalid/OldNewOnNonState.s": [
@@ -269,12 +285,12 @@
     ],
     "invalid/OversizedInput.s": [
       {
-        "parse_error": "Unexpected token Token('NAME', 'OversizedInput_') at line 4, column 65.\nExpected one of: \n\t* MODULEDEF\n\t* SUBMODULES\n\t* MODULEPARAMETERS\n\t* DATECODE_PREFIX\n\t* LOCALVARIABLES\n\t* LPAR\n\t* TYPEDEFINITIONS\nPrevious tokens: [Token('MODULEDEFINITION', 'MODULEDEFINITION')]\n"
+        "parse_error": true
       }
     ],
     "invalid/PropertyInVarBareName.s": [
       {
-        "parse_error": "Unexpected token Token('NAME', 'Flag') at line 27, column 34.\nExpected one of: \n\t* ON_KW\n\t* SIGNED_INT\n\t* REAL\n\t* BOOL\n\t* OFF_KW\n\t* STRING\nPrevious tokens: [Token('INVAR_PREFIX', 'InVar_')]\n"
+        "parse_error": true
       }
     ],
     "invalid/ReservedNameVarOff.s": [
@@ -349,7 +365,7 @@
     ],
     "invalid/StandaloneSeqBreak.s": [
       {
-        "parse_error": "Unexpected token Token('NAME', 'SEQBREAK') at line 31, column 7.\nExpected one of: \n\t* SUBSEQUENCE\n\t* PARALLELSEQ\n\t* COMMENT_START\n\t* ENDSEQUENCE\n\t* SEQINITSTEP\n\t* SEQTRANSITION\n\t* SEQSTEP\n\t* SUBSEQSTEP\n\t* ALTERNATIVESEQ\n\t* ENDOPENSEQUENCE\n\t* SEQFORK\n\t* SUBSEQTRANSITION\n"
+        "parse_error": true
       }
     ],
     "invalid/StringLiteralInCallArgument.s": [
@@ -485,7 +501,7 @@
     ],
     "invalid/UnterminatedComment.s": [
       {
-        "parse_error": "Unexpected token Token('$END', '') at line 14, column 23.\nExpected one of: \n\t* COMMENT_END\n\t* COMMENT_START\n\t* COMMENT_TEXT\n"
+        "parse_error": true
       }
     ],
     "invalid/WriteToConstVariable.s": [

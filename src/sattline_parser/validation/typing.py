@@ -463,17 +463,28 @@ def assignment_is_compatible(source_type: str, target_type: str) -> bool:
     return source_family is target_family
 
 
-def operand_types(expr: Compare | BinOp, scope: Scope, records: dict[str, DataType]) -> tuple[str | None, str | None]:
+def operand_types(
+    expr: Compare | BinOp,
+    scope: Scope,
+    records: dict[str, DataType],
+    type_graph: TypeGraph | None = None,
+) -> tuple[str | None, str | None]:
     """Static types of a binary operator's two operands."""
-    return infer_expr_type(expr.left, scope, records), infer_expr_type(expr.right, scope, records)
+    return (
+        infer_expr_type(expr.left, scope, records, type_graph),
+        infer_expr_type(expr.right, scope, records, type_graph),
+    )
 
 
 def assignment_types(
-    assignment: Assignment, scope: Scope, records: dict[str, DataType]
+    assignment: Assignment,
+    scope: Scope,
+    records: dict[str, DataType],
+    type_graph: TypeGraph | None = None,
 ) -> tuple[str | None, str | None]:
     """(target type, source type) for an assignment, either side may be ``None``."""
     target = resolve_var(assignment.target, scope, records)
-    source = infer_expr_type(assignment.value, scope, records)
+    source = infer_expr_type(assignment.value, scope, records, type_graph)
     return (None if target is None else target.datatype_text), source
 
 

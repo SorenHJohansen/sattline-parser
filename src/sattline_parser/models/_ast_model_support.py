@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import textwrap
 from collections.abc import Callable
-from typing import TYPE_CHECKING, Any, Literal
+from typing import TYPE_CHECKING, Any
 
 from ..formatting.formatter import format_expr, format_list, format_optional, format_seq_nodes
 
@@ -31,19 +31,12 @@ type FormatOptionalFn = Callable[..., str]
 type FormatSeqNodesFn = Callable[..., str]
 type AstNodeDict = dict[str, Any]
 type PropertyMap = dict[str, Any]
-type ModulePath = list[str]
-type UsageKind = Literal["read", "write"]
-type UsageLocation = tuple[ModulePath, UsageKind]
 #: Values a variable init or parameter-mapping source can hold: a literal, a
 #: boolean, or a parsed ``time_value`` dictionary.
 type InitValue = bool | int | float | str | dict[str, str | None]
 
 
 def variable_list() -> list[Variable]:
-    return []
-
-
-def usage_location_list() -> list[UsageLocation]:
     return []
 
 
