@@ -60,13 +60,18 @@ def _validate_parameter(name: str, parameter: object) -> dict[str, object]:
     _require(entry["direction"] in _DIRECTIONS, f"{name}: unknown direction {entry['direction']!r}")
     _require(entry["sorting"] in _SORTING, f"{name}: unknown sorting {entry['sorting']!r}")
     _require(entry["ownership"] in _OWNERSHIP, f"{name}: unknown ownership {entry['ownership']!r}")
-    return {
+    optional = entry.get("optional", False)
+    _require(isinstance(optional, bool), f"{name}: parameter optional must be a boolean")
+    validated: dict[str, object] = {
         "name": entry["name"],
         "datatype": entry["datatype"],
         "direction": entry["direction"],
         "sorting": entry["sorting"],
         "ownership": entry["ownership"],
     }
+    if optional:
+        validated["optional"] = True
+    return validated
 
 
 def _validate_function(name: str, raw: object) -> dict[str, object]:
@@ -83,12 +88,19 @@ def _validate_function(name: str, raw: object) -> dict[str, object]:
     parameters = entry.get("parameters")
     _require(isinstance(parameters, list), f"{name}: parameters must be a list")
     raw_parameters = cast("list[object]", parameters)
+    validated_parameters = [_validate_parameter(name, parameter) for parameter in raw_parameters]
+    optional_seen = False
+    for parameter in validated_parameters:
+        if parameter.get("optional") is True:
+            optional_seen = True
+        elif optional_seen:
+            _require(False, f"{name}: required parameter {parameter['name']!r} follows an optional parameter")
     return {
         "kind": kind,
         "return_type": return_type,
         "precision_scangroup": precision_scangroup,
         "typed": typed,
-        "parameters": [_validate_parameter(name, parameter) for parameter in raw_parameters],
+        "parameters": validated_parameters,
     }
 
 

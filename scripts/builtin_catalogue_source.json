@@ -798,14 +798,16 @@
           "datatype": "AsyncOperation",
           "direction": "inout",
           "sorting": "RS/WS",
-          "ownership": "RO/WO"
+          "ownership": "RO/WO",
+          "optional": true
         },
         {
           "name": "DebugStatus",
           "datatype": "Integer",
           "direction": "out",
           "sorting": "WS",
-          "ownership": "WO"
+          "ownership": "WO",
+          "optional": true
         }
       ]
     },
@@ -827,14 +829,16 @@
           "datatype": "AsyncOperation",
           "direction": "inout",
           "sorting": "RS/WS",
-          "ownership": "RO/WO"
+          "ownership": "RO/WO",
+          "optional": true
         },
         {
           "name": "DebugStatus",
           "datatype": "Integer",
           "direction": "out",
           "sorting": "WS",
-          "ownership": "WO"
+          "ownership": "WO",
+          "optional": true
         }
       ]
     },
@@ -863,14 +867,16 @@
           "datatype": "AsyncOperation",
           "direction": "inout",
           "sorting": "RS/WS",
-          "ownership": "RO/WO"
+          "ownership": "RO/WO",
+          "optional": true
         },
         {
           "name": "DebugStatus",
           "datatype": "Integer",
           "direction": "out",
           "sorting": "WS",
-          "ownership": "WO"
+          "ownership": "WO",
+          "optional": true
         }
       ]
     },
@@ -892,14 +898,16 @@
           "datatype": "AsyncOperation",
           "direction": "inout",
           "sorting": "RS/WS",
-          "ownership": "RO/WO"
+          "ownership": "RO/WO",
+          "optional": true
         },
         {
           "name": "DebugStatus",
           "datatype": "Integer",
           "direction": "out",
           "sorting": "WS",
-          "ownership": "WO"
+          "ownership": "WO",
+          "optional": true
         }
       ]
     },
@@ -1240,14 +1248,16 @@
           "datatype": "AsyncOperation",
           "direction": "inout",
           "sorting": "RS/WS",
-          "ownership": "RO/WO"
+          "ownership": "RO/WO",
+          "optional": true
         },
         {
           "name": "DebugStatus",
           "datatype": "Integer",
           "direction": "out",
           "sorting": "WS",
-          "ownership": "WO"
+          "ownership": "WO",
+          "optional": true
         }
       ]
     },
@@ -1429,14 +1439,16 @@
           "datatype": "AsyncOperation",
           "direction": "inout",
           "sorting": "RS/WS",
-          "ownership": "RO/WO"
+          "ownership": "RO/WO",
+          "optional": true
         },
         {
           "name": "DebugStatus",
           "datatype": "Integer",
           "direction": "out",
           "sorting": "WS",
-          "ownership": "WO"
+          "ownership": "WO",
+          "optional": true
         }
       ]
     },
@@ -1807,14 +1819,16 @@
           "datatype": "AsyncOperation",
           "direction": "inout",
           "sorting": "RS/WS",
-          "ownership": "RO/WO"
+          "ownership": "RO/WO",
+          "optional": true
         },
         {
           "name": "DebugStatus",
           "datatype": "Integer",
           "direction": "out",
           "sorting": "WS",
-          "ownership": "WO"
+          "ownership": "WO",
+          "optional": true
         }
       ]
     },
@@ -2045,14 +2059,16 @@
           "datatype": "AsyncOperation",
           "direction": "inout",
           "sorting": "RS/WS",
-          "ownership": "RO/WO"
+          "ownership": "RO/WO",
+          "optional": true
         },
         {
           "name": "DebugStatus",
           "datatype": "Integer",
           "direction": "out",
           "sorting": "WS",
-          "ownership": "WO"
+          "ownership": "WO",
+          "optional": true
         }
       ]
     },
@@ -2088,14 +2104,16 @@
           "datatype": "AsyncOperation",
           "direction": "inout",
           "sorting": "RS/WS",
-          "ownership": "RO/WO"
+          "ownership": "RO/WO",
+          "optional": true
         },
         {
           "name": "DebugStatus",
           "datatype": "Integer",
           "direction": "out",
           "sorting": "WS",
-          "ownership": "WO"
+          "ownership": "WO",
+          "optional": true
         }
       ]
     },
@@ -2734,14 +2752,16 @@
           "datatype": "AsyncOperation",
           "direction": "inout",
           "sorting": "RS/WS",
-          "ownership": "RO/WO"
+          "ownership": "RO/WO",
+          "optional": true
         },
         {
           "name": "DebugStatus",
           "datatype": "Integer",
           "direction": "out",
           "sorting": "WS",
-          "ownership": "WO"
+          "ownership": "WO",
+          "optional": true
         }
       ]
     },
@@ -3092,14 +3112,16 @@
           "datatype": "AsyncOperation",
           "direction": "inout",
           "sorting": "RS/WS",
-          "ownership": "RO/WO"
+          "ownership": "RO/WO",
+          "optional": true
         },
         {
           "name": "DebugStatus",
           "datatype": "Integer",
           "direction": "out",
           "sorting": "WS",
-          "ownership": "WO"
+          "ownership": "WO",
+          "optional": true
         }
       ]
     },
@@ -3128,14 +3150,16 @@
           "datatype": "AsyncOperation",
           "direction": "inout",
           "sorting": "RS/WS",
-          "ownership": "RO/WO"
+          "ownership": "RO/WO",
+          "optional": true
         },
         {
           "name": "DebugStatus",
           "datatype": "Integer",
           "direction": "out",
           "sorting": "WS",
-          "ownership": "WO"
+          "ownership": "WO",
+          "optional": true
         }
       ]
     },
@@ -3164,14 +3188,16 @@
           "datatype": "AsyncOperation",
           "direction": "inout",
           "sorting": "RS/WS",
-          "ownership": "RO/WO"
+          "ownership": "RO/WO",
+          "optional": true
         },
         {
           "name": "DebugStatus",
           "datatype": "Integer",
           "direction": "out",
           "sorting": "WS",
-          "ownership": "WO"
+          "ownership": "WO",
+          "optional": true
         }
       ]
     },
@@ -3278,14 +3304,16 @@
           "datatype": "AsyncOperation",
           "direction": "inout",
           "sorting": "RS/WS",
-          "ownership": "RO/WO"
+          "ownership": "RO/WO",
+          "optional": true
         },
         {
           "name": "DebugStatus",
           "datatype": "Integer",
           "direction": "out",
           "sorting": "WS",
-          "ownership": "WO"
+          "ownership": "WO",
+          "optional": true
         }
       ]
     },
@@ -3545,14 +3573,16 @@
           "datatype": "AsyncOperation",
           "direction": "inout",
           "sorting": "RS/WS",
-          "ownership": "RO/WO"
+          "ownership": "RO/WO",
+          "optional": true
         },
         {
           "name": "DebugStatus",
           "datatype": "Integer",
           "direction": "out",
           "sorting": "WS",
-          "ownership": "WO"
+          "ownership": "WO",
+          "optional": true
         }
       ]
     },
@@ -3588,14 +3618,16 @@
           "datatype": "AsyncOperation",
           "direction": "inout",
           "sorting": "RS/WS",
-          "ownership": "RO/WO"
+          "ownership": "RO/WO",
+          "optional": true
         },
         {
           "name": "DebugStatus",
           "datatype": "Integer",
           "direction": "out",
           "sorting": "WS",
-          "ownership": "WO"
+          "ownership": "WO",
+          "optional": true
         }
       ]
     },
@@ -3669,14 +3701,16 @@
           "datatype": "AsyncOperation",
           "direction": "inout",
           "sorting": "RS/WS",
-          "ownership": "RO/WO"
+          "ownership": "RO/WO",
+          "optional": true
         },
         {
           "name": "DebugStatus",
           "datatype": "Integer",
           "direction": "out",
           "sorting": "WS",
-          "ownership": "WO"
+          "ownership": "WO",
+          "optional": true
         }
       ]
     },
@@ -3705,14 +3739,16 @@
           "datatype": "AsyncOperation",
           "direction": "inout",
           "sorting": "RS/WS",
-          "ownership": "RO/WO"
+          "ownership": "RO/WO",
+          "optional": true
         },
         {
           "name": "DebugStatus",
           "datatype": "Integer",
           "direction": "out",
           "sorting": "WS",
-          "ownership": "WO"
+          "ownership": "WO",
+          "optional": true
         }
       ]
     },
@@ -3777,14 +3813,16 @@
           "datatype": "AsyncOperation",
           "direction": "inout",
           "sorting": "RS/WS",
-          "ownership": "RO/WO"
+          "ownership": "RO/WO",
+          "optional": true
         },
         {
           "name": "DebugStatus",
           "datatype": "Integer",
           "direction": "out",
           "sorting": "WS",
-          "ownership": "WO"
+          "ownership": "WO",
+          "optional": true
         }
       ]
     },
@@ -3842,14 +3880,16 @@
           "datatype": "AsyncOperation",
           "direction": "inout",
           "sorting": "RS/WS",
-          "ownership": "RO/WO"
+          "ownership": "RO/WO",
+          "optional": true
         },
         {
           "name": "DebugStatus",
           "datatype": "Integer",
           "direction": "out",
           "sorting": "WS",
-          "ownership": "WO"
+          "ownership": "WO",
+          "optional": true
         }
       ]
     },
@@ -4016,14 +4056,16 @@
           "datatype": "AsyncOperation",
           "direction": "inout",
           "sorting": "RS/WS",
-          "ownership": "RO/WO"
+          "ownership": "RO/WO",
+          "optional": true
         },
         {
           "name": "DebugStatus",
           "datatype": "Integer",
           "direction": "out",
           "sorting": "WS",
-          "ownership": "WO"
+          "ownership": "WO",
+          "optional": true
         }
       ]
     },
@@ -4869,14 +4911,16 @@
           "datatype": "AsyncOperation",
           "direction": "inout",
           "sorting": "RS/WS",
-          "ownership": "RO/WO"
+          "ownership": "RO/WO",
+          "optional": true
         },
         {
           "name": "DebugStatus",
           "datatype": "Integer",
           "direction": "out",
           "sorting": "WS",
-          "ownership": "WO"
+          "ownership": "WO",
+          "optional": true
         }
       ]
     },
@@ -5432,14 +5476,16 @@
           "datatype": "AsyncOperation",
           "direction": "inout",
           "sorting": "RS/WS",
-          "ownership": "RO/WO"
+          "ownership": "RO/WO",
+          "optional": true
         },
         {
           "name": "DebugStatus",
           "datatype": "Integer",
           "direction": "out",
           "sorting": "WS",
-          "ownership": "WO"
+          "ownership": "WO",
+          "optional": true
         }
       ]
     },
@@ -5475,14 +5521,16 @@
           "datatype": "AsyncOperation",
           "direction": "inout",
           "sorting": "RS/WS",
-          "ownership": "RO/WO"
+          "ownership": "RO/WO",
+          "optional": true
         },
         {
           "name": "DebugStatus",
           "datatype": "Integer",
           "direction": "out",
           "sorting": "WS",
-          "ownership": "WO"
+          "ownership": "WO",
+          "optional": true
         }
       ]
     },
@@ -5511,14 +5559,16 @@
           "datatype": "AsyncOperation",
           "direction": "inout",
           "sorting": "RS/WS",
-          "ownership": "RO/WO"
+          "ownership": "RO/WO",
+          "optional": true
         },
         {
           "name": "DebugStatus",
           "datatype": "Integer",
           "direction": "out",
           "sorting": "WS",
-          "ownership": "WO"
+          "ownership": "WO",
+          "optional": true
         }
       ]
     },
@@ -5547,14 +5597,16 @@
           "datatype": "AsyncOperation",
           "direction": "inout",
           "sorting": "RS/WS",
-          "ownership": "RO/WO"
+          "ownership": "RO/WO",
+          "optional": true
         },
         {
           "name": "DebugStatus",
           "datatype": "Integer",
           "direction": "out",
           "sorting": "WS",
-          "ownership": "WO"
+          "ownership": "WO",
+          "optional": true
         }
       ]
     },
@@ -5590,14 +5642,16 @@
           "datatype": "AsyncOperation",
           "direction": "inout",
           "sorting": "RS/WS",
-          "ownership": "RO/WO"
+          "ownership": "RO/WO",
+          "optional": true
         },
         {
           "name": "DebugStatus",
           "datatype": "Integer",
           "direction": "out",
           "sorting": "WS",
-          "ownership": "WO"
+          "ownership": "WO",
+          "optional": true
         }
       ]
     },
@@ -5626,14 +5680,16 @@
           "datatype": "AsyncOperation",
           "direction": "inout",
           "sorting": "RS/WS",
-          "ownership": "RO/WO"
+          "ownership": "RO/WO",
+          "optional": true
         },
         {
           "name": "DebugStatus",
           "datatype": "Integer",
           "direction": "out",
           "sorting": "WS",
-          "ownership": "WO"
+          "ownership": "WO",
+          "optional": true
         }
       ]
     }

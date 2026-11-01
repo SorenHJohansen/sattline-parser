@@ -38,6 +38,11 @@ The generated header records the numbers. At the time of writing:
 `EqualString` is documented with that spelling; the catalogue carries
 `equalstrings` as the canonical key and `EqualString` as an alias.
 
+Parameters documented as optional carry `"optional": true`. Optional
+parameters are trailing-only; the generator rejects a required parameter after
+an optional one. The validator uses the leading required count as a call's
+minimum arity.
+
 ### Regeneration
 
 ```bash

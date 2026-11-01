@@ -245,6 +245,9 @@ def test_builtin_type_matches() -> None:
     assert builtin_type_matches("MyRecord", "Other", direction="in") is False
     assert builtin_type_matches("integer", "anytype", direction="in") is True
     assert builtin_type_matches("MyRecord", Simple_DataType.INTEGER, direction="in") is False
+    assert builtin_type_matches("textfile", "tObject", direction="in") is True
+    assert builtin_type_matches("integer", "AsyncOperation", direction="inout") is True
+    assert builtin_type_matches("real", "AsyncOperation", direction="inout") is False
 
 
 def test_assignment_type_matches() -> None:

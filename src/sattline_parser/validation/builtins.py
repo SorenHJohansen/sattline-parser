@@ -52,9 +52,14 @@ class BuiltinFunction:
 
 
 def _adapt(signature: _BuiltinFunction) -> BuiltinFunction:
+    required_args = 0
+    for parameter in signature.parameters:
+        if parameter.optional:
+            break
+        required_args += 1
     return BuiltinFunction(
         name=signature.name,
-        min_args=signature.arity,
+        min_args=required_args,
         max_args=signature.arity,
         out_arg_positions=signature.out_arg_positions,
         parameters=signature.parameters,

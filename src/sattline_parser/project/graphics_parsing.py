@@ -162,6 +162,7 @@ def _extract_picture_display_record(
     record_start_line: int,
     record_end_line: int,
 ) -> GraphicsPictureDisplayRecord:
+    path_row_lines = tuple(row_line_index + 1 for row_line_index, _row_line in record_lines[5:-2])
     path_rows = tuple(
         row
         for row_line_index, row_line in record_lines[5:-2]
@@ -171,6 +172,7 @@ def _extract_picture_display_record(
         record_index=record_index,
         start_line=record_start_line,
         end_line=record_end_line,
+        path_row_lines=path_row_lines,
         path_rows=path_rows,
     )
 
