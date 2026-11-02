@@ -253,6 +253,44 @@ def test_enable_paren_tail_is_accepted_on_graph_and_interact_objects():
     assert _codes("valid", "InteractEnableParenTail") == set()
 
 
+def test_internal_registrations_are_checked_like_documented_builtins():
+    """Names bound for compiled programs get arity checks, not silence.
+
+    ``Login`` is not a documented language built-in, but shipped library
+    sources call it, so the catalogue carries its signature.
+    """
+    header = (
+        '"Syntax version 2.23, date: 2026-10-26-12:00:00.000 N"\n'
+        '"Original file date: ---"\n'
+        '"Program date: 2026-10-26-12:00:00.000, name: InternalBuiltinArity"\n'
+    )
+    picture = (
+        "BasePicture Invocation\n"
+        "   ( 0.0 , 0.0 , 0.0 , 1.0 , 1.0\n"
+        "    ) : MODULEDEFINITION DateCode_ 1\n"
+        "\n"
+        "LOCALVARIABLES\n"
+        '   User: string := "";\n'
+        "   Status: integer := 0;\n"
+        "\n"
+        "ModuleDef\n"
+        "ClippingBounds = ( -1.0 , -1.0 ) ( 1.0 , 1.0 )\n"
+        "ModuleCode\n"
+        "   EQUATIONBLOCK Main COORD 0.0, 0.0 OBJSIZE 1.0, 1.0 :\n"
+    )
+    tail = "\nENDDEF (*BasePicture*);\n"
+
+    def codes(statement: str) -> set[str]:
+        source = header + picture + f"      {statement}\n" + tail
+        return {diagnostic.code.value for diagnostic in parse_and_validate(source)[1]}
+
+    assert codes("Login(User, Status);") == set()
+    assert "SL-V013" in codes("Login(User);")
+    assert "SL-V013" in codes("Login(User, Status, Status);")
+    signature = builtin_function_signature("Login")
+    assert signature is not None and signature.kind == "procedure"
+
+
 def test_builtin_table_and_typo_helpers():
     assert builtin_function_signature("EqualStrings") is not None
     assert builtin_function_signature("NoSuchBuiltin") is None
@@ -1318,6 +1356,54 @@ def test_reserved_runtime_names_cannot_be_declared():
     assert "SL-V034" not in codes("   GroupData: boolean := False;\n   Flag: boolean := False;\n")
     # reading a reserved name is still fine - SL-V019 must not fire
     assert "SL-V019" not in codes("   Flag: boolean := False;\n")
+
+
+def test_system_datatype_declarations_resolve_to_declared_fields():
+    """System/configuration datatypes are real records, not opaque names.
+
+    A variable may be declared with any of them without a local ``DATATYPE``
+    definition, and a field path through it carries the declared field type
+    rather than staying unknown.
+    """
+    from sattline_parser.validation.type_graph import TypeGraph  # noqa: PLC0415
+
+    header = (
+        '"Syntax version 2.23, date: 2026-11-02-12:00:00.000 N"\n'
+        '"Original file date: ---"\n'
+        '"Program date: 2026-11-02-12:00:00.000, name: SystemTypes"\n'
+    )
+    picture = "BasePicture Invocation\n   ( 0.0 , 0.0 , 0.0 , 1.0 , 1.0\n    ) : MODULEDEFINITION DateCode_ 1\n\n"
+    declarations = (
+        "LOCALVARIABLES\n"
+        "   Step: StepStatus;\n"
+        "   Elapsed: Timer;\n"
+        "   GroupInfo: ScanGroupInfo;\n"
+        "   Operation: AsyncOperation;\n"
+        "   Interact: EventInteract;\n"
+        "   Count: integer := 0;\n"
+        "   High: integer := 0;\n"
+    )
+    tail = (
+        "\nModuleDef\nClippingBounds = ( -1.0 , -1.0 ) ( 1.0 , 1.0 )\n"
+        "ModuleCode\n"
+        "   EQUATIONBLOCK Main COORD 0.0, 0.0 OBJSIZE 1.0, 1.0 :\n"
+        "      High = Elapsed.High;\n"
+        "\nENDDEF (*BasePicture*);\n"
+    )
+
+    source = header + picture + declarations + tail
+    picture_ast, diagnostics = parse_and_validate(source)
+    assert [diagnostic.code.value for diagnostic in diagnostics] == []
+
+    graph = TypeGraph.from_basepicture(picture_ast)
+    high = graph.field("Timer", "High")
+    assert high is not None and high.datatype is Simple_DataType.INTEGER
+    block = graph.field("StepStatus", "block")
+    assert block is None
+    transit = graph.field("StepStatus", "transit")
+    assert transit is not None and transit.datatype is Simple_DataType.BOOLEAN
+    group_object = graph.field("ScanGroupInfo", "ScanGroupName")
+    assert group_object is not None and group_object.datatype is Simple_DataType.STRING
 
 
 def test_identifier_folding_uses_the_cp1252_byte_table():

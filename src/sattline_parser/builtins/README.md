@@ -30,10 +30,19 @@ The generated header records the numbers. At the time of writing:
 - 171 documented functions are carried with a full signature.
 - 2 documented functions are carried without a typed parameter list
   (`GetPrivilegeFlag`, `ResetPrivilegeFlag`); they still carry their arity.
+- 191 further registrations are carried under `meta.internal`. They are not
+  language built-ins: the system binds them for compiled programs and shipped
+  library sources call them, so they are kept for arity and argument checks.
+  A black-box check of the registrations a program can bind is the evidence for
+  this bucket; no public manual in the reference set describes the names.
 - 9 names are carried but are not located in any public manual in the
   reference set. They are listed under `meta.not_located` in the catalogue and
   are kept only so arity checks keep working for them.
 - No documented name is omitted.
+
+`documented_total` counts only the manual-documented names; `not_located` and
+`internal` are excluded from it, so the documented total stays comparable with
+the manual's own count.
 
 `EqualString` is documented with that spelling; the catalogue carries
 `equalstrings` as the canonical key and `EqualString` as an alias.
@@ -56,8 +65,14 @@ A test runs the `--check` path, so a stale catalogue fails the suite.
 
 `records.py` holds `BUILTIN_RECORD_SPECS`: the ordered field list for each
 builtin record datatype, plus the opaque and fieldless name sets and
-`BUILTIN_DECLARED_DATATYPE_NAMES`. The field tables are transcribed from the
-builtin datatype reference in the SattLine General and Graphics User manual and
-the SattLine I/O and Communication User manual, both System Version 3.1.
-Consumers resolve a field path against these specs; the package does not decide
-whether a field access is valid.
+`BUILTIN_DECLARED_DATATYPE_NAMES`. The field tables cover the builtin datatype
+reference in the SattLine General and Graphics User manual and the SattLine
+I/O and Communication User manual, both System Version 3.1, together with the
+datatype declarations a system configuration ships.
+
+Only three entries carry an empty spec: `tObject`, `ArrayObject` and
+`QueueObject`. They are native object handles with no addressable fields, so an
+empty spec there is the complete answer rather than a missing one. Every other
+name in the table has its declared fields. Consumers resolve a field path
+against these specs; the package does not decide whether a field access is
+valid.

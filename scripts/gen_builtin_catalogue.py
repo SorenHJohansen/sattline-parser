@@ -18,10 +18,16 @@ The signatures are transcribed from the following public manuals:
 * SattLine 3.1 Additional features, System Version 3.1-2.
 
 The generated header records the documented total, the sources cited, and the
-reason for every documented name the catalogue does not carry. Names that the
-source table carries but no public manual in the reference set documents are
-listed separately as ``not_located``; they are kept so that arity checks keep
-working for them, not because the documentation confirms them.
+reason for every name the catalogue does not document. Two buckets sit beside
+the documented set:
+
+* ``not_located``: names the source table carries but no public manual in the
+  reference set documents.
+* ``internal``: registrations the system exposes to compiled programs but does
+  not publish as language built-ins. They are carried so calls in existing
+  sources keep their arity and argument constraints.
+
+Neither bucket is part of ``documented_total``.
 
 Usage::
 
@@ -112,6 +118,8 @@ def build(source: dict[str, object]) -> dict[str, object]:
     _require(isinstance(additional_sources, list), "additional_sources must be a list")
     not_located = source.get("not_located", [])
     _require(isinstance(not_located, list), "not_located must be a list")
+    internal = source.get("internal", [])
+    _require(isinstance(internal, list), "internal must be a list")
     aliases = source.get("aliases", {})
     _require(isinstance(aliases, dict), "aliases must be an object")
     functions = source.get("functions")
@@ -127,11 +135,18 @@ def build(source: dict[str, object]) -> dict[str, object]:
     for name in not_located_names:
         _require(name in catalogue_functions, f"{name}: listed as not_located but absent from functions")
 
+    internal_names = sorted(cast("list[str]", internal))
+    for name in internal_names:
+        _require(name == name.casefold(), f"{name}: internal names must be casefolded")
+        _require(name in catalogue_functions, f"{name}: listed as internal but absent from functions")
+        _require(name not in not_located_names, f"{name}: listed as both internal and not_located")
+
     alias_table = cast("dict[str, str]", aliases)
     for alias, target in alias_table.items():
         _require(target in catalogue_functions, f"{alias}: alias target {target!r} is absent")
 
-    documented_total = len(catalogue_functions) - len(not_located_names)
+    undocumented = len(not_located_names) + len(internal_names)
+    documented_total = len(catalogue_functions) - undocumented
     typed_entries = sum(1 for entry in catalogue_functions.values() if cast("dict[str, object]", entry)["typed"])
     untyped_entries = len(catalogue_functions) - typed_entries
 
@@ -151,6 +166,15 @@ def build(source: dict[str, object]) -> dict[str, object]:
                 "reason": (
                     "Carried from the transcribed table so arity checks keep working for them; "
                     "no public manual in the reference set documents these names."
+                ),
+            },
+            "internal": {
+                "count": len(internal_names),
+                "names": internal_names,
+                "reason": (
+                    "Registrations the system binds for compiled programs but does not publish as "
+                    "language built-ins. Carried so arity and argument checks keep working for "
+                    "sources that call them; they are not part of the documented total."
                 ),
             },
             "aliases": alias_table,
