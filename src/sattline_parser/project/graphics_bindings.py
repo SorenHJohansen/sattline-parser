@@ -15,13 +15,13 @@ from typing import Any, cast
 from lark import Tree
 from lark.exceptions import LarkError
 
-from sattline_parser.api import build_lark_parser
 from sattline_parser.models.ast_model import GraphicsBinding, SourceSpan
+from sattline_parser.source_io import build_lark_parser
 from sattline_parser.transformer.sl_transformer import SLTransformer
 
 from .models import GraphicsMessage
 
-_BINDING_LINE_RE = re.compile(r"(?<!\S)(Var|Expr|Lit)\s+(\S+)\s+(-?\d+)\s+")
+BINDING_LINE_RE = re.compile(r"(?<!\S)(Var|Expr|Lit)\s+(\S+)\s+(-?\d+)\s+")
 _GRAPHICS_EXPR_KEYWORDS = {
     "and": "AND",
     "or": "OR",
@@ -160,7 +160,7 @@ def _normalize_graphics_expression(payload: str) -> str:
     )
 
 
-def _parse_graphics_binding_match(
+def parse_graphics_binding_match(
     row_text: str,
     *,
     line: int,
@@ -215,7 +215,7 @@ def _parse_graphics_binding_match(
     return GraphicsBinding(kind=kind, raw_text=payload, value=parsed, span=span), ()
 
 
-def _parse_graphics_binding_line(
+def parse_graphics_binding_line(
     row_text: str,
     *,
     line: int,
@@ -223,8 +223,8 @@ def _parse_graphics_binding_line(
     bindings: list[GraphicsBinding] = []
     messages: list[GraphicsMessage] = []
 
-    for match in _BINDING_LINE_RE.finditer(row_text):
-        binding, binding_messages = _parse_graphics_binding_match(row_text, line=line, match=match)
+    for match in BINDING_LINE_RE.finditer(row_text):
+        binding, binding_messages = parse_graphics_binding_match(row_text, line=line, match=match)
         if binding is not None:
             bindings.append(binding)
         messages.extend(binding_messages)
@@ -233,12 +233,12 @@ def _parse_graphics_binding_line(
 
 
 __all__: tuple[str, ...] = (
-    "_BINDING_LINE_RE",
+    "BINDING_LINE_RE",
     "_coerce_graphics_literal",
     "_graphics_expression_parser",
     "_normalize_graphics_expression",
     "_offset_source_spans",
-    "_parse_graphics_binding_line",
-    "_parse_graphics_binding_match",
     "_unwrap_expression_root",
+    "parse_graphics_binding_line",
+    "parse_graphics_binding_match",
 )

@@ -28,7 +28,22 @@ from lark.exceptions import UnexpectedCharacters, UnexpectedEOF, UnexpectedInput
 if TYPE_CHECKING:
     from sattline_parser.source_document import SourceDocument
 
+#: Exceptions that mean "this source could not be parsed", as opposed to a
+#: defect in the parser itself. Every layer that turns a failed parse into a
+#: finding shares this tuple, so one broken file is classified the same way by
+#: ``sattline check`` and by the project loader.
+#:
+#: ``PreprocessError`` and ``UnicodeError`` are ``ValueError`` subclasses, so the
+#: tuple is effectively ``(LarkError, ValueError, OSError)``.
+PARSE_FAILURES: tuple[type[Exception], ...] = (
+    UnexpectedInput,  # grammar/matcher/transform failures reach the caller as UnexpectedInput
+    ValueError,  # preprocess and transformer value errors (PreprocessError included)
+    UnicodeError,  # undecodable source outside a comment body
+    OSError,  # unreadable file
+)
+
 __all__ = [
+    "PARSE_FAILURES",
     "ParseErrorDetails",
     "_log_parser_failure",
     "_unexpected_input_summary",
@@ -110,12 +125,10 @@ _WORD_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
 @cache
 def _terminal_spellings() -> dict[str, str]:
     """Terminal name -> literal spelling, read from the resolved grammar."""
-    from sattline_parser.api import (  # noqa: PLC0415 - avoids an import cycle
-        _resolved_grammar,  # pyright: ignore[reportPrivateUsage]
-    )
+    from sattline_parser.grammar.resolved import resolved_grammar  # noqa: PLC0415 - grammar loads lazily
 
     spellings: dict[str, str] = dict(_PUNCTUATION_TERMINALS)
-    for match in _TERMINAL_DEF_RE.finditer(_resolved_grammar()):
+    for match in _TERMINAL_DEF_RE.finditer(resolved_grammar()):
         definition = match.group("definition")
         quoted = _QUOTED_TERMINAL_RE.match(definition)
         keyword = _CASE_FOLDED_KEYWORD_RE.match(definition)

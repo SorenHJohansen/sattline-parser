@@ -11,7 +11,7 @@ blocks, each terminated by CRLF. Bytes are xored with ``key[n] = (7n + 8) %
 import pytest
 from lark.exceptions import UnexpectedToken
 
-from sattline_parser import api as parser_api
+from sattline_parser import source_io as parser_api
 from sattline_parser.api import load_source_text
 from sattline_parser.preprocessing.coded import decode_coded_stream, is_coded
 from sattline_parser.preprocessing.compressed import PreprocessError
@@ -121,11 +121,13 @@ def test_parse_source_file_decodes_coded_before_parsing(tmp_path) -> None:
         parser_api.parse_source_file(path)
 
 
-def test_is_coded_requires_header_crlf() -> None:
+def test_is_coded_accepts_a_header_without_its_terminator() -> None:
+    # The header alone identifies a coded stream; a lost CRLF is reported by
+    # decode_coded_stream instead of falling through to the text decoder.
     assert is_coded(b"\x80 3.1\r\n" + b"\x80" * 10) is True
-    assert is_coded(b"\x80 3.1XX") is False
-    assert is_coded(b"\x80 3.1\n") is False
-    assert is_coded(b"\x80 3.1") is False
+    assert is_coded(b"\x80 3.1XX") is True
+    assert is_coded(b"\x80 3.1\n") is True
+    assert is_coded(b"\x80 3.1") is True
     assert is_coded(b"\x80 3.0\r\n") is False
 
 

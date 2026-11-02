@@ -5,11 +5,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any
 
-from lark.exceptions import UnexpectedInput
-
 from sattline_parser.api import parse_and_validate
+from sattline_parser.errors import PARSE_FAILURES
 from sattline_parser.models.ast_model import BasePicture
-from sattline_parser.preprocessing import PreprocessError, is_compressed
+from sattline_parser.preprocessing import is_compressed
 
 from ._findings import Finding, finding_from_diagnostic, finding_from_parse_error
 
@@ -28,7 +27,7 @@ def analyse(name: str, text: str, *, absolute: bool) -> Analysis:
     """Parse and validate one source; a failure is one finding, never an exception."""
     try:
         picture, diagnostics = parse_and_validate(text, log_failures=False)
-    except (UnexpectedInput, PreprocessError) as exc:
+    except PARSE_FAILURES as exc:
         return Analysis(
             findings=(finding_from_parse_error(exc, text, file=name, absolute_paths=absolute),),
             summary=None,

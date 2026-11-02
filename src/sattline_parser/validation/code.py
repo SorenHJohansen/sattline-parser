@@ -15,10 +15,13 @@ from typing import cast
 
 from sattline_parser.grammar import constants as const
 from sattline_parser.models.ast_model import (
+    BasePicture,
     DataType,
     Equation,
+    FrameModule,
     ModuleCode,
     ModuleDef,
+    ModuleTypeInstance,
     Sequence,
     SFCAlternative,
     SFCBodyItem,
@@ -29,6 +32,7 @@ from sattline_parser.models.ast_model import (
     SFCTransition,
     SFCTransitionSub,
     Simple_DataType,
+    SingleModule,
     SourceSpan,
     Variable,
 )
@@ -46,9 +50,9 @@ from sattline_parser.models.expressions import (
     UnaryOp,
     VarRef,
 )
+from sattline_parser.names import fold_identifier
 from sattline_parser.validation.builtins import builtin_function_signature
 from sattline_parser.validation.diagnostics import Diagnostic, DiagnosticCode
-from sattline_parser.validation.names import fold_identifier
 from sattline_parser.validation.sequences import check_sequence_positions
 from sattline_parser.validation.symbols import (
     Scope,
@@ -99,18 +103,53 @@ def walk_sequence_body(
         walk_sfc_item(item, scope, records, type_graph, sfc_names, errors)
 
 
+def _iter_program_module_codes(bp: BasePicture) -> list[ModuleCode]:
+    """Every ``ModuleCode`` block in one program file, nested modules included."""
+    codes: list[ModuleCode] = [*bp.modulecodes]
+    pending: list[SingleModule | FrameModule | ModuleTypeInstance] = list(bp.submodules)
+    for moduletype in bp.moduletype_defs:
+        codes.extend(moduletype.modulecodes)
+        pending.extend(moduletype.submodules)
+    while pending:
+        child = pending.pop()
+        if isinstance(child, ModuleTypeInstance):
+            continue
+        codes.extend(child.modulecodes)
+        pending.extend(child.submodules)
+    return codes
+
+
+def collect_program_sfc_names(bp: BasePicture) -> frozenset[str]:
+    """Every SFC step and sequence name visible anywhere in one program file.
+
+    SFC element names resolve program-wide: an equation block refers to a
+    sequence defined in a *nested* frame module by name (``Seq.Reset``), so a
+    module-local set alone would report those references as undefined.
+    """
+    names: set[str] = set()
+    for code in _iter_program_module_codes(bp):
+        steps, _transitions = _collect_module_jump_targets(code.sequences)
+        names |= steps
+        names |= {fold_identifier(sequence.name) for sequence in code.sequences or () if sequence.name}
+    return frozenset(names)
+
+
 def walk_module_code(
     mc: ModuleCode,
     scope: Scope,
     records: dict[str, DataType],
     type_graph: TypeGraph,
     errors: list[Diagnostic],
+    *,
+    program_sfc_names: frozenset[str] = frozenset(),
 ) -> None:
     sequences = mc.sequences or ()
     step_names, transition_names = _collect_module_jump_targets(mc.sequences)
     name_counts = _collect_module_sfc_name_counts(mc.sequences)
     all_known = step_names | transition_names
-    sfc_names = all_known | {fold_identifier(sequence.name) for sequence in sequences if sequence.name}
+    sfc_names = (
+        all_known | {fold_identifier(sequence.name) for sequence in sequences if sequence.name} | program_sfc_names
+    )
     _check_duplicate_sfc_names(mc.sequences, errors)
     check_sequence_positions(mc.sequences, errors)
     check_step_auto_variables(mc, scope, errors)

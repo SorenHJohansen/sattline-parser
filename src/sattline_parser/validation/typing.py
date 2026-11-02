@@ -42,7 +42,7 @@ from sattline_parser.models.expressions import (
     UnaryOp,
     VarRef,
 )
-from sattline_parser.validation.names import fold_identifier
+from sattline_parser.names import fold_identifier
 from sattline_parser.validation.symbols import Scope, is_sfc_runtime_constant, resolve_var
 from sattline_parser.validation.type_graph import TypeGraph
 
@@ -123,12 +123,13 @@ def _normalize(datatype: Simple_DataType | str | None) -> Simple_DataType | str 
 
 
 def is_numeric_datatype(datatype: Simple_DataType | str | None) -> bool:
-    normalized = _normalize(datatype)
-    return normalized in {Simple_DataType.INTEGER, Simple_DataType.REAL}
+    """``is_numeric`` for callers that may not have a datatype at all."""
+    return datatype is not None and is_numeric(datatype)
 
 
 def is_boolean_datatype(datatype: Simple_DataType | str | None) -> bool:
-    return _normalize(datatype) == Simple_DataType.BOOLEAN
+    """``is_boolean`` for callers that may not have a datatype at all."""
+    return datatype is not None and is_boolean(datatype)
 
 
 def is_string_simple_type(datatype: Simple_DataType | str | None) -> bool:
@@ -307,9 +308,10 @@ def builtin_type_matches(
         return True
     expected_name = fold_identifier(format_datatype(normalized_expected))
     if expected_name == "TOBJECT":
-        # tObject is the documented opaque base object; file handles and other
-        # builtin objects are passed where a tObject parameter is declared.
-        return True
+        # tObject is the documented opaque base object: handles and record
+        # values are passed where a tObject parameter is declared. A scalar is
+        # not one of them, so it stays a mismatch instead of being waved through.
+        return isinstance(normalized_actual, str)
     if expected_name == "ASYNCOPERATION" and normalized_actual == Simple_DataType.INTEGER:
         # The asynchronous-operation handle is integer-backed in source code.
         return True

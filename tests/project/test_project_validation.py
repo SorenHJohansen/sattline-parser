@@ -165,9 +165,16 @@ def test_external_record_fields_belong_to_the_defining_program(tmp_path: Path) -
     _write(root, "Dep.s", _source("Dep", typedefs=broken_record))
     _write(root, "Main.s", _source("Main", locals_block="LOCALVARIABLES\n   Sensor: BrokenRecord;\n"))
     _write(root, "Main.l", "Dep\n")
-    project = _load(root, "Main")
+    # Ownership of an external field finding is a FULL-mode property: INVOKED
+    # limits a dependency to its invoked module types, and Dep contributes a
+    # record datatype only.
+    project = _load(root, "Main", validate=LoadValidation.FULL)
     assert project.get("Main").diagnostics == ()
     assert "MissingFieldType" in " ".join(d.message for d in project.get("Dep").diagnostics)
+
+    invoked = _load(root, "Main", validate=LoadValidation.INVOKED)
+    assert invoked.get("Main").diagnostics == ()
+    assert invoked.get("Dep").diagnostics == ()
 
 
 def test_visible_definitions_come_from_the_dependency_closure(tmp_path: Path) -> None:
@@ -267,6 +274,11 @@ def test_missing_dependency_marks_external_findings_tentative(tmp_path: Path) ->
     assert [diagnostic.code.value for diagnostic in invoked.diagnostics] == ["SL-V020"]
     assert invoked.diagnostics[0].tentative is True
 
+    # FULL marks the same finding tentative through its own code path.
+    full = _load(root, "Main", strict=False, validate=LoadValidation.FULL).get("Main")
+    assert [diagnostic.code.value for diagnostic in full.diagnostics] == ["SL-V020"]
+    assert full.diagnostics[0].tentative is True
+
 
 def test_datecode_conflict_is_reported_on_the_later_program(tmp_path: Path) -> None:
     root = tmp_path / "libs"
@@ -288,6 +300,43 @@ def test_datecode_conflict_is_reported_on_the_later_program(tmp_path: Path) -> N
     assert len(conflicts) == 1
     assert "libs/Main.s" in conflicts[0].message
     assert "1 in libs/Dep.s" in conflicts[0].message
+
+
+def test_datecode_conflicts_only_cover_the_program_closure(tmp_path: Path) -> None:
+    """A sibling program that the target cannot see is not a conflict.
+
+    Unit libraries load dozens of independent programs that each declare their
+    own local module types; those copies must not be compared with each other.
+    """
+    root = tmp_path / "libs"
+    root.mkdir()
+    moduletype = (
+        "TYPEDEFINITIONS\n"
+        "   ControllerType = MODULEDEFINITION DateCode_ {datecode}\n"
+        "   MODULEPARAMETERS\n"
+        "      Setpoint: real := 0.0;\n"
+        "   ModuleDef\n"
+        "   ClippingBounds = ( -1.0 , -1.0 ) ( 1.0 , 1.0 )\n"
+        "   ENDDEF (*ControllerType*);\n"
+    )
+    _write(root, "Unrelated.s", _source("Unrelated", typedefs=moduletype.format(datecode=1)))
+    _write(root, "Dep.s", _source("Dep", typedefs=moduletype.format(datecode=2)))
+    _write(root, "Main.s", _source("Main", typedefs=moduletype.format(datecode=3)))
+    _write(root, "Main.l", "Dep\n")
+
+    # Both targets are loaded into one project; neither may see the other.
+    project = SattLineProject.load(
+        [root],
+        mode=LoadMode.DRAFT,
+        targets=("Unrelated", "Main"),
+    )
+    codes = {
+        program.name: [diagnostic.code.value for diagnostic in program.diagnostics]
+        for program in project.programs().values()
+    }
+    assert codes["Unrelated"] == []
+    assert codes["Main"] == ["SL-V057"]
+    assert "libs/Unrelated.s" not in project.get("Main").diagnostics[0].message
 
 
 def test_cycles_are_returned_as_paths(tmp_path: Path) -> None:

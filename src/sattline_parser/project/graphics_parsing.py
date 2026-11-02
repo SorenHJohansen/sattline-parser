@@ -12,11 +12,15 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Literal
 
-from sattline_parser.api import read_text_cp1252
 from sattline_parser.models.ast_model import GraphicsBinding, SourceSpan
+from sattline_parser.source_io import read_text_cp1252
 
-from .formats import graphics_ext_candidates
-from .graphics_bindings import _BINDING_LINE_RE, _parse_graphics_binding_line, _parse_graphics_binding_match
+from .formats import ALL_GRAPHICS_EXTENSIONS, companion_extensions_for_code
+from .graphics_bindings import (
+    BINDING_LINE_RE,
+    parse_graphics_binding_line,
+    parse_graphics_binding_match,
+)
 from .models import (
     GraphicsCompositeRecord,
     GraphicsMessage,
@@ -41,10 +45,10 @@ def resolve_graphics_companion_path(code_path: Path, *, mode: LoadMode) -> Path 
     resolves only to ``.y``; draft code falls back from ``.g`` to ``.y``; a
     ``.g`` / ``.y`` input resolves to itself.
     """
-    if code_path.suffix.lower() in {".g", ".y"}:
+    if code_path.suffix.lower() in ALL_GRAPHICS_EXTENSIONS:
         return code_path
 
-    candidates = (".y",) if code_path.suffix.lower() == ".x" else graphics_ext_candidates(mode)
+    candidates = companion_extensions_for_code(code_path.suffix, mode)
     for extension in candidates:
         candidate = code_path.with_suffix(extension)
         if candidate.exists():
@@ -113,10 +117,10 @@ def _parse_picture_display_row(
 
     binding_payload = payload
     nested_index_token: str | None = None
-    binding_match = _BINDING_LINE_RE.match(binding_payload)
+    binding_match = BINDING_LINE_RE.match(binding_payload)
     if binding_match is None:
         nested_index_token, binding_payload = _split_nested_picture_display_payload(payload)
-        binding_match = _BINDING_LINE_RE.match(binding_payload)
+        binding_match = BINDING_LINE_RE.match(binding_payload)
     if binding_match is not None:
         binding_meta = binding_match.group(2).casefold()
         if binding_meta == "invalid":
@@ -127,7 +131,7 @@ def _parse_picture_display_row(
             return None
         else:
             row_kind = "variable"
-        binding, _binding_messages = _parse_graphics_binding_match(binding_payload, line=line, match=binding_match)
+        binding, _binding_messages = parse_graphics_binding_match(binding_payload, line=line, match=binding_match)
         if binding is None or binding.kind != "var":
             return None
         column = row_text.find(binding.raw_text)
@@ -267,7 +271,7 @@ def parse_graphics_text(text: str) -> GraphicsModel:
     messages: list[GraphicsMessage] = []
     bindings: list[GraphicsBinding] = []
     for line_number, line_text in enumerate(lines, start=1):
-        row_bindings, binding_messages = _parse_graphics_binding_line(line_text, line=line_number)
+        row_bindings, binding_messages = parse_graphics_binding_line(line_text, line=line_number)
         bindings.extend(row_bindings)
         messages.extend(binding_messages)
 

@@ -13,7 +13,7 @@ from functools import cache
 
 from sattline_parser.builtins.records import BUILTIN_RECORD_SPECS
 from sattline_parser.models.ast_model import BasePicture, DataType, Simple_DataType, Variable
-from sattline_parser.validation.names import fold_identifier
+from sattline_parser.names import fold_identifier
 
 
 @dataclass(frozen=True, slots=True)

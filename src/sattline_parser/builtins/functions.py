@@ -13,7 +13,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Final, Literal, cast
 
-from sattline_parser.validation.names import fold_identifier
+from sattline_parser.names import fold_identifier
 
 BuiltinKind = Literal["function", "procedure"]
 BuiltinDirection = Literal["in", "in var", "out", "inout"]

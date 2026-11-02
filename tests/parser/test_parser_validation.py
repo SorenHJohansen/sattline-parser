@@ -1406,8 +1406,105 @@ def test_system_datatype_declarations_resolve_to_declared_fields():
     assert group_object is not None and group_object.datatype is Simple_DataType.STRING
 
 
+def test_frame_modules_inherit_the_enclosing_scope():
+    """A frame module is display-only: it adds no scope of its own.
+
+    Parameters and locals declared by the enclosing module stay visible inside
+    a frame module and inside frames nested further down.
+    """
+    source = (
+        '"Syntax version 2.23, date: 2026-11-02-12:00:00.000 N"\n'
+        '"Original file date: ---"\n'
+        '"Program date: 2026-11-02-12:00:00.000, name: FrameScope"\n'
+        "BasePicture Invocation\n"
+        "   ( 0.0 , 0.0 , 0.0 , 1.0 , 1.0\n"
+        "    ) : MODULEDEFINITION DateCode_ 1\n"
+        "\n"
+        "MODULEPARAMETERS\n"
+        "   ParentParam: boolean := False;\n"
+        "\n"
+        "LOCALVARIABLES\n"
+        "   ParentFlag: boolean := False;\n"
+        "\n"
+        "SUBMODULES\n"
+        "   F1 Invocation\n"
+        "      ( 0.0 , 0.0 , 0.0 , 1.0 , 1.0\n"
+        "       ) : MODULEDEFINITION DateCode_ 3 ( Frame_Module )\n"
+        "      SUBMODULES\n"
+        "         F2 Invocation\n"
+        "            ( 0.0 , 0.0 , 0.0 , 0.5 , 0.5\n"
+        "             ) : MODULEDEFINITION DateCode_ 4 ( Frame_Module )\n"
+        "            ModuleDef\n"
+        "            ClippingBounds = ( -1.0 , -1.0 ) ( 1.0 , 1.0 )\n"
+        "            ModuleCode\n"
+        "               EQUATIONBLOCK Frame2 COORD 0.0,0.0 OBJSIZE 1.0,1.0 :\n"
+        "                  ParentFlag = ParentParam;\n"
+        "            ENDDEF (*F2*);\n"
+        "      ModuleDef\n"
+        "      ClippingBounds = ( -1.0 , -1.0 ) ( 1.0 , 1.0 )\n"
+        "      ModuleCode\n"
+        "         EQUATIONBLOCK Frame1 COORD 0.0,0.0 OBJSIZE 1.0,1.0 :\n"
+        "            ParentFlag = ParentParam;\n"
+        "      ENDDEF (*F1*);\n"
+        "\n"
+        "ModuleDef\n"
+        "ClippingBounds = ( -1.0 , -1.0 ) ( 1.0 , 1.0 )\n"
+        "ModuleCode\n"
+        "   EQUATIONBLOCK Main COORD 0.0,0.0 OBJSIZE 1.0,1.0 :\n"
+        "      ParentFlag = ParentParam;\n"
+        "\nENDDEF (*BasePicture*);\n"
+    )
+    picture, diagnostics = parse_and_validate(source)
+    assert [(diagnostic.code.value, diagnostic.message) for diagnostic in diagnostics] == []
+    assert [parameter.name for parameter in picture.moduleparameters] == ["ParentParam"]
+    assert isinstance(picture.submodules[0], FrameModule)
+
+
+def test_sfc_element_names_resolve_across_module_bounds():
+    """A dotted SFC accessor may name an element from another module block.
+
+    Shipped library code assigns ``Seq.Reset`` from an equation block while the
+    sequence lives in a nested module, so the element set is program-wide.
+    """
+    header = (
+        '"Syntax version 2.23, date: 2026-11-02-12:00:00.000 N"\n'
+        '"Original file date: ---"\n'
+        '"Program date: 2026-11-02-12:00:00.000, name: SfcScope"\n'
+    )
+    typedefs = (
+        "TYPEDEFINITIONS\n"
+        "   Inner = MODULEDEFINITION DateCode_ 2\n"
+        "      ModuleDef\n"
+        "      ClippingBounds = ( -1.0 , -1.0 ) ( 1.0 , 1.0 )\n"
+        "      ModuleCode\n"
+        "         SEQUENCE InnerSeq ( SeqControl ) COORD 0.0,0.0 OBJSIZE 1.0,1.0\n"
+        "            SEQSTEP InnerStep\n"
+        "            SEQTRANSITION TrDone WAIT_FOR True\n"
+        "         ENDSEQUENCE\n"
+        "      ENDDEF (*Inner*);\n"
+        "\n"
+    )
+    picture = "BasePicture Invocation\n   ( 0.0 , 0.0 , 0.0 , 1.0 , 1.0\n    ) : MODULEDEFINITION DateCode_ 1\n\n"
+    locals_block = "LOCALVARIABLES\n   Flag: boolean := False;\n\n"
+    body = (
+        "ModuleDef\n"
+        "ClippingBounds = ( -1.0 , -1.0 ) ( 1.0 , 1.0 )\n"
+        "ModuleCode\n"
+        "   EQUATIONBLOCK Main COORD 0.0,0.0 OBJSIZE 1.0,1.0 :\n"
+        "      Flag = InnerStep.x;\n"
+        "      InnerSeq.Reset = False;\n"
+        "      Unknown.x = False;\n"
+        "\nENDDEF (*BasePicture*);\n"
+    )
+    diagnostics = parse_and_validate(header + picture + typedefs + locals_block + body)[1]
+    codes = [diagnostic.code.value for diagnostic in diagnostics]
+    # The nested element resolves; a genuinely unknown root still reports.
+    assert codes == ["SL-V019"]
+    assert "Unknown" in diagnostics[0].message
+
+
 def test_identifier_folding_uses_the_cp1252_byte_table():
-    from sattline_parser.validation.names import fold_identifier, identifiers_equal  # noqa: PLC0415
+    from sattline_parser.names import fold_identifier, identifiers_equal  # noqa: PLC0415
 
     # ASCII folds to upper case
     assert fold_identifier("count") == "COUNT"

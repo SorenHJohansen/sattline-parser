@@ -19,6 +19,13 @@ from ._cli_support import (
 )
 
 
+def test_unknown_fail_on_value_is_a_usage_error(tmp_path, capsys) -> None:
+    source = write_source(tmp_path, "M.s", VALID_SOURCE)
+
+    assert main(["check", str(source), "--fail-on", "sometimes"]) == ExitCode.USAGE
+    assert "expected one of" in capsys.readouterr().err
+
+
 def test_clean_source_prints_nothing_and_succeeds(tmp_path, capsys) -> None:
     source = write_source(tmp_path, "Clean.s", VALID_SOURCE)
 

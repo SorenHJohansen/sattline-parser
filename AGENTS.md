@@ -12,7 +12,9 @@
 
 | Path | Role |
 | --- | --- |
-| `src/sattline_parser/api.py` | Public entry points: `create_parser`, `parse_source_text/file`, `describe_parse_error`, decoding helpers |
+| `src/sattline_parser/api.py` | Public façade: re-exports the parse pipeline (`source_io`) and the graphics entry points |
+| `src/sattline_parser/source_io.py` | Parser cache, source decoding, and the source→`BasePicture` pipeline |
+| `src/sattline_parser/names.py` | Identifier identity: the CP1252 fold table used by every layer |
 | `src/sattline_parser/grammar/` | Lark grammar (`sattline.lark`), `constants.py`, `sattline_lexer.py` |
 | `src/sattline_parser/models/` | AST models (`ast_model.py`) |
 | `src/sattline_parser/transformer/` | Transformer mixins and `SLTransformer` |

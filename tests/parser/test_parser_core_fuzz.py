@@ -15,7 +15,7 @@ def test_fuzz_harness_timeout_and_default_input_description(monkeypatch: pytest.
 
     assert result.input_desc == "text(3 chars)"
     assert result.success is False
-    assert isinstance(result.error, parser_fuzz_harness.TimeoutError)
+    assert isinstance(result.error, parser_fuzz_harness.FuzzTimeoutError)
     assert "timed out" in str(result.error)
     assert result.duration_ms >= 0.0
 

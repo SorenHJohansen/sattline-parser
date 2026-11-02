@@ -25,7 +25,12 @@ from sattline_parser.models.ast_model import (
     SingleModule,
     Variable,
 )
-from sattline_parser.validation.code import check_coordinate_tail_types, walk_module_code
+from sattline_parser.names import fold_identifier
+from sattline_parser.validation.code import (
+    check_coordinate_tail_types,
+    collect_program_sfc_names,
+    walk_module_code,
+)
 from sattline_parser.validation.declarations import (
     check_identifiers,
     check_record_fields,
@@ -34,7 +39,6 @@ from sattline_parser.validation.declarations import (
     check_variable_declarations,
 )
 from sattline_parser.validation.diagnostics import Diagnostic, DiagnosticCode
-from sattline_parser.validation.names import fold_identifier
 from sattline_parser.validation.parameter_mappings import check_parameter_mappings
 from sattline_parser.validation.symbols import Scope, build_scope
 from sattline_parser.validation.transfers import check_moduletype_transfers
@@ -63,6 +67,7 @@ class _ValidationContext:
     moduletypes: dict[str, ModuleTypeDef]
     type_graph: TypeGraph
     allow_unresolved_external_datatypes: bool
+    sfc_names: frozenset[str]
 
 
 def validate_basepicture(
@@ -92,13 +97,14 @@ def validate_basepicture(
         moduletypes={fold_identifier(moduletype.name): moduletype for moduletype in available_moduletypes},
         type_graph=TypeGraph.from_datatypes(available_datatypes),
         allow_unresolved_external_datatypes=allow_unresolved_external_datatypes,
+        sfc_names=collect_program_sfc_names(bp),
     )
 
     check_reserved_name_declarations(bp, errors)
     check_identifiers(bp, errors)
-    base_scope = build_scope(None, bp.localvariables)
+    base_scope = build_scope(None, [*bp.moduleparameters, *bp.localvariables])
     check_variable_declarations(
-        bp.localvariables,
+        [*bp.moduleparameters, *bp.localvariables],
         context.records,
         errors,
         allow_unresolved_external_datatypes=allow_unresolved_external_datatypes,
@@ -114,7 +120,14 @@ def validate_basepicture(
         check_coordinate_tail_types(module_def, base_scope, context.records, context.type_graph, errors)
 
     for code in bp.modulecodes:
-        walk_module_code(code, base_scope, context.records, context.type_graph, errors)
+        walk_module_code(
+            code,
+            base_scope,
+            context.records,
+            context.type_graph,
+            errors,
+            program_sfc_names=context.sfc_names,
+        )
     for child in bp.submodules:
         _walk_submodule(child, base_scope, context, errors)
     for moduletype in bp.moduletype_defs:
@@ -166,7 +179,14 @@ def _walk_moduletype_def(
     )
     check_sibling_submodules(moduletype.submodules, errors)
     for code in moduletype.modulecodes:
-        walk_module_code(code, scope, context.records, context.type_graph, errors)
+        walk_module_code(
+            code,
+            scope,
+            context.records,
+            context.type_graph,
+            errors,
+            program_sfc_names=context.sfc_names,
+        )
     for child in moduletype.submodules:
         _walk_submodule(child, scope, context, errors)
 
@@ -176,15 +196,11 @@ def _child_scope(child: SingleModule | FrameModule, parent: Scope) -> Scope:
 
 
 def _module_parameters(child: SingleModule | FrameModule) -> list[Variable]:
-    if isinstance(child, SingleModule):
-        return child.moduleparameters
-    return []
+    return child.moduleparameters
 
 
 def _local_variables(child: SingleModule | FrameModule) -> list[Variable]:
-    if isinstance(child, SingleModule):
-        return child.localvariables
-    return []
+    return child.localvariables
 
 
 def _walk_definition(
@@ -205,6 +221,13 @@ def _walk_definition(
     for module_def in child.moduledefs:
         check_coordinate_tail_types(module_def, scope, context.records, context.type_graph, errors)
     for code in child.modulecodes:
-        walk_module_code(code, scope, context.records, context.type_graph, errors)
+        walk_module_code(
+            code,
+            scope,
+            context.records,
+            context.type_graph,
+            errors,
+            program_sfc_names=context.sfc_names,
+        )
     for sub in child.submodules:
         _walk_submodule(sub, scope, context, errors)

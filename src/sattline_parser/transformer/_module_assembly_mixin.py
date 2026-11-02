@@ -27,6 +27,7 @@ from sattline_parser.models.ast_model import (
 from ._module_shared import (
     GroupConnInfo,
     ModuleInvocation,
+    PrivateMarker,
     TransformerItem,
     TransformerTree,
     flatten_items,
@@ -72,9 +73,9 @@ def _scan_variable_modifiers(items: list[TransformerItem], idx: int) -> tuple[di
 class ModuleAssemblyMixin:
     """Mixin providing module body normalization and AST assembly methods."""
 
-    def PRIVATE_KW(self, _: object) -> dict[str, bool]:  # noqa: N802
-        """Grammar PRIVATE_KW terminal -> dict marker."""
-        return {"is_private": True}
+    def PRIVATE_KW(self, _: object) -> PrivateMarker:  # noqa: N802
+        """Grammar PRIVATE_KW terminal -> private marker."""
+        return PrivateMarker()
 
     def module_body(self, items: list[TransformerItem]) -> TransformerTree:
         """Grammar module_body -> Tree (keep structure for collectors)."""
@@ -96,6 +97,7 @@ class ModuleAssemblyMixin:
         datatype_defs: list[DataType] = []
         moduletype_defs: list[ModuleTypeDef] = []
         localvariables: list[Variable] = []
+        moduleparameters: list[Variable] = []
         submodules: list[ModuleInvocation] = []
         moduledefs: list[ModuleDef] = []
         modulecodes: list[ModuleCode] = []
@@ -124,6 +126,8 @@ class ModuleAssemblyMixin:
                     datatype_defs.extend([x for x in tree_children(tree) if isinstance(x, DataType)])
                 elif tree.data == const.TREE_TAG_MODULETYPE_LIST:
                     moduletype_defs.extend([x for x in tree_children(tree) if isinstance(x, ModuleTypeDef)])
+                elif tree.data == const.GRAMMAR_VALUE_MODULEPARAMETERS:
+                    moduleparameters.extend([x for x in tree_children(tree) if isinstance(x, Variable)])
                 elif tree.data == const.GRAMMAR_VALUE_LOCALVARIABLES:
                     localvariables.extend([x for x in tree_children(tree) if isinstance(x, Variable)])
                 elif tree.data == const.TREE_TAG_SUBMODULES:
@@ -139,6 +143,7 @@ class ModuleAssemblyMixin:
             position=header.invoke_coord,
             datatype_defs=datatype_defs,
             moduletype_defs=moduletype_defs,
+            moduleparameters=moduleparameters,
             localvariables=localvariables,
             submodules=submodules,
             moduledef=moduledefs[-1] if moduledefs else None,
@@ -199,6 +204,8 @@ class ModuleAssemblyMixin:
             return FrameModule(
                 header=header,
                 datecode=datecode,
+                moduleparameters=moduleparameters,
+                localvariables=localvariables,
                 submodules=submodules,
                 moduledef=moduledefs[-1] if moduledefs else None,
                 modulecode=modulecodes[-1] if modulecodes else None,
@@ -303,10 +310,8 @@ class ModuleAssemblyMixin:
                 else:
                     description_comments.append(it)
                 continue
-            if isinstance(it, dict):
-                payload = cast(dict[str, object], it)
-                if payload.get("is_private"):
-                    is_private = True
+            if isinstance(it, PrivateMarker):
+                is_private = True
                 continue
             if isinstance(it, str) and name is None:
                 name = it
@@ -331,7 +336,7 @@ class ModuleAssemblyMixin:
                     submodules.extend(submodule_children(tree_children(cast(TransformerTree, it))))
 
         if name is None:
-            raise Exception("Name cannot be none")
+            raise ValueError("module type definition has no name; the source cannot be transformed")
 
         moduletype = ModuleTypeDef(
             name=name,

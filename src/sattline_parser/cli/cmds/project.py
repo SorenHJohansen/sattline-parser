@@ -11,6 +11,7 @@ from sattline_parser.project import (
     LoadDiagnosticKind,
     LoadMode,
     LoadValidation,
+    ProjectLoadError,
     SattLineProgram,
     SattLineProject,
     code_ext_candidates,
@@ -20,7 +21,7 @@ from .._errors import CliError
 from .._exit import ExitCode
 from .._findings import Finding
 from .._json import SCHEMA_PREFIX, dumps
-from ._common import add_output_flags, emit_findings
+from ._common import add_fail_on, add_output_flags, emit_findings, fails_on, positive_int
 
 __all__ = ["register", "run"]
 
@@ -48,32 +49,26 @@ def register(subparsers: argparse._SubParsersAction[argparse.ArgumentParser]) ->
     parser.add_argument("--no-cache", action="store_true", help="bypass the parser caches")
     parser.add_argument("--lenient", action="store_true", help="continue past unreadable artifacts")
     parser.add_argument(
-        "--no-validate",
-        action="store_true",
-        help="parse only; skip semantic validation of loaded programs",
+        "--validate",
+        choices=("invoked", "full", "none"),
+        default="invoked",
+        help=(
+            "what to validate: the selected programs plus the module types they invoke "
+            "(default), every loaded program, or nothing"
+        ),
     )
     parser.add_argument(
-        "--fail-on",
-        choices=("none", "error", "warning"),
-        default="error",
-        help="when validation findings make the command exit with a findings code (default: error)",
+        "--no-validate",
+        action="store_true",
+        help="alias for --validate none",
     )
+    add_fail_on(parser)
     parser.add_argument("--graph", action="store_true", help="only print the dependency edges")
     parser.add_argument("--of", metavar="NAME", help="restrict the graph to this program")
     parser.add_argument("--reverse", action="store_true", help="follow dependents instead of dependencies")
-    parser.add_argument("--depth", type=_positive_int, metavar="N", help="limit the graph traversal depth")
+    parser.add_argument("--depth", type=positive_int, metavar="N", help="limit the graph traversal depth")
     parser.add_argument("--cycles", action="store_true", help="only print dependency cycles")
     parser.set_defaults(handler=run)
-
-
-def _positive_int(value: str) -> int:
-    try:
-        number = int(value)
-    except ValueError as exc:
-        raise argparse.ArgumentTypeError(f"expected an integer, got {value!r}") from exc
-    if number < 1:
-        raise argparse.ArgumentTypeError("must be 1 or greater")
-    return number
 
 
 def run(args: argparse.Namespace) -> int:
@@ -81,7 +76,9 @@ def run(args: argparse.Namespace) -> int:
         project = _load(args)
     except CliError:
         raise
-    except Exception as exc:  # noqa: BLE001 - a broken tree is a finding, not a crash
+    except ProjectLoadError as exc:
+        # A tree that cannot be loaded is a finding about the tree. Anything
+        # else is a bug in this tool and must reach main()'s internal-error path.
         finding = Finding(severity="error", message=f"cannot load project: {exc}", rule="PROJECT_LOAD_ERROR")
         emit_findings([finding], args=args, schema="project", extra={"programs": []})
         return int(ExitCode.FINDINGS)
@@ -126,11 +123,11 @@ def _validation_rows(programs: Mapping[str, SattLineProgram]) -> list[dict[str, 
 
 
 def _validation_fails(rows: Sequence[Mapping[str, object]], fail_on: str) -> bool:
-    if fail_on == "none":
-        return False
-    if fail_on == "warning":
-        return bool(rows)
-    return any(row["severity"] == "error" for row in rows)
+    return fails_on(
+        sum(1 for row in rows if row["severity"] == "error"),
+        sum(1 for row in rows if row["severity"] == "warning"),
+        fail_on,
+    )
 
 
 def _load(args: argparse.Namespace) -> SattLineProject:
@@ -138,6 +135,8 @@ def _load(args: argparse.Namespace) -> SattLineProject:
     for root in roots:
         if not root.exists():
             raise CliError(f"cannot read {root}: no such file or directory")
+        if not root.is_dir():
+            raise CliError(f"cannot read {root}: not a directory")
     mode = LoadMode(args.mode)
     targets = (
         tuple(part.strip() for part in args.targets.split(",") if part.strip())
@@ -153,7 +152,7 @@ def _load(args: argparse.Namespace) -> SattLineProject:
         targets=targets,
         strict=not args.lenient,
         cache_dir=None if args.no_cache else (Path(args.cache_dir) if args.cache_dir else None),
-        validate=LoadValidation.NONE if args.no_validate else LoadValidation.FULL,
+        validate=LoadValidation.NONE if args.no_validate else LoadValidation(args.validate),
     )
 
 

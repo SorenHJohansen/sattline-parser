@@ -3,16 +3,15 @@
 from __future__ import annotations
 
 import argparse
-from pathlib import Path
+from collections.abc import Sequence
 
 from sattline_parser.project import GraphicsModel, parse_graphics_text
 
-from .._errors import CliError
 from .._exit import ExitCode
 from .._findings import Finding
 from .._io import read_source
 from .._json import SCHEMA_PREFIX, dumps
-from ._common import add_output_flags, add_source_flags, emit_findings
+from ._common import add_output_flags, add_source_flags, emit_findings, finding_fields, require_companion
 
 __all__ = ["register", "run"]
 
@@ -30,15 +29,12 @@ def register(subparsers: argparse._SubParsersAction[argparse.ArgumentParser]) ->
 def run(args: argparse.Namespace) -> int:
     model, name = _load_model(args)
     findings = _findings(model, name=name)
-    _emit_document(model, args=args, name=name)
-    if findings:
-        emit_findings(findings, args=args, schema="graphics", extra={"file": name})
+    _emit_document(model, args=args, name=name, findings=findings)
     return int(ExitCode.FINDINGS if any(finding.is_error for finding in findings) else ExitCode.OK)
 
 
 def _load_model(args: argparse.Namespace) -> tuple[GraphicsModel, str]:
-    if args.path != "-" and Path(args.path).suffix.lower() not in {".g", ".y"}:
-        raise CliError(f"{args.path} is not a graphics companion (.g/.y)")
+    require_companion(args.path)
     source = read_source(args.path, name=args.stdin_name or "<stdin>")
     return parse_graphics_text(source.text), source.name
 
@@ -81,7 +77,18 @@ def _message_rows(model: GraphicsModel) -> list[dict[str, object]]:
     ]
 
 
-def _emit_document(model: GraphicsModel, *, args: argparse.Namespace, name: str) -> None:
+def _emit_document(
+    model: GraphicsModel,
+    *,
+    args: argparse.Namespace,
+    name: str,
+    findings: Sequence[Finding],
+) -> None:
+    """Write the model and its findings as exactly one document.
+
+    ``--json``/``--jsonl`` must stay parseable: findings ride inside the same
+    object as the bindings instead of being printed as a second document.
+    """
     rows = _binding_rows(model)
     messages = _message_rows(model)
     if args.json or args.jsonl:
@@ -90,9 +97,11 @@ def _emit_document(model: GraphicsModel, *, args: argparse.Namespace, name: str)
             "file": name,
             "bindings": rows,
             "messages": messages,
+            **finding_fields(findings, args=args),
         }
         print(dumps(payload, compact=bool(args.jsonl)))
         return
     print(f"bindings: {len(rows)}")
     for row in rows:
         print(f"  {row['line']}:{row['column']} [{row['kind']}] {row['text']}")
+    emit_findings(findings, args=args, schema="graphics", extra={"file": name})

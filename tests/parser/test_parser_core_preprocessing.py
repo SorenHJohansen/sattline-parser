@@ -33,6 +33,22 @@ def test_is_compressed_still_detects_structural_markers_when_strings_contain_mar
     assert is_compressed(src) is True
 
 
+def test_is_compressed_uses_the_weak_marker_rule_without_structure_keywords():
+    # Ten markers, far below the 2% character share, and no structural keyword:
+    # the weak rule is what decides.
+    src = " ".join(["#01"] * 10) + " " + "x" * 3000
+
+    assert is_compressed(src) is True
+
+
+def test_is_compressed_keeps_prose_with_a_structure_keyword_plain():
+    # The same marker density, but the body names MODULEDEFINITION, so the weak
+    # rule must not fire.
+    src = " ".join(["#01"] * 10) + " MODULEDEFINITION Demo " + "x" * 3000
+
+    assert is_compressed(src) is False
+
+
 def test_plain_source_with_marker_like_strings_is_not_preprocessed():
     src = (
         "MODULEDEFINITION Demo\n"

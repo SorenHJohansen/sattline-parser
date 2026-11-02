@@ -17,8 +17,8 @@ from sattline_parser.models.ast_model import (
     ModuleTypeInstance,
     Variable,
 )
+from sattline_parser.names import fold_identifier
 from sattline_parser.validation.diagnostics import Diagnostic, DiagnosticCode
-from sattline_parser.validation.names import fold_identifier
 from sattline_parser.validation.symbols import Scope, resolve_var
 from sattline_parser.validation.typing import builtin_type_matches
 

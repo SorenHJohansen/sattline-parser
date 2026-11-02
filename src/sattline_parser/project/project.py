@@ -50,9 +50,13 @@ class SattLineProject:
         strict: bool = True,
         debug: Callable[[str], None] | None = None,
         cache_dir: Path | None = None,
-        validate: LoadValidation = LoadValidation.FULL,
+        validate: LoadValidation = LoadValidation.INVOKED,
     ) -> SattLineProject:
         """Load a project from ``roots`` plus ``targets``.
+
+        ``validate`` defaults to :attr:`LoadValidation.INVOKED`: each target is
+        validated in full, while a dependency file contributes only the module
+        types the target invokes.
 
         Each target is resolved across the ordered roots, its ``.l`` / ``.z``
         dependency file (when present) is read, and dependencies are loaded

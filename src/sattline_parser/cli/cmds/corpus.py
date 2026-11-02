@@ -9,16 +9,17 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
 
+from ...project.formats import ALL_CODE_EXTENSIONS
 from .._errors import CliError
 from .._exit import ExitCode
 from .._io import read_source_path
 from .._json import SCHEMA_PREFIX, dumps
 from .._validate import Analysis, analyse
-from ._common import add_output_flags
+from ._common import add_fail_on, add_output_flags, fails_on, positive_int
 
 __all__ = ["CorpusRow", "register", "run"]
 
-_SOURCE_SUFFIXES = frozenset({".s", ".x"})
+_SOURCE_SUFFIXES = ALL_CODE_EXTENSIONS
 
 
 @dataclass(frozen=True, slots=True)
@@ -43,25 +44,10 @@ def register(subparsers: argparse._SubParsersAction[argparse.ArgumentParser]) ->
     parser: argparse.ArgumentParser = subparsers.add_parser("corpus", help="parse and validate a whole tree")
     parser.add_argument("root", metavar="ROOT", help="directory to scan for .s/.x sources")
     add_output_flags(parser)
-    parser.add_argument("--jobs", type=_positive_int, default=1, metavar="N", help="files to process at once")
+    parser.add_argument("--jobs", type=positive_int, default=1, metavar="N", help="files to process at once")
     parser.add_argument("--summary", action="store_true", help="only print the histogram")
-    parser.add_argument(
-        "--fail-on",
-        choices=("error", "any", "never"),
-        default="error",
-        help="what makes the exit code 1 (default: error)",
-    )
+    add_fail_on(parser)
     parser.set_defaults(handler=run)
-
-
-def _positive_int(value: str) -> int:
-    try:
-        number = int(value)
-    except ValueError as exc:
-        raise argparse.ArgumentTypeError(f"expected an integer, got {value!r}") from exc
-    if number < 1:
-        raise argparse.ArgumentTypeError("must be 1 or greater")
-    return number
 
 
 def run(args: argparse.Namespace) -> int:
@@ -130,8 +116,9 @@ def _histogram(rows: Iterable[CorpusRow]) -> Counter[str]:
 
 
 def _exit_code(rows: Sequence[CorpusRow], *, fail_on: str) -> ExitCode:
-    if fail_on == "never":
-        return ExitCode.OK
-    if fail_on == "any":
-        return ExitCode.FINDINGS if any(row.errors or row.warnings for row in rows) else ExitCode.OK
-    return ExitCode.FINDINGS if any(row.errors for row in rows) else ExitCode.OK
+    fails = fails_on(
+        sum(row.errors for row in rows),
+        sum(row.warnings for row in rows),
+        fail_on,
+    )
+    return ExitCode.FINDINGS if fails else ExitCode.OK

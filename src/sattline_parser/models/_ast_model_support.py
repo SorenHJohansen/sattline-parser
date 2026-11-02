@@ -193,6 +193,7 @@ def render_base_picture(base_picture: BasePicture) -> str:
         f"Position: {base_picture.position!r}\n\n"
         f"TYPEDEFINITIONS (Records): {format_list(base_picture.datatype_defs)}\n\n"
         f"TYPEDEFINITIONS (Modules): {format_list(base_picture.moduletype_defs)}\n"
+        f"Moduleparameters: {format_list(base_picture.moduleparameters)}\n"
         f"Localvariables: {format_list(base_picture.localvariables)}\n\n"
         f"Submodules: {format_list(base_picture.submodules)}\n\n"
         f"ModuleCode: {base_picture.modulecode}\n\n"

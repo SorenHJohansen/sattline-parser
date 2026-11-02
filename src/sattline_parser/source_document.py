@@ -240,52 +240,40 @@ class SourceDocument:
         return all(value < 0 for value in self._char_map[norm_start:norm_end])
 
 
-def _remap_token(token: Token, doc: SourceDocument) -> None:
-    start_pos = getattr(token, "start_pos", None)
-    end_pos = getattr(token, "end_pos", None)
-    if not isinstance(start_pos, int) or not isinstance(end_pos, int):
-        return
-    mapped_start = doc.map_position(start_pos)
-    mapped_end = doc.map_position(end_pos - 1)
-    if mapped_start is None or mapped_end is None:
-        return
-    token.start_pos = mapped_start
-    token.end_pos = mapped_end + 1
-    line, column = doc.line_col(mapped_start)
-    token.line = line
-    token.column = column
-    end_line, end_column = doc.line_col(token.end_pos)
-    token.end_line = end_line
-    token.end_column = end_column
+def _remap_span(target: Token | Meta, doc: SourceDocument) -> bool:
+    """Rewrite one token/meta span into original coordinates.
 
-
-def _remap_meta(meta: Meta, doc: SourceDocument) -> None:
-    start_pos = getattr(meta, "start_pos", None)
-    end_pos = getattr(meta, "end_pos", None)
+    Returns ``False`` when the node carries no usable span, so the caller can
+    tell "nothing to do" from "remapped".
+    """
+    start_pos = getattr(target, "start_pos", None)
+    end_pos = getattr(target, "end_pos", None)
     if not isinstance(start_pos, int) or not isinstance(end_pos, int):
-        return
-    mapped_start = doc.map_position(start_pos)
-    mapped_end = doc.map_position(end_pos - 1)
-    if mapped_start is None or mapped_end is None:
-        return
-    meta.start_pos = mapped_start
-    meta.end_pos = mapped_end + 1
+        return False
+    # ``map_range`` never refuses a range; a node whose ends do not lie in the
+    # normalized text keeps its recorded span rather than being nudged to 0.
+    if doc.map_position(start_pos) is None or doc.map_position(end_pos - 1) is None:
+        return False
+    mapped_start, mapped_end = doc.map_range(start_pos, end_pos)
+    target.start_pos = mapped_start
+    target.end_pos = mapped_end
     line, column = doc.line_col(mapped_start)
-    meta.line = line
-    meta.column = column
-    end_line, end_column = doc.line_col(meta.end_pos)
-    meta.end_line = end_line
-    meta.end_column = end_column
+    target.line = line
+    target.column = column
+    end_line, end_column = doc.line_col(mapped_end)
+    target.end_line = end_line
+    target.end_column = end_column
+    return True
 
 
 def _walk(node: Token | Tree[Token], doc: SourceDocument) -> None:
     if isinstance(node, Tree):
         tree_node = node
-        _remap_meta(tree_node.meta, doc)
+        _remap_span(tree_node.meta, doc)
         for child in tree_node.children:
             _walk(child, doc)
     else:
-        _remap_token(node, doc)
+        _remap_span(node, doc)
 
 
 def remap_tree_to_original(tree: Tree[Token], doc: SourceDocument) -> None:
@@ -308,6 +296,10 @@ def remap_parse_error(exc: Exception, doc: SourceDocument) -> None:
     """
     if not isinstance(exc, UnexpectedInput):
         return
+    if getattr(exc, "_sattline_remapped", False):
+        # Already in original coordinates; remapping again would shift twice.
+        return
+    remapped = False
     pos = getattr(exc, "pos_in_stream", None)
     mapped: int | None = None
     if isinstance(pos, int):
@@ -317,25 +309,14 @@ def remap_parse_error(exc: Exception, doc: SourceDocument) -> None:
             exc.pos_in_stream = mapped  # type: ignore[assignment]  # runtime-only attribute
             exc.line = line
             exc.column = column
+            remapped = True
     if isinstance(exc, UnexpectedCharacters) and mapped is not None and 0 <= mapped < len(doc.original_text):
         exc.char = doc.original_text[mapped]
         exc._context = exc.get_context(doc.original_text)  # pyright: ignore[reportPrivateUsage]
     token = getattr(exc, "token", None)
-    if isinstance(token, Token):
-        token_start = getattr(token, "start_pos", None)
-        token_end = getattr(token, "end_pos", None)
-        if (
-            isinstance(token_start, int)
-            and isinstance(token_end, int)
-            and (mapped_start := doc.map_position(token_start)) is not None
-            and (mapped_end := doc.map_position(token_end - 1)) is not None
-        ):
-            token.start_pos = mapped_start
-            token.end_pos = mapped_end + 1
-            line, column = doc.line_col(mapped_start)
-            token.line = line
-            token.column = column
-            end_line, end_column = doc.line_col(token.end_pos)
-            token.end_line = end_line
-            token.end_column = end_column
-    exc._sattline_remapped = True  # type: ignore[attr-defined]  # runtime tag consumed by diagnostics
+    if isinstance(token, Token) and _remap_span(token, doc):
+        remapped = True
+    if remapped:
+        # Only claim original coordinates when something was actually rewritten;
+        # diagnostics fall back to translating the normalized offset otherwise.
+        exc._sattline_remapped = True  # type: ignore[attr-defined]  # runtime tag consumed by diagnostics

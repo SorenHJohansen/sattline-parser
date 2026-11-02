@@ -92,9 +92,9 @@ def test_unwrap_expression_root() -> None:
 
 
 def test_parse_graphics_binding_match_var() -> None:
-    match = bindings._BINDING_LINE_RE.search(" Var  True  5 HVar tail")
+    match = bindings.BINDING_LINE_RE.search(" Var  True  5 HVar tail")
     assert match is not None
-    binding, messages = bindings._parse_graphics_binding_match(match.string, line=7, match=match)
+    binding, messages = bindings.parse_graphics_binding_match(match.string, line=7, match=match)
     assert messages == ()
     assert binding is not None
     assert binding.kind == "var"
@@ -103,9 +103,9 @@ def test_parse_graphics_binding_match_var() -> None:
 
 
 def test_parse_graphics_binding_match_lit() -> None:
-    match = bindings._BINDING_LINE_RE.search("  Lit  True  4 True ")
+    match = bindings.BINDING_LINE_RE.search("  Lit  True  4 True ")
     assert match is not None
-    binding, _ = bindings._parse_graphics_binding_match(match.string, line=2, match=match)
+    binding, _ = bindings.parse_graphics_binding_match(match.string, line=2, match=match)
     assert binding is not None
     assert binding.kind == "lit"
     assert binding.value is True
@@ -113,9 +113,9 @@ def test_parse_graphics_binding_match_lit() -> None:
 
 def test_parse_graphics_binding_match_expr_success() -> None:
     text = "  Expr  True  15 not ZoomableVar"
-    match = bindings._BINDING_LINE_RE.search(text)
+    match = bindings.BINDING_LINE_RE.search(text)
     assert match is not None
-    binding, messages = bindings._parse_graphics_binding_match(text, line=5, match=match)
+    binding, messages = bindings.parse_graphics_binding_match(text, line=5, match=match)
     assert messages == ()
     assert binding is not None
     assert binding.kind == "expr"
@@ -127,9 +127,9 @@ def test_parse_graphics_binding_match_expr_success() -> None:
 
 def test_parse_graphics_binding_match_expr_failure_warns() -> None:
     text = "  Expr  True  3 ((("
-    match = bindings._BINDING_LINE_RE.search(text)
+    match = bindings.BINDING_LINE_RE.search(text)
     assert match is not None
-    binding, messages = bindings._parse_graphics_binding_match(text, line=9, match=match)
+    binding, messages = bindings.parse_graphics_binding_match(text, line=9, match=match)
     assert binding is not None
     assert binding.kind == "expr"
     assert binding.value == "((("
@@ -140,27 +140,27 @@ def test_parse_graphics_binding_match_expr_failure_warns() -> None:
 
 
 def test_parse_graphics_binding_match_negative_length() -> None:
-    match = bindings._BINDING_LINE_RE.search("  Expr  True  -1  x")
+    match = bindings.BINDING_LINE_RE.search("  Expr  True  -1  x")
     assert match is not None
-    assert bindings._parse_graphics_binding_match(match.string, line=1, match=match) == (None, ())
+    assert bindings.parse_graphics_binding_match(match.string, line=1, match=match) == (None, ())
 
 
 def test_parse_graphics_binding_match_length_overflow_and_empty() -> None:
-    overflow_match = bindings._BINDING_LINE_RE.search("  Var  True  99 x")
+    overflow_match = bindings.BINDING_LINE_RE.search("  Var  True  99 x")
     assert overflow_match is not None
-    binding, messages = bindings._parse_graphics_binding_match(overflow_match.string, line=1, match=overflow_match)
+    binding, messages = bindings.parse_graphics_binding_match(overflow_match.string, line=1, match=overflow_match)
     assert messages == ()
     assert binding is not None
     assert binding.raw_text == "x"
 
-    empty_match = bindings._BINDING_LINE_RE.search("  Lit  True  0  ")
+    empty_match = bindings.BINDING_LINE_RE.search("  Lit  True  0  ")
     assert empty_match is not None
-    assert bindings._parse_graphics_binding_match(empty_match.string, line=1, match=empty_match) == (None, ())
+    assert bindings.parse_graphics_binding_match(empty_match.string, line=1, match=empty_match) == (None, ())
 
 
 def test_parse_graphics_binding_line_multiple_bindings() -> None:
     text = " Var 0 12 OprPathIndex  Lit 0 2 -1     2"
-    bindings_, messages = bindings._parse_graphics_binding_line(text, line=8)
+    bindings_, messages = bindings.parse_graphics_binding_line(text, line=8)
     assert messages == ()
     assert [(b.kind, b.raw_text) for b in bindings_] == [("var", "OprPathIndex"), ("lit", "-1")]
 

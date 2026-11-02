@@ -3,7 +3,9 @@
 
 from __future__ import annotations
 
+import io
 import json
+import sys
 
 from sattline_parser.cli import main
 from sattline_parser.cli._exit import ExitCode
@@ -52,3 +54,12 @@ def test_non_companion_and_missing_files_are_refused(tmp_path, capsys) -> None:
 
     assert main(["graphics", str(tmp_path / "Absent.y")]) == ExitCode.USAGE
     assert "cannot read" in capsys.readouterr().err
+
+
+def test_stdin_is_accepted_as_a_companion() -> None:
+    original = sys.stdin
+    sys.stdin = type("_Stdin", (), {"buffer": io.BytesIO(_COMPANION.encode("cp1252"))})()  # type: ignore[assignment]
+    try:
+        assert main(["graphics", "-", "--stdin-name", "Companion.y"]) == ExitCode.OK
+    finally:
+        sys.stdin = original

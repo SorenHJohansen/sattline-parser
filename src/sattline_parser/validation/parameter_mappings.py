@@ -12,8 +12,8 @@ mappings that are present are checked.
 from __future__ import annotations
 
 from sattline_parser.models.ast_model import ParameterMapping, Simple_DataType, Variable
+from sattline_parser.names import fold_identifier
 from sattline_parser.validation.diagnostics import Diagnostic, DiagnosticCode
-from sattline_parser.validation.names import fold_identifier
 from sattline_parser.validation.symbols import Scope
 from sattline_parser.validation.type_graph import TypeGraph
 from sattline_parser.validation.typing import (

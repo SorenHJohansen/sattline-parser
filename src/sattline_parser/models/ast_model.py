@@ -8,6 +8,7 @@ from enum import Enum
 from typing import Any, Literal
 
 from ..grammar import constants as const
+from ..names import fold_identifier
 from ._ast_model_support import (
     InitValue,
     PropertyMap,
@@ -193,8 +194,13 @@ class Simple_DataType(Enum):
             return value
         if not isinstance(value, str):
             raise TypeError("Expected Simple_DataType or str")
-        # Accept any-case string for built-ins; will raise ValueError if not valid.
-        return cls(value.lower())
+        # Identifiers fold through the same CP1252 table as every other name in
+        # the language, so ``INTEGER``/``Integer``/``integer`` are one datatype.
+        folded = fold_identifier(value)
+        for member in cls:
+            if fold_identifier(member.value) == folded:
+                return member
+        raise ValueError(f"{value!r} is not a built-in datatype")
 
 
 @dataclass
@@ -443,6 +449,8 @@ class SingleModule:
 class FrameModule:
     header: ModuleHeader
     datecode: int | None = None
+    moduleparameters: list[Variable] = field(default_factory=variable_list)
+    localvariables: list[Variable] = field(default_factory=variable_list)
     submodules: list[SingleModule | FrameModule | ModuleTypeInstance] = field(default_factory=submodule_list)
     moduledef: ModuleDef | None = None
     modulecode: ModuleCode | None = None
@@ -497,6 +505,7 @@ class BasePicture:
     position: tuple[float, float, float, float, float] | None = None
     datatype_defs: list[DataType] = field(default_factory=datatype_def_list)
     moduletype_defs: list[ModuleTypeDef] = field(default_factory=moduletype_def_list)
+    moduleparameters: list[Variable] = field(default_factory=variable_list)
     localvariables: list[Variable] = field(default_factory=variable_list)
     submodules: list[SingleModule | FrameModule | ModuleTypeInstance] = field(default_factory=submodule_list)
     moduledef: ModuleDef | None = None
