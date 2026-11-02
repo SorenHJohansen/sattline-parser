@@ -118,8 +118,13 @@ class FuzzResult:
         self.duration_ms = duration_ms
 
 
-class TimeoutError(Exception):
-    pass
+class FuzzTimeoutError(Exception):
+    """Raised when a worker exceeds its parse budget.
+
+    Named rather than shadowing the builtin ``TimeoutError``: callers may
+    reasonably want ``except TimeoutError`` for socket or queue timeouts while
+    handling fuzz results separately.
+    """
 
 
 def _drain_worker_results(stream: t.IO[bytes], results_queue: queue.Queue[dict[str, object]]) -> None:
@@ -191,7 +196,7 @@ class _FuzzWorker:
             self._restart()
             return {
                 "ok": False,
-                "error_class": f"{__name__}.TimeoutError",
+                "error_class": f"{__name__}.FuzzTimeoutError",
                 "error_message": f"Parse timed out after {timeout}s",
                 "duration_ms": timeout * 1000,
             }
@@ -474,7 +479,7 @@ def assert_no_crashes(results: list[FuzzResult]) -> None:
 
 
 def assert_no_timeouts(results: list[FuzzResult]) -> None:
-    timeouts = [r for r in results if isinstance(r.error, TimeoutError)]
+    timeouts = [r for r in results if isinstance(r.error, FuzzTimeoutError)]
     if timeouts:
         messages = "\n".join(f"  - {r.input_desc}: {r.duration_ms:.1f}ms" for r in timeouts[:5])
         raise AssertionError(f"{len(timeouts)} timeout(s) detected:\n{messages}")

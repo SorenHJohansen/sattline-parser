@@ -15,7 +15,7 @@ from .._exit import ExitCode
 from .._findings import finding_from_parse_error
 from .._io import read_source
 from .._json import SCHEMA_PREFIX, dumps
-from ._common import add_output_flags, add_source_flags, emit_findings, reject_companion
+from ._common import add_output_flags, add_source_flags, emit_findings, positive_int, reject_companion
 
 __all__ = ["KINDS", "register", "run"]
 
@@ -40,18 +40,8 @@ def register(subparsers: argparse._SubParsersAction[argparse.ArgumentParser]) ->
         metavar="PATH",
         help="only rows in this module path, e.g. 'StartMaster/Changelog'",
     )
-    parser.add_argument("--limit", type=_positive_int, metavar="N", help="stop after N rows")
+    parser.add_argument("--limit", type=positive_int, metavar="N", help="stop after N rows")
     parser.set_defaults(handler=run)
-
-
-def _positive_int(value: str) -> int:
-    try:
-        number = int(value)
-    except ValueError as exc:
-        raise argparse.ArgumentTypeError(f"expected an integer, got {value!r}") from exc
-    if number < 1:
-        raise argparse.ArgumentTypeError("must be 1 or greater")
-    return number
 
 
 def run(args: argparse.Namespace) -> int:

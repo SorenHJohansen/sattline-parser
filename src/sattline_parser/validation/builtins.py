@@ -22,7 +22,7 @@ from sattline_parser.builtins.functions import (
     get_function_signature,
 )
 from sattline_parser.models.ast_model import Simple_DataType
-from sattline_parser.validation.names import fold_identifier
+from sattline_parser.names import fold_identifier
 from sattline_parser.validation.typing import suggest_datatype_name
 
 #: Canonical (casefolded) names of all primitive datatypes. ``Variable`` normalises

@@ -3,17 +3,18 @@
 from __future__ import annotations
 
 import argparse
-from collections.abc import Sequence
 
 from .._exit import ExitCode
 from .._findings import Finding
 from .._io import read_source
 from .._validate import analyse
 from ._common import (
+    add_fail_on,
     add_finding_filters,
     add_output_flags,
     add_source_flags,
     emit_findings,
+    fails_on,
     reject_companion,
     selected_findings,
 )
@@ -27,12 +28,7 @@ def register(subparsers: argparse._SubParsersAction[argparse.ArgumentParser]) ->
     add_source_flags(parser)
     add_output_flags(parser)
     add_finding_filters(parser)
-    parser.add_argument(
-        "--fail-on",
-        choices=("error", "any", "never"),
-        default="error",
-        help="which reported findings make the exit code 1 (default: error)",
-    )
+    add_fail_on(parser)
     parser.set_defaults(handler=run)
 
 
@@ -50,12 +46,12 @@ def run(args: argparse.Namespace) -> int:
         schema="check",
         extra={"files": list(args.paths)},
     )
-    return int(_exit_code(reported, fail_on=args.fail_on))
-
-
-def _exit_code(findings: Sequence[Finding], *, fail_on: str) -> ExitCode:
-    if fail_on == "never":
-        return ExitCode.OK
-    if fail_on == "any":
-        return ExitCode.FINDINGS if findings else ExitCode.OK
-    return ExitCode.FINDINGS if any(finding.is_error for finding in findings) else ExitCode.OK
+    return int(
+        ExitCode.FINDINGS
+        if fails_on(
+            sum(1 for finding in reported if finding.is_error),
+            sum(1 for finding in reported if finding.severity == "warning"),
+            args.fail_on,
+        )
+        else ExitCode.OK
+    )

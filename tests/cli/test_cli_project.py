@@ -72,6 +72,11 @@ def test_missing_root_and_empty_tree_are_usage_errors(tmp_path, capsys) -> None:
     assert main(["project", str(tmp_path / "Absent")]) == ExitCode.USAGE
     assert "cannot read" in capsys.readouterr().err
 
+    not_a_directory = tmp_path / "File.txt"
+    not_a_directory.write_text("x")
+    assert main(["project", str(not_a_directory)]) == ExitCode.USAGE
+    assert "not a directory" in capsys.readouterr().err
+
     assert main(["project", str(tmp_path)]) == ExitCode.USAGE
     assert "no source files directly under" in capsys.readouterr().err
 

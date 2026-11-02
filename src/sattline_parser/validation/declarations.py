@@ -36,9 +36,9 @@ from sattline_parser.models.ast_model import (
     SourceSpan,
     Variable,
 )
+from sattline_parser.names import fold_identifier
 from sattline_parser.validation.builtins import builtin_datatype_typo
 from sattline_parser.validation.diagnostics import Diagnostic, DiagnosticCode
-from sattline_parser.validation.names import fold_identifier
 from sattline_parser.validation.symbols import is_sfc_runtime_constant
 
 Submodule = SingleModule | FrameModule | ModuleTypeInstance
@@ -139,6 +139,7 @@ def check_identifiers(bp: BasePicture, errors: list[Diagnostic]) -> None:
         _check_modulecode_identifiers(moduletype.modulecode, errors)
         for submodule in moduletype.submodules:
             _check_submodule_identifiers(submodule, errors)
+    _check_variable_names(bp.moduleparameters, errors)
     _check_variable_names(bp.localvariables, errors)
     _check_modulecode_identifiers(bp.modulecode, errors)
     for submodule in bp.submodules:
@@ -342,7 +343,7 @@ def check_reserved_name_declarations(bp: BasePicture, errors: list[Diagnostic]) 
         _flag_if_reserved(datatype.name, datatype, "Datatype", errors)
         for variable in datatype.var_list:
             _flag_if_reserved(variable.name, variable, "Variable", errors)
-    for variable in bp.localvariables:
+    for variable in (*bp.moduleparameters, *bp.localvariables):
         _flag_if_reserved(variable.name, variable, "Variable", errors)
     for module in _walk_modules(bp.submodules):
         for variable in (*module.localvariables, *module.moduleparameters):

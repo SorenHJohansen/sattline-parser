@@ -65,7 +65,7 @@ def test_modules_mixin_definition_trees_keep_only_supported_children():
 
     assert [sub.moduletype_name for sub in direct_nested.submodules] == ["LeafType"]
 
-    with pytest.raises(Exception, match="Name cannot be none"):
+    with pytest.raises(ValueError, match="has no name"):
         mixin.moduletype_definition(SimpleNamespace(line=1, column=1), [100])
 
 

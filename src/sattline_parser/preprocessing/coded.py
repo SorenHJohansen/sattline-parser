@@ -36,12 +36,22 @@ _LONE_CR_RE = re.compile(r"\r(?!\n)")
 # The ``(b & 0x7F) ^ key`` decode mask destroys bit 7, so cp1252 curly
 # quotes (0x93/0x94) surface as the control characters DC3/DC4. Those can
 # never occur in legitimate SattLine source, so restoring them is unambiguous.
+# Every other cp1252 character above 0x7F collides with its ASCII counterpart
+# once bit 7 is gone (``å`` 0xE5 with ``e`` 0x65), and nothing in the stream
+# tells the two apart, so only these two can be repaired. A coded stream
+# containing other non-ASCII text decodes lossily by construction of the format.
 _BIT7_REPAIRS = {"\x13": "“", "\x14": "”"}
 
 
 def is_coded(data: bytes) -> bool:
-    """True when *data* starts with the complete coded-stream header (``\\x80 3.1\\r\\n``)."""
-    return data.startswith(_HEADER_LINE)
+    """True when *data* starts with the coded-stream header (``\\x80 3.1``).
+
+    The trailing CRLF is deliberately not required here: a header that lost its
+    terminator is still a coded stream, and
+    :func:`decode_coded_stream` reports that precisely instead of letting the
+    bytes fall through to the plain-text decoder.
+    """
+    return data.startswith(_HEADER)
 
 
 def decode_coded_stream(data: bytes) -> str:

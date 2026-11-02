@@ -17,13 +17,13 @@ from lark.exceptions import UnexpectedCharacters, UnexpectedEOF, UnexpectedInput
 from lark.tree import Meta
 
 from sattline_parser import (
-    api as parser_api,
-)
-from sattline_parser import (
     fuzz_harness as parser_fuzz_harness,
 )
 from sattline_parser import (
     parse_source_text as parser_core_parse_source_text,
+)
+from sattline_parser import (
+    source_io as parser_api,
 )
 from sattline_parser.api import create_sl_parser, parse_source_file
 from sattline_parser.formatting.formatter import format_expr, format_list, format_optional, format_seq_nodes

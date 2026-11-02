@@ -122,7 +122,12 @@ def _walk_unit(picture: m.BasePicture, path: tuple[str, ...]) -> Iterator[QueryR
             module_type.submodules,
         )
     yield from _walk_module(
-        path, picture.localvariables, (), picture.moduledefs, picture.modulecodes, picture.submodules
+        path,
+        picture.localvariables,
+        picture.moduleparameters,
+        picture.moduledefs,
+        picture.modulecodes,
+        picture.submodules,
     )
 
 

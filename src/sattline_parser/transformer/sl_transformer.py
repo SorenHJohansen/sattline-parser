@@ -48,7 +48,7 @@ meta_span = _module_shared.meta_span
 
 def _is_tree(node: object) -> TypeGuard[TransformerTree]:
     """Check if node is a Lark Tree."""
-    return hasattr(node, "data") and hasattr(node, "children")
+    return isinstance(node, Tree)
 
 
 def _iter_tree_children(node: object) -> tuple[TransformerItem, ...]:

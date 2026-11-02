@@ -15,7 +15,14 @@ from .._findings import finding_from_parse_error
 from .._io import read_source
 from .._json import to_jsonable
 from .._validate import summarise
-from ._common import add_output_flags, add_source_flags, emit_findings, emit_payload, reject_companion
+from ._common import (
+    add_output_flags,
+    add_source_flags,
+    emit_findings,
+    emit_payload,
+    positive_int,
+    reject_companion,
+)
 
 __all__ = ["DEFAULT_DEPTH", "register", "run"]
 
@@ -30,23 +37,13 @@ def register(subparsers: argparse._SubParsersAction[argparse.ArgumentParser]) ->
     parser.add_argument("--tree", action="store_true", help="emit the AST as JSON instead of a summary")
     parser.add_argument(
         "--depth",
-        type=_positive_int,
+        type=positive_int,
         default=DEFAULT_DEPTH,
         metavar="N",
         help=f"how deep to serialise with --tree (default: {DEFAULT_DEPTH})",
     )
     parser.add_argument("--compact", action="store_true", help="emit JSON on one line")
     parser.set_defaults(handler=run)
-
-
-def _positive_int(value: str) -> int:
-    try:
-        number = int(value)
-    except ValueError as exc:
-        raise argparse.ArgumentTypeError(f"expected an integer, got {value!r}") from exc
-    if number < 1:
-        raise argparse.ArgumentTypeError("must be 1 or greater")
-    return number
 
 
 def run(args: argparse.Namespace) -> int:

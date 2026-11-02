@@ -14,10 +14,12 @@ from __future__ import annotations
 
 import json
 import re
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from pathlib import Path
+from types import MappingProxyType
 from typing import cast
 
+from sattline_parser.grammar import constants as const
 from sattline_parser.source_document import GENERATED, SourceDocument
 
 __all__ = [
@@ -37,13 +39,17 @@ __all__ = [
 #: keywords and operators only; literal source text is emitted unencoded by the
 #: compressor.
 _TOKEN_DATA_PATH = Path(__file__).with_name("scanner_tokens.json")
-SCANNER_TOKENS: dict[str, str] = {
+_TOKEN_DATA: dict[str, str] = {
     row["code"]: row["text"]
     for row in cast("list[dict[str, str]]", json.loads(_TOKEN_DATA_PATH.read_text(encoding="utf-8")))
 }
 
+#: Read-only view of the token table: decoding must be a pure function, so no
+#: caller may mutate the mapping that every later decode reads.
+SCANNER_TOKENS: Mapping[str, str] = MappingProxyType(_TOKEN_DATA)
+
 #: Historical name for :data:`SCANNER_TOKENS`, kept for API compatibility.
-SEED_MAPPING: dict[str, str] = SCANNER_TOKENS
+SEED_MAPPING: Mapping[str, str] = SCANNER_TOKENS
 
 _MARKER_RE = re.compile(r"#[0-9A-Za-z;:=><?]{1,2}")
 _WHITESPACE_RE = re.compile(r"\s+")
@@ -104,6 +110,34 @@ def _markers_outside_opaque_regions(text: str) -> list[str]:
     return markers
 
 
+#: Thresholds that classify a marker-dense source as compressed. They are
+#: heuristics: a source with this many markers (or this share of marker
+#: characters) is compact-encoded even when it also carries structure words.
+_MARKER_COUNT_STRONG = 50
+_MARKER_CHAR_RATIO = 0.02
+_MARKER_COUNT_WEAK = 10
+
+#: Structural keywords a real source body names at least once.
+_STRUCTURAL_KEYWORDS = (
+    const.GRAMMAR_VALUE_MODULEDEFINITION,
+    const.GRAMMAR_VALUE_TYPEDEFINITIONS,
+    const.GRAMMAR_VALUE_MODULEPARAMETERS,
+    const.GRAMMAR_VALUE_EQUATIONBLOCK,
+)
+
+
+def _mask_opaque_regions(text: str) -> str:
+    """Return *text* with every string and comment span replaced by spaces."""
+    parts: list[str] = []
+    cursor = 0
+    for _kind, start, end in scan_opaque_regions(text):
+        parts.append(text[cursor:start])
+        parts.append(" " * (end - start))
+        cursor = end
+    parts.append(text[cursor:])
+    return "".join(parts)
+
+
 def is_compressed(text: str) -> bool:
     """Detect compressed SattLine format.
 
@@ -123,17 +157,15 @@ def is_compressed(text: str) -> bool:
     compact_len = max(len(_WHITESPACE_RE.sub("", text)), 1)
     marker_char_ratio = len("".join(markers)) / compact_len
     marker_count = len(markers)
-    keyword_hits = sum(
-        1
-        for kw in (
-            "MODULEDEFINITION",
-            "TYPEDEFINITIONS",
-            "MODULEPARAMETERS",
-            "EQUATIONBLOCK",
-        )
-        if kw in text
-    )
-    return marker_count >= 50 or marker_char_ratio >= 0.02 or (marker_count >= 10 and keyword_hits == 0)
+    # A genuine source always names at least one structural keyword somewhere
+    # outside its strings and comments; marker-dense text without one is
+    # compressed. Opaque regions are masked first so a keyword inside a comment
+    # cannot veto the classification.
+    visible = _mask_opaque_regions(text)
+    keyword_hits = sum(1 for kw in _STRUCTURAL_KEYWORDS if kw in visible)
+    if marker_count >= _MARKER_COUNT_STRONG or marker_char_ratio >= _MARKER_CHAR_RATIO:
+        return True
+    return marker_count >= _MARKER_COUNT_WEAK and keyword_hits == 0
 
 
 # ---------------------------------------------------------------------------
@@ -249,8 +281,6 @@ class _OpaqueRegistry:
         restored_map: list[int] = []
         for part in map_parts:
             restored_map.extend(part)
-        if "\x00" in restored:
-            raise PreprocessError("internal error: placeholder not restored during decode")
         if len(restored_map) != len(restored):  # pragma: no cover - invariant by construction
             raise PreprocessError("internal error: placeholder restore map mismatch")  # pragma: no cover
         return restored, restored_map
@@ -337,7 +367,7 @@ def _regex_sub(
     return new_decoded, new_map
 
 
-def _decode_markers(text: str, mapping: dict[str, str]) -> tuple[_OpaqueRegistry, str, list[int]]:
+def _decode_markers(text: str, mapping: Mapping[str, str]) -> tuple[_OpaqueRegistry, str, list[int]]:
     """Replace ``#markers`` with their mapped text, keeping strings/comments protected.
 
     Returns ``(registry, decoded, char_map)``: the decoded text still holds
@@ -358,7 +388,7 @@ def _decode_markers(text: str, mapping: dict[str, str]) -> tuple[_OpaqueRegistry
     return registry, decoded, char_map
 
 
-def _decode_with_map(text: str, mapping: dict[str, str]) -> tuple[str, list[int]]:
+def _decode_with_map(text: str, mapping: Mapping[str, str]) -> tuple[str, list[int]]:
     """Decode *text* with *mapping*, returning (decoded, char_map).
 
     String literals and ``(* ... *)`` comments stay protected through
@@ -368,7 +398,7 @@ def _decode_with_map(text: str, mapping: dict[str, str]) -> tuple[str, list[int]
     return registry.restore(decoded, char_map)
 
 
-def decode_compressed(text: str, mapping: dict[str, str]) -> str:
+def decode_compressed(text: str, mapping: Mapping[str, str]) -> str:
     """Decode ``#markers`` using *mapping*.
 
     String literals and ``(* ... *)`` comments are never rewritten. Unknown

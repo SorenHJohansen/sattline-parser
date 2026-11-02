@@ -39,6 +39,11 @@ class InterimCoords:
 
 
 @dataclass(frozen=True)
+class PrivateMarker:
+    """The ``PRIVATE_`` keyword on a module type definition."""
+
+
+@dataclass(frozen=True)
 class GroupConnInfo:
     """``scan_group`` payload: an optional group connection and its global flag."""
 

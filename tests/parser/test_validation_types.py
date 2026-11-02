@@ -23,8 +23,8 @@ from sattline_parser.models.expressions import (
     UnaryOp,
     VarRef,
 )
+from sattline_parser.names import fold_identifier
 from sattline_parser.validation.diagnostics import Diagnostic
-from sattline_parser.validation.names import fold_identifier
 from sattline_parser.validation.parameter_mappings import check_parameter_mappings
 from sattline_parser.validation.symbols import build_scope
 from sattline_parser.validation.type_graph import TypeGraph
@@ -246,6 +246,10 @@ def test_builtin_type_matches() -> None:
     assert builtin_type_matches("integer", "anytype", direction="in") is True
     assert builtin_type_matches("MyRecord", Simple_DataType.INTEGER, direction="in") is False
     assert builtin_type_matches("textfile", "tObject", direction="in") is True
+    assert builtin_type_matches("MyRecord", "tObject", direction="in") is True
+    # a scalar is not an object handle, so it stays a mismatch
+    assert builtin_type_matches("integer", "tObject", direction="in") is False
+    assert builtin_type_matches("real", "tObject", direction="in") is False
     assert builtin_type_matches("integer", "AsyncOperation", direction="inout") is True
     assert builtin_type_matches("real", "AsyncOperation", direction="inout") is False
 

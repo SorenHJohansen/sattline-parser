@@ -25,13 +25,12 @@ from collections.abc import Callable, Sequence
 from dataclasses import replace
 from pathlib import Path
 
-from lark.exceptions import LarkError
-
-from sattline_parser.api import parse_source_file, read_text_cp1252
+from sattline_parser.errors import PARSE_FAILURES
 from sattline_parser.models.ast_model import BasePicture, DataType, ModuleTypeDef, SourceSpan
+from sattline_parser.names import fold_identifier
+from sattline_parser.source_io import parse_source_file, read_text_cp1252
 from sattline_parser.validation import validate_basepicture
 from sattline_parser.validation.diagnostics import Diagnostic, DiagnosticCode
-from sattline_parser.validation.names import fold_identifier
 
 from .ast_cache import FileASTCache
 from .discovery import ProjectLookup
@@ -50,13 +49,6 @@ from .models import (
 )
 from .reachability import invoked_moduletypes
 
-_PARSE_FAILURES = (
-    LarkError,  # grammar/matcher/framework/transform failures
-    ValueError,  # preprocess and transformer value errors
-    UnicodeError,  # undecodable source outside a comment body
-    OSError,  # unreadable file
-)
-
 #: Findings that depend on definitions outside the program itself. They become
 #: tentative when a part of the closure failed to load.
 _TENTATIVE_CODES = frozenset(
@@ -69,6 +61,11 @@ _TENTATIVE_CODES = frozenset(
         DiagnosticCode.DATECODE_CONFLICT,
     }
 )
+
+
+def _mark_tentative(diagnostics: Sequence[Diagnostic]) -> list[Diagnostic]:
+    """Mark the findings that depend on an incomplete closure as tentative."""
+    return [replace(item, tentative=True) if item.code in _TENTATIVE_CODES else item for item in diagnostics]
 
 
 def read_dependency_names(deps_path: Path) -> tuple[str, ...]:
@@ -92,7 +89,7 @@ class ProjectLoader:
         strict: bool,
         debug: Callable[[str], None] | None,
         cache_dir: Path | None,
-        validate: LoadValidation = LoadValidation.FULL,
+        validate: LoadValidation = LoadValidation.INVOKED,
     ) -> None:
         self._lookup_cache = FileLookupCache(cache_dir) if cache_dir is not None else None
         self._ast_cache = FileASTCache(cache_dir) if cache_dir is not None else None
@@ -106,8 +103,13 @@ class ProjectLoader:
         self._diagnostics: list[LoadDiagnostic] = []
         self._cycles: list[tuple[str, ...]] = []
         self._incomplete: set[str] = set()
+        #: name -> datecode -> program keys declaring it. Conflict checks are
+        #: scoped to a program's visible closure, so unrelated programs that
+        #: happen to declare the same name never conflict with each other.
         self._moduletype_versions: dict[str, dict[int, set[str]]] = {}
         self._datatype_versions: dict[str, dict[int, set[str]]] = {}
+        #: program key -> source label used in diagnostics.
+        self._labels: dict[str, str] = {}
 
     def _dbg(self, message: str) -> None:
         if self._debug is not None:
@@ -238,7 +240,14 @@ class ProjectLoader:
                 diagnostics = (
                     ()
                     if declared_by is not None
-                    else tuple(self._datecode_conflicts(basepicture, library=library, file_name=code_path.name))
+                    else tuple(
+                        self._datecode_conflicts(
+                            basepicture,
+                            library=library,
+                            file_name=code_path.name,
+                            visible=self._visible_program_keys(key, dep_names),
+                        )
+                    )
                 )
             else:
                 diagnostics = self._program_diagnostics(
@@ -248,7 +257,7 @@ class ProjectLoader:
                     file_name=code_path.name,
                     key=key,
                 )
-            self._remember_definitions(basepicture, library=library, file_name=code_path.name)
+            self._remember_definitions(basepicture, library=library, file_name=code_path.name, program_key=key)
 
             graphics_path = resolve_graphics_companion_path(code_path, mode=self._mode)
             graphics = (
@@ -328,9 +337,7 @@ class ProjectLoader:
                 )
             diagnostics = [*program.diagnostics, *module_diagnostics]
             if key in self._incomplete:
-                diagnostics = [
-                    replace(item, tentative=True) if item.code in _TENTATIVE_CODES else item for item in diagnostics
-                ]
+                diagnostics = _mark_tentative(diagnostics)
             self._registry[key] = replace(program, diagnostics=tuple(diagnostics))
 
     def _validate_code(self, code: BasePicture, *, dependencies: tuple[str, ...]) -> tuple[Diagnostic, ...]:
@@ -376,14 +383,62 @@ class ProjectLoader:
                 external_moduletype_defs=visible_moduletypes,
             )
         )
-        diagnostics.extend(self._datecode_conflicts(basepicture, library=library, file_name=file_name))
+        diagnostics.extend(
+            self._datecode_conflicts(
+                basepicture,
+                library=library,
+                file_name=file_name,
+                visible=self._visible_program_keys(key, dependencies),
+            )
+        )
         if key in self._incomplete:
-            diagnostics = [
-                replace(item, tentative=True) if item.code in _TENTATIVE_CODES else item for item in diagnostics
-            ]
+            diagnostics = _mark_tentative(diagnostics)
         return tuple(diagnostics)
 
-    def _datecode_conflicts(self, basepicture: BasePicture, *, library: str, file_name: str) -> list[Diagnostic]:
+    def _visible_program_keys(self, key: str, dependencies: Sequence[str]) -> frozenset[str]:
+        """Keys of every program *key* can see: itself plus its transitive deps."""
+        visible = {key}
+        seen = {key}
+        pending = [dependency.casefold() for dependency in dependencies]
+        while pending:
+            current = pending.pop()
+            if current in seen:
+                continue
+            seen.add(current)
+            program = self._registry.get(current)
+            if program is None:
+                # A missing dependency makes the caller incomplete; it cannot
+                # contribute a definition to the closure.
+                continue
+            visible.add(current)
+            pending.extend(dependency.casefold() for dependency in program.dependencies)
+        return frozenset(visible)
+
+    def _versions_in_scope(
+        self,
+        table: dict[str, dict[int, set[str]]],
+        name: str,
+        visible: frozenset[str],
+    ) -> dict[int, set[str]] | None:
+        """Datecodes declared for *name* by programs in *visible*."""
+        entry = table.get(fold_identifier(name))
+        if not entry:
+            return None
+        known: dict[int, set[str]] = {}
+        for datecode, keys in entry.items():
+            in_scope = keys & visible
+            if in_scope:
+                known[datecode] = {self._labels[key] for key in in_scope if key in self._labels}
+        return known or None
+
+    def _datecode_conflicts(
+        self,
+        basepicture: BasePicture,
+        *,
+        library: str,
+        file_name: str,
+        visible: frozenset[str],
+    ) -> list[Diagnostic]:
         source_label = f"{library}/{file_name}"
         conflicts: list[Diagnostic] = []
         for moduletype in basepicture.moduletype_defs:
@@ -391,7 +446,7 @@ class ProjectLoader:
                 "moduletype",
                 moduletype.name,
                 moduletype.datecode,
-                self._moduletype_versions.get(fold_identifier(moduletype.name)),
+                self._versions_in_scope(self._moduletype_versions, moduletype.name, visible),
                 source_label=source_label,
                 span=moduletype.declaration_span,
             )
@@ -402,7 +457,7 @@ class ProjectLoader:
                 "datatype",
                 datatype.name,
                 datatype.datecode,
-                self._datatype_versions.get(fold_identifier(datatype.name)),
+                self._versions_in_scope(self._datatype_versions, datatype.name, visible),
                 source_label=source_label,
                 span=datatype.declaration_span,
             )
@@ -410,18 +465,25 @@ class ProjectLoader:
                 conflicts.append(conflict)
         return conflicts
 
-    def _remember_definitions(self, basepicture: BasePicture, *, library: str, file_name: str) -> None:
-        label = f"{library}/{file_name}"
+    def _remember_definitions(
+        self,
+        basepicture: BasePicture,
+        *,
+        library: str,
+        file_name: str,
+        program_key: str,
+    ) -> None:
+        self._labels[program_key] = f"{library}/{file_name}"
         for moduletype in basepicture.moduletype_defs:
             if moduletype.datecode is not None:
                 self._moduletype_versions.setdefault(fold_identifier(moduletype.name), {}).setdefault(
                     moduletype.datecode, set()
-                ).add(label)
+                ).add(program_key)
         for datatype in basepicture.datatype_defs:
             if datatype.datecode is not None:
                 self._datatype_versions.setdefault(fold_identifier(datatype.name), {}).setdefault(
                     datatype.datecode, set()
-                ).add(label)
+                ).add(program_key)
 
     def _read_deps(
         self,
@@ -450,7 +512,7 @@ class ProjectLoader:
         self._dbg(f"Parsing: {code_path}")
         try:
             basepicture = parse_source_file(code_path, debug=self._debug)
-        except _PARSE_FAILURES as exc:
+        except PARSE_FAILURES as exc:
             if dependency is None:
                 raise ArtifactLoadError(program_name, f"failed to parse {code_path.name}") from exc
             raise DependencyParseError(

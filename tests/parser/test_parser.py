@@ -77,14 +77,14 @@ class TestFuzzParseText:
 
     def test_timeout_enforced(self, monkeypatch: pytest.MonkeyPatch):
         # A hard timeout must actually kill the worker: a worker that never
-        # replies must produce a TimeoutError, and the harness must resume.
-        from sattline_parser.fuzz_harness import TimeoutError, fuzz_parse_text  # noqa: PLC0415
+        # replies must produce a FuzzTimeoutError, and the harness must resume.
+        from sattline_parser.fuzz_harness import FuzzTimeoutError, fuzz_parse_text  # noqa: PLC0415
 
         sleeping_worker = "import time\nimport sys\nwhile True:\n    time.sleep(3600)\n"
         monkeypatch.setattr("sattline_parser.fuzz_harness._WORKER_SOURCE", sleeping_worker)
         result = fuzz_parse_text("irrelevant", input_desc="timeout-test", timeout=0.5)
         assert not result.success
-        assert isinstance(result.error, TimeoutError)
+        assert isinstance(result.error, FuzzTimeoutError)
         assert "timed out" in str(result.error)
 
 
@@ -173,9 +173,11 @@ class TestRunRandomFuzz:
             assert isinstance(result.duration_ms, float)
 
     def test_timeout_protected(self):
+        from sattline_parser.fuzz_harness import FuzzTimeoutError  # noqa: PLC0415
+
         results = run_random_fuzz(rounds=5, text_length=1000, timeout=1.0, seed=789)
         for result in results:
-            assert result.duration_ms < 2000 or isinstance(result.error, TimeoutError)
+            assert result.duration_ms < 2000 or isinstance(result.error, FuzzTimeoutError)
 
 
 class TestAssertNoCrashes:
@@ -200,13 +202,13 @@ class TestAssertNoTimeouts:
         assert_no_timeouts(results)
 
     def test_raises_on_timeout(self):
-        from sattline_parser.fuzz_harness import TimeoutError  # noqa: PLC0415
+        from sattline_parser.fuzz_harness import FuzzTimeoutError  # noqa: PLC0415
 
         results = [
             _min_fuzz_result("ok", success=True),
             _min_fuzz_result("timeout", success=False),
         ]
-        results[1].error = TimeoutError("timed out")
+        results[1].error = FuzzTimeoutError("timed out")
         with pytest.raises(AssertionError, match="timeout"):
             assert_no_timeouts(results)
 

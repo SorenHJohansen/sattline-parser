@@ -217,10 +217,13 @@ if program.graphics is not None:  # GraphicsMessage values, never raised
   `DependencyNotFoundError`, `DependencyParseError`), and a skipped program is
   recorded as a `LoadDiagnosticKind.LOAD_SKIPPED` diagnostic, so a partial load
   is never silent.
-- `validate=LoadValidation.FULL` validates every loaded program.
-  `validate=LoadValidation.INVOKED` validates each target in full and limits a
-  dependency file to the module types that target invokes, transitively, so an
-  imported library's unused module types are not checked. `NONE` parses only.
+- `validate=LoadValidation.INVOKED` (default) validates each target in full and
+  limits a dependency file to the module types that target invokes,
+  transitively, so an imported library's unused module types are never checked
+  on the consumer's behalf. `FULL` validates every loaded program, which is what
+  a whole-tree audit wants; `NONE` parses only. On the command line this is
+  `--validate invoked|full|none`, and `--no-validate` stays as an alias for
+  `none`.
 - `cache_dir=...` optionally enables the parser-owned lookup and per-file AST
   caches (`FileLookupCache` / `FileASTCache`) so repeated loads skip
   re-discovery and re-parsing. When `cache_dir=None` (default) the load is

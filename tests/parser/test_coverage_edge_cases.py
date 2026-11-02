@@ -16,8 +16,8 @@ from lark import Token, Tree
 from lark.exceptions import UnexpectedInput
 
 import sattline_parser
-from sattline_parser import api as parser_api
 from sattline_parser import fuzz_harness as fuzzharness
+from sattline_parser import source_io as parser_api
 from sattline_parser.grammar import constants as const
 from sattline_parser.models.ast_model import (
     BasePicture,
@@ -539,6 +539,19 @@ def test_remap_parse_error_updates_unexpected_characters_context() -> None:
     assert exc._context is not None
 
 
+def test_remap_parse_error_does_not_shift_an_already_remapped_error() -> None:
+    from lark.exceptions import UnexpectedCharacters  # noqa: PLC0415
+
+    from sattline_parser.source_document import remap_parse_error  # noqa: PLC0415
+
+    doc = SourceDocument("aXYb", "abXY", (0, 3, 1, 2))
+    exc = UnexpectedCharacters("abXY", 2, 1, 3, allowed=cast(Any, {"NAME"}))
+    remap_parse_error(exc, doc)
+    first = exc.pos_in_stream
+    remap_parse_error(exc, doc)
+    assert exc.pos_in_stream == first
+
+
 def test_remap_parse_error_ignores_non_unexpected_input() -> None:
     from sattline_parser.source_document import remap_parse_error  # noqa: PLC0415
 
@@ -617,7 +630,7 @@ def test_load_source_text_returns_plain_text_unchanged(tmp_path: Path) -> None:
 def test_parse_source_text_emits_debug_for_compressed_input() -> None:
     events: list[str] = []
 
-    from ._parser_core_provenance import _COMPRESSED  # noqa: PLC0415
+    from .test_parser_core_provenance import _COMPRESSED  # noqa: PLC0415
 
     parser_api.parse_source_text(_COMPRESSED, debug=events.append)
     assert "Compressed format detected; decoding before parsing" in events
@@ -678,12 +691,14 @@ def test_opaque_registry_restore_rejects_unknown_placeholder() -> None:
         registry.restore("\x00S9\x00", [-1, -1, -1, -1, -1, -1])
 
 
-def test_opaque_registry_restore_detects_unrestored_nul() -> None:
-    from sattline_parser.preprocessing.compressed import PreprocessError, _OpaqueRegistry  # noqa: PLC0415
+def test_opaque_registry_restore_keeps_a_literal_nul() -> None:
+    # A NUL is valid cp1252 source text; only a *placeholder* is an internal
+    # marker, so restore must not treat a stray NUL as an unrestored one.
+    from sattline_parser.preprocessing.compressed import _OpaqueRegistry  # noqa: PLC0415
 
     registry = _OpaqueRegistry('"a string"')
-    with pytest.raises(PreprocessError, match="placeholder not restored"):
-        registry.restore("\x00leftover", [0, -1, -1, -1, -1, -1, -1, -1])
+    restored, _map = registry.restore("\x00leftover", [0, -1, -1, -1, -1, -1, -1, -1, -1])
+    assert restored == "\x00leftover"
 
 
 # ---- Golden file parse tests ----

@@ -11,7 +11,7 @@ from __future__ import annotations
 from collections.abc import Callable, Sequence
 from pathlib import Path
 
-from .formats import ArtifactKind, candidate_extensions
+from .formats import ALL_CODE_EXTENSIONS, ALL_DEPS_EXTENSIONS, ArtifactKind, candidate_extensions
 from .lookup_cache import FileLookupCache
 from .models import LoadMode
 
@@ -65,7 +65,7 @@ class SourceIndex:
     resolved via their code path and never appear here.
     """
 
-    INDEXED_EXTENSIONS = frozenset({".s", ".x", ".l", ".z"})
+    INDEXED_EXTENSIONS = ALL_CODE_EXTENSIONS | ALL_DEPS_EXTENSIONS
 
     def __init__(self, roots: Sequence[Path]) -> None:
         self._roots = tuple(Path(root) for root in roots)
@@ -338,10 +338,9 @@ class ProjectLookup:
 
         A SattLine library is a body plus a sidecar at *one* prefix.
         Resolving the sidecar through the whole ordered root list can pair a
-        body with an unrelated library's sidecar, so the
-        body prefix decides; the cache still short-circuits an already-known
-        prefix, and the requester-relative scan is only the fallback used by
-        :meth:`find_deps` for consumers that want the old behaviour.
+        body with an unrelated library's sidecar, so the body prefix decides and
+        *requester_dir* is ignored here. :meth:`find_deps` keeps the
+        requester-relative behaviour for consumers that want it.
         """
         del requester_dir  # the body prefix, not the requester, decides
         extensions = candidate_extensions(ArtifactKind.DEPS, self._mode)

@@ -90,6 +90,29 @@ def format_optional(obj: object) -> str:
     return "None" if obj is None else str(obj)
 
 
+def _branch_block(
+    branches: Sequence[tuple[object, Sequence[object]]],
+    *,
+    indent: str,
+    else_block: Sequence[object] | None,
+) -> str:
+    """Render one IF/ELSIF/THEN/ELSE/ENDIF chain.
+
+    Shared by ``IfStmt`` (statement bodies) and ``TernaryOp`` (expression
+    bodies), which only differ in what each branch contains.
+    """
+    lines: list[str] = []
+    for index, (cond, body) in enumerate(branches):
+        lines.append(f"{'IF' if index == 0 else 'ELSIF'} {format_expr(cond, indent)}")
+        lines.append("THEN")
+        lines.extend(textwrap.indent(format_expr(stmt, indent), indent) for stmt in body)
+    if else_block is not None:
+        lines.append("ELSE")
+        lines.extend(textwrap.indent(format_expr(stmt, indent), indent) for stmt in else_block)
+    lines.append("ENDIF")
+    return "\n".join(lines)
+
+
 def format_expr(expr: object, indent: str = _DEFAULT_INDENT) -> str:
     """Pretty-print nested expressions and statements in a SattLine-like format."""
 
@@ -104,18 +127,7 @@ def format_expr(expr: object, indent: str = _DEFAULT_INDENT) -> str:
         return format_expr(expr.call, indent)
 
     if isinstance(expr, IfStmt):
-        out_lines: list[str] = []
-        for index, (cond, body) in enumerate(expr.branches):
-            out_lines.append(f"{'IF' if index == 0 else 'ELSIF'} {format_expr(cond, indent)}")
-            out_lines.append("THEN")
-            for stmt in body:
-                out_lines.append(textwrap.indent(format_expr(stmt, indent), indent))
-        if expr.else_block is not None:
-            out_lines.append("ELSE")
-            for stmt in expr.else_block:
-                out_lines.append(textwrap.indent(format_expr(stmt, indent), indent))
-        out_lines.append("ENDIF")
-        return "\n".join(out_lines)
+        return _branch_block(expr.branches, indent=indent, else_block=expr.else_block)
 
     if isinstance(expr, BoolOp):
         parts = [format_expr(op, indent) for op in expr.operands]
@@ -139,20 +151,19 @@ def format_expr(expr: object, indent: str = _DEFAULT_INDENT) -> str:
         return f"{expr.name}({args})"
 
     if isinstance(expr, TernaryOp):
-        out_lines2: list[str] = []
-        for index, (cond, then_expr) in enumerate(expr.branches):
-            out_lines2.append(f"{'IF' if index == 0 else 'ELSIF'} {format_expr(cond, indent)}")
-            out_lines2.append("THEN")
-            out_lines2.append(textwrap.indent(format_expr(then_expr, indent), indent))
-        if expr.else_expr is not None:
-            out_lines2.append("ELSE")
-            out_lines2.append(textwrap.indent(format_expr(expr.else_expr, indent), indent))
-        out_lines2.append("ENDIF")
-        return "\n".join(out_lines2)
+        branches = [(cond, [then_expr]) for cond, then_expr in expr.branches]
+        return _branch_block(
+            branches,
+            indent=indent,
+            else_block=None if expr.else_expr is None else [expr.else_expr],
+        )
 
     if isinstance(expr, int | float | bool | str):
         return repr(expr) if isinstance(expr, str) else str(expr)
 
+    # Unhandled nodes fall back to ``str``: the formatter also accepts the
+    # legacy tuple/dict expression forms, so an unknown object is rendered
+    # rather than rejected.
     return str(expr)
 
 

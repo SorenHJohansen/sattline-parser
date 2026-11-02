@@ -72,13 +72,35 @@ def candidate_extensions(kind: ArtifactKind, mode: LoadMode) -> tuple[str, ...]:
 
 
 __all__ = [
+    "ALL_CODE_EXTENSIONS",
+    "ALL_DEPS_EXTENSIONS",
+    "ALL_GRAPHICS_EXTENSIONS",
     "ArtifactKind",
     "candidate_extensions",
     "code_ext",
     "code_ext_candidates",
+    "companion_extensions_for_code",
     "deps_ext",
     "deps_ext_candidates",
     "graphics_ext",
     "graphics_ext_candidates",
     "preferred_extension",
 ]
+
+#: Every extension an artifact kind may use, in any load mode. Callers that only
+#: need to classify a path derive their sets from these instead of re-spelling
+#: the literals.
+ALL_CODE_EXTENSIONS: frozenset[str] = frozenset({".s", ".x"})
+ALL_DEPS_EXTENSIONS: frozenset[str] = frozenset({".l", ".z"})
+ALL_GRAPHICS_EXTENSIONS: frozenset[str] = frozenset({".g", ".y"})
+
+
+def companion_extensions_for_code(code_suffix: str, mode: LoadMode) -> tuple[str, ...]:
+    """Graphics companion candidates for a code file's own suffix.
+
+    ``.x`` is the official body format, so only the official companion may pair
+    with it; draft bodies keep the ``.g`` → ``.y`` fallback that *mode* selects.
+    """
+    if code_suffix.lower() == ".x":
+        return (graphics_ext(LoadMode.OFFICIAL),)
+    return graphics_ext_candidates(mode)

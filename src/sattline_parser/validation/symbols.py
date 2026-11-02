@@ -12,7 +12,7 @@ from dataclasses import dataclass, field
 
 from sattline_parser.models.ast_model import DataType, Variable
 from sattline_parser.models.expressions import VarRef
-from sattline_parser.validation.names import fold_identifier
+from sattline_parser.names import fold_identifier
 
 #: Names that mean an SFC *runtime* thing rather than a user-chosen identifier.
 #: ``On`` and ``Off`` are readable wherever a boolean is expected, which is why
