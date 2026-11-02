@@ -7,6 +7,96 @@ and this project uses calendar versioning (`YYYY.M.N`). The version orders
 releases; it is not a compatibility contract. The public API and its stability
 policy are documented in the README.
 
+## [2026.11.3] - 2026-11-02
+
+### Added
+
+- **Internal builtin registrations.** 191 names the system binds for compiled
+  programs but does not publish as language built-ins are carried in the
+  catalogue under `meta.internal`. Calls to them now get arity and argument
+  checks instead of passing silently; `documented_total` still counts only the
+  manual-documented names.
+- **Record field tables.** 27 configuration-defined system records are added
+  (`StepStatus` family, `SchedulerObjectInfo`, `ScanGroupInfo`, `Semaphore`,
+  `JChannelType`, `JournalInfo`, `EventInteract`, the serial/printer/task setup
+  records and others), and eight incomplete tables are filled in: `Timer`,
+  `AcofTimerType`, `RandomGenerator`, `EventSortRecType`, `SortedEventType`,
+  `CalendarRecord`, `GroupData` and `AsyncOperation`. Only `tObject`,
+  `ArrayObject` and `QueueObject` keep an empty spec, because they have no
+  fields at all rather than an unknown shape.
+- **Program-wide SFC element names.** A dotted runtime accessor may name a step
+  or sequence from anywhere in the program, including a nested frame module.
+- **Base-picture module parameters.** `BasePicture` now carries the
+  `MODULEPARAMETERS` block it declares, and `sattline query symbols` lists them.
+- **`--validate` flag.** `sattline project --validate invoked|full|none`
+  selects the validation scope; `--no-validate` remains an alias for `none`.
+- **`PARSE_FAILURES`.** One exception taxonomy for "this source could not be
+  parsed", shared by `sattline check` and the project loader.
+
+### Changed
+
+- **Validation scope default.** `LoadValidation.INVOKED` is now the default for
+  `SattLineProject.load` and `sattline project`: each target is validated in
+  full, while a dependency file contributes only the module types the target
+  invokes, transitively. `FULL` remains available for a whole-tree audit. On a
+  138-program unit library this removed 183 dependency findings that had
+  nothing to do with the selected programs.
+- **`--fail-on` vocabulary.** `sattline check`, `corpus` and `project` share one
+  set of values (`none`, `error`, `any`) and one implementation. The earlier
+  `never` and `warning` spellings are still accepted as aliases.
+- **`sattline graphics --json`** emits exactly one document; findings ride
+  inside it instead of being printed as a second JSON document.
+- **`sattline_parser.api` is a facade.** The parse pipeline moved to
+  `sattline_parser.source_io` so the project layer no longer imports the public
+  module back. `api` re-exports the same names. Identifier folding moved from
+  `sattline_parser.validation.names` to `sattline_parser.names`. Both modules
+  are outside the documented public surface.
+- **`tObject` arguments** must now be a non-scalar. Passing an integer, real,
+  boolean, string or time where an object handle is declared is a type
+  mismatch again, as is passing one where `AnyType` is documented.
+- **`fuzz_harness.TimeoutError`** is renamed to `FuzzTimeoutError` so it no
+  longer shadows the builtin exception.
+- **Artifact extensions** have one owner: `project/formats.py` now exposes the
+  complete per-kind extension sets and the `.x` → `.y` companion rule that the
+  discovery, graphics and CLI layers had each re-spelled.
+
+### Fixed
+
+- **False datecode conflicts.** Conflicting definitions were compared against
+  every program loaded so far instead of the target's dependency closure, so
+  unrelated programs that happened to declare the same module type reported
+  drift. On the trial tree this was 237 false findings across 88 programs.
+- **False undefined-variable findings for SFC elements.** A reference such as
+  `Seq.Reset` or `Step.x` from a module whose element lives in a nested frame
+  module was reported as an undefined variable (41 occurrences in one
+  library).
+- **Base-picture module parameters were undefined everywhere.** The transformer
+  parsed the block and discarded it, so even the program's own module code
+  could not reference its parameters.
+- **Frame modules lost their declarations.** A frame module's parameter and
+  local blocks were dropped when the AST was built.
+- **Coded streams.** A stream whose header lost its CRLF terminator fell
+  through to the plain-text decoder instead of reporting the framing error, and
+  a legitimate NUL in source text was mistaken for an unrestored placeholder.
+- **Compression detection** counted structural keywords inside strings and
+  comments, so a comment could veto a correct classification.
+- **`sattline project`** reported unexpected failures as findings (exit 1)
+  instead of internal errors (exit 3), and treated a root that exists but is not
+  a directory as an empty tree.
+- **Two predicates for one question.** `is_numeric`/`is_numeric_datatype` and
+  `is_boolean`/`is_boolean_datatype` disagreed on `None`; both pairs now share
+  one implementation.
+- **Datatype folding.** `Simple_DataType.from_any` used Unicode lowercasing
+  while every other identifier folds through the CP1252 table.
+
+### Removed
+
+- The `_parser_core_*.py` test-module indirection: the tests are collectable by
+  name and the wildcard aggregator is gone. Internal duplicates (the counter and
+  IP4 signal field shape, the PID parameter block, the span-remapping helpers,
+  the tentative-marking pass, the IF/ELSE printer, four copies of
+  `_positive_int`) are collapsed.
+
 ## [2026.11.2] - 2026-11-01
 
 ### Added
