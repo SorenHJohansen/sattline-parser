@@ -2,14 +2,14 @@
 
 Each entry maps a builtin datatype name to its ordered field list. Field
 datatypes are either a :class:`Simple_DataType` or the name of another record
-type. Opaque and fieldless builtin records are registered with an empty spec:
-the field list is not documented, but the name is a declared datatype and must
-resolve as a record.
+type. Only the native object handles (``tObject``, ``ArrayObject``,
+``QueueObject``) carry an empty spec: they have no fields at all, which is a
+property of the type rather than a gap in the table.
 
-The field tables are transcribed from the builtin datatype reference in the
-SattLine General and Graphics User manual and the SattLine I/O and
-Communication User manual, both System Version 3.1. Names are matched
-case-insensitively by consumers.
+The field tables cover the builtin datatype reference in the SattLine General
+and Graphics User manual and the SattLine I/O and Communication User manual,
+both System Version 3.1, plus the datatype declarations the system configuration
+ships. Names are matched case-insensitively by consumers.
 """
 
 from __future__ import annotations
@@ -98,16 +98,34 @@ _MANUAL_AUTO_REAL_FIELDS = (
     ("Min", _REAL),
 )
 
+# Step status shapes shared by the SFC and greedy/timer step variants.
+_STEP_STATUS_FIELDS = (
+    ("X", _BOOL),
+    ("transit", _BOOL),
+    ("disable", _BOOL),
+)
+_GREEDY_STEP_STATUS_FIELDS = (
+    ("X", _BOOL),
+    ("transit", _BOOL),
+)
+_TIMER_STEP_STATUS_FIELDS = (*_STEP_STATUS_FIELDS, ("T", _INT))
+_GTIMER_STEP_STATUS_FIELDS = (*_GREEDY_STEP_STATUS_FIELDS, ("T", _INT))
+
+_SERIAL_SETUP_FIELDS = (
+    ("ChannelIdent", _IDENT),
+    ("BaudRate", _INT),
+    ("DataBits", _INT),
+    ("StopBits", _INT),
+    ("Parity", _INT),
+    ("HandShake", _INT),
+)
+
 _OPAQUE_BUILTIN_RECORD_NAMES = (
-    "AcofTimerType",
-    "EventSortRecType",
     "QueueObject",
-    "SortedEventType",
-    "Timer",
     "tObject",
 )
 
-_FIELDLESS_BUILTIN_RECORD_NAMES = ("ArrayObject", "RandomGenerator")
+_FIELDLESS_BUILTIN_RECORD_NAMES = ("ArrayObject",)
 
 BOOL = _BOOL
 INT = _INT
@@ -137,7 +155,10 @@ BUILTIN_RECORD_SPECS: dict[str, tuple[BuiltinFieldSpec, ...]] = {
         ("Elapsed", _DURATION),
         ("AcofTimer", "AcofTimerType"),
     ),
-    "AsyncOperation": (("Status", _INT),),
+    "AsyncOperation": (
+        ("Operation", "tObject"),
+        ("Status", _INT),
+    ),
     "DurationRecord": (
         ("Days", _INT),
         ("Hours", _INT),
@@ -152,15 +173,25 @@ BUILTIN_RECORD_SPECS: dict[str, tuple[BuiltinFieldSpec, ...]] = {
         ("Hour", _INT),
         ("Minute", _INT),
         ("Second", _INT),
-        ("MilliSecond", _INT),
+        ("MilliSec", _INT),
     ),
     "CalendarRecord": (
         ("Year", _INT),
         ("Month", _INT),
         ("Day", _INT),
-        ("WeekDay", _INT),
+        ("Hour", _INT),
+        ("Minute", _INT),
+        ("Second", _INT),
+        ("MilliSecond", _INT),
+        ("WeekDayNo", _INT),
+        ("WeekNo", _INT),
+        ("IsLeapYear", _BOOL),
     ),
-    "GroupData": (("WarmStarting", _BOOL),),
+    "GroupData": (
+        ("Executing", _BOOL),
+        ("GroupObject", "tObject"),
+        ("WarmStarting", _BOOL),
+    ),
     "TimeFormatType": (
         ("ShortTime", _STR),
         ("MinAndSec", _STR),
@@ -727,8 +758,8 @@ BUILTIN_RECORD_SPECS: dict[str, tuple[BuiltinFieldSpec, ...]] = {
         ("TextGroup", _INT),
         ("Time", _TIME),
         ("TransitionType", _INT),
-        ("NewOpValue", _LINE),
         ("OldOpValue", _LINE),
+        ("NewOpValue", _LINE),
     ),
     "LoggedEvent": (
         ("FormattedInfo", _MAX),
@@ -867,6 +898,151 @@ BUILTIN_RECORD_SPECS: dict[str, tuple[BuiltinFieldSpec, ...]] = {
         ("Calibrated", _BOOL),
         ("Latched", _BOOL),
         ("PresetReached", _BOOL),
+    ),
+    "StepStatus": _STEP_STATUS_FIELDS,
+    "InitStepStatus": _STEP_STATUS_FIELDS,
+    "TimerStepStatus": _TIMER_STEP_STATUS_FIELDS,
+    "TimerInitStepStatus": _TIMER_STEP_STATUS_FIELDS,
+    "GreedyStepStatus": _GREEDY_STEP_STATUS_FIELDS,
+    "GreedyInitStepStatus": _GREEDY_STEP_STATUS_FIELDS,
+    "GTimerStepStatus": _GTIMER_STEP_STATUS_FIELDS,
+    "GTimerInitStepStatus": _GTIMER_STEP_STATUS_FIELDS,
+    "TransitionStatus": (
+        ("block", _BOOL),
+        ("force", _BOOL),
+        ("forceback", _BOOL),
+    ),
+    "SeqListAttributes": (
+        ("Reset", _BOOL),
+        ("Reseted", _BOOL),
+        ("Hold", _BOOL),
+        ("Disable", _BOOL),
+        ("Check", _BOOL),
+        ("TimedOut", _BOOL),
+        ("MaxTime", _INT),
+    ),
+    "SepoVarType": (
+        ("ModuleInstance", _INT),
+        ("VarOffset", _INT),
+    ),
+    "LoopExitStatus": (
+        ("blockLoopExit", _BOOL),
+        ("forceLoopExit", _BOOL),
+    ),
+    "SchedulerObjectInfo": (
+        ("ActualCycleTime", _INT),
+        ("MaxCycleTime", _INT),
+        ("ActualExecutionTime", _INT),
+        ("MaxExecutionTime", _INT),
+        ("CycleTimeCorrected", _BOOL),
+    ),
+    "SchedulerSystemInfo": (
+        ("SystemLoad", _INT),
+        ("Dummy", _BOOL),
+    ),
+    "SchedulerEvent": (
+        ("Time", _INT),
+        ("SchedulerObjectNr", _INT),
+    ),
+    "PowerFailureInfo": (
+        ("Days", _INT),
+        ("Ms", _INT),
+        ("NrOfPFs", _INT),
+    ),
+    "ScanGroupInfo": (
+        ("ScanGroupName", _STR),
+        ("ProgramName", _STR),
+        ("System", _STR),
+        ("Synchronized", _BOOL),
+        ("Priority", _INT),
+        ("CycleTime", _INT),
+        ("Phase", _INT),
+        ("Cyclic", _BOOL),
+        ("ScanGroupNr", _INT),
+        ("InThisProgram", _BOOL),
+    ),
+    "Semaphore": (
+        ("SemaphoreVal", _BOOL),
+        ("Dummy", _BOOL),
+    ),
+    "JChannelType": (
+        ("Object", "tObject"),
+        ("Status", _INT),
+    ),
+    "MemoryInfoRec": (
+        ("Total", _INT),
+        ("Free", _INT),
+    ),
+    "ProgramSizeInfoRec": (
+        ("IntermediateCodeSize", _INT),
+        ("ModCodeSize", _INT),
+        ("MachineCodeSize", _INT),
+        ("MemorySize", _INT),
+    ),
+    "ObjectInfoRec": (
+        ("ObjectType", _INT),
+        ("Cyclic", _BOOL),
+        ("ExecutionTime", _INT),
+        ("RequestedCycleTime", _INT),
+        ("ActualCycleTime", _INT),
+    ),
+    "JournalInfo": (
+        ("JournalName", _STR),
+        ("JournalSize", _INT),
+        ("TimeOfLastSecure", _TIME),
+        ("TimeOfLastWrite", _TIME),
+        ("TimeOfFirstWrite", _TIME),
+        ("NoOfEntries", _INT),
+    ),
+    "EventInteract": (
+        ("Severity", _INT),
+        ("EventState", _INT),
+        ("Class", _INT),
+        ("EventText", _LINE),
+        ("LineInteract", _BOOL),
+    ),
+    "SerialSetupType": (
+        *_SERIAL_SETUP_FIELDS,
+        ("ReadLineEcho", _BOOL),
+        ("ReadStringChar", _INT),
+        ("ReadLineEndChar", _INT),
+        ("LineEditorEnable", _BOOL),
+        ("CharAfterReadLineEnd", _INT),
+        ("ClearRead", _BOOL),
+    ),
+    "PrinterSetupType": _SERIAL_SETUP_FIELDS,
+    "TaskSetupType": (
+        ("MaxLengthOnString", _INT),
+        ("Dummy", _BOOL),
+    ),
+    "AcofTimerType": (
+        ("Running", _BOOL),
+        ("Hold", _BOOL),
+        ("High", _INT),
+        ("Low", _INT),
+    ),
+    "Timer": (
+        ("Running", _BOOL),
+        ("Holding", _BOOL),
+        ("High", _INT),
+        ("Low", _INT),
+    ),
+    "RandomGenerator": (
+        ("SeedPart1", _INT),
+        ("SeedPart2", _INT),
+    ),
+    "EventSortRecType": (
+        ("Sort1", _INT),
+        ("Sort2", _INT),
+        ("Sort3", _INT),
+        ("Sort4", _INT),
+        ("Sort5", _INT),
+    ),
+    "SortedEventType": (
+        ("EventCondName", _TAG),
+        ("EventState", _INT),
+        ("SortRecord", "EventSortRecType"),
+        ("FormattedInfo", _MAX),
     ),
 }
 

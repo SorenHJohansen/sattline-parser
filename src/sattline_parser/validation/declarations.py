@@ -46,19 +46,14 @@ Submodule = SingleModule | FrameModule | ModuleTypeInstance
 # Datatype names the SattLine language accepts that are not modelled as
 # Simple_DataType nor declared via TYPEDEFINITIONS. GroupData is the reserved
 # scan-group connection type used by module definitions with a GroupConn tail.
-#: System datatypes the language accepts without a local definition. The field
-#: lists are not needed for the declaration rule; field access on an opaque
-#: system type stays silent rather than guessing a shape.
+#: System datatypes the language accepts without a local definition and without a
+#: field table. Every other system datatype resolves through
+#: :data:`BUILTIN_RECORD_SPECS`; these three either have no fields at all
+#: (``AnyType``) or are plain aliases of a scalar / of ``tObject``.
 _VALID_UNRESOLVED_DATATYPES = frozenset(
     fold_identifier(name)
     for name in (
         "anytype",
-        "eventinteract",
-        "jchanneltype",
-        "memoryinforec",
-        "scangroupinfo",
-        "schedulerobjectinfo",
-        "schedulersysteminfo",
         "textfile",
         "window",
     )

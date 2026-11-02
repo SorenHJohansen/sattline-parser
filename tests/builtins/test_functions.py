@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import cast
+
 from sattline_parser.builtins import (
     BUILTIN_ALIASES,
     BUILTIN_FUNCTIONS,
@@ -12,24 +14,47 @@ from sattline_parser.builtins import (
 )
 
 
+def _meta_bucket(key: str) -> dict[str, object]:
+    bucket = CATALOGUE_META[key]
+    assert isinstance(bucket, dict)
+    return cast("dict[str, object]", bucket)
+
+
+def _meta_names(key: str) -> list[str]:
+    names = _meta_bucket(key)["names"]
+    assert isinstance(names, list)
+    return cast("list[str]", names)
+
+
 def test_catalogue_carries_every_entry_and_alias() -> None:
-    assert len(BUILTIN_FUNCTIONS) == 180
+    assert len(BUILTIN_FUNCTIONS) == 371
     assert BUILTIN_ALIASES == {"EqualString": "equalstrings"}
+
+
+def test_meta_buckets_partition_the_carried_names() -> None:
+    buckets = [*_meta_names("not_located"), *_meta_names("internal")]
+    assert len(buckets) == len(set(buckets))
+    assert set(buckets) <= set(BUILTIN_FUNCTIONS)
+    assert CATALOGUE_META["documented_total"] == len(BUILTIN_FUNCTIONS) - len(buckets)
+    assert CATALOGUE_META["carried_total"] == len(BUILTIN_FUNCTIONS)
 
 
 def test_meta_states_coverage_and_provenance() -> None:
     assert CATALOGUE_META["documented_total"] == 171
-    assert CATALOGUE_META["carried_total"] == 180
-    assert CATALOGUE_META["typed_entries"] == 178
+    assert CATALOGUE_META["carried_total"] == 371
+    assert CATALOGUE_META["typed_entries"] == 369
     assert CATALOGUE_META["untyped_entries"] == 2
     assert CATALOGUE_META["omissions"] == []
     primary = CATALOGUE_META["primary_source"]
     assert isinstance(primary, dict)
     assert primary["title"] == "SattLine Language User manual"
     assert primary["edition"] == "System Version 3.1"
-    not_located = CATALOGUE_META["not_located"]
-    assert isinstance(not_located, dict)
+    not_located = _meta_bucket("not_located")
     assert not_located["count"] == 9
+    internal = _meta_bucket("internal")
+    assert internal["count"] == 191
+    names = _meta_names("internal")
+    assert names == sorted(names)
 
 
 def test_lookup_is_case_insensitive() -> None:
