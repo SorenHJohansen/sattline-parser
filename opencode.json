@@ -2,7 +2,30 @@
   "$schema": "https://opencode.ai/config.json",
   "lsp": {
     "pyright": {
-      "command": ["pyright-langserver", "--stdio"]
+      "command": ["pyright-langserver", "--stdio"],
+      "extensions": [".py"]
     }
-  }
+  },
+  "formatter": {
+    "ruff": {
+      "command": [".venv/bin/ruff", "format", "$FILE"],
+      "extensions": [".py", ".pyi"]
+    }
+  },
+  "permissions": [
+    { "action": "edit", "resource": "src/sattline_parser/builtins/catalogue.json", "effect": "deny" },
+    { "action": "edit", "resource": "src/sattline_parser.egg-info/**", "effect": "deny" },
+    { "action": "edit", "resource": "dist/**", "effect": "deny" },
+    { "action": "edit", "resource": "build/**", "effect": "deny" },
+    { "action": "edit", "resource": "htmlcov/**", "effect": "deny" },
+    { "action": "edit", "resource": "coverage.xml", "effect": "deny" },
+    { "action": "edit", "resource": "coverage*.json", "effect": "deny" },
+    { "action": "edit", "resource": ".venv/**", "effect": "deny" },
+    { "action": "edit", "resource": "uv.lock", "effect": "deny" },
+    { "action": "shell", "resource": "git push *", "effect": "ask" },
+    { "action": "shell", "resource": "gh pr merge *", "effect": "ask" },
+    { "action": "shell", "resource": "gh release create *", "effect": "ask" },
+    { "action": "shell", "resource": "twine upload *", "effect": "ask" },
+    { "action": "shell", "resource": "git tag *", "effect": "ask" }
+  ]
 }
