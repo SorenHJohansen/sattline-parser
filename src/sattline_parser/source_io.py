@@ -20,7 +20,6 @@ from typing import Protocol, cast
 
 from lark import Lark, Token, Tree
 from lark import __version__ as lark_version
-from lark.exceptions import UnexpectedInput
 
 from sattline_parser.models.ast_model import BasePicture
 from sattline_parser.source_document import remap_parse_error, remap_tree_to_original
@@ -31,12 +30,6 @@ from .errors import (
     ParseErrorDetails,
     _log_parser_failure,  # pyright: ignore[reportPrivateUsage]  # imported for internal use
     describe_parse_error,
-)
-from .errors import (
-    _failure_details as _failure_details,  # pyright: ignore[reportPrivateUsage]  # re-exported as a test seam
-)
-from .errors import (
-    _unexpected_input_summary as _unexpected_input_summary,  # pyright: ignore[reportPrivateUsage]  # re-exported as a test seam
 )
 from .grammar.resolved import grammar_fingerprint
 from .grammar.resolved import resolved_grammar as _resolved_grammar
@@ -49,7 +42,6 @@ __all__ = [
     "ParseErrorDetails",
     "build_lark_parser",
     "create_parser",
-    "create_sl_parser",
     "decode_source_bytes",
     "describe_parse_error",
     "load_source_text",
@@ -108,12 +100,9 @@ def _parser_cache_dir() -> Path | None:
 
 
 class _ParserProtocol(Protocol):
-    def parse(
-        self,
-        text: str,
-        start: str | None = None,
-        _on_error: Callable[[UnexpectedInput], bool] | None = None,
-    ) -> Tree[Token]: ...
+    """The slice of Lark's parser interface the pipeline calls."""
+
+    def parse(self, text: str) -> Tree[Token]: ...
 
 
 def _parser_cache_path(
@@ -166,11 +155,6 @@ def build_lark_parser(
 def create_parser() -> Lark:
     """Load and compile the SattLine grammar."""
     return build_lark_parser()
-
-
-def create_sl_parser() -> Lark:
-    """Compatibility alias for :func:`create_parser`."""
-    return create_parser()
 
 
 @lru_cache(maxsize=1)
@@ -368,6 +352,31 @@ def parse_source_text(
     log_failures: bool = True,
     retain_parse_tree: bool = False,
 ) -> BasePicture:
+    """Parse SattLine source text and transform it into a :class:`BasePicture`.
+
+    The pipeline is preprocess, parse, remap, transform:
+
+    * ``src`` is preprocessed first. A marker-compressed source is decoded into
+      normalized text while the original text is kept for provenance.
+    * The parse tree is produced from the normalized text. Parse errors are
+      remapped from normalized coordinates back to the original source before
+      they propagate, so ``line``/``column`` describe what the caller wrote.
+    * When the source was decoded, AST positions are rewritten to original
+      coordinates, so spans always point into ``src`` as given.
+    * The tree is handed to an :class:`SLTransformer`, which must return a
+      :class:`BasePicture`.
+
+    ``parser`` and ``transformer`` default to a shared cached parser and a fresh
+    transformer. ``debug`` receives progress messages. ``source_path`` is only
+    used to label logged failures, and ``log_failures`` (default on) logs each
+    stage failure with its source location before the exception propagates.
+    Set ``retain_parse_tree`` to attach the raw tree to the result as
+    ``parse_tree``; if the picture rejects the attribute, the tree is dropped
+    instead of failing the parse.
+
+    This is a pure parse and transform entry point. Use
+    :func:`parse_and_validate` to also run strict single-source validation.
+    """
     try:
         source_doc = preprocess_source(src)
     except Exception as exc:

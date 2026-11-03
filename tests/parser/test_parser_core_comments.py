@@ -229,7 +229,7 @@ def test_comments_are_illegal_inside_an_expression():
         parser_core_parse_source_text(code)
     # Same rejection through the raw parser: comments are not whitespace.
     with pytest.raises(UnexpectedInput):
-        create_sl_parser().parse(code)
+        create_parser().parse(code)
 
 
 def test_comments_are_illegal_between_operands_and_operator():

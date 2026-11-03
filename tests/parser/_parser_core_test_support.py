@@ -25,7 +25,7 @@ from sattline_parser import (
 from sattline_parser import (
     source_io as parser_api,
 )
-from sattline_parser.api import create_sl_parser, parse_source_file
+from sattline_parser.api import create_parser, parse_source_file
 from sattline_parser.formatting.formatter import format_expr, format_list, format_optional, format_seq_nodes
 from sattline_parser.grammar import constants as const
 from sattline_parser.grammar import constants as parser_const
@@ -120,7 +120,7 @@ from sattline_parser.transformer.sl_transformer import (
 
 
 def _parse_to_basepicture(text: str):
-    parser = create_sl_parser()
+    parser = create_parser()
     tree = parser.parse(text)
     return SLTransformer().transform(tree)
 
@@ -260,7 +260,7 @@ __all__ = [
     "ast",
     "cast",
     "const",
-    "create_sl_parser",
+    "create_parser",
     "flatten_items",
     "format_expr",
     "format_list",

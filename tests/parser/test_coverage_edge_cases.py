@@ -16,6 +16,7 @@ from lark import Token, Tree
 from lark.exceptions import UnexpectedInput
 
 import sattline_parser
+from sattline_parser import errors as parser_errors
 from sattline_parser import fuzz_harness as fuzzharness
 from sattline_parser import source_io as parser_api
 from sattline_parser.grammar import constants as const
@@ -69,11 +70,11 @@ def test_package_lazy_fuzz_exports_and_dir() -> None:
         _ = sattline_parser.does_not_exist_anywhere
 
 
-# ---- api.py helpers ----
+# ---- errors helpers ----
 
 
 def test_failure_details_without_source() -> None:
-    details = parser_api._failure_details(ValueError("demonstrative"))
+    details = parser_errors._failure_details(ValueError("demonstrative"))
     assert details.message == "demonstrative"
     assert details.line is None
     assert details.column is None
