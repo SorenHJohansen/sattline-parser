@@ -52,7 +52,7 @@ test = [
 
 dev = [
     "sattline-parser[test]",
-    "ruff==0.15.20",
+    "ruff==0.17.3",
     "pyright>=1.1.380",
     "build>=1.2.2",
     "bandit>=1.8.0",
