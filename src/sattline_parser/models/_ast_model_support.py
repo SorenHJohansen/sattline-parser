@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import textwrap
 from collections.abc import Callable
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 from ..formatting.formatter import format_expr, format_list, format_optional, format_seq_nodes
 
@@ -29,8 +29,6 @@ type FormatExprFn = Callable[..., str]
 type FormatListFn = Callable[..., str]
 type FormatOptionalFn = Callable[..., str]
 type FormatSeqNodesFn = Callable[..., str]
-type AstNodeDict = dict[str, Any]
-type PropertyMap = dict[str, Any]
 #: Values a variable init or parameter-mapping source can hold: a literal, a
 #: boolean, or a parsed ``time_value`` dictionary.
 type InitValue = bool | int | float | str | dict[str, str | None]
@@ -40,19 +38,11 @@ def variable_list() -> list[Variable]:
     return []
 
 
-def property_map() -> PropertyMap:
-    return {}
-
-
 def graph_object_list() -> list[GraphObject]:
     return []
 
 
 def interact_object_list() -> list[InteractObject]:
-    return []
-
-
-def any_list() -> list[Any]:
     return []
 
 

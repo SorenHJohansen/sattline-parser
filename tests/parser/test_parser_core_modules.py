@@ -27,26 +27,14 @@ def test_modules_mixin_module_header_collects_argument_metadata():
         SimpleNamespace(line=5, column=2, start_pos=20, end_pos=30),
         [
             "Motor",
-            InterimCoords(coords=(1, 2, 3, 4, 5), tails=["PosX"]),
-            Tree(
-                parser_const.TREE_TAG_ARGUMENTS,
-                [
-                    7,
-                    {
-                        parser_const.TREE_TAG_ENABLE: False,
-                        parser_const.KEY_TAIL: "EnableVar",
-                    },
-                    {
-                        parser_const.KEY_ASSIGN: {
-                            parser_const.KEY_NAME: "Module_In_View",
-                            parser_const.KEY_VALUE: True,
-                            parser_const.KEY_TAIL: "Allow.RecpSupParameters",
-                        },
-                    },
-                    {parser_const.GRAMMAR_VALUE_ZOOMLIMITS: (0.5, 2.0)},
-                    {parser_const.GRAMMAR_VALUE_ZOOMABLE: True},
-                    parser_const.GRAMMAR_VALUE_IGNOREMAXMODULE,
-                ],
+            InterimCoords(coords=(1, 2, 3, 4, 5), tails=[VarTail("in", "PosX")]),
+            ModuleArguments(
+                layer=7,
+                enable=EnableClause(False, VarTail("in", "EnableVar")),
+                zoom_limits=ZoomLimits(0.5, 2.0),
+                zoomable=True,
+                markers=(ModuleMarker(parser_const.GRAMMAR_VALUE_IGNOREMAXMODULE),),
+                assigns=(AssignClause("Module_In_View", True, VarTail("out", "Allow.RecpSupParameters")),),
             ),
         ],
     )
@@ -54,10 +42,10 @@ def test_modules_mixin_module_header_collects_argument_metadata():
     assert header.name == "Motor"
     assert header.declaration_span == SourceSpan(start=20, end=30, line=5, column=2)
     assert header.invoke_coord == (1.0, 2.0, 3.0, 4.0, 5.0)
-    assert header.invoke_coord_tails == ["PosX", "Allow.RecpSupParameters"]
+    assert header.invoke_coord_tails == [VarTail("in", "PosX"), VarTail("out", "Allow.RecpSupParameters")]
     assert header.layer_info == 7
     assert header.enable is False
-    assert header.enable_tail == "EnableVar"
+    assert header.enable_tail == VarTail("in", "EnableVar")
     assert header.zoom_limits == (0.5, 2.0)
     assert header.zoomable is True
     assert header.invocation_arguments == (parser_const.GRAMMAR_VALUE_IGNOREMAXMODULE,)
@@ -66,8 +54,8 @@ def test_modules_mixin_module_header_collects_argument_metadata():
         SimpleNamespace(line=6, column=4),
         [
             "Valve",
-            (6, 7, 8, 9, 10),
-            Tree(parser_const.TREE_TAG_ARGUMENTS, ["FreeArg"]),
+            InterimCoords(coords=(6, 7, 8, 9, 10)),
+            ModuleArguments(markers=(ModuleMarker("FreeArg"),)),
         ],
     )
 
@@ -78,33 +66,62 @@ def test_modules_mixin_module_header_collects_argument_metadata():
         mixin.module_header(SimpleNamespace(line=1, column=1), ["BrokenHeader"])
 
 
-def test_modules_mixin_coordinate_helpers_preserve_pairs_tails_and_clipping_tree():
-    mixin = _ModulesHarness(["PanelResize"])
+def test_modules_mixin_arguments_collect_every_typed_argument_kind():
+    mixin = _ModulesHarness()
+    args = mixin.arguments(
+        [
+            Token("JUNK", ","),
+            3,
+            EnableClause(True, VarTail("in", "E")),
+            ModuleInViewClause(False, VarTail("out", "V")),
+            ZoomLimits(1.0, 2.0),
+            Zoomable(),
+            ModuleMarker("SymbolModule"),
+            AssignClause("Field", 1, VarTail("in", "A")),
+        ]
+    )
 
-    coords = mixin.coordinates([1, 2, "ignored"])
+    assert args == ModuleArguments(
+        layer=3,
+        enable=EnableClause(True, VarTail("in", "E")),
+        module_in_view=ModuleInViewClause(False, VarTail("out", "V")),
+        zoom_limits=ZoomLimits(1.0, 2.0),
+        zoomable=True,
+        markers=(ModuleMarker("SymbolModule"),),
+        assigns=(AssignClause("Field", 1, VarTail("in", "A")),),
+    )
+
+
+def test_modules_mixin_coordinate_helpers_preserve_pairs_tails_and_clipping_tree():
+    mixin = _ModulesHarness()
+    coord_tail = CoordTail(VarTail("in", "PanelResize"))
+
+    coords = mixin.coordinates([1, 2, coord_tail])
     pair = mixin.origo_size_pair(
         [
             coords,
-            InterimCoords(coords=(3, 4), tails=["PanelScale"]),
+            InterimCoords(coords=(3, 4), tails=[VarTail("in", "PanelScale")]),
         ]
     )
-    invoke = mixin.invoke_coord([1, 2, 3, 4, 5, "ignored"])
-    clipping = mixin.coord_clippingbounds([coords])
+    invoke = mixin.invoke_coord([1, 2, 3, 4, 5, coord_tail])
+    clipping = mixin.coord_clippingbounds([CoordinateClipping((ClipValue(1.0),))])
 
-    assert coords == InterimCoords(coords=(1.0, 2.0), tails=["PanelResize"])
-    assert pair == InterimCoords(coords=((1.0, 2.0), (3.0, 4.0)), tails=["PanelResize", "PanelScale"])
-    assert invoke == InterimCoords(coords=(1.0, 2.0, 3.0, 4.0, 5.0), tails=["PanelResize"])
-    assert mixin.origo_size_pair([(1.0, 2.0), Tree(parser_const.TREE_TAG_COORDINATES, [3.0, 4.0])]) == (
+    assert coords == InterimCoords(coords=(1.0, 2.0), tails=[VarTail("in", "PanelResize")])
+    assert pair == InterimCoords(
+        coords=((1.0, 2.0), (3.0, 4.0)),
+        tails=[VarTail("in", "PanelResize"), VarTail("in", "PanelScale")],
+    )
+    assert invoke == InterimCoords(coords=(1.0, 2.0, 3.0, 4.0, 5.0), tails=[VarTail("in", "PanelResize")])
+    assert mixin.origo_size_pair([InterimCoords(coords=(1.0, 2.0)), InterimCoords(coords=(3.0, 4.0))]) == (
         InterimCoords(coords=((1.0, 2.0), (3.0, 4.0)), tails=None)
     )
-    assert mixin.coord_invar_tail([Token("COMMA", ","), "WidthSource"]) == "WidthSource"
-    assert isinstance(clipping, Tree)
-    assert clipping.data == parser_const.GRAMMAR_VALUE_CLIPPINGBOUNDS
+    assert mixin.coord_invar_tail([Token("COMMA", ","), "WidthSource"]) == CoordTail("WidthSource")
+    assert clipping == CoordinateClipping((ClipValue(1.0),))
 
     with pytest.raises(ValueError, match="coordinates missing REAL values"):
         mixin.coordinates([1])
     with pytest.raises(ValueError, match="origo_size_pair expected 2 coordinate pairs"):
-        mixin.origo_size_pair([(1.0, 2.0)])
+        mixin.origo_size_pair([InterimCoords(coords=(1.0, 2.0))])
     with pytest.raises(ValueError, match="invoke_coord expected 5 REALs"):
         mixin.invoke_coord([1.0, 2.0, 3.0, 4.0])
 

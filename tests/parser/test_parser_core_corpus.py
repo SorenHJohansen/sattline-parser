@@ -1,4 +1,4 @@
-# pyright: reportUnknownVariableType=false, reportUnknownMemberType=false, reportUnknownParameterType=false, reportMissingParameterType=false, reportUnknownArgumentType=false, reportUnknownLambdaType=false, reportArgumentType=false, reportPrivateUsage=false, reportUnusedImport=false
+# pyright: reportUnknownVariableType=false, reportUnknownMemberType=false, reportUnknownParameterType=false, reportMissingParameterType=false, reportUnknownArgumentType=false, reportUnknownLambdaType=false, reportArgumentType=false, reportPrivateUsage=false, reportUnusedImport=false, reportTypedDictNotRequiredAccess=false
 # ruff: noqa: F403, F405
 """Fixture-corpus regression tests.
 
@@ -57,7 +57,9 @@ def test_fixture_graph_object_enable_tails_keep_tail_content():
     assert bp.moduledef is not None
     text = bp.moduledef.graph_objects[0]
     assert text.type == "TextObject"
-    assert "%d" in cast(list[Any], text.properties.get("tails", []))
+    tails = cast(list[Any], text.properties.get("tails", []))
+    assert len(tails) == 6
+    assert all(isinstance(tail, Compare) for tail in tails)
     colours = cast(list[Any], text.properties.get("colours", []))
     colour_repr = repr(colours)
     assert "Colour0" in colour_repr and "Colour1" in colour_repr and "ColourStyle" in colour_repr
@@ -74,16 +76,14 @@ def test_fixture_graph_object_shapes_keep_their_types():
     ]
 
 
-def _interact_entries(interactor: Any) -> list[dict[str, Any]]:
+def _interact_entries(interactor: Any) -> list[Any]:
     body = cast(list[Any], interactor.properties.get("body", []))
-    entries: list[dict[str, Any]] = []
+    entries: list[Any] = []
     for node in body:
         assert isinstance(node, Tree)
         assert node.data == "interact_body"
         assert len(node.children) == 1
-        entry = node.children[0]
-        assert isinstance(entry, dict)
-        entries.append(cast(dict[str, Any], entry))
+        entries.append(node.children[0])
     return entries
 
 
@@ -96,20 +96,22 @@ def test_fixture_interact_enable_tails_keep_assignments_and_enables():
     # TextBox_: `Variable = 0 : (InputValue > 0)` -- the assignment directive
     # keeps an expression tail.
     text_entries = _interact_entries(interactors["TextBox_"])
-    text_assign = next(e["assign"] for e in text_entries if "assign" in e)
-    assert text_assign["name"] == "Variable"
-    assert isinstance(text_assign["tail"], Compare)
-    assert text_assign["tail"].left == VarRef(name="InputValue", state=None, span=text_assign["tail"].left.span)
+    text_assign = next(e for e in text_entries if isinstance(e, AssignClause))
+    assert text_assign.name == "Variable"
+    text_tail = text_assign.tail
+    assert isinstance(text_tail, Compare)
+    assert isinstance(text_tail.left, VarRef)
+    assert text_tail.left == VarRef(name="InputValue", state=None, span=text_tail.left.span)
 
     # ComBut_: `Variable = False : InVar_ "EnableFlag"` keeps the quoted symbol
     # as its tail, and `Enable_ = True : InVar_ "ToggleBit"` keeps it too.
     button_entries = _interact_entries(interactors["ComBut_"])
-    button_assign = next(e["assign"] for e in button_entries if "assign" in e)
-    assert button_assign["name"] == "Variable"
-    assert button_assign["tail"] == "EnableFlag"
-    enable = next(e for e in button_entries if "enable" in e)
-    assert enable["enable"] is True
-    assert enable["tail"] == "ToggleBit"
+    button_assign = next(e for e in button_entries if isinstance(e, AssignClause))
+    assert button_assign.name == "Variable"
+    assert button_assign.tail == VarTail("in", "EnableFlag")
+    enable = next(e for e in button_entries if isinstance(e, EnableClause))
+    assert enable.enabled is True
+    assert enable.tail == VarTail("in", "ToggleBit")
 
 
 def test_fixture_deeply_nested_comments_roundtrip_as_single_comment():

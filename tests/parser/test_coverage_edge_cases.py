@@ -1,4 +1,4 @@
-# pyright: reportUnknownVariableType=false, reportUnknownMemberType=false, reportUnknownArgumentType=false, reportPrivateUsage=false, reportUnusedImport=false, reportUnknownParameterType=false, reportArgumentType=false
+# pyright: reportUnknownVariableType=false, reportUnknownMemberType=false, reportUnknownArgumentType=false, reportPrivateUsage=false, reportUnusedImport=false, reportUnknownParameterType=false, reportArgumentType=false, reportTypedDictNotRequiredAccess=false
 """Edge-case coverage tests driving otherwise-unreached parser-core branches."""
 
 # pyright: reportUnknownParameterType=false, reportMissingParameterType=false, reportUnknownLambdaType=false, reportArgumentType=false, reportCallIssue=false
@@ -33,16 +33,14 @@ from sattline_parser.models.ast_model import (
     SFCSubsequence,
     SourceSpan,
 )
+from sattline_parser.models.clauses import ClippingClause, Grid, ModuleMarker, ModuleOptions, SeqLayers
 from sattline_parser.models.expressions import IfStmt, VarRef
+from sattline_parser.models.tails import VarTail
 from sattline_parser.source_document import SourceDocument
 from sattline_parser.transformer._comments_mixin import CommentsMixin
 from sattline_parser.transformer._expressions_mixin import _ExpressionsMixin
 from sattline_parser.transformer._graphics_interact_mixin import _as_float, _is_coord_box, _is_coord_pair
 from sattline_parser.transformer._module_assembly_mixin import ModuleAssemblyMixin
-from sattline_parser.transformer._module_header_mixin import (
-    _collect_module_header_argument_tails,
-    _normalize_module_header_tail,
-)
 from sattline_parser.transformer._module_layout_mixin import ModuleLayoutMixin
 from sattline_parser.transformer._module_shared import (  # used below
     CodeBlockPayload,
@@ -120,23 +118,6 @@ def test_coord_type_guards_and_as_float() -> None:
         _as_float(object())
 
 
-def test_module_header_tail_normalization() -> None:
-    assert isinstance(_normalize_module_header_tail(Tree("other", ["x"])), Tree)
-    assert isinstance(_normalize_module_header_tail(Tree(const.GRAMMAR_VALUE_INVAR_PREFIX, [1, 2])), Tree)
-    assert isinstance(_normalize_module_header_tail(Tree(const.GRAMMAR_VALUE_INVAR_PREFIX, [Token("A", "a")])), Tree)
-    assert _normalize_module_header_tail(Tree(const.GRAMMAR_VALUE_INVAR_PREFIX, ["child"])) == "child"
-
-
-def test_module_header_tail_collection_branches() -> None:
-    assert _collect_module_header_argument_tails({const.TREE_TAG_ENABLE: True}) == []
-    assert _collect_module_header_argument_tails({const.KEY_TAIL: "t"}) == ["t"]
-    assert _collect_module_header_argument_tails({"nested": {"leaf": 1}}) == []
-    assert _collect_module_header_argument_tails(Tree(const.GRAMMAR_VALUE_INVAR_PREFIX, ["top"])) == ["top"]
-    assert _collect_module_header_argument_tails(Tree("unrelated", ["a", Token("N", "n"), None])) == []
-    assert _collect_module_header_argument_tails(["e1", {"k": "v"}]) == []
-    assert _collect_module_header_argument_tails((1, {"xx": 2})) == []
-
-
 def test_module_direct_mixin_branches() -> None:
     m = ModuleAssemblyMixin()
     with pytest.raises(ValueError, match="missing ModuleHeader"):
@@ -150,18 +131,21 @@ def test_module_direct_mixin_branches() -> None:
 
 def test_module_layout_grid_and_def_tails() -> None:
     layout = ModuleLayoutMixin()
-    assert layout.grid([2]) == 2.0
+    assert layout.grid([2]) == Grid(2.0)
     with pytest.raises(ValueError, match="grid expected"):
         layout.grid([{"bad": 1}])
+    tail_a = VarTail("in", "a")
+    tail_b = VarTail("out", "b")
     module_def = layout.moduledef(
         [
-            {const.GRAMMAR_VALUE_CLIPPINGBOUNDS: ((0.0, 0.0), (1.0, 1.0)), const.KEY_TAILS: ["a"]},
-            {const.GRAMMAR_VALUE_CLIPPINGBOUNDS: ((2.0, 2.0), (3.0, 3.0)), const.KEY_TAILS: ["b"]},
-            {const.KEY_SEQ_LAYERS: 2},
+            ClippingClause(((0.0, 0.0), (1.0, 1.0)), (tail_a,)),
+            ClippingClause(((2.0, 2.0), (3.0, 3.0)), (tail_b,)),
+            ModuleOptions(layer_limit=2.0),
+            SeqLayers({"top": 1.0}),
         ]
     )
-    assert module_def.properties[const.KEY_TAILS] == ["a", "b"]
-    assert module_def.seq_layers == 2.0
+    assert module_def.properties[const.KEY_TAILS] == [tail_a, tail_b]
+    assert module_def.seq_layers == {"top": 1.0}
 
 
 def test_module_shared_float_tuple_and_groupconn() -> None:
@@ -225,7 +209,7 @@ def test_expressions_if_statement_flattens_nested_list_statements() -> None:
 
 
 def test_text_object_skips_comment_trees_when_linking_text_vars() -> None:
-    mixin = _GraphicsHarness(coord_tails=[], extra_tails=[])
+    mixin = _GraphicsHarness()
     go = mixin.text_object(
         [
             "Caption",
@@ -774,7 +758,7 @@ def test_segment_object_with_coord_pair() -> None:
     go = mixin.segment_object(
         [
             InterimCoords(coords=((0.0, 0.0), (1.0, 1.0))),
-            (5.0, 6.0),
+            InterimCoords(coords=(5.0, 6.0)),
         ]
     )
     assert go.type == const.GRAMMAR_VALUE_SEGMENTOBJECT
@@ -800,8 +784,8 @@ def test_symbolmodule_and_non_zoomable_terminal_handlers() -> None:
     from sattline_parser.transformer._module_header_mixin import ModuleHeaderMixin  # noqa: PLC0415
 
     mixin = ModuleHeaderMixin()
-    assert mixin.SYMBOLMODULE(Token("SYMBOLMODULE", "SymbolModule")) == {const.TREE_TAG_SYMBOLMODULE: True}
-    assert mixin.NON_ZOOMABLE(Token("NON_ZOOMABLE", "Non_Zoomable")) == {const.TREE_TAG_NON_ZOOMABLE: True}
+    assert mixin.SYMBOLMODULE(Token("SYMBOLMODULE", "SymbolModule")) == ModuleMarker("SymbolModule")
+    assert mixin.NON_ZOOMABLE(Token("NON_ZOOMABLE", "Non_Zoomable")) == ModuleMarker("Non_Zoomable")
 
 
 # ---- _module_header_mixin.py:173-176 SymbolModule/Non_Zoomable in invocation args ----

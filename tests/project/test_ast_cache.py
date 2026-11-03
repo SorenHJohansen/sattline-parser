@@ -6,6 +6,7 @@ from __future__ import annotations
 import hashlib
 import hmac
 import os
+import pickle
 import shutil
 import time
 from pathlib import Path
@@ -15,8 +16,11 @@ import pytest
 
 from sattline_parser.__version__ import __version__
 from sattline_parser.api import parse_source_file
+from sattline_parser.grammar import constants as const
 from sattline_parser.grammar.resolved import grammar_fingerprint
-from sattline_parser.models.ast_model import BasePicture
+from sattline_parser.models.ast_model import BasePicture, GraphObject, InteractObject, ModuleDef, ModuleHeader
+from sattline_parser.models.clauses import AssignClause, ColourSpec, TailedClause
+from sattline_parser.models.tails import LitStringTail, VarTail
 from sattline_parser.project import FILE_AST_CACHE_VERSION, FileASTCache
 from sattline_parser.project.ast_cache import (
     _PICKLE_CACHE_MAGIC,
@@ -79,6 +83,55 @@ def test_envelope_rejects_wrong_signature_length() -> None:
         signature = b"a" * lengths
         envelope = _PICKLE_CACHE_MAGIC + signature + b"\npayload"
         assert _read_signed_pickle_envelope(envelope) == (None, b"")
+
+
+def test_typed_tail_nodes_survive_a_pickle_round_trip() -> None:
+    """The AST cache pickles the model; the new frozen tail/clause nodes must round-trip.
+
+    ``FILE_AST_CACHE_VERSION`` was bumped to 2 when the tail shape changed, so an
+    old envelope is never read as if it held the typed nodes.
+    """
+    corner = VarTail("in", "Corner")
+    module_def = ModuleDef(
+        clipping_bounds=((-1.0, -1.0), (1.0, 1.0)),
+        clipping_tails=[corner],
+        properties={const.KEY_TAILS: [corner]},
+        graph_objects=[
+            GraphObject(
+                type=const.GRAMMAR_VALUE_TEXTOBJECT,
+                properties={
+                    const.KEY_COLOURS: [
+                        ColourSpec(
+                            "outline",
+                            width=TailedClause(const.GRAMMAR_VALUE_WIDTH_KEY, 2, VarTail("in", "WidthTail")),
+                        )
+                    ],
+                    const.KEY_COORDS: ((-1.0, 1.0), (1.0, -1.0)),
+                },
+            )
+        ],
+        interact_objects=[
+            InteractObject(
+                type=const.GRAMMAR_VALUE_COMBUT,
+                properties={const.KEY_ASSIGNS: [AssignClause("Variable", 0, VarTail("out", "AssignTail"))]},
+            )
+        ],
+    )
+    picture = BasePicture(
+        header=ModuleHeader(
+            name="BasePicture",
+            invoke_coord=(0.0, 0.0, 0.0, 1.0, 1.0),
+            enable_tail=VarTail("in", "EnableVar"),
+            invoke_coord_tails=[VarTail("out", LitStringTail("LitString", "Symbol"))],
+        ),
+        moduledefs=[module_def],
+    )
+
+    restored = pickle.loads(pickle.dumps(picture))
+
+    assert restored == picture
+    assert restored.header.invoke_coord_tails == [VarTail("out", LitStringTail("LitString", "Symbol"))]
+    assert FILE_AST_CACHE_VERSION == 2
 
 
 def test_envelope_round_trip() -> None:

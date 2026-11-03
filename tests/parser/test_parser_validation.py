@@ -11,6 +11,7 @@ false positives, and covers every branch of the validators with hand-built ASTs.
 import pathlib
 
 from sattline_parser import parse_and_validate
+from sattline_parser.models.tails import VarTail
 from sattline_parser.preprocessing.compressed import PreprocessError
 from sattline_parser.validation import validate_basepicture
 from sattline_parser.validation.builtins import (
@@ -1257,7 +1258,7 @@ def test_coordinate_tail_rule_covers_bare_variable_tails():
 
 def test_coordinate_tail_rule_skips_reference_names():
     """An InVar_ "Name" tail is a reference, not a value, so it stays silent."""
-    module_def = ModuleDef(clipping_bounds=((-1.0, -1.0), (1.0, 1.0)), clipping_tails=["ClipX"])
+    module_def = ModuleDef(clipping_bounds=((-1.0, -1.0), (1.0, 1.0)), clipping_tails=[VarTail("in", "ClipX")])
     bp = _base_picture()
     bp.moduledefs = [module_def]
     assert [d.code.value for d in validate_basepicture(bp)] == []

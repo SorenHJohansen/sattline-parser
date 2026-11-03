@@ -59,6 +59,27 @@ from sattline_parser.models.ast_model import (
     SourceSpan,
     Variable,
 )
+from sattline_parser.models.clauses import (
+    AssignClause,
+    ClippingClause,
+    ColourSpec,
+    CommonProperties,
+    EnableClause,
+    FlagClause,
+    Grid,
+    ModuleArguments,
+    ModuleInViewClause,
+    ModuleMarker,
+    ModuleOptions,
+    PickButton,
+    ProcedureCall,
+    ScaleSelector,
+    SeqLayers,
+    TailedClause,
+    TwoLayers,
+    Zoomable,
+    ZoomLimits,
+)
 from sattline_parser.models.expressions import (
     Assignment,
     BinOp,
@@ -72,11 +93,12 @@ from sattline_parser.models.expressions import (
     UnaryOp,
     VarRef,
 )
+from sattline_parser.models.tails import ClipValue, CoordinateClipping, LitStringTail, VarTail
 from sattline_parser.preprocessing import preprocess_sl_text, preprocess_source
 from sattline_parser.source_document import SourceDocument
 from sattline_parser.transformer._expressions_mixin import _ExpressionsMixin
 from sattline_parser.transformer._graphics_interact_mixin import _GraphicsInteractMixin
-from sattline_parser.transformer._module_shared import CodeBlockPayload, GroupConnInfo, InterimCoords
+from sattline_parser.transformer._module_shared import CodeBlockPayload, CoordTail, GroupConnInfo, InterimCoords
 from sattline_parser.transformer._modules_mixin import _ModulesMixin, flatten_items, meta_span
 from sattline_parser.transformer._sfc_mixin import SFCMixin
 from sattline_parser.transformer._tokens_mixin import DEFAULT_INIT, TokensMixin
@@ -111,52 +133,11 @@ _is_tree = _sl_is_tree
 
 
 class _ModulesHarness(_ModulesMixin):
-    def __init__(self, tails: list[Any] | None = None) -> None:
-        self._tails = list(tails or [])
-
-    def _extract_coord_tails(self, _items: list[Any]) -> list[Any]:
-        return list(self._tails)
+    """Direct harness for the composed module mixins."""
 
 
 class _GraphicsHarness(_GraphicsInteractMixin):
-    def __init__(self, coord_tails: list[Any] | None = None, extra_tails: list[Any] | None = None) -> None:
-        self._coord_tails = list(coord_tails or [])
-        self._extra_tails = list(extra_tails or [])
-
-    def _extract_coord_payloads(self, items: list[Any]) -> tuple[list[Any], list[Any]]:
-        payloads: list[Any] = []
-        tails = list(self._coord_tails)
-        for item in items:
-            if isinstance(item, tuple):
-                payloads.append(item)
-            elif isinstance(item, InterimCoords):
-                payloads.append(item.coords)
-                if item.tails:
-                    tails.extend(item.tails)
-            elif isinstance(item, dict) and parser_const.KEY_COORDS in item:
-                payloads.append(item[parser_const.KEY_COORDS])
-                tails.extend(item.get(parser_const.KEY_TAILS, []))
-        return payloads, tails
-
-    def _merge_tails(self, *tail_groups: list[Any]) -> list[Any]:
-        merged: list[Any] = []
-        for group in tail_groups:
-            merged.extend(group)
-        return merged
-
-    def _collect_invar_enable_tails(self, items: list[Any]) -> list[Any]:
-        tails = list(self._extra_tails)
-
-        def _visit(node: Any) -> None:
-            if isinstance(node, dict) and parser_const.KEY_TAIL in node:
-                tails.append(node[parser_const.KEY_TAIL])
-            elif isinstance(node, (list, tuple)):
-                for child in node:
-                    _visit(child)
-
-        for item in items:
-            _visit(item)
-        return tails
+    """Direct harness for the graphics/interact mixin."""
 
 
 class _TokensHarness(TokensMixin):
@@ -178,35 +159,52 @@ def _module_header(name: str = "Module") -> ModuleHeader:
 __all__ = [
     "DEFAULT_INIT",
     "Any",
+    "AssignClause",
     "Assignment",
     "BasePicture",
     "BinOp",
     "BoolOp",
+    "ClipValue",
+    "ClippingClause",
     "CodeBlockPayload",
     "CodeComment",
+    "ColourSpec",
+    "CommonProperties",
     "Compare",
+    "CoordTail",
+    "CoordinateClipping",
     "DataType",
+    "EnableClause",
     "Equation",
+    "FlagClause",
     "FloatLiteral",
     "FrameModule",
     "FuncCall",
     "FuncCallStmt",
     "GraphObject",
+    "Grid",
     "GroupConnInfo",
     "IfStmt",
     "IntLiteral",
     "InteractObject",
     "InterimCoords",
+    "LitStringTail",
     "LiteralString",
     "Meta",
+    "ModuleArguments",
     "ModuleCode",
     "ModuleDef",
     "ModuleHeader",
+    "ModuleInViewClause",
+    "ModuleMarker",
+    "ModuleOptions",
     "ModuleTypeDef",
     "ModuleTypeInstance",
     "NotOp",
     "ParameterMapping",
     "Path",
+    "PickButton",
+    "ProcedureCall",
     "SFCAlternative",
     "SFCCodeBlocks",
     "SFCFork",
@@ -217,23 +215,30 @@ __all__ = [
     "SFCTransition",
     "SFCTransitionSub",
     "SLTransformer",
+    "ScaleSelector",
+    "SeqLayers",
     "Sequence",
     "SimpleNamespace",
     "Simple_DataType",
     "SingleModule",
     "SourceDocument",
     "SourceSpan",
+    "TailedClause",
     "TernaryOp",
     "Token",
     "TokensMixin",
     "Tree",
+    "TwoLayers",
     "UnaryOp",
     "UnexpectedCharacters",
     "UnexpectedEOF",
     "UnexpectedInput",
     "UnexpectedToken",
     "VarRef",
+    "VarTail",
     "Variable",
+    "ZoomLimits",
+    "Zoomable",
     "_ExpressionsHarness",
     "_ExpressionsMixin",
     "_GraphicsHarness",

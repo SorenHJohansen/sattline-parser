@@ -1,4 +1,4 @@
-# pyright: reportUnknownVariableType=false, reportUnknownMemberType=false, reportUnknownParameterType=false, reportMissingParameterType=false, reportUnknownArgumentType=false, reportCallIssue=false, reportPrivateUsage=false, reportUnusedImport=false
+# pyright: reportUnknownVariableType=false, reportUnknownMemberType=false, reportUnknownParameterType=false, reportMissingParameterType=false, reportUnknownArgumentType=false, reportCallIssue=false, reportPrivateUsage=false, reportUnusedImport=false, reportTypedDictNotRequiredAccess=false
 # ruff: noqa: F403, F405
 from ._parser_core_test_support import *
 
@@ -133,11 +133,13 @@ def test_modules_mixin_wrapper_rules_and_invocation_errors():
 
     assert mixin.module_body(["a"]).data == parser_const.TREE_TAG_MODULE_BODY
     assert mixin.base_module_body(["b"]).data == parser_const.TREE_TAG_BASE_MODULE_BODY
-    assert mixin.IGNOREMAXMODULE(None) == parser_const.GRAMMAR_VALUE_IGNOREMAXMODULE
-    assert mixin.LAYERMODULE(None) == parser_const.GRAMMAR_VALUE_LAYERMODULE
+    assert mixin.IGNOREMAXMODULE(None) == ModuleMarker(parser_const.GRAMMAR_VALUE_IGNOREMAXMODULE)
+    assert mixin.LAYERMODULE(None) == ModuleMarker(parser_const.GRAMMAR_VALUE_LAYERMODULE)
     assert mixin.argument([Token("COMMA", ","), "value"]) == "value"
     assert mixin.argument([Token("COMMA", ",")]) is None
-    assert mixin.arguments([Token("COMMA", ","), 1, "two"]).children == [1, "two"]
+    assert mixin.arguments([Token("COMMA", ","), 1, ModuleMarker("SymbolModule")]) == ModuleArguments(
+        layer=1, markers=(ModuleMarker("SymbolModule"),)
+    )
     assert mixin.frame_module([]) is True
     assert mixin.invocation_module_type([header, "PumpType", parameter_tree]).moduletype_name == "PumpType"
     assert isinstance(mixin.invocation_new_module([True, header, 101, ModuleDef(), ModuleCode()]), FrameModule)
@@ -233,45 +235,42 @@ def test_modules_mixin_transfer_and_variable_helpers_cover_fallback_branches():
 
 
 def test_modules_mixin_layout_helpers_cover_moduledef_and_numeric_errors():
-    mixin = _ModulesHarness(["CoordTail"])
+    mixin = _ModulesHarness()
     graph = GraphObject(type="TextObject", properties={})
     interact = InteractObject(type="Button_", properties={})
+    tail = VarTail("in", "TailA")
 
     assert mixin.origo_coord([1, 2, 3]) == [1, 2, 3]
     assert mixin.size([4, 5]) == [4, 5]
-    assert mixin.clippingbounds([InterimCoords(coords=((0.0, 0.0), (1.0, 1.0)), tails=["TailA"])]) == {
-        parser_const.GRAMMAR_VALUE_CLIPPINGBOUNDS: ((0.0, 0.0), (1.0, 1.0)),
-        parser_const.KEY_TAILS: ["TailA"],
-    }
-    assert mixin.clippingbounds([((0.0, 0.0), (1.0, 1.0))]) == {
-        parser_const.GRAMMAR_VALUE_CLIPPINGBOUNDS: ((0.0, 0.0), (1.0, 1.0))
-    }
-    assert mixin.seq_layers(["LayerA"]) == {parser_const.KEY_SEQ_LAYERS: "LayerA"}
-    assert mixin.zoomlimits([0.5, 2.0]) == {parser_const.GRAMMAR_VALUE_ZOOMLIMITS: (0.5, 2.0)}
+    assert mixin.clippingbounds([InterimCoords(coords=((0.0, 0.0), (1.0, 1.0)), tails=[tail])]) == ClippingClause(
+        ((0.0, 0.0), (1.0, 1.0)), (tail,)
+    )
+    assert mixin.seq_layers([{"top": 1.0}]) == SeqLayers({"top": 1.0})
+    assert mixin.seq_layers([2]) == SeqLayers(2.0)
+    assert mixin.zoomlimits([0.5, 2.0]) == ZoomLimits(0.5, 2.0)
     with pytest.raises(ValueError, match="zoomlimits expected two REAL values"):
         mixin.zoomlimits([0.5])
     with pytest.raises(ValueError, match="clippingbounds expected a payload"):
         mixin.clippingbounds([])
-    assert mixin.ZOOMABLE(None) == {parser_const.GRAMMAR_VALUE_ZOOMABLE: True}
-    assert mixin.grid([Token("JUNK", ","), 0.5, 1.5]) == 1.5
-    assert mixin.moduledef_opts_seq(
-        [{parser_const.GRAMMAR_VALUE_GRID: 0.5}, {parser_const.KEY_SEQ_LAYERS: "LayerA"}]
-    ).children == [{parser_const.GRAMMAR_VALUE_GRID: 0.5, parser_const.KEY_SEQ_LAYERS: "LayerA"}]
+    with pytest.raises(ValueError, match="seq_layers expected a layer mapping"):
+        mixin.seq_layers(["bad"])
+    assert mixin.ZOOMABLE(None) == Zoomable()
+    assert mixin.grid([Token("JUNK", ","), 0.5, 1.5]) == Grid(1.5)
+    assert mixin.two_layers([Token("JUNK", ":"), 3.0]) == TwoLayers(3.0)
+    assert mixin.moduledef_opts_seq([Grid(0.5), Grid(0.75)]).children == [ModuleOptions(grid=0.75)]
 
     moduledef = mixin.moduledef(
         [
-            {parser_const.GRAMMAR_VALUE_CLIPPINGBOUNDS: ((0.0, 0.0), (1.0, 1.0)), parser_const.KEY_TAILS: ["TailA"]},
+            ClippingClause(((0.0, 0.0), (1.0, 1.0)), (tail,)),
             [graph],
             [interact],
-            {parser_const.GRAMMAR_VALUE_ZOOMLIMITS: (0.5, 2.0)},
-            {parser_const.GRAMMAR_VALUE_ZOOMABLE: True},
-            {parser_const.GRAMMAR_VALUE_GRID: 0.75},
-            {parser_const.KEY_SEQ_LAYERS: {"top": 1.0}},
+            ModuleOptions(zoom_limits=ZoomLimits(0.5, 2.0), zoomable=True, grid=0.75, layer_limit=3.0),
+            SeqLayers({"top": 1.0}),
         ]
     )
 
     assert moduledef.clipping_bounds == ((0.0, 0.0), (1.0, 1.0))
-    assert moduledef.properties[parser_const.KEY_TAILS] == ["TailA"]
+    assert moduledef.properties[parser_const.KEY_TAILS] == [tail]
     assert moduledef.graph_objects == [graph]
     assert moduledef.interact_objects == [interact]
     assert moduledef.zoom_limits == (0.5, 2.0)
@@ -279,16 +278,14 @@ def test_modules_mixin_layout_helpers_cover_moduledef_and_numeric_errors():
     assert moduledef.grid == 0.75
     assert moduledef.seq_layers == {"top": 1.0}
 
-    tuple_moduledef = mixin.moduledef([((2.0, 2.0), (3.0, 3.0))])
-    assert tuple_moduledef.clipping_bounds == ((2.0, 2.0), (3.0, 3.0))
-
     # Module options arriving through the real grammar (moduledef_opts /
     # moduledef_option) must reach the ModuleDef, including Two_Layers_ and
     # bare-float grid values.
-    option = mixin.moduledef_option([{parser_const.GRAMMAR_VALUE_ZOOMABLE: True}, 0.75])
-    assert option == {parser_const.GRAMMAR_VALUE_ZOOMABLE: True, parser_const.GRAMMAR_VALUE_GRID: 0.75}
-    opts = mixin.moduledef_opts([option, {parser_const.GRAMMAR_VALUE_TWO_LAYERS: 3.0}])
-    assert opts[parser_const.GRAMMAR_VALUE_TWO_LAYERS] == 3.0
+    option = mixin.moduledef_option([Zoomable(), Grid(0.75)])
+    assert option == ModuleOptions(zoomable=True, grid=0.75)
+    assert mixin.moduledef_option([0.5]) == ModuleOptions(grid=0.5)
+    opts = mixin.moduledef_opts([option, TwoLayers(3.0)])
+    assert opts == ModuleOptions(zoomable=True, grid=0.75, layer_limit=3.0)
     options_moduledef = mixin.moduledef([opts])
     assert options_moduledef.zoomable is True
     assert options_moduledef.grid == 0.75
@@ -300,3 +297,23 @@ def test_modules_mixin_layout_helpers_cover_moduledef_and_numeric_errors():
         mixin.grid(["bad"])
     with pytest.raises(ValueError, match="grid expected at least one numeric value"):
         mixin.grid([Token("JUNK", ",")])
+
+
+def test_modules_mixin_layout_rejects_malformed_payloads():
+    mixin = _ModulesHarness()
+    pair = mixin.origo_size_pair(["ignored", InterimCoords(coords=(1.0, 2.0)), InterimCoords(coords=(3.0, 4.0))])
+    assert pair == InterimCoords(coords=((1.0, 2.0), (3.0, 4.0)))
+
+    assert mixin.coord_invar_tail([Token("OUTVAR_PREFIX", "OutVar_"), "Bound"]) == CoordTail(VarTail("out", "Bound"))
+    with pytest.raises(ValueError, match="expected a literal after InVar_/OutVar_"):
+        mixin.coord_invar_tail([Token("INVAR_PREFIX", "InVar_"), object()])
+    with pytest.raises(ValueError, match="coord_clippingbounds expected clip values"):
+        mixin.coord_clippingbounds([])
+    with pytest.raises(ValueError, match="clip_value_tailed expected a REAL value"):
+        mixin.clip_value_tailed([])
+    with pytest.raises(ValueError, match="clip_value_plain expected a REAL value"):
+        mixin.clip_value_plain([])
+    with pytest.raises(ValueError, match="clip_value expected a clip value payload"):
+        mixin.clip_value([])
+    with pytest.raises(ValueError, match="two_layers expected a numeric layer value"):
+        mixin.two_layers([])

@@ -50,6 +50,7 @@ from sattline_parser.models.expressions import (
     UnaryOp,
     VarRef,
 )
+from sattline_parser.models.tails import is_expression_tail
 from sattline_parser.names import fold_identifier
 from sattline_parser.validation.builtins import builtin_function_signature
 from sattline_parser.validation.diagnostics import Diagnostic, DiagnosticCode
@@ -639,14 +640,14 @@ def check_coordinate_tail_types(
     *position*, so it applies to every collected tail, not just computed ones:
     a bare integer variable in a corner is rejected the same way.
 
-    ``str`` tails are skipped. An ``InVar_ "Name"`` tail carries a variable
+    ``VarTail`` tails are skipped. An ``InVar_ "Name"`` tail carries a variable
     *reference*, not a value, and resolving the name is not evidenced.
     Unknown types stay silent, as elsewhere in this module.
     """
     seen: set[int] = set()
     tails: list[object] = [*(module_def.clipping_tails or []), *(module_def.properties.get(const.KEY_TAILS) or [])]
     for tail in tails:
-        if not isinstance(tail, BoolOp | NotOp | Compare | BinOp | UnaryOp | FuncCall | TernaryOp | VarRef):
+        if not is_expression_tail(tail):
             continue
         if id(tail) in seen:
             continue

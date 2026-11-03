@@ -42,72 +42,8 @@ def test_sl_transformer_top_level_helpers_cover_header_quote_and_tree_iteration_
     assert list(_iter_tree_children("not-a-tree")) == []
 
 
-def test_sl_transformer_helper_methods_cover_nested_tail_and_payload_collection():
+def test_sl_transformer_start_paths_cover_header_name_and_errors():
     transformer = SLTransformer()
-    variable_tail = VarRef("ScanGroup")
-    tuple_tail = ("Group", 3)
-
-    tails = transformer._extract_coord_tails(
-        [
-            None,
-            Token("NAME", "IgnoredToken"),
-            IntLiteral(1),
-            FloatLiteral(2.5),
-            True,
-            "TailText",
-            (1.0, 2.0),
-            tuple_tail,
-            variable_tail,
-            {"nested": ["NestedTail", {"deep": "DeepTail"}]},
-            [Tree("inner", ["TreeTail"])],
-        ]
-    )
-
-    assert tails == ["TailText", tuple_tail, variable_tail, "NestedTail", "DeepTail", "TreeTail"]
-    assert transformer._merge_tails(["Left"], [], ["Right"]) == ["Left", "Right"]
-    assert transformer._extract_coord_payloads(
-        [
-            InterimCoords(coords=(1.0, 2.0), tails=["CoordTail"]),
-            (3.0, 4.0),
-            "ignored",
-        ]
-    ) == ([(1.0, 2.0), (3.0, 4.0)], ["CoordTail"])
-
-
-def test_sl_transformer_tailed_rule_and_start_paths_cover_enable_payloads_and_errors():
-    transformer = SLTransformer()
-    enable_expr = Tree(parser_const.KEY_ENABLE_EXPRESSION, ["Enabled"])
-    dict_payload = {"payload": "Width"}
-
-    assert transformer._extract_tailed_rule_payload("plain") is None
-    assert (
-        transformer._extract_tailed_rule_payload(Tree("format_string_tailed", [Token("COMMA", ","), enable_expr]))
-        is enable_expr
-    )
-    assert (
-        transformer._extract_tailed_rule_payload(Tree("width_tailed", [Token("COMMA", ","), dict_payload]))
-        == dict_payload
-    )
-    assert transformer._extract_tailed_rule_payload(Tree("width_tailed", [Token("COMMA", ",")])) is None
-
-    invar_tree = Tree(parser_const.GRAMMAR_VALUE_INVAR_PREFIX, [])
-    tail_tree = Tree("invar_tail", [])
-    tailed_rule = Tree("format_string_tailed", [Token("COMMA", ","), {"payload": "FormatTail"}])
-    collected = transformer._collect_invar_enable_tails(
-        [
-            {parser_const.KEY_TAIL: "PlainTail", "nested": [invar_tree]},
-            {parser_const.TREE_TAG_ENABLE: True, parser_const.KEY_TAIL: "EnabledTail"},
-            Tree("outer", cast(list[Any], [enable_expr, tail_tree, tailed_rule])),
-            [None],
-        ]
-    )
-
-    assert "PlainTail" in collected
-    assert "EnabledTail" in collected
-    assert invar_tree in collected
-    assert enable_expr in collected
-    assert tail_tree in collected
-    assert {"payload": "FormatTail"} in collected
 
     base_picture = BasePicture(header=_module_header("BasePicture"))
     started = transformer.start(

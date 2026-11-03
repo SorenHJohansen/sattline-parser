@@ -11,8 +11,6 @@ from ..grammar import constants as const
 from ..names import fold_identifier
 from ._ast_model_support import (
     InitValue,
-    PropertyMap,
-    any_list,
     code_comment_list,
     code_item_list,
     datatype_def_list,
@@ -24,7 +22,6 @@ from ._ast_model_support import (
     moduledef_list,
     moduletype_def_list,
     parameter_mapping_list,
-    property_map,
     render_base_picture,
     render_frame_module,
     render_module_code,
@@ -50,6 +47,15 @@ from .expressions import (
     UnaryOp,
     VarRef,
 )
+from .properties import (
+    GraphProperties,
+    InteractProperties,
+    ModuleDefProperties,
+    graph_properties,
+    interact_properties,
+    module_def_properties,
+)
+from .tails import Tail, tail_list
 
 __all__ = [
     "Assignment",
@@ -302,7 +308,7 @@ class ParameterMapping:
 @dataclass
 class GraphObject:
     type: str
-    properties: PropertyMap = field(default_factory=property_map)
+    properties: GraphProperties = field(default_factory=graph_properties)
     #: Source span of the object (its ``graph_object`` rule), when positions are
     #: propagated. Graphics correlation uses it to point at the marker.
     span: SourceSpan | None = None
@@ -311,7 +317,7 @@ class GraphObject:
 @dataclass
 class InteractObject:
     type: str
-    properties: PropertyMap = field(default_factory=property_map)
+    properties: InteractProperties = field(default_factory=interact_properties)
 
 
 @dataclass
@@ -328,14 +334,14 @@ class ModuleDef:
     #: Coordinate tails attached to the ``ClippingBounds`` corners, in source
     #: order. Retained so validation can type-check corner tail expressions;
     #: :attr:`clipping_bounds` keeps only the resolved float values.
-    clipping_tails: list[object] | None = None
+    clipping_tails: list[Tail] | None = None
     zoom_limits: tuple[float, float] | None = None
     seq_layers: float | dict[str, float] | None = None
     grid: float = 0.2
     zoomable: bool = False
     graph_objects: list[GraphObject] = field(default_factory=graph_object_list)
     interact_objects: list[InteractObject] = field(default_factory=interact_object_list)
-    properties: PropertyMap = field(default_factory=property_map)
+    properties: ModuleDefProperties = field(default_factory=module_def_properties)
 
     def __str__(self) -> str:
         lines = [
@@ -413,8 +419,8 @@ class ModuleHeader:
     module_in_view: bool | None = None
     zoom_limits: tuple[float, float] | None = None
     zoomable: bool = False
-    enable_tail: object | None = None
-    invoke_coord_tails: list[object] = field(default_factory=any_list)
+    enable_tail: Tail | None = None
+    invoke_coord_tails: list[Tail] = field(default_factory=tail_list)
     groupconn: VarRef | None = None
     groupconn_global: bool = False
     description_comments: list[CodeComment] = field(default_factory=code_comment_list)
@@ -543,12 +549,14 @@ class BasePicture(_ModuleBlockViews):
     #: graphics data lives on ``SattLineProgram.graphics``. They stay declared
     #: only so consumers that attach their own views to the AST keep working
     #: until they move that state into their own graph model.
-    graphics_bindings: list[GraphicsBinding] = field(default_factory=any_list, metadata={"deprecated": True})
-    graphics_messages: list[Any] = field(default_factory=any_list, metadata={"deprecated": True})
-    graphics_composite_records: list[Any] = field(default_factory=any_list, metadata={"deprecated": True})
-    graphics_composite_occurrences: list[Any] = field(default_factory=any_list, metadata={"deprecated": True})
-    graphics_picture_display_records: list[Any] = field(default_factory=any_list, metadata={"deprecated": True})
-    graphics_picture_display_occurrences: list[Any] = field(default_factory=any_list, metadata={"deprecated": True})
+    graphics_bindings: list[GraphicsBinding] = field(
+        default_factory=list[GraphicsBinding], metadata={"deprecated": True}
+    )
+    graphics_messages: list[Any] = field(default_factory=list[Any], metadata={"deprecated": True})
+    graphics_composite_records: list[Any] = field(default_factory=list[Any], metadata={"deprecated": True})
+    graphics_composite_occurrences: list[Any] = field(default_factory=list[Any], metadata={"deprecated": True})
+    graphics_picture_display_records: list[Any] = field(default_factory=list[Any], metadata={"deprecated": True})
+    graphics_picture_display_occurrences: list[Any] = field(default_factory=list[Any], metadata={"deprecated": True})
     library_dependencies: dict[str, list[str]] = field(
         default_factory=library_dependency_map, metadata={"deprecated": True}
     )

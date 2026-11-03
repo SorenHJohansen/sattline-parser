@@ -7,20 +7,10 @@ from __future__ import annotations
 
 from typing import Any, TypeGuard, cast
 
-from lark import Token, Transformer, Tree
+from lark import Transformer, Tree
 
-from sattline_parser.models.ast_model import BasePicture, FloatLiteral, IntLiteral, VarRef
-from sattline_parser.models.expressions import (
-    BinOp,
-    BoolOp,
-    Compare,
-    FuncCall,
-    NotOp,
-    TernaryOp,
-    UnaryOp,
-)
+from sattline_parser.models.ast_model import BasePicture
 
-from ..grammar import constants as const
 from . import _module_shared as _module_shared
 from ._comments_mixin import CommentsMixin
 from ._expressions_mixin import ExpressionsMixin
@@ -28,7 +18,7 @@ from ._graphics_interact_mixin import GraphicsInteractMixin
 from ._module_assembly_mixin import ModuleAssemblyMixin
 from ._module_header_mixin import ModuleHeaderMixin
 from ._module_layout_mixin import ModuleLayoutMixin
-from ._module_shared import InterimCoords, TransformerItem, TransformerTree, tree_children
+from ._module_shared import TransformerItem, TransformerTree, tree_children
 from ._sfc_mixin import SFCMixin
 from ._tokens_mixin import TokensMixin
 
@@ -108,129 +98,6 @@ class SLTransformer(
 
     def __init__(self) -> None:
         super().__init__()
-
-    def _extract_coord_tails(self, nodes: list[TransformerItem]) -> list[object]:
-        """Extract coordinate tail annotations from nested node structure."""
-        tails: list[object] = []
-
-        def visit(value: object) -> None:
-            if value is None or isinstance(value, Token):
-                return
-            if isinstance(value, IntLiteral | FloatLiteral | int | float | bool):
-                return
-            if isinstance(value, str):
-                tails.append(value)
-                return
-            if isinstance(value, tuple):
-                tuple_value = cast(tuple[object, ...], value)
-                if len(tuple_value) == 2 and all(isinstance(item, int | float) for item in tuple_value):
-                    return
-                tails.append(tuple_value)
-                return
-            if isinstance(value, dict):
-                payload = cast(dict[str, object], value)
-                for nested in payload.values():
-                    visit(nested)
-                return
-            if isinstance(value, VarRef):
-                tails.append(value)
-                return
-            if isinstance(value, BoolOp | NotOp | Compare | BinOp | UnaryOp | FuncCall | TernaryOp):
-                # Computed corner tails, e.g. `ClippingBounds = ( -1.0 : (Source + 1) , .. )`.
-                # Retained so validation can type-check them (SL-V032).
-                tails.append(value)
-                return
-            if isinstance(value, list):
-                for nested in cast(list[object], value):
-                    visit(nested)
-                return
-            if _is_tree(value):
-                for child in tree_children(value):
-                    visit(child)
-
-        for node in nodes:
-            visit(node)
-        return tails
-
-    def _merge_tails(self, *tail_groups: list[object]) -> list[object]:
-        """Merge multiple tail groups into a single flat list."""
-        merged: list[object] = []
-        for group in tail_groups:
-            merged.extend(group)
-        return merged
-
-    def _extract_coord_payloads(self, items: list[TransformerItem]) -> tuple[list[object], list[object]]:
-        """Extract coordinates and tails from items."""
-        coords: list[object] = []
-        tails: list[object] = []
-        for item in items:
-            if isinstance(item, InterimCoords):
-                coords.append(item.coords)
-                if item.tails:
-                    tails.extend(item.tails)
-            elif isinstance(item, tuple):
-                coords.append(cast(tuple[object, ...], item))
-        return coords, tails
-
-    def _extract_tailed_rule_payload(self, node: object) -> object | None:
-        """Extract payload from a tailed grammar rule."""
-        if not _is_tree(node):
-            return None
-
-        for child in reversed(tree_children(node)):
-            if isinstance(child, Token):
-                continue
-            if _is_tree(child) and getattr(child, "data", None) == const.KEY_ENABLE_EXPRESSION:
-                return child
-            if isinstance(child, dict | tuple | str):
-                return cast(object, child)
-        return None
-
-    def _collect_invar_enable_tails(self, nodes: list[TransformerItem]) -> list[object]:
-        """Find InVar_ trees and enable-expression tails in nested structure."""
-        tails: list[object] = []
-        tailed_rules = {
-            "format_string_tailed",
-            "value_fraction_tailed",
-            "width_tailed",
-            "assign_colour_tailed",
-            "colour_style_tailed",
-        }
-
-        def visit(value: object) -> None:
-            if value is None:
-                return
-            if isinstance(value, dict):
-                payload = cast(dict[str, object], value)
-                # A tail is appended exactly once per dict, including enable
-                # dicts which also carry TREE_TAG_ENABLE.
-                if const.KEY_TAIL in payload and payload[const.KEY_TAIL] is not None:
-                    tails.append(payload[const.KEY_TAIL])
-                for nested in payload.values():
-                    visit(nested)
-                return
-            if _is_tree(value):
-                data = getattr(value, "data", None)
-                if data in (
-                    const.GRAMMAR_VALUE_INVAR_PREFIX,
-                    const.KEY_ENABLE_EXPRESSION,
-                    "invar_tail",
-                ):
-                    tails.append(value)
-                elif data in tailed_rules:
-                    payload = self._extract_tailed_rule_payload(value)
-                    if payload is not None:
-                        tails.append(payload)
-                for child in tree_children(value):
-                    visit(child)
-                return
-            if isinstance(value, list):
-                for nested in cast(list[object], value):
-                    visit(nested)
-
-        for node in nodes:
-            visit(node)
-        return tails
 
     def start(self, items: list[TransformerItem]) -> BasePicture:
         """Grammar start -> BasePicture root from parsed program."""

@@ -11,6 +11,8 @@ from lark.visitors import v_args as _lark_v_args  # pyright: ignore[reportUnknow
 
 from sattline_parser.grammar import constants as const
 from sattline_parser.models.ast_model import CodeItem, FrameModule, ModuleTypeInstance, SingleModule, SourceSpan, VarRef
+from sattline_parser.models.clauses import CoordBox, CoordPair
+from sattline_parser.models.tails import Tail
 
 TransformerTree = Tree[Any]
 TransformerItem = object
@@ -18,8 +20,18 @@ ModuleInvocation = SingleModule | FrameModule | ModuleTypeInstance
 type VArgsDecorator = Callable[[object], object]
 _V_ARGS_FACTORY = cast(Callable[..., VArgsDecorator], _lark_v_args)
 
-CoordPair = tuple[float, float]
-CoordBox = tuple[CoordPair, CoordPair]
+
+@dataclass(frozen=True)
+class CoordTail:
+    """One ``coord_invar_tail`` payload: a tail after a coordinate REAL.
+
+    Lark drops the anonymous commas, so a rule that reads several coordinates
+    cannot tell a coordinate REAL from a numeric literal tail by position alone.
+    Wrapping every ``coord_invar_tail`` result makes the split structural: the
+    remaining bare numbers are exactly the coordinate values.
+    """
+
+    value: Tail
 
 
 @dataclass(frozen=True)
@@ -35,7 +47,7 @@ class InterimCoords:
     """
 
     coords: CoordPair | CoordBox | tuple[float, float, float, float, float]
-    tails: list[object] | None = None
+    tails: list[Tail] | None = None
 
 
 @dataclass(frozen=True)
@@ -144,6 +156,7 @@ __all__ = [
     "CodeBlockPayload",
     "CoordBox",
     "CoordPair",
+    "CoordTail",
     "GroupConnInfo",
     "InterimCoords",
     "ModuleInvocation",
