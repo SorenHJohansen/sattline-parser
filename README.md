@@ -6,6 +6,49 @@ This is an independent, unofficial project. It is not affiliated with, endorsed
 by, or supported by ABB, and the SattLine name is used only to describe the file
 format this package reads.
 
+## Scope
+
+`sattline-parser` is **language infrastructure**. It answers "what is in this
+source, and how is it structured?". It does not analyse a program, score it,
+refactor it, or decide whether it is correct for a machine.
+
+| Responsibility | Where |
+| --- | --- |
+| Grammar and tokenization | `src/sattline_parser/grammar/` |
+| Compressed-source preprocessing and source provenance | `src/sattline_parser/preprocessing/`, `src/sattline_parser/source_document.py` |
+| AST models and transformation | `src/sattline_parser/models/`, `src/sattline_parser/transformer/` |
+| Syntax diagnostics | `src/sattline_parser/errors.py` |
+| Graphics file parsing and data models | `src/sattline_parser/project/graphics_*.py`, `project/models.py` |
+| SattLine project discovery | `src/sattline_parser/project/discovery.py` |
+| Draft/official resolution | `src/sattline_parser/project/formats.py` |
+| Dependency resolution and project loading | `src/sattline_parser/project/loader.py` |
+| Language-level structural validation | `src/sattline_parser/validation/` |
+| Generic parser and project introspection | `src/sattline_parser/cli/` |
+
+Out of scope: lint policy, metrics, dead-code analysis, refactoring, code
+generation, graphics correlation, asset verification, rendering, and any
+consumer-specific rule. The package supplies language facts with source
+positions. A consumer applies its own policy on top.
+
+## Documentation
+
+The internals are documented in [`docs/`](docs/README.md):
+
+- [Architecture](docs/architecture.md): layers, module map, and import rules
+- [Parse pipeline](docs/parse-pipeline.md): bytes to `BasePicture`
+- [Grammar and tokenization](docs/grammar.md): `sattline.lark`, the lexer, comments
+- [Source provenance](docs/source-provenance.md): original-source positions
+- [AST models](docs/ast.md): the tree and its invariants
+- [Transformer](docs/transformer.md): how the tree is built
+- [Validation](docs/validation.md): the strict single-source rules
+- [Project layer](docs/project.md): discovery, dependencies, caches
+- [Graphics companions](docs/graphics.md): `.g` / `.y` parsing
+- [Command line](docs/cli.md): commands, exit codes, JSON schemas
+- [Builtins](docs/builtins.md): function signatures and record fields
+- [Public API](docs/api.md): the stable import surface
+- [Testing and CI](docs/testing.md): suites, coverage, fuzzing
+- [Development](docs/development.md): setup, workflow, conventions
+
 ## Provenance
 
 Everything in this repository that describes SattLine behaviour was established
@@ -85,7 +128,7 @@ basepicture = parse_source_text(source)
 
 ### Choosing an entry point
 
-`parse_source_file` is for when you have a path on disk. It handles the file I/O for you: it reads the file as **Windows-1252** (`cp1252`) — the only encoding the real SattLine parser accepts, with no fallback to `utf-8` or `latin-1` — and passes the path along so error messages can name the source file.
+`parse_source_file` is for when you have a path on disk. It handles the file I/O for you: it reads the file as **Windows-1252** (`cp1252`, the only encoding the real SattLine parser accepts, with no fallback to `utf-8` or `latin-1`) and passes the path along so error messages can name the source file.
 
 `parse_source_text` is for when you already hold the source as a string: a snippet, an editor buffer, a response from an API, or content read by your own code. The two are interchangeable in behavior; `parse_source_file(path)` is equivalent to `parse_source_text(path.read_bytes().decode("cp1252"))` plus path-aware error reporting. Start with `parse_source_file` when you have a path, `parse_source_text` otherwise.
 
@@ -111,7 +154,7 @@ if is_compressed(source):
 `is_compressed` answers whether the text uses the compressed encoding.
 `preprocess_sl_text` decodes it, returning the decoded text plus the *marker
 substitution table* (the seed mapping that was applied). That mapping is **not**
-a position map — use `preprocess_source` for provenance. `preprocess_source`
+a position map. Use `preprocess_source` for provenance. `preprocess_source`
 returns a `SourceDocument` carrying the original text, the decoded text, and a
 per-character map from decoded offsets back to the original source; `parse_source_text`
 uses it internally so every AST span and diagnostic points into the original source.
@@ -227,7 +270,7 @@ if program.graphics is not None:  # GraphicsMessage values, never raised
 - `cache_dir=...` optionally enables the parser-owned lookup and per-file AST
   caches (`FileLookupCache` / `FileASTCache`) so repeated loads skip
   re-discovery and re-parsing. When `cache_dir=None` (default) the load is
-  fully in-memory and hermetic — no disk writes, no shared cache state.
+  fully in-memory and hermetic: no disk writes, no shared cache state.
 
 ```python
 # Hermetic callers (no disk cache) are the recommended default:
@@ -244,8 +287,9 @@ project = SattLineProject.load(
 Releases use calendar versioning (`YYYY.M.N`). The version orders releases; it
 does not encode semantic-version compatibility.
 
-The supported public surface is the names listed in `sattline_parser.__all__`
-and `sattline_parser.api.__all__`, plus the documented `sattline` command and
+The supported public surface is the names listed in `sattline_parser.__all__`,
+`sattline_parser.api.__all__`, `sattline_parser.project.__all__`, and
+`sattline_parser.builtins.__all__`, plus the documented `sattline` command and
 its JSON schemas. Submodule paths and names not listed there are internal and
 may change between releases.
 
@@ -268,6 +312,11 @@ pip-audit
 python scripts/check_branch_coverage.py     # line >= 100%, branch >= 93%
 ```
 
+The repository also ships an OpenCode workspace in `.opencode/`: the
+`sattline-parser` skill, the `/verify`, `/release`, and `/review` commands, and a
+read-only `parser-reviewer` subagent. `AGENTS.md` is the control plane, and
+`docs/development.md` describes the workflow.
+
 `dev` never pulls the `fuzz` extra, because the fuzzing engine is Linux and
 FreeBSD only. Add it explicitly where it is supported:
 
@@ -286,16 +335,16 @@ including the packaging tests in `tests/test_packaging.py` that live outside
 
 Fuzzing runs in three tiers, each enforced separately:
 
-- **Deterministic corpus regression** — every fixture in `tests/fixtures/corpus/`
+- **Deterministic corpus regression**: every fixture in `tests/fixtures/corpus/`
   must parse or produce an *expected* invalid-input error; runs in normal CI.
-- **PR fuzz smoke** — a small number of random inputs must not crash the
+- **PR fuzz smoke**: a small number of random inputs must not crash the
   parser; runs in normal CI.
-- **Continuous fuzzing** — long-running, coverage-guided fuzzing via
+- **Continuous fuzzing**: long-running, coverage-guided fuzzing via
   ClusterFuzzLite (`.github/workflows/fuzz.yml`).
 
 The fuzz harness enforces timeouts with a worker subprocess (killed on timeout,
 reused across inputs) and classifies expected invalid-input errors (`UnexpectedInput`,
-`PreprocessError`) separately from internal bugs — a `ValueError`/`TypeError`
+`PreprocessError`) separately from internal bugs: a `ValueError`/`TypeError`
 from the transformer is treated as a crash, not as ordinary invalid input.
 
 ## Dependencies
@@ -312,12 +361,15 @@ actually exercised. Installs use `uv.lock` for reproducibility.
 - `src/sattline_parser/grammar/` : Lark grammar and constants
 - `src/sattline_parser/models/` : AST models
 - `src/sattline_parser/preprocessing/` : compressed-source decoding and its scanner table
+- `src/sattline_parser/source_document.py` : original-source provenance and span remapping
 - `src/sattline_parser/transformer/` : transformer mixins and `SLTransformer`
-- `src/sattline_parser/validation/` : validator rules, diagnostics and the builtin catalogue
+- `src/sattline_parser/validation/` : validator rules and diagnostics
+- `src/sattline_parser/builtins/` : builtin function signatures and record field tables
 - `src/sattline_parser/cli/` : the `sattline` command line (one module per command)
 - `src/sattline_parser/api.py` : public entry points
 - `src/sattline_parser/project/` : project/artifact layer (`SattLineProject`, discovery, resolution, `.g`/`.y` parsing, parser-owned caches)
 - `src/sattline_parser/fuzz_harness.py` : standalone fuzzing
+- `docs/` : architecture and internals documentation
 
 ## License
 
