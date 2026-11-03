@@ -1,38 +1,19 @@
-"""AST walking for ``sattline query``: declarations, uses and SFC/object inventories."""
+"""AST walking for ``sattline query``: declarations, uses and SFC/object inventories.
+
+The traversal itself is the public :class:`sattline_parser.models.NodeVisitor`.
+This module only decides which AST facts become query rows and in what order.
+"""
 
 from __future__ import annotations
 
 from collections.abc import Iterable, Iterator
 from dataclasses import dataclass
-from typing import Literal
 
-from sattline_parser.grammar import constants as const
+from sattline_parser.models import NodeVisitor
 from sattline_parser.models import ast_model as m
-from sattline_parser.models.expressions import (
-    Assignment,
-    BinOp,
-    BoolOp,
-    Compare,
-    FuncCall,
-    FuncCallStmt,
-    IfStmt,
-    NotOp,
-    TernaryOp,
-    UnaryOp,
-    VarRef,
-)
+from sattline_parser.models.expressions import Assignment, FuncCall, FuncCallStmt, IfStmt, VarRef
 
 __all__ = ["QUERY_KINDS", "QueryRow", "iter_rows"]
-
-QueryKind = Literal[
-    "symbols",
-    "references",
-    "writers",
-    "callers",
-    "graph-objects",
-    "interact-objects",
-    "sequences",
-]
 
 #: ``--what`` values, in the order the help lists them.
 QUERY_KINDS: tuple[str, ...] = (
@@ -98,10 +79,12 @@ def iter_rows(
     picture: m.BasePicture, *, kinds: Iterable[str], name: str | None, module: str | None
 ) -> Iterator[QueryRow]:
     """Yield rows for the requested kinds, filtered by name and module path."""
+    visitor = _QueryVisitor()
+    visitor.visit(picture)
     wanted = {kind.casefold() for kind in kinds}
     wanted_name = name.casefold() if name is not None else None
     wanted_module = module.casefold() if module is not None else None
-    for row in _walk_unit(picture, ()):
+    for row in visitor.rows:
         if row.kind.casefold() not in wanted:
             continue
         if wanted_name is not None and row.name.casefold() != wanted_name:
@@ -111,168 +94,160 @@ def iter_rows(
         yield row
 
 
-def _walk_unit(picture: m.BasePicture, path: tuple[str, ...]) -> Iterator[QueryRow]:
-    for module_type in picture.moduletype_defs:
-        yield _symbol("module_type", module_type.name, path, module_type.declaration_span)
-        yield from _walk_module(
-            (*path, module_type.name),
-            module_type.localvariables,
-            module_type.moduleparameters,
-            module_type.moduledefs,
-            module_type.modulecodes,
-            module_type.submodules,
+class _QueryVisitor(NodeVisitor):
+    """Turn AST nodes into query rows while tracking the enclosing module path."""
+
+    def __init__(self) -> None:
+        self.rows: list[QueryRow] = []
+        self._path: list[str] = []
+
+    def visit_BasePicture(self, picture: m.BasePicture) -> None:
+        for module_type in picture.moduletype_defs:
+            self.rows.append(
+                _symbol("module_type", module_type.name, self._module_path(), module_type.declaration_span)
+            )
+            self._path.append(module_type.name)
+            self._visit_module_body(module_type, declarations=True)
+            self._path.pop()
+        self._visit_module_body(picture, declarations=True)
+
+    def visit_ModuleDef(self, module_def: m.ModuleDef) -> None:
+        for graph_object in module_def.graph_objects or ():
+            self.rows.append(
+                QueryRow.at(
+                    "graph-objects",
+                    graph_object.type,
+                    span=graph_object.span,
+                    detail=_graph_object_detail(graph_object),
+                    module=self._module_path(),
+                )
+            )
+        for interact_object in module_def.interact_objects or ():
+            self.rows.append(QueryRow(kind="interact-objects", name=interact_object.type, module=self._module_path()))
+
+    def visit_ModuleCode(self, module_code: m.ModuleCode) -> None:
+        for sequence in module_code.sequences or ():
+            self.rows.append(
+                QueryRow(
+                    kind="sequences",
+                    name=sequence.name or "",
+                    detail=f"{sequence.type}, {len(sequence.code)} element(s)",
+                    module=self._module_path(),
+                )
+            )
+            self.visit(sequence)
+        for equation in module_code.equations or ():
+            self.visit(equation)
+
+    def visit_Sequence(self, sequence: m.Sequence) -> None:
+        for item in sequence.code:
+            self.visit(item)
+
+    def visit_Equation(self, equation: m.Equation) -> None:
+        for item in equation.code:
+            self.visit(item)
+
+    def visit_SFCStep(self, step: m.SFCStep) -> None:
+        self.rows.append(_symbol("step", step.name or "", self._module_path(), step.span))
+        for block in (step.code.enter, step.code.active, step.code.exit):
+            for item in block:
+                self.visit(item)
+
+    def visit_SFCTransition(self, transition: m.SFCTransition) -> None:
+        self.rows.append(_symbol("transition", transition.name or "", self._module_path(), transition.span))
+        if transition.condition is not None:
+            self.visit(transition.condition)
+
+    def visit_SFCTransitionSub(self, transition: m.SFCTransitionSub) -> None:
+        self.rows.append(_symbol("transition", transition.name or "", self._module_path(), transition.span))
+        for item in transition.body:
+            self.visit(item)
+
+    def visit_SFCAlternative(self, alternative: m.SFCAlternative) -> None:
+        for branch in alternative.branches:
+            for item in branch:
+                self.visit(item)
+
+    def visit_SFCParallel(self, parallel: m.SFCParallel) -> None:
+        for branch in parallel.branches:
+            for item in branch:
+                self.visit(item)
+
+    def visit_SFCSubsequence(self, subsequence: m.SFCSubsequence) -> None:
+        kind = "substep" if subsequence.kind == "substep" else "subsequence"
+        self.rows.append(_symbol(kind, subsequence.name or "", self._module_path(), subsequence.span))
+        for item in subsequence.body:
+            self.visit(item)
+
+    def visit_Assignment(self, assignment: Assignment) -> None:
+        self.rows.append(
+            QueryRow.at("writers", assignment.target.name, span=assignment.target.span, module=self._module_path())
         )
-    yield from _walk_module(
-        path,
-        picture.localvariables,
-        picture.moduleparameters,
-        picture.moduledefs,
-        picture.modulecodes,
-        picture.submodules,
-    )
+        self.visit(assignment.value)
 
+    def visit_FuncCallStmt(self, statement: FuncCallStmt) -> None:
+        self._visit_call(statement.call)
+        for argument in statement.call.args:
+            self.visit(argument)
 
-def _walk_module(
-    path: tuple[str, ...],
-    localvariables: Iterable[m.Variable],
-    parameters: Iterable[m.Variable],
-    moduledefs: Iterable[m.ModuleDef],
-    modulecodes: Iterable[m.ModuleCode],
-    submodules: Iterable[m.SingleModule | m.FrameModule | m.ModuleTypeInstance],
-) -> Iterator[QueryRow]:
-    for variable in localvariables:
-        yield _symbol("variable", variable.name, path)
-    for variable in parameters:
-        yield _symbol("parameter", variable.name, path)
-    for moduledef in moduledefs:
-        for graph_object in moduledef.graph_objects or ():
-            yield QueryRow.at(
-                "graph-objects",
-                graph_object.type,
-                span=graph_object.span,
-                detail=_graph_object_detail(graph_object),
-                module=_module_path(path),
+    def visit_IfStmt(self, statement: IfStmt) -> None:
+        for condition, body in statement.branches:
+            self.visit(condition)
+            for item in body:
+                self.visit(item)
+        for item in statement.else_block or ():
+            self.visit(item)
+
+    def visit_VarRef(self, reference: VarRef) -> None:
+        self.rows.append(QueryRow.at("references", reference.name, span=reference.span, module=self._module_path()))
+
+    def visit_FuncCall(self, call: FuncCall) -> None:
+        self._visit_call(call)
+        for argument in call.args:
+            self.visit(argument)
+
+    def _visit_call(self, call: FuncCall) -> None:
+        self.rows.append(QueryRow.at("callers", call.name, span=call.span, module=self._module_path()))
+
+    def _visit_module_body(
+        self, module: m.BasePicture | m.ModuleTypeDef | m.SingleModule | m.FrameModule, *, declarations: bool
+    ) -> None:
+        if declarations:
+            for variable in module.localvariables:
+                self.rows.append(_symbol("variable", variable.name, self._module_path()))
+            for variable in module.moduleparameters:
+                self.rows.append(_symbol("parameter", variable.name, self._module_path()))
+        for module_def in module.moduledefs:
+            self.visit(module_def)
+        for module_code in module.modulecodes:
+            self.visit(module_code)
+        for submodule in module.submodules:
+            self._visit_submodule(submodule)
+
+    def _visit_submodule(self, submodule: m.SingleModule | m.FrameModule | m.ModuleTypeInstance) -> None:
+        if isinstance(submodule, m.ModuleTypeInstance):
+            # A reference to a named module type: no body is parsed here.
+            self.rows.append(
+                _symbol(
+                    "module_instance", submodule.header.name, self._module_path(), submodule.header.declaration_span
+                )
             )
-        for interact_object in moduledef.interact_objects or ():
-            yield QueryRow(kind="interact-objects", name=interact_object.type, module=_module_path(path))
-    for modulecode in modulecodes:
-        for sequence in modulecode.sequences or ():
-            yield QueryRow(
-                kind="sequences",
-                name=sequence.name or "",
-                detail=f"{sequence.type}, {len(sequence.code)} element(s)",
-                module=_module_path(path),
-            )
-            yield from _walk_sfc(sequence.code, path)
-        for equation in modulecode.equations or ():
-            for code_item in equation.code:
-                yield from _walk_code_item(code_item, path)
-    for submodule in submodules:
-        yield from _walk_submodule(submodule, path)
+            return
+        header = submodule.header
+        self.rows.append(_symbol("submodule", header.name, self._module_path(), header.declaration_span))
+        self._path.append(header.name)
+        self._visit_module_body(submodule, declarations=isinstance(submodule, m.SingleModule))
+        self._path.pop()
+
+    def _module_path(self) -> str | None:
+        """``A/B`` for a nested module, ``None`` at the unit level."""
+        return "/".join(self._path) or None
 
 
-def _walk_submodule(
-    submodule: m.SingleModule | m.FrameModule | m.ModuleTypeInstance, path: tuple[str, ...]
-) -> Iterator[QueryRow]:
-    if isinstance(submodule, m.ModuleTypeInstance):
-        # A reference to a named module type: no body is parsed here.
-        yield _symbol("module_instance", submodule.header.name, path, submodule.header.declaration_span)
-        return
-    header = submodule.header
-    child_path = (*path, header.name)
-    yield _symbol("submodule", header.name, path, header.declaration_span)
-    # A FrameModule is a pure container: it only nests further submodules.
-    variables = submodule.localvariables if isinstance(submodule, m.SingleModule) else []
-    parameters = submodule.moduleparameters if isinstance(submodule, m.SingleModule) else []
-    yield from _walk_module(
-        child_path,
-        variables,
-        parameters,
-        submodule.moduledefs,
-        submodule.modulecodes,
-        submodule.submodules,
-    )
-
-
-def _walk_sfc(items: Iterable[m.SFCBodyItem], path: tuple[str, ...]) -> Iterator[QueryRow]:
-    for item in items:
-        if isinstance(item, m.SFCStep):
-            yield _symbol("step", item.name or "", path, item.span)
-            for block in (item.code.enter, item.code.active, item.code.exit):
-                for code_item in block:
-                    yield from _walk_code_item(code_item, path)
-        elif isinstance(item, m.SFCTransition):
-            yield _symbol("transition", item.name or "", path, item.span)
-            if item.condition is not None:
-                yield from _walk_expression(item.condition, path)
-        elif isinstance(item, m.SFCTransitionSub):
-            yield _symbol("transition", item.name or "", path, item.span)
-            yield from _walk_sfc(item.body, path)
-        elif isinstance(item, (m.SFCAlternative, m.SFCParallel)):
-            for branch in item.branches:
-                yield from _walk_sfc(branch, path)
-        elif isinstance(item, m.SFCSubsequence):
-            kind = "substep" if item.kind == "substep" else "subsequence"
-            yield _symbol(kind, item.name or "", path, item.span)
-            yield from _walk_sfc(item.body, path)
-
-
-def _walk_code_item(item: object, path: tuple[str, ...]) -> Iterator[QueryRow]:
-    if isinstance(item, Assignment):
-        yield QueryRow.at("writers", item.target.name, span=item.target.span, module=_module_path(path))
-        yield from _walk_expression(item.value, path)
-    elif isinstance(item, FuncCallStmt):
-        yield _call_row(item.call, path)
-        for argument in item.call.args:
-            yield from _walk_expression(argument, path)
-    elif isinstance(item, IfStmt):
-        for condition, body in item.branches:
-            yield from _walk_expression(condition, path)
-            for nested in body:
-                yield from _walk_code_item(nested, path)
-        for nested in item.else_block or ():
-            yield from _walk_code_item(nested, path)
-
-
-def _walk_expression(expression: object, path: tuple[str, ...]) -> Iterator[QueryRow]:
-    """Yield ``references`` and ``callers`` inside an expression tree."""
-    if isinstance(expression, VarRef):
-        yield QueryRow.at("references", expression.name, span=expression.span, module=_module_path(path))
-    elif isinstance(expression, FuncCall):
-        yield _call_row(expression, path)
-        for argument in expression.args:
-            yield from _walk_expression(argument, path)
-    elif isinstance(expression, BoolOp):
-        for operand in expression.operands:
-            yield from _walk_expression(operand, path)
-    elif isinstance(expression, NotOp):
-        yield from _walk_expression(expression.operand, path)
-    elif isinstance(expression, (Compare, BinOp)):
-        yield from _walk_expression(expression.left, path)
-        yield from _walk_expression(expression.right, path)
-    elif isinstance(expression, UnaryOp):
-        yield from _walk_expression(expression.operand, path)
-    elif isinstance(expression, TernaryOp):
-        for condition, then_expression in expression.branches:
-            yield from _walk_expression(condition, path)
-            yield from _walk_expression(then_expression, path)
-        if expression.else_expr is not None:
-            yield from _walk_expression(expression.else_expr, path)
-
-
-def _call_row(call: FuncCall, path: tuple[str, ...]) -> QueryRow:
-    return QueryRow.at("callers", call.name, span=call.span, module=_module_path(path))
-
-
-def _symbol(kind: str, name: str, path: tuple[str, ...], span: m.SourceSpan | None = None) -> QueryRow:
-    return QueryRow.at("symbols", name, span=span, detail=kind, module=_module_path(path))
-
-
-def _module_path(path: tuple[str, ...]) -> str | None:
-    """``A/B`` for a nested module, ``None`` at the unit level."""
-    return "/".join(path) or None
+def _symbol(kind: str, name: str, module: str | None, span: m.SourceSpan | None = None) -> QueryRow:
+    return QueryRow.at("symbols", name, span=span, detail=kind, module=module)
 
 
 def _graph_object_detail(graph_object: m.GraphObject) -> str:
-    layer = graph_object.properties.get(const.KEY_LAYER)
+    layer = graph_object.properties.get("layer")
     return f"layer {layer}" if layer is not None else "graph object"

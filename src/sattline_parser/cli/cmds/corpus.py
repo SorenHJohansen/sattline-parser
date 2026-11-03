@@ -12,6 +12,7 @@ from pathlib import Path
 from ...project.formats import ALL_CODE_EXTENSIONS
 from .._errors import CliError
 from .._exit import ExitCode
+from .._findings import READ_RULE
 from .._io import read_source_path
 from .._json import SCHEMA_PREFIX, dumps
 from .._validate import Analysis, analyse
@@ -65,7 +66,7 @@ def _analyse_all(paths: Sequence[Path], *, jobs: int) -> list[CorpusRow]:
         try:
             source = read_source_path(path)
         except CliError:
-            return CorpusRow(file=str(path), errors=1, warnings=0, rules=(("READ_ERROR", 1),))
+            return CorpusRow(file=str(path), errors=1, warnings=0, rules=((READ_RULE, 1),))
         analysis: Analysis = analyse(source.name, source.text, absolute=False)
         rules = Counter(finding.rule for finding in analysis.findings)
         errors = sum(1 for finding in analysis.findings if finding.is_error)

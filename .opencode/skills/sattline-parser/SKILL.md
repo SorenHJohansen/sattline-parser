@@ -110,15 +110,17 @@ review. The `/release` command runs the release checklist.
 
 1. Prove the rule with a fixture, a public manual, or a black-box check. A
    plausible rule without evidence is a bug. See `RETIRED_CODES` in
-   `validation/diagnostics.py`.
+   `validation/rules.py`.
 2. Add a `DiagnosticCode` member.
-3. Put the rule in the owning module: declarations in `declarations.py`, code
+3. Add the matching `Rule` to `validation/rules.py` with its summary, scope,
+   severity, and status.
+4. Put the rule in the owning module: declarations in `declarations.py`, code
    and SFC in `code.py`, type facts in `typing.py`, transfers in `transfers.py`.
-4. Emit a `Diagnostic` with a sentence and a `span`.
-5. Add a fixture under `tests/fixtures/corpus/invalid/` or `edge_cases/`.
-6. Add the golden expectation to `tests/fixtures/validation/expectations.json`.
-7. Add a focused test.
-8. Update `docs/validation.md`.
+5. Emit a `Diagnostic` with a sentence and a `span`.
+6. Add a fixture under `tests/fixtures/corpus/invalid/` or `edge_cases/`.
+7. Add the golden expectation to `tests/fixtures/validation/expectations.json`.
+8. Add a focused test.
+9. Update `docs/validation.md` and run `python scripts/gen_rule_table.py`.
 
 ### Add a grammar form
 

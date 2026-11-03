@@ -11,9 +11,8 @@ element names.
 
 from __future__ import annotations
 
-from typing import cast
-
 from sattline_parser.grammar import constants as const
+from sattline_parser.models import walk
 from sattline_parser.models.ast_model import (
     BasePicture,
     DataType,
@@ -162,65 +161,13 @@ def walk_module_code(
 
 
 def _iter_var_refs(node: object) -> list[VarRef]:
-    refs: list[VarRef] = []
-    if isinstance(node, VarRef):
-        return [node]
-    if isinstance(node, list | tuple):
-        for item in cast("list[object] | tuple[object, ...]", node):
-            refs.extend(_iter_var_refs(item))
-        return refs
-    if isinstance(node, Assignment):
-        refs.extend(_iter_var_refs(node.target))
-        refs.extend(_iter_var_refs(node.value))
-        return refs
-    if isinstance(node, FuncCallStmt):
-        return _iter_var_refs(node.call)
-    if isinstance(node, IfStmt):
-        for condition, body in node.branches:
-            refs.extend(_iter_var_refs(condition))
-            refs.extend(_iter_var_refs(body))
-        refs.extend(_iter_var_refs(node.else_block or ()))
-        return refs
-    if isinstance(node, BoolOp):
-        for operand in node.operands:
-            refs.extend(_iter_var_refs(operand))
-        return refs
-    if isinstance(node, NotOp | UnaryOp):
-        return _iter_var_refs(node.operand)
-    if isinstance(node, Compare | BinOp):
-        refs.extend(_iter_var_refs(node.left))
-        refs.extend(_iter_var_refs(node.right))
-        return refs
-    if isinstance(node, FuncCall):
-        for arg in node.args:
-            refs.extend(_iter_var_refs(arg))
-        return refs
-    if isinstance(node, TernaryOp):
-        for condition, value in node.branches:
-            refs.extend(_iter_var_refs(condition))
-            refs.extend(_iter_var_refs(value))
-        refs.extend(_iter_var_refs(node.else_expr) if node.else_expr is not None else ())
-        return refs
-    return refs
+    """Every ``VarRef`` under ``node``, in source order."""
+    return [event.node for event in walk(node) if isinstance(event.node, VarRef)]
 
 
 def _iter_sfc_var_refs(items: list[SFCBodyItem]) -> list[VarRef]:
-    refs: list[VarRef] = []
-    for item in items:
-        if isinstance(item, SFCStep):
-            for block in (item.code.enter, item.code.active, item.code.exit):
-                refs.extend(_iter_var_refs(block))
-        elif isinstance(item, SFCTransition):
-            if item.condition is not None:
-                refs.extend(_iter_var_refs(item.condition))
-        elif isinstance(item, SFCTransitionSub):
-            refs.extend(_iter_sfc_var_refs(item.body))
-        elif isinstance(item, SFCAlternative | SFCParallel):
-            for branch in item.branches:
-                refs.extend(_iter_sfc_var_refs(branch))
-        elif isinstance(item, SFCSubsequence):
-            refs.extend(_iter_sfc_var_refs(item.body))
-    return refs
+    """Every ``VarRef`` in an SFC body, in source order."""
+    return [event.node for event in walk(items) if isinstance(event.node, VarRef)]
 
 
 def _collect_sequence_features(
@@ -453,7 +400,7 @@ def _check_operands(
     A comparison splits by operator: equality accepts any two compatible
     types (two strings, two records of the same type, numeric pairs), while
     ordering requires numeric operands. Arithmetic requires numeric operands
-    on both sides, and a literal zero divisor is rejected outright.
+    on both sides.
     """
     left_type = infer_expr_type(expr.left, scope, records, type_graph)
     right_type = infer_expr_type(expr.right, scope, records, type_graph)

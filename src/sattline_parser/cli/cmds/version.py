@@ -12,7 +12,7 @@ from ._common import emit_payload
 
 __all__ = ["COMMANDS", "register", "run"]
 
-COMMANDS = ("check", "parse", "query", "project", "graphics", "decode", "diff", "corpus", "version")
+COMMANDS = ("check", "parse", "query", "project", "graphics", "decode", "diff", "corpus", "rules", "version")
 
 SCHEMAS = {
     "version": f"{SCHEMA_PREFIX}.version",
@@ -24,6 +24,7 @@ SCHEMAS = {
     "decode": f"{SCHEMA_PREFIX}.decode",
     "diff": f"{SCHEMA_PREFIX}.diff",
     "corpus": f"{SCHEMA_PREFIX}.corpus",
+    "rules": f"{SCHEMA_PREFIX}.rules",
 }
 
 

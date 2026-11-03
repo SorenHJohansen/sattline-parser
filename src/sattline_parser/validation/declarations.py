@@ -7,7 +7,7 @@ unknown datatype references.
 A rule only lives here if it is enforced. Several plausible rules were
 implemented and then removed because the editor's UI refuses to create such a
 declaration while the same source loads and parses from disk; see
-:data:`sattline_parser.validation.diagnostics.RETIRED_CODES`.
+:data:`sattline_parser.validation.rules.RETIRED_CODES`.
 """
 
 from __future__ import annotations

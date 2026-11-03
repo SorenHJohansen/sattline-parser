@@ -8,7 +8,7 @@ from collections.abc import Sequence
 from sattline_parser.project import GraphicsModel, parse_graphics_text
 
 from .._exit import ExitCode
-from .._findings import Finding
+from .._findings import GRAPHICS_SCAN_RULE, Finding
 from .._io import read_source
 from .._json import SCHEMA_PREFIX, dumps
 from ._common import add_output_flags, add_source_flags, emit_findings, finding_fields, require_companion
@@ -44,7 +44,7 @@ def _findings(model: GraphicsModel, *, name: str) -> list[Finding]:
         Finding(
             severity=message.severity,
             message=message.message,
-            rule="GRAPHICS_SCAN",
+            rule=GRAPHICS_SCAN_RULE,
             file=name,
             line=message.line,
             column=message.column,

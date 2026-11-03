@@ -6,6 +6,7 @@ from importlib import import_module
 from types import ModuleType
 from typing import TYPE_CHECKING, Any
 
+from sattline_parser.models import NodeVisitor, WalkEvent, iter_child_nodes, walk
 from sattline_parser.models.ast_model import BasePicture, SourceSpan
 from sattline_parser.models.expressions import (
     Assignment,
@@ -104,6 +105,7 @@ __all__ = [
     "FuncCallStmt",
     "FuzzResult",
     "IfStmt",
+    "NodeVisitor",
     "NotOp",
     "SLExpression",
     "SLStmt",
@@ -112,6 +114,7 @@ __all__ = [
     "TernaryOp",
     "UnaryOp",
     "VarRef",
+    "WalkEvent",
     "__version__",
     "assert_no_crashes",
     "assert_no_timeouts",
@@ -122,6 +125,7 @@ __all__ = [
     "fuzz_parse_text",
     "generate_random_text",
     "is_compressed",
+    "iter_child_nodes",
     "parse_and_validate",
     "parse_graphics_file",
     "parse_graphics_text",
@@ -134,4 +138,5 @@ __all__ = [
     "run_corpus_regression",
     "run_random_fuzz",
     "validate_basepicture",
+    "walk",
 ]

@@ -20,11 +20,11 @@ from sattline_parser.validation.builtins import (
     builtin_function_signature,
 )
 from sattline_parser.validation.diagnostics import (
-    RETIRED_CODES,
     Diagnostic,
     DiagnosticCode,
     DiagnosticSeverity,
 )
+from sattline_parser.validation.rules import RETIRED_CODES
 from sattline_parser.validation.symbols import SFC_RUNTIME_CONSTANTS, build_scope, resolve_var
 from sattline_parser.validation.typing import (
     TypeFamily,

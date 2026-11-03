@@ -51,6 +51,7 @@ Agents branch on exit codes, not on prose. A traceback is printed only under
 | `check` | `parse_and_validate` | Does this source decode, parse, and validate? |
 | `parse` | `parse_source_text` | What is the structure of this unit? |
 | `query` | `parse_source_text` + AST walk | One structural question: symbols, references, writers, callers, graph objects, interact objects, sequences |
+| `rules` | validation rule registry | Which rules exist, what they mean, and whether they are active? |
 | `project` | `SattLineProject.load` | What does this tree contain, and how does it depend? |
 | `graphics` | `parse_graphics_text` | What bindings and scan messages does this companion have? |
 | `decode` | `preprocess_source` | What is this compact/coded source as plain text? |
@@ -68,6 +69,12 @@ sattline check - --stdin-name editor-buffer.s
 
 Reads each source exactly like `parse_source_file` and reports parse-or-decode
 failures and validator diagnostics in one shape.
+
+`--rule` accepts a rule id (`SL-V016`), enum name
+(`CONSECUTIVE_SEQUENCE_STEPS`), or a synthetic finding id such as
+`PARSE_ERROR`, and is repeatable, so output can be narrowed to one rule. An
+unknown or inactive rule is a usage error (exit `2`), never a silently empty
+report. See [`rules`](#rules) for the registry.
 
 ### `parse`
 
@@ -97,6 +104,24 @@ sattline query M.s --what sequences --json
 `sequences`. Filters are case-insensitive: `--name` matches a row name,
 `--module` matches a slash-separated module path. A query with no rows exits
 `1`, because "nothing found" is a finding for a caller that expected a hit.
+
+### `rules`
+
+```bash
+sattline rules
+sattline rules SL-V016
+sattline rules CONSECUTIVE_SEQUENCE_STEPS --json
+```
+
+Lists every rule with its id, enum name, status, and summary. Retired rules are
+hidden from the listing unless `--include-retired` is given; a single lookup by
+id or name always finds one. `--json` emits one document and `--jsonl` emits one
+object per line followed by a summary. An unknown rule exits `2`.
+
+The status is `active` (the validator emits it), `retired` (the form was proved
+to load and the check was withdrawn), or `unimplemented` (a reserved code with
+no check). The same registry renders the rule table in
+[validation.md](validation.md).
 
 ### `project`
 
@@ -201,7 +226,7 @@ diagnostic, becomes one `Finding`:
 | --- | --- |
 | `severity` | `error` or `warning` |
 | `message` | A sentence about the source |
-| `rule` | Machine-only id: `PARSE_ERROR`, `DECODE_ERROR`, `PROJECT_LOAD_ERROR`, `GRAPHICS_SCAN`, a `DiagnosticCode` name such as `SL-V019`, or a corpus read error |
+| `rule` | Machine-only id: `PARSE_ERROR`, `DECODE_ERROR`, `PROJECT_LOAD_ERROR`, `GRAPHICS_SCAN`, a `DiagnosticCode` enum name such as `UNDEFINED_VARIABLE` (`SL-V019` is its id), or a corpus read error |
 | `file` | Display path |
 | `line`, `column` | One-based location in the original source |
 | `start`, `end` | Zero-based character range in the original source |
@@ -218,7 +243,7 @@ diffs.
 | `--stdin-name PATH` | source commands | Required when reading `-`, so findings are attributable |
 | `--paths given\|absolute` | source commands | How to render paths |
 | `--severity all\|error\|warning` | `check` | Filter |
-| `--rule RULE` | `check` | Filter by rule id, repeatable |
+| `--rule RULE` | `check` | Filter by rule id or enum name, repeatable; synthetic ids such as `PARSE_ERROR` are accepted |
 | `--max-findings N` | `check` | Limit printed findings; the exit code still reflects all of them |
 | `--fail-on none\|error\|any` | `check`, `project`, `corpus` | Which findings make the exit code `1` (`never` and `warning` are accepted aliases) |
 | `--depth N` | `parse --tree`, `project --of` | Bound output or traversal |
@@ -237,6 +262,7 @@ Every payload is tagged with `sattline.v1.<command>`:
 | `decode` | `sattline.v1.decode` |
 | `diff` | `sattline.v1.diff` |
 | `corpus` | `sattline.v1.corpus` |
+| `rules` | `sattline.v1.rules` |
 | `version` | `sattline.v1.version` |
 
 `sattline version --json` is the authoritative list. A schema change is a

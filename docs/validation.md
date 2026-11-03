@@ -125,7 +125,6 @@ the top-level `DATATYPE` definitions and the builtin record specifications.
   `OR`, and `NOT`; a boolean condition for `IF`, `ELSIF`, and `WAIT_FOR`.
 - Assignment types must be compatible.
 - Comparison operands must be compatible.
-- Division by a literal zero is rejected.
 - Ternary branches must have compatible types.
 - A string may not be assigned where the language does not allow it.
 
@@ -183,32 +182,90 @@ about the source. `span` points into the original source. `tentative` is set by
 the project loader, never by the validator: it means the finding depends on
 definitions from a part of the closure that failed to load, so it is not final.
 
-The full code table is the `DiagnosticCode` enum in
-`validation/diagnostics.py`. The codes group by area:
+The full code table lives in the rule registry, not in the enum. Every
+`DiagnosticCode` has exactly one `Rule` in `validation/rules.py` with an id, an
+enum name, a default severity, a scope, a status, a summary, and optional
+details. The status is `active` when the validator emits the rule, `retired`
+when the form was proved to load and the check was withdrawn, and
+`unimplemented` when a code was reserved but no check exists yet.
 
-| Codes | Area |
-| --- | --- |
-| `SL-V001` to `SL-V004` | Duplicate names and sibling submodules |
-| `SL-V005` to `SL-V007` | `:Old` / `:New` state rules and const writes |
-| `SL-V008` to `SL-V012` | Initial values and temporal literals |
-| `SL-V013` to `SL-V015` | Builtin call arity, output arguments, string arguments |
-| `SL-V016` to `SL-V017` | Sequence step order and fork targets |
-| `SL-V018` | Builtin datatype typo |
-| `SL-V019` to `SL-V020` | Undefined variable and unknown datatype |
-| `SL-V021` to `SL-V024` | SFC names and SFC structure |
-| `SL-V025` to `SL-V027` | Record fields, shadowing, parameter transfers |
-| `SL-V028` to `SL-V033` | Operand types, assignment, conditions, attributes, coordinates, sequence end |
-| `SL-V034` to `SL-V039` | Reserved names, writable state, sequence position, identifier length |
-| `SL-V040` to `SL-V051` | Datatype size, comparisons, division, logical and ternary types, mappings |
-| `SL-V052` to `SL-V058` | Sequence transitions, parallel branches, forks, datecodes, unknown module types |
+`RULES`, `RULES_BY_ID`, and `RULES_BY_NAME` are the lookup tables. `find_rule`
+accepts either `SL-V019` or `UNDEFINED_VARIABLE`, case-insensitively.
+`render_markdown_table` produces the table below, and a test asserts that the
+document and the registry agree, so a code cannot be added without appearing
+here. `sattline rules` exposes the same data on the command line.
 
-### Retired codes
+<!-- RULE-TABLE:START -->
+| Id | Name | Status | Severity | Scope | Summary |
+| --- | --- | --- | --- | --- | --- |
+| `SL-V001` | `DUPLICATE_DATATYPE_NAME` | retired | error | declarations | A datatype name may be declared twice. |
+| `SL-V002` | `DUPLICATE_MODULETYPE_NAME` | retired | error | declarations | A module-type name may be declared twice. |
+| `SL-V003` | `DUPLICATE_VARIABLE_NAME` | retired | error | declarations | A variable name may be declared twice. |
+| `SL-V004` | `DUPLICATE_SIBLING_SUBMODULE` | active | error | declarations | Two sibling submodule instances may not share a name. |
+| `SL-V005` | `OLD_NEW_ON_NON_STATE_VARIABLE` | active | error | code | `:Old` and `:New` require a State variable. |
+| `SL-V006` | `OLD_NEW_ON_NON_STATE_FIELD` | active | error | code | `:Old` and `:New` require a State record field. |
+| `SL-V007` | `WRITE_TO_CONST_VARIABLE` | active | error | code | A Const variable may not be assigned or written through an output argument. |
+| `SL-V008` | `INIT_VALUE_TYPE_MISMATCH` | retired | error | declarations | An initial value must match its variable's datatype. |
+| `SL-V009` | `BARE_DURATION_INIT` | retired | error | declarations | A duration variable needs a duration literal, not a bare string. |
+| `SL-V010` | `BARE_TIME_INIT` | retired | error | declarations | A time variable needs a time literal, not a bare string. |
+| `SL-V011` | `MALFORMED_DURATION_LITERAL` | retired | error | declarations | A duration literal must be well formed. |
+| `SL-V012` | `MALFORMED_TIME_LITERAL` | retired | error | declarations | A time literal must be well formed. |
+| `SL-V013` | `BUILTIN_WRONG_ARITY` | active | error | code | A builtin call must supply between its minimum and maximum argument count. |
+| `SL-V014` | `BUILTIN_OUT_ARG_NOT_VARIABLE` | active | error | code | A builtin output argument must be a plain variable reference. |
+| `SL-V015` | `STRING_LITERAL_CALL_ARGUMENT` | active | error | code | A string literal may not stand in a call argument position that requires a reference. |
+| `SL-V016` | `CONSECUTIVE_SEQUENCE_STEPS` | active | error | sfc | SFC steps must be separated by a transition. |
+| `SL-V017` | `SEQUENCE_FORK_UNKNOWN_TARGET` | active | error | sfc | A SEQFORK target must name an SFC element in the module. |
+| `SL-V018` | `BUILTIN_DATATYPE_TYPO` | active | error | declarations | A near miss of a builtin datatype name is reported as a typo. |
+| `SL-V019` | `UNDEFINED_VARIABLE` | active | error | code | A reference or assignment target must resolve to a declared variable or parameter. |
+| `SL-V020` | `UNKNOWN_DATATYPE_NAME` | active | error | declarations | A datatype reference must resolve to a builtin or a declared DATATYPE. |
+| `SL-V021` | `DUPLICATE_SFC_ELEMENT_NAME` | active | error | sfc | SFC step and transition names must be unique within a module. |
+| `SL-V022` | `SFC_INIT_STEP_PLACEMENT` | retired | error | sfc | A sequence must contain exactly one init step in a valid position. |
+| `SL-V023` | `SFC_ALTERNATIVE_BRANCH_START` | active | error | sfc | An ALTERNATIVESEQ branch must start with a SEQTRANSITION. |
+| `SL-V024` | `SFC_PARALLEL_BRANCH_START` | active | error | sfc | A PARALLELSEQ branch must start and end with a SEQSTEP. |
+| `SL-V025` | `DUPLICATE_RECORD_FIELD_NAME` | retired | error | declarations | A record may not declare the same field name twice. |
+| `SL-V026` | `BUILTIN_DATATYPE_SHADOWED` | retired | error | declarations | A declaration may not reuse a builtin datatype name. |
+| `SL-V027` | `PARAM_TRANSFER_TYPE_MISMATCH` | active | error | mappings | A submodule argument must be type compatible with the declared module-type parameter. |
+| `SL-V028` | `OPERAND_NOT_NUMERIC` | active | error | code | Arithmetic and unary operators require integer or real operands. |
+| `SL-V029` | `ASSIGNMENT_TYPE_MISMATCH` | active | error | code | An assigned value must have a datatype compatible with the target. |
+| `SL-V030` | `CONDITION_NOT_BOOLEAN` | active | error | code | IF, ELSIF, and WAIT_FOR conditions must be boolean. |
+| `SL-V031` | `ATTRIBUTE_COMBINATION_INVALID` | active | error | declarations | Declaration attributes must appear in an accepted order and combination. |
+| `SL-V032` | `COORDINATE_NOT_REAL` | active | error | code | A coordinate value must be real. |
+| `SL-V033` | `SEQUENCE_ENDS_WITH_STEP` | active | error | sfc | A closed sequence must end with a transition, not a step. |
+| `SL-V034` | `RESERVED_NAME_DECLARED` | active | error | declarations | `On` and `Off` are SFC runtime names and may not be declared. |
+| `SL-V035` | `OLD_STATE_NOT_WRITABLE` | active | error | code | The `:Old` state of a State variable is read-only. |
+| `SL-V036` | `SEQUENCE_POSITION_INVALID` | active | error | sfc | SFC steps, transitions, and structural constructs must occupy valid positions. |
+| `SL-V037` | `SEQUENCE_FORK_TARGET_KIND` | active | error | sfc | A SEQFORK on a step must target a transition, and the reverse. |
+| `SL-V038` | `IDENTIFIER_TOO_LONG` | active | error | declarations | A declared identifier may be at most 20 characters. |
+| `SL-V039` | `RESERVED_KEYWORD_NAME` | active | error | declarations | A declaration may not use a reserved SattLine keyword as its name. |
+| `SL-V040` | `DATATYPE_TOO_FEW_FIELDS` | unimplemented | error | declarations | A DATATYPE declaration must declare at least one field. |
+| `SL-V041` | `COMPARE_INCOMPATIBLE_OPERANDS` | active | error | code | Comparison operators require compatible operand datatypes. |
+| `SL-V042` | `DIVISION_BY_ZERO` | unimplemented | error | code | Division by a literal zero is rejected. |
+| `SL-V043` | `LOGICAL_OPERAND_NOT_BOOLEAN` | active | error | code | Logical operators require boolean operands. |
+| `SL-V044` | `TERNARY_BRANCH_TYPES_INCOMPATIBLE` | active | error | code | IF-expression branches must have compatible datatypes. |
+| `SL-V045` | `STRING_ASSIGNMENT_NOT_ALLOWED` | active | error | code | A string variable is copied with CopyString or CopyVar, not assigned directly. |
+| `SL-V046` | `BUILTIN_ARG_NOT_VARIABLE` | active | error | code | An `in var` builtin parameter requires a variable reference argument. |
+| `SL-V047` | `BUILTIN_ARG_TYPE_MISMATCH` | active | error | code | A builtin argument must match its declared parameter datatype. |
+| `SL-V048` | `PARAMETER_MAPPING_TARGET_UNKNOWN` | active | error | mappings | A module-type instance mapping must target a declared parameter. |
+| `SL-V049` | `PARAMETER_MAPPING_DUPLICATE_TARGET` | active | error | mappings | A module-type instance may map each parameter target only once. |
+| `SL-V050` | `PARAMETER_MAPPING_TYPE_MISMATCH` | active | error | mappings | A module-type instance mapping value must match the parameter datatype. |
+| `SL-V051` | `STEP_AUTO_VARIABLE_UNAVAILABLE` | active | error | code | A step or sequence accessor requires the matching SeqControl or SeqTimer flag. |
+| `SL-V052` | `SEQUENCE_TRANSITION_AFTER_TRANSITION` | unimplemented | error | sfc | A transition may not directly follow another transition. |
+| `SL-V053` | `PARALLEL_BRANCH_INCOMPLETE` | unimplemented | error | sfc | A parallel branch must contain a complete step sequence. |
+| `SL-V054` | `SUBSEQTRANSITION_STARTS_WITH_STEP` | unimplemented | error | sfc | A SUBSEQTRANSITION body must not start with a step. |
+| `SL-V055` | `SEQUENCE_REQUIRES_INIT_STEP` | unimplemented | error | sfc | A closed sequence must contain an init step. |
+| `SL-V056` | `SEQUENCE_AMBIGUOUS_FORK_TARGET` | active | error | sfc | A SEQFORK target may not be declared more than once in a module. |
+| `SL-V057` | `DATECODE_CONFLICT` | active | error | project | The same module type or datatype may not be declared with different datecodes in a visible closure. |
+| `SL-V058` | `UNKNOWN_MODULETYPE_NAME` | active | error | project | A module-type instance must name a declared type or one visible from a loaded dependency. |
+<!-- RULE-TABLE:END -->
 
-`RETIRED_CODES` records rules that were implemented, then disproved by loading
-the same source directly. The editor's UI refused to *create* such a
-declaration, but the file loaded and parsed from disk. A UI guard is not a
-parser rule. The enum members stay so existing imports and stored diagnostics
-remain valid, but nothing emits them:
+### Retired and unimplemented codes
+
+`RETIRED_CODES` in `validation/rules.py` records the retired rules and why they
+are not enforced. Each was implemented, then disproved by loading the same
+source directly. The editor's UI refused to *create* such a declaration, but the
+file loaded and parsed from disk. A UI guard is not a parser rule. The enum
+members stay so existing imports and stored diagnostics remain valid, but
+nothing emits them:
 
 - duplicate datatype, module-type, variable, and record-field names;
 - shadowing a builtin datatype;
@@ -218,6 +275,12 @@ remain valid, but nothing emits them:
 - misplaced or missing init step.
 
 Do not reintroduce one of these without new, reproducible evidence.
+
+A rule marked `unimplemented` is a reserved code with no check at all. It is not
+a statement about the language; it is a gap in the validator. The registry
+records the gap so it cannot be mistaken for an enforced rule. In particular,
+`DIVISION_BY_ZERO` is reserved but not enforced, so a literal zero divisor is
+not reported today.
 
 ## Relation to the project loader
 
@@ -251,15 +314,18 @@ applies its policy.
 1. Prove the rule is real: a fixture, a public manual, or a black-box check.
    The `RETIRED_CODES` list exists because a plausible rule without proof is a
    bug.
-2. Put the rule in the owning module: declarations in `declarations.py`, code
+2. Add a `DiagnosticCode` member. Do not reuse a code for a different rule.
+3. Add the matching `Rule` to `validation/rules.py`: summary, scope, severity,
+   and status. The registry test fails until every code has exactly one entry.
+4. Put the rule in the owning module: declarations in `declarations.py`, code
    and SFC in `code.py`, type facts in `typing.py`, and so on.
-3. Add a `DiagnosticCode` member. Do not reuse a code for a different rule.
-4. Emit a `Diagnostic` with a sentence and a `span` when one is available.
-5. Add the fixture to `tests/fixtures/corpus/invalid/` or
+5. Emit a `Diagnostic` with a sentence and a `span` when one is available.
+6. Add the fixture to `tests/fixtures/corpus/invalid/` or
    `tests/fixtures/corpus/edge_cases/`, and the golden expectation to
    `tests/fixtures/validation/expectations.json`.
-6. Add a focused test.
-7. Update this document and the code table.
+7. Add a focused test.
+8. Update this document, then run `python scripts/gen_rule_table.py` to refresh
+   the rule table.
 
 ## Tests that pin validation
 
