@@ -5,9 +5,9 @@ Handles expression parsing, operator handling, statements, and value unwrapping.
 
 from __future__ import annotations
 
-from typing import Any, cast
+from typing import Any, Literal, cast
 
-from lark import Token, Tree
+from lark import Token
 
 from sattline_parser.grammar import constants as const
 from sattline_parser.models.ast_model import CodeItem
@@ -25,10 +25,40 @@ from sattline_parser.models.expressions import (
     UnaryOp,
     VarRef,
 )
+from sattline_parser.models.tails import LitStringTail, Tail, VarTail
 
 from ._module_shared import meta_span, v_args
 
 __all__ = ["ExpressionsMixin", "_ExpressionsMixin"]
+
+#: Terminal type of the ``OutVar_`` prefix; ``InVar_`` is the default.
+_OUTVAR_TOKEN = "OUTVAR_PREFIX"
+
+type BoundValue = str | bool | int | float | LitStringTail
+
+
+def _bound_tail(items: list[object]) -> VarTail:
+    """Build the ``VarTail`` written by an ``invar``/``invar_tail`` rule."""
+    direction: Literal["in", "out"] = "in"
+    value: BoundValue | None = None
+    for item in items:
+        if isinstance(item, Token):
+            if item.type == _OUTVAR_TOKEN:
+                direction = "out"
+            continue
+        if value is None and isinstance(item, str | bool | int | float | LitStringTail):
+            value = item
+    if value is None:
+        raise ValueError(f"invar tail expected a value after InVar_/OutVar_; got: {items!r}")
+    return VarTail(direction, value)
+
+
+def _passthrough(items: list[object], rule: str) -> object:
+    """Return the single non-Token child a wrapper rule carries."""
+    for item in items:
+        if not isinstance(item, Token):
+            return item
+    raise ValueError(f"{rule} expected a non-Token child; got: {items!r}")
 
 
 class _ExpressionsMixin:
@@ -52,17 +82,38 @@ class _ExpressionsMixin:
                 return it
         raise ValueError(f"connected_variable expected a non-Token child; got: {items}")
 
-    def invar_tail(self, items: list[Any]) -> Any:
-        """Grammar invar_tail rule -> tail specification or variable reference."""
-        saw_outvar = False
-        for it in items:
-            if isinstance(it, Token) and it.type == "OUTVAR_PREFIX":
-                saw_outvar = True
-            if not isinstance(it, Token):
-                if saw_outvar:
-                    return Tree(const.GRAMMAR_VALUE_OUTVAR_PREFIX, [it])
-                return it
-        raise ValueError(f"invar_tail expected a non-Token child; got: {items}")
+    def invar(self, items: list[Any]) -> VarTail:
+        """Grammar invar -> the bound ``InVar_``/``OutVar_`` tail."""
+        return _bound_tail(items)
+
+    def invar_tail(self, items: list[Any]) -> VarTail:
+        """Grammar invar_tail -> the bound ``InVar_``/``OutVar_`` tail."""
+        return _bound_tail(items)
+
+    def litstring_tail(self, items: list[Any]) -> LitStringTail:
+        """Grammar litstring_tail -> the quoted-symbol tail."""
+        keyword = ""
+        text: str | None = None
+        for item in items:
+            if isinstance(item, Token):
+                keyword = str(item)
+            elif isinstance(item, str):
+                text = item
+        if text is None:
+            raise ValueError(f"litstring_tail expected a STRING; got: {items!r}")
+        return LitStringTail(keyword=keyword, text=text)
+
+    def plain_value(self, items: list[Any]) -> SLExpression:
+        """Grammar plain_value -> the literal without tail detection."""
+        return cast(SLExpression, _passthrough(items, "plain_value"))
+
+    def value_or_invar(self, items: list[Any]) -> Tail:
+        """Grammar value_or_invar -> a value or a bound tail."""
+        return cast(Tail, _passthrough(items, "value_or_invar"))
+
+    def proc_atom(self, items: list[Any]) -> Tail:
+        """Grammar proc_atom -> one procedure-call argument."""
+        return cast(Tail, _passthrough(items, "proc_atom"))
 
     @v_args(meta=True)
     def or_expression(self, meta: Any, items: list[Any]) -> SLExpression:

@@ -20,6 +20,7 @@ from sattline_parser.models.ast_model import (
     SFCTransition,
 )
 from sattline_parser.models.expressions import Assignment, IfStmt, VarRef
+from sattline_parser.models.tails import VarTail
 
 _HEADER = (
     '"Syntax version 2.23, date: 2026-10-26-12:00:00.000 N"\n'
@@ -426,7 +427,7 @@ def test_module_in_view_is_a_distinct_invocation_property() -> None:
     header = parse_source_text(source).header
     assert header.module_in_view is True
     assert header.enable is False
-    assert header.invoke_coord_tails == ["Visible"]
+    assert header.invoke_coord_tails == [VarTail("out", "Visible")]
 
 
 def test_module_in_view_rejects_on_off() -> None:

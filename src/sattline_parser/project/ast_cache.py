@@ -37,7 +37,7 @@ from sattline_parser.models.ast_model import BasePicture
 from ._atomic import TEMP_SUFFIX
 from ._atomic import temp_path_for as _temp_path_for
 
-FILE_AST_CACHE_VERSION = 1
+FILE_AST_CACHE_VERSION = 2
 
 _PICKLE_CACHE_MAGIC = b"SATTLINE-PARSER-PICKLE-V1\n"
 _PICKLE_HMAC_KEY_NAME = ".pickle-hmac-key"

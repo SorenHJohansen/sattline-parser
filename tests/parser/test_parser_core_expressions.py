@@ -65,11 +65,25 @@ def test_expressions_mixin_coerces_values_and_builds_expression_tuples():
         mixin.value([None])
 
     assert mixin.connected_variable([Token("NAME", "ignored"), "Motor.Speed"]) == "Motor.Speed"
-    assert mixin.invar_tail([Token("NAME", "ignored"), {"tail": "InVar_1"}]) == {"tail": "InVar_1"}
+    assert mixin.invar_tail([Token("NAME", "ignored"), "InVar_1"]) == VarTail("in", "InVar_1")
+    assert mixin.invar_tail([Token("OUTVAR_PREFIX", "OutVar_"), "OutVar_1"]) == VarTail("out", "OutVar_1")
+    assert mixin.invar([Token("INVAR_PREFIX", "InVar_"), True]) == VarTail("in", True)
+    assert mixin.litstring_tail([Token("LITSTRING", "LitString"), "Quoted"]) == LitStringTail("LitString", "Quoted")
+    assert mixin.plain_value([Token("JUNK", ","), 5]) == 5
+    assert mixin.value_or_invar([VarTail("in", "Bound")]) == VarTail("in", "Bound")
+    assert mixin.proc_atom([False]) is False
     with pytest.raises(ValueError, match="connected_variable expected"):
         mixin.connected_variable([Token("NAME", "OnlyToken")])
-    with pytest.raises(ValueError, match="invar_tail expected"):
+    with pytest.raises(ValueError, match="invar tail expected"):
         mixin.invar_tail([Token("NAME", "OnlyToken")])
+    with pytest.raises(ValueError, match="litstring_tail expected a STRING"):
+        mixin.litstring_tail([Token("LITSTRING", "LitString")])
+    with pytest.raises(ValueError, match="plain_value expected a non-Token"):
+        mixin.plain_value([Token("JUNK", ",")])
+    with pytest.raises(ValueError, match="value_or_invar expected a non-Token"):
+        mixin.value_or_invar([])
+    with pytest.raises(ValueError, match="proc_atom expected a non-Token"):
+        mixin.proc_atom([])
     with pytest.raises(ValueError, match="function_call missing name"):
         mixin.function_call(_META, [Token("LPAREN", "("), 42, Token("RPAREN", ")")])
 

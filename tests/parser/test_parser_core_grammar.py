@@ -1,4 +1,4 @@
-# pyright: reportUnknownVariableType=false, reportUnknownMemberType=false, reportUnusedImport=false
+# pyright: reportUnknownVariableType=false, reportUnknownMemberType=false, reportUnusedImport=false, reportTypedDictNotRequiredAccess=false
 # ruff: noqa: F403, F405
 from ._parser_core_test_support import *
 
@@ -160,29 +160,12 @@ def test_parser_core_preserves_interact_outvar_tails_for_output_bindings():
     assert bp.moduledef.interact_objects is not None
     interact = bp.moduledef.interact_objects[0]
     body = interact.properties[const.KEY_BODY]
-    tails: list[Any] = []
 
-    def visit(value: Any) -> None:
-        if isinstance(value, dict):
-            for nested in value.values():
-                visit(nested)
-            return
-        if isinstance(value, list):
-            for nested in value:
-                visit(nested)
-            return
-        if getattr(value, "data", None) == parser_const.GRAMMAR_VALUE_OUTVAR_PREFIX:
-            tails.append(value)
-            return
-        children = getattr(value, "children", None)
-        if isinstance(children, list):
-            for child in children:
-                visit(child)
-
-    visit(body)
-
-    assert len(tails) == 1
-    assert tails[0].children == ["Changed"]
+    assign = cast(Any, body)[0].children[0]
+    assert isinstance(assign, AssignClause)
+    assert assign.name == "Value_Changed"
+    assert assign.tail == VarTail("out", "Changed")
+    assert interact.properties[const.KEY_TAILS] == [VarTail("out", "Changed")]
 
 
 def test_parser_core_accepts_interact_flag_plus_textobject_assignment():
@@ -395,9 +378,51 @@ ENDDEF (*BasePicture*);
 
     bp = parser_core_parse_source_text(code)
 
-    assert bp.header.invoke_coord_tails == ["PosX"]
+    assert bp.header.invoke_coord_tails == [VarTail("in", "PosX")]
     assert bp.moduledef is not None
-    assert bp.moduledef.properties[const.KEY_TAILS] == ["PanelResize"]
+    assert bp.moduledef.properties[const.KEY_TAILS] == [VarTail("in", "PanelResize")]
+
+
+def test_parser_core_keeps_numeric_coordinate_tails_out_of_the_coordinate_value():
+    """Lark drops the commas, so a numeric tail must not become the next coordinate."""
+    code = """
+"SyntaxVersion"
+"OriginalFileDate"
+"ProgramDate"
+BasePicture Invocation (0.0,0.0,0.0,1.0,1.0) : MODULEDEFINITION DateCode_ 1
+ModuleDef
+    ClippingBounds = ( -1.0 : 2.5 , -1.0 ) ( 1.0 , 1.0 )
+ENDDEF (*BasePicture*);
+"""
+
+    bp = parser_core_parse_source_text(code)
+
+    assert bp.moduledef is not None
+    assert bp.moduledef.clipping_bounds == ((-1.0, -1.0), (1.0, 1.0))
+    assert bp.moduledef.clipping_tails == [2.5]
+
+
+def test_parser_core_flattens_nested_clipping_bounds_tails():
+    """`ClippingBounds = <values>` annotations contribute only their tails."""
+    code = """
+"SyntaxVersion"
+"OriginalFileDate"
+"ProgramDate"
+BasePicture Invocation (3.48 : InVar_ "XVar" ClippingBounds = 3.48 3.48 0.0 : InVar_ "XMin"
+   100.0 : InVar_ "XMax",1.08,0.0,0.36,0.36) : MODULEDEFINITION DateCode_ 1
+ModuleDef
+    ClippingBounds = ( -1.0 , -1.0 ) ( 1.0 , 1.0 )
+ENDDEF (*BasePicture*);
+"""
+
+    bp = parser_core_parse_source_text(code)
+
+    assert bp.header.invoke_coord == (3.48, 1.08, 0.0, 0.36, 0.36)
+    assert bp.header.invoke_coord_tails == [
+        VarTail("in", "XVar"),
+        VarTail("in", "XMin"),
+        VarTail("in", "XMax"),
+    ]
 
 
 def test_parser_core_preserves_outvar_tails_in_module_invocation_arguments():
@@ -420,7 +445,7 @@ ENDDEF (*BasePicture*);
     assert len(bp.submodules) == 1
     child = bp.submodules[0]
     assert isinstance(child, ModuleTypeInstance)
-    assert child.header.invoke_coord_tails == ["Allow.RecpSupParameters"]
+    assert child.header.invoke_coord_tails == [VarTail("out", "Allow.RecpSupParameters")]
 
 
 def test_parser_core_parses_nested_submodule_fixture_through_split_module_mixins():

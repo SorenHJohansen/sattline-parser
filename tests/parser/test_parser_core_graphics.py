@@ -1,23 +1,25 @@
-# pyright: reportUnknownVariableType=false, reportUnknownMemberType=false, reportUnknownParameterType=false, reportMissingParameterType=false, reportUnknownArgumentType=false, reportUnknownLambdaType=false, reportArgumentType=false, reportPrivateUsage=false, reportUnusedImport=false, reportCallIssue=false
+# pyright: reportUnknownVariableType=false, reportUnknownMemberType=false, reportUnknownParameterType=false, reportMissingParameterType=false, reportUnknownArgumentType=false, reportUnknownLambdaType=false, reportArgumentType=false, reportPrivateUsage=false, reportUnusedImport=false, reportCallIssue=false, reportTypedDictNotRequiredAccess=false
 # ruff: noqa: F403, F405
 from ._parser_core_test_support import *
 
 
 def test_graphics_interact_mixin_builds_graph_objects_and_lists():
-    mixin = _GraphicsHarness(coord_tails=["CoordTail"], extra_tails=["ExtraTail"])
+    mixin = _GraphicsHarness()
     coords = ((1.0, 2.0), (3.0, 4.0))
+    coord_tail = VarTail("in", "CoordTail")
+    payload_tail = VarTail("out", "PayloadTail")
 
     text_object = mixin.text_object(
         [
-            Tree(parser_const.TREE_TAG_TEXT_CONTENT, ["Caption"]),
+            "Caption",
             Token(parser_const.TOKEN_VARNAME, "TextVar"),
-            InterimCoords(coords=coords, tails=["PayloadTail"]),
+            InterimCoords(coords=coords, tails=[coord_tail, payload_tail]),
         ]
     )
 
     assert text_object.type == parser_const.GRAMMAR_VALUE_TEXTOBJECT
     assert text_object.properties[parser_const.KEY_COORDS] == coords
-    assert text_object.properties[parser_const.KEY_TAILS] == ["CoordTail", "PayloadTail", "ExtraTail"]
+    assert text_object.properties[parser_const.KEY_TAILS] == [coord_tail, payload_tail]
     assert text_object.properties["text_vars"] == ["Caption"]
 
     skipped_empty_text = mixin.text_object(
@@ -42,11 +44,11 @@ def test_graphics_interact_mixin_builds_graph_objects_and_lists():
         ("polygon_object", parser_const.GRAMMAR_VALUE_POLYGONOBJECT, False),
         ("segment_object", parser_const.GRAMMAR_VALUE_SEGMENTOBJECT, True),
     ):
-        graph_object = getattr(mixin, method_name)([InterimCoords(coords=coords)])
+        graph_object = getattr(mixin, method_name)([InterimCoords(coords=coords, tails=[coord_tail])])
         assert graph_object.type == expected_type
         if keeps_coords:
             assert graph_object.properties[parser_const.KEY_COORDS] == coords
-        assert graph_object.properties[parser_const.KEY_TAILS] == ["CoordTail", "ExtraTail"]
+        assert graph_object.properties[parser_const.KEY_TAILS] == [coord_tail]
 
     # The composite marker takes only the layer clause.
     composite = mixin.composite_object([7])
@@ -74,12 +76,10 @@ def test_graphics_interact_mixin_builds_graph_objects_and_lists():
 
 
 def test_graph_objects_propagates_section_level_layer_to_objects():
-    mixin = _GraphicsHarness(coord_tails=[], extra_tails=[])
+    mixin = _GraphicsHarness()
     rect = mixin.rectangle_object([InterimCoords(coords=((0.0, 0.0), (1.0, 1.0)))])
-    text = mixin.text_object([Tree(parser_const.TREE_TAG_TEXT_CONTENT, ["Caption"])])
-    explicit = mixin.rectangle_object(
-        [InterimCoords(coords=((0.0, 0.0), (1.0, 1.0))), {parser_const.KEY_COORDS: None, "layer": 9}]
-    )
+    text = mixin.text_object(["Caption"])
+    explicit = mixin.rectangle_object([InterimCoords(coords=((0.0, 0.0), (1.0, 1.0))), CommonProperties(layer=9)])
 
     # A section-level Layer_ = 2 applies to every object lacking an explicit one.
     result = mixin.graph_objects([2, rect, text, explicit])
@@ -179,55 +179,56 @@ def test_graphics_property_readers_stay_true_false_only():
 
 
 def test_graph_object_handles_standalone_and_attached_connection_nodes():
-    mixin = _GraphicsHarness(coord_tails=[], extra_tails=[])
+    mixin = _GraphicsHarness()
 
     bare_object = mixin.connection_node_bare([])
     assert bare_object.type == parser_const.GRAMMAR_VALUE_CONNECTIONNODE
     assert bare_object.properties == {}
 
-    positioned = mixin.graph_object(Meta(), [Tree("connection_node", [(0.25, 0.25)])])
+    positioned = mixin.connection_node([Token("LPAR", "("), 0.25, Token("COMMA", ","), 0.25])
     assert positioned.type == parser_const.GRAMMAR_VALUE_CONNECTIONNODE
     assert positioned.properties[parser_const.KEY_COORDS] == (0.25, 0.25)
 
-    unpositioned = mixin.graph_object(Meta(), [Tree("connection_node", [])])
-    assert unpositioned.type == parser_const.GRAMMAR_VALUE_CONNECTIONNODE
-    assert parser_const.KEY_COORDS not in unpositioned.properties
+    with pytest.raises(ValueError, match="connection_node expected two REAL coordinates"):
+        mixin.connection_node([0.25])
 
     merged = mixin.common_properties(
         [
             3,
-            Tree("connection_node_bare", []),
-            Tree("connection_node", [(1.0, 2.0)]),
-            Tree("outline_colour", [Token("OUTLINECOLOUR", "OutlineColour")]),
+            GraphObject(parser_const.GRAMMAR_VALUE_CONNECTIONNODE),
+            EnableClause(False, VarTail("in", "Enabled")),
+            ColourSpec("outline"),
         ]
     )
-    assert merged["layer"] == 3
-    assert merged["colours"] == [Tree("outline_colour", [Token("OUTLINECOLOUR", "OutlineColour")])]
-    assert parser_const.KEY_COORDS not in merged
+    assert merged == CommonProperties(
+        layer=3, enable=EnableClause(False, VarTail("in", "Enabled")), colours=(ColourSpec("outline"),)
+    )
+    assert merged.layer == 3
 
 
 def test_interact_simple_item_extracts_type_from_grammar_tree():
-    # The real grammar yields interact_type_simple as a Tree wrapping the type
-    # token; the type must be extracted, never defaulted to "Interact".
-    mixin = _GraphicsHarness(coord_tails=[], extra_tails=[])
+    # The real grammar yields interact_type_simple as the type name; the type
+    # must be extracted, never defaulted to "Interact".
+    mixin = _GraphicsHarness()
     simple = mixin.interact_simple_item(
         [
-            Tree("interact_type_simple", [Token("COMBUT", "ComBut_")]),
-            ((0.0, 0.0), (1.0, 1.0)),
+            "ComBut_",
+            InterimCoords(coords=((0.0, 0.0), (1.0, 1.0))),
             Tree(parser_const.TREE_TAG_INTERACT_BODY_SEQ, ["body"]),
         ]
     )
     assert simple.type == "ComBut_"
     with pytest.raises(ValueError, match="interact_simple_item expected an interactor type"):
-        mixin.interact_simple_item([((0.0, 0.0), (1.0, 1.0))])
+        mixin.interact_simple_item([InterimCoords(coords=((0.0, 0.0), (1.0, 1.0)))])
+    with pytest.raises(ValueError, match="interact_type_simple expected an interactor token"):
+        mixin.interact_type_simple([])
+    assert mixin.interact_type_simple([Token("COMBUT", "ComBut_")]) == "ComBut_"
 
 
 def test_interact_scale_selector_maps_relative_and_abs():
     mixin = _GraphicsHarness()
-    assert mixin.interact_scale_selector([Token("RELATIVE_KW", "Relative_")]) == {
-        parser_const.KEY_SCALE_MODE: "relative"
-    }
-    assert mixin.interact_scale_selector([Token("ABS_KW", "Abs_")]) == {parser_const.KEY_SCALE_MODE: "abs"}
+    assert mixin.interact_scale_selector([Token("RELATIVE_KW", "Relative_")]) == ScaleSelector("relative")
+    assert mixin.interact_scale_selector([Token("ABS_KW", "Abs_")]) == ScaleSelector("abs")
     with pytest.raises(ValueError, match="interact_scale_selector expected"):
         mixin.interact_scale_selector([Token("NAME", "Other")])
 
@@ -237,12 +238,12 @@ def test_interact_pick_button_models_literal_and_reference():
     mixin = _GraphicsHarness()
 
     literal = mixin.interact_pick_button([Token("INTOBJPICKBUTTON_KW", "IntObjPickButton"), "Pick me"])
-    assert literal == {parser_const.KEY_PICK_BUTTON: {"value": "Pick me", "is_reference": False}}
+    assert literal == PickButton("Pick me")
 
     reference = mixin.interact_pick_button(
         [Token("INTOBJPICKBUTTON_KW", "IntObjPickButton"), "PickVar", Token("VARNAME", "VarName")]
     )
-    assert reference == {parser_const.KEY_PICK_BUTTON: {"value": "PickVar", "is_reference": True}}
+    assert reference == PickButton("PickVar", is_reference=True)
 
     with pytest.raises(ValueError, match="interact_pick_button expected"):
         mixin.interact_pick_button([Token("INTOBJPICKBUTTON_KW", "IntObjPickButton")])
@@ -267,35 +268,32 @@ def test_interactor_body_accepts_pick_button_and_scale_selector():
 
     assert bp.moduledef is not None
     payloads = _body_payloads(bp.moduledef.interact_objects[0])
-    assert {parser_const.KEY_PICK_BUTTON: {"value": "Pick me", "is_reference": False}} in payloads
-    assert {parser_const.KEY_PICK_BUTTON: {"value": "PickVar", "is_reference": True}} in payloads
-    assert {parser_const.KEY_SCALE_MODE: "relative"} in payloads
+    assert PickButton("Pick me") in payloads
+    assert PickButton("PickVar", is_reference=True) in payloads
+    assert ScaleSelector("relative") in payloads
 
 
 def test_interact_flag_captures_plain_string_name():
     # NAME terminals arrive as plain strings after token coercion; the name
     # must land in "name", not in "tail".
-    mixin = _GraphicsHarness(coord_tails=[], extra_tails=[])
-    assert mixin.interact_flag(["Int_Value"]) == {
-        parser_const.KEY_NAME: "Int_Value",
-        parser_const.KEY_EXTRA: None,
-        parser_const.KEY_TAIL: None,
-    }
+    mixin = _GraphicsHarness()
+    assert mixin.interact_flag(["Int_Value"]) == FlagClause("Int_Value")
+    assert mixin.interact_flag([Token("TEXTOBJECT", "TextObject")]) == FlagClause("TextObject")
 
 
 def test_common_properties_preserves_layer_enable_and_colour_content():
-    mixin = _GraphicsHarness(coord_tails=[], extra_tails=[])
+    mixin = _GraphicsHarness()
+    colour = ColourSpec("outline")
+    enable = EnableClause(False, VarTail("in", "Enabled"))
     merged = mixin.common_properties(
         [
             Tree("comment", [Token("COMMENT_START", "(*")]),
             7,
-            {parser_const.TREE_TAG_ENABLE: False, parser_const.KEY_TAIL: "Enabled"},
-            Tree("outline_colour", [Token("OUTLINECOLOUR", "OutlineColour")]),
+            enable,
+            colour,
         ]
     )
-    assert merged["layer"] == 7
-    assert merged[parser_const.TREE_TAG_ENABLE] is False
-    assert merged["colours"] == [Tree("outline_colour", [Token("OUTLINECOLOUR", "OutlineColour")])]
+    assert merged == CommonProperties(layer=7, enable=enable, colours=(colour,))
 
     obj = mixin.rectangle_object(
         [
@@ -305,37 +303,98 @@ def test_common_properties_preserves_layer_enable_and_colour_content():
     )
     assert obj.properties["layer"] == 7
     assert obj.properties[parser_const.TREE_TAG_ENABLE] is False
-    assert obj.properties["colours"] == merged["colours"]
+    assert obj.properties["colours"] == [colour]
 
 
 def test_combutproc_item_preserves_assignments_flags_enables_layers_and_colours():
-    mixin = _GraphicsHarness(coord_tails=[], extra_tails=[])
+    mixin = _GraphicsHarness()
+    assign = AssignClause("Variable", 0, VarTail("out", "AssignTail"))
+    enable = EnableClause(True, VarTail("in", "En"))
+    flag = FlagClause("Abs_")
+    colour = ColourSpec("outline", assignments=(TailedClause("Colour0", 2),))
     item = mixin.combutproc_item(
         [
-            ((0.0, 0.0), (1.0, 1.0)),
+            InterimCoords(coords=((0.0, 0.0), (1.0, 1.0))),
             mixin.combutproc_tail([3]),
-            mixin.combutproc_tail([{parser_const.KEY_ASSIGN: {"name": "Variable", "value": 0}}]),
-            mixin.combutproc_tail([{parser_const.TREE_TAG_ENABLE: True, parser_const.KEY_TAIL: "En"}]),
-            mixin.combutproc_tail([{parser_const.KEY_NAME: "Abs_", parser_const.KEY_EXTRA: None}]),
-            mixin.combutproc_tail([Tree("outline_colour", [Token("OUTLINECOLOUR", "OutlineColour")])]),
+            mixin.combutproc_tail([assign]),
+            mixin.combutproc_tail([enable]),
+            mixin.combutproc_tail([flag]),
+            mixin.combutproc_tail([colour]),
         ]
     )
     assert item.properties["layers"] == [3]
-    assert item.properties["assigns"] == [{parser_const.KEY_ASSIGN: {"name": "Variable", "value": 0}}]
-    assert item.properties["enables"] == [{parser_const.TREE_TAG_ENABLE: True, parser_const.KEY_TAIL: "En"}]
-    assert item.properties["flags"] == [{parser_const.KEY_NAME: "Abs_", parser_const.KEY_EXTRA: None}]
-    assert item.properties["colours"] == [Tree("outline_colour", [Token("OUTLINECOLOUR", "OutlineColour")])]
+    assert item.properties["assigns"] == [assign]
+    assert item.properties["enables"] == [enable]
+    assert item.properties["flags"] == [flag]
+    assert item.properties["colours"] == [colour]
+    assert item.properties["tails"] == [VarTail("out", "AssignTail"), VarTail("in", "En")]
 
     with pytest.raises(ValueError, match="combutproc_tail expected a tail item"):
         mixin.combutproc_tail([])
 
 
 def test_procedure_call_keeps_name_out_of_args():
-    mixin = _GraphicsHarness(coord_tails=[], extra_tails=[])
-    assert mixin.procedure_call([42])[parser_const.KEY_PROCEDURE_CALL] == {
-        parser_const.KEY_NAME: None,
-        parser_const.KEY_ARGS: [42],
-    }
+    mixin = _GraphicsHarness()
+    assert mixin.procedure_call(["OpenValve", 42]) == ProcedureCall("OpenValve", (42,))
+    assert mixin.procedure_args([1, Token("COMMA", ","), VarTail("in", "Arg")]) == [1, VarTail("in", "Arg")]
+    with pytest.raises(ValueError, match="procedure_call missing name"):
+        mixin.procedure_call([42])
+
+
+def test_tailed_clause_handlers_build_typed_plain_and_tailed_clauses():
+    mixin = _GraphicsHarness()
+    tail = VarTail("in", "T")
+    width = TailedClause(parser_const.GRAMMAR_VALUE_WIDTH_KEY, 2, tail)
+    style = TailedClause(parser_const.GRAMMAR_VALUE_COLOURSTYLE, 1.5, tail)
+    colour0 = TailedClause(parser_const.GRAMMAR_VALUE_COLOUR0, 1, tail)
+    colour1 = TailedClause(parser_const.GRAMMAR_VALUE_COLOUR1, 3)
+
+    assert mixin.format_string_tailed(
+        [Token("FORMATSTRING", parser_const.GRAMMAR_VALUE_FORMAT_STRING), "%d", tail]
+    ) == TailedClause(parser_const.GRAMMAR_VALUE_FORMAT_STRING, "%d", tail)
+    assert mixin.format_string_plain(
+        [Token("FORMATSTRING", parser_const.GRAMMAR_VALUE_FORMAT_STRING), 5]
+    ) == TailedClause(parser_const.GRAMMAR_VALUE_FORMAT_STRING, 5)
+    assert mixin.format_string([TailedClause(parser_const.GRAMMAR_VALUE_FORMAT_STRING, 5)]) == TailedClause(
+        parser_const.GRAMMAR_VALUE_FORMAT_STRING, 5
+    )
+    assert mixin.value_fraction_tailed([Token("VALUEFRACTION", parser_const.GRAMMAR_VALUE_VALUEFRACTION), 2, tail]) == (
+        TailedClause(parser_const.GRAMMAR_VALUE_VALUEFRACTION, 2, tail)
+    )
+    assert mixin.value_fraction_plain([Token("VALUEFRACTION", parser_const.GRAMMAR_VALUE_VALUEFRACTION), 2]) == (
+        TailedClause(parser_const.GRAMMAR_VALUE_VALUEFRACTION, 2)
+    )
+    assert mixin.value_fraction([TailedClause(parser_const.GRAMMAR_VALUE_VALUEFRACTION, 2)]) == TailedClause(
+        parser_const.GRAMMAR_VALUE_VALUEFRACTION, 2
+    )
+    assert mixin.width_tailed([Token("WIDTH_KEY", parser_const.GRAMMAR_VALUE_WIDTH_KEY), 2, tail]) == width
+    assert mixin.width_plain([Token("WIDTH_KEY", parser_const.GRAMMAR_VALUE_WIDTH_KEY), 2]) == TailedClause(
+        parser_const.GRAMMAR_VALUE_WIDTH_KEY, 2
+    )
+    assert mixin.width([width]) == width
+    assert mixin.assign_colour_tailed([Token("COLOUR0", parser_const.GRAMMAR_VALUE_COLOUR0), 1, tail]) == colour0
+    assert mixin.assign_colour_plain([Token("COLOUR0", parser_const.GRAMMAR_VALUE_COLOUR0), 1]) == TailedClause(
+        parser_const.GRAMMAR_VALUE_COLOUR0, 1
+    )
+    assert mixin.assign_colour([colour0]) == colour0
+    assert mixin.colour_style_tailed([Token("COLOURSTYLE", parser_const.GRAMMAR_VALUE_COLOURSTYLE), 1.5, tail]) == style
+    assert mixin.colour_style_plain([Token("COLOURSTYLE", parser_const.GRAMMAR_VALUE_COLOURSTYLE), 1.5]) == (
+        TailedClause(parser_const.GRAMMAR_VALUE_COLOURSTYLE, 1.5)
+    )
+    assert mixin.colour_style([style]) == style
+    assert mixin.colour_assignments([colour0, Token("JUNK", ","), colour1]) == (colour0, colour1)
+    assert mixin.outline_colour([width, (colour0, colour1), style]) == ColourSpec(
+        "outline", width=width, assignments=(colour0, colour1), style=style
+    )
+    assert mixin.fill_colour([(colour0,)]) == ColourSpec("fill", assignments=(colour0,))
+    assert mixin.color_properties([ColourSpec("fill")]) == ColourSpec("fill")
+
+    with pytest.raises(ValueError, match="tailed clause expected a keyword and a value"):
+        mixin._tailed_clause([Token("JUNK", ",")])
+    with pytest.raises(ValueError, match="expected a tailed clause"):
+        mixin.format_string([])
+    with pytest.raises(ValueError, match="color_properties expected a colour block"):
+        mixin.color_properties([])
 
 
 def _body_payloads(interactor: object) -> list[object]:
@@ -360,8 +419,8 @@ def test_interact_widgets_fixture_preserves_types_names_and_assignments():
     body_text = " ".join(repr(item) for item in cast(list[Any], text_box.properties.get("body", [])))
     assert "Int_Value" in body_text and "Digits_" in body_text
     # ``Abs_``/``Relative_`` are modelled as a distinct scale-mode selector now.
-    assert {parser_const.KEY_SCALE_MODE: "abs"} in _body_payloads(text_box)
-    assert {parser_const.KEY_SCALE_MODE: "abs"} in _body_payloads(interactors["ComBut_"])
+    assert ScaleSelector("abs") in _body_payloads(text_box)
+    assert ScaleSelector("abs") in _body_payloads(interactors["ComBut_"])
 
     proc_item = interactors["ComButProc_"]
     assert proc_item.properties.get("assigns") is not None
@@ -391,95 +450,73 @@ def test_moduledef_options_fixture_preserves_grid_zoom_and_layers():
 
 
 def test_graphics_interact_mixin_cover_interact_helpers_and_validation_errors():
-    mixin = _GraphicsHarness(coord_tails=["CoordTail"], extra_tails=["TailVar"])
+    mixin = _GraphicsHarness()
     coords = ((0.0, 0.0), (1.0, 1.0))
-    proc_dict = mixin.procedure_call([Token("NAME", "ToggleWindow"), "arg1", 2])
-    assert proc_dict[parser_const.KEY_PROCEDURE_CALL][parser_const.KEY_NAME] == "ToggleWindow"
+    coord_tail = VarTail("in", "CoordTail")
+    proc = mixin.procedure_call([Token("NAME", "ToggleWindow"), "arg1", 2])
+    assert proc.name == "ToggleWindow"
     # A plain-string name (the real NAME->str coercion) must land in name, not args.
-    plain_name_dict = mixin.procedure_call(["OpenValve", "argA"])
-    assert plain_name_dict == {
-        parser_const.KEY_PROCEDURE_CALL: {parser_const.KEY_NAME: "OpenValve", parser_const.KEY_ARGS: ["argA"]}
-    }
+    assert mixin.procedure_call(["OpenValve", "argA"]) == ProcedureCall("OpenValve", ("argA",))
     combut = mixin.combutproc_item(
         [
-            coords,
-            proc_dict,
-            [{parser_const.KEY_PROCEDURE_CALL: {parser_const.KEY_NAME: "OtherProc", parser_const.KEY_ARGS: []}}],
+            InterimCoords(coords=coords, tails=[coord_tail]),
+            proc,
+            ProcedureCall("OtherProc"),
         ]
     )
     simple = mixin.interact_simple_item(
         [
-            Token("INTERACT", "Button_"),
-            coords,
-            Tree(parser_const.TREE_TAG_INTERACT_BODY_SEQ, ["body-a"]),
-            ["body-b"],
-            {parser_const.KEY_TAIL: "EnableVar"},
+            "Button_",
+            InterimCoords(coords=coords),
+            Tree(parser_const.TREE_TAG_INTERACT_BODY_SEQ, ["body-a", EnableClause(True, VarTail("in", "EnableVar"))]),
         ]
     )
 
-    assert proc_dict == {
-        parser_const.KEY_PROCEDURE_CALL: {
-            parser_const.KEY_NAME: "ToggleWindow",
-            parser_const.KEY_ARGS: ["arg1", 2],
-        }
-    }
     assert combut.type == parser_const.GRAMMAR_VALUE_COMBUTPROC
     assert combut.properties[parser_const.KEY_COORDS] == [coords]
-    assert combut.properties[parser_const.KEY_PROCEDURE] == {
-        parser_const.KEY_NAME: "OtherProc",
-        parser_const.KEY_ARGS: [],
-    }
-    assert combut.properties[parser_const.KEY_TAILS] == ["CoordTail", "TailVar"]
+    assert combut.properties[parser_const.KEY_PROCEDURE] == ProcedureCall("OtherProc")
+    assert combut.properties[parser_const.KEY_TAILS] == [coord_tail]
     assert simple.type == "Button_"
     assert simple.properties[parser_const.KEY_COORDS] == [coords]
-    assert simple.properties[parser_const.KEY_BODY] == ["body-a", "body-b"]
-    assert simple.properties[parser_const.KEY_TAILS] == ["CoordTail", "TailVar", "EnableVar"]
+    assert simple.properties[parser_const.KEY_BODY] == ["body-a", EnableClause(True, VarTail("in", "EnableVar"))]
+    assert simple.properties[parser_const.KEY_TAILS] == [VarTail("in", "EnableVar")]
 
-    assert mixin.invar([Token("JUNK", "="), "VarRef"]) == "VarRef"
-    assert mixin.enable([False, {parser_const.KEY_TAIL: "EnableExpr"}]) == {
-        parser_const.TREE_TAG_ENABLE: False,
-        parser_const.KEY_TAIL: {parser_const.KEY_TAIL: "EnableExpr"},
-    }
+    assert mixin.enable([False, VarTail("in", "EnableExpr")]) == EnableClause(False, VarTail("in", "EnableExpr"))
+    assert mixin.enable_combut([False, Compare(VarRef("Flag"), "==", 1)]) == EnableClause(
+        False, Compare(VarRef("Flag"), "==", 1)
+    )
     assert mixin.enable_expression([Token("JUNK", "="), "Expr"]) == "Expr"
-    assert mixin.interact_assign_variable_tailed(["Setpoint", 5, {parser_const.KEY_TAIL: "OutVar"}]) == {
-        parser_const.KEY_NAME: "Setpoint",
-        parser_const.KEY_VALUE: 5,
-        parser_const.KEY_TAIL: {parser_const.KEY_TAIL: "OutVar"},
-    }
-    assert mixin.interact_assign_variable_plain(["Setpoint", 5]) == {
-        parser_const.KEY_NAME: "Setpoint",
-        parser_const.KEY_VALUE: 5,
-        parser_const.KEY_TAIL: None,
-    }
-    assert mixin.interact_assign_variable([{parser_const.KEY_NAME: "Setpoint", parser_const.KEY_VALUE: 5}]) == {
-        parser_const.KEY_ASSIGN: {parser_const.KEY_NAME: "Setpoint", parser_const.KEY_VALUE: 5}
-    }
+    assert mixin.module_in_view([True, VarTail("out", "Visible")]) == ModuleInViewClause(
+        True, VarTail("out", "Visible")
+    )
+    assert mixin.interact_assign_variable_tailed(["Setpoint", 5, VarTail("out", "OutVar")]) == AssignClause(
+        "Setpoint", 5, VarTail("out", "OutVar")
+    )
+    assert mixin.interact_assign_variable_plain(["Setpoint", 5]) == AssignClause("Setpoint", 5)
+    assert mixin.interact_assign_variable([AssignClause("Setpoint", 5)]) == AssignClause("Setpoint", 5)
     assert mixin.interact_flag(
         [
             Token(parser_const.KEY_NAME, "Abs_"),
             Token(parser_const.KEY_STRING, "label"),
-            {parser_const.KEY_TAIL: "InVar"},
+            VarTail("in", "InVar"),
         ]
-    ) == {
-        parser_const.KEY_NAME: "Abs_",
-        parser_const.KEY_EXTRA: "label",
-        parser_const.KEY_TAIL: {parser_const.KEY_TAIL: "InVar"},
-    }
-    assert mixin.interact_value_line([1, 2, 3]) == [1, 2, 3]
+    ) == FlagClause("Abs_", "label", VarTail("in", "InVar"))
+    assert mixin.interact_value_line([1]) == 1
     assert mixin.layer_info([Token("JUNK", ":"), 4]) == 4
     assert mixin.seq_control_opt(["SEQ_CONTROL", "SEQTIMER"]).data == parser_const.KEY_SEQ_CONTROL_OPS
     assert mixin.codeblock_coord([Token("LPAR", "("), 1, 2]) == (1.0, 2.0)
     assert mixin.objsizedef([Token("LPAR", "("), 3, 4]) == (3.0, 4.0)
-    assert mixin.two_layers([Token("JUNK", ":"), 3.0]) == {parser_const.GRAMMAR_VALUE_TWO_LAYERS: 3.0}
-    with pytest.raises(ValueError, match="two_layers expected a numeric"):
-        mixin.two_layers(["bad"])
 
-    with pytest.raises(ValueError, match="invar expected"):
-        mixin.invar([Token("JUNK", "=")])
     with pytest.raises(ValueError, match="enable_expression expected"):
         mixin.enable_expression([Token("JUNK", "=")])
     with pytest.raises(ValueError, match="interact_assign_variable expected"):
         mixin.interact_assign_variable(["bad"])
+    with pytest.raises(ValueError, match="interact assignment expected a name and a value"):
+        mixin.interact_assign_variable_plain([])
+    with pytest.raises(ValueError, match="interact_flag expected a flag name"):
+        mixin.interact_flag([])
+    with pytest.raises(ValueError, match="interact_value_line expected a value"):
+        mixin.interact_value_line([])
     with pytest.raises(ValueError, match="layer_info expected"):
         mixin.layer_info(["bad"])
     with pytest.raises(ValueError, match="codeblock_coord expected 2 coordinate values"):

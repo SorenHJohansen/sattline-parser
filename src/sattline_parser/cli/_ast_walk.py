@@ -6,6 +6,7 @@ from collections.abc import Iterable, Iterator
 from dataclasses import dataclass
 from typing import Literal
 
+from sattline_parser.grammar import constants as const
 from sattline_parser.models import ast_model as m
 from sattline_parser.models.expressions import (
     Assignment,
@@ -273,5 +274,5 @@ def _module_path(path: tuple[str, ...]) -> str | None:
 
 
 def _graph_object_detail(graph_object: m.GraphObject) -> str:
-    layer = graph_object.properties.get("layer")
+    layer = graph_object.properties.get(const.KEY_LAYER)
     return f"layer {layer}" if layer is not None else "graph object"
