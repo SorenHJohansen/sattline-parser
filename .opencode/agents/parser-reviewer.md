@@ -20,6 +20,15 @@ permissions:
   - action: shell
     resource: "git show*"
     effect: allow
+  - action: shell
+    resource: "echo *"
+    effect: allow
+  - action: shell
+    resource: "head *"
+    effect: allow
+  - action: shell
+    resource: "git branch --show-current*"
+    effect: allow
 ---
 
 You review changes to `sattline-parser`. This package is language
@@ -28,6 +37,12 @@ before judging a subsystem.
 
 Report findings in severity order with `file:line` references. Do not edit
 files and do not run the test suite. The parent agent runs verification.
+
+Shell access is read-only git inspection plus the harmless chain helpers
+`echo`, `head`, and `git branch --show-current`. Those three exist so a
+multi-segment snapshot command can run under the agent's per-segment
+permissions; none of them can mutate the tree. Every other shell command is
+denied.
 
 Review for:
 
