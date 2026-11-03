@@ -16,6 +16,7 @@ from ._common import (
     emit_findings,
     fails_on,
     reject_companion,
+    resolve_rule_filters,
     selected_findings,
 )
 
@@ -34,6 +35,8 @@ def register(subparsers: argparse._SubParsersAction[argparse.ArgumentParser]) ->
 
 def run(args: argparse.Namespace) -> int:
     absolute = args.path_style == "absolute"
+    # Reject an unknown or inactive --rule before reading any source.
+    resolve_rule_filters(args.rule or ())
     findings: list[Finding] = []
     for target in args.paths:
         reject_companion(target)

@@ -96,8 +96,11 @@ def test_severity_and_rule_filters(tmp_path, capsys) -> None:
     assert main(["check", str(source), "--rule", "CONSECUTIVE_SEQUENCE_STEPS"]) == ExitCode.FINDINGS
     assert "Consecutive SFC steps" in capsys.readouterr().out
 
-    assert main(["check", str(source), "--rule", "SOMETHING_ELSE"]) == ExitCode.OK
-    assert capsys.readouterr().out == ""
+    assert main(["check", str(source), "--rule", "SL-V016"]) == ExitCode.FINDINGS
+    assert "Consecutive SFC steps" in capsys.readouterr().out
+
+    assert main(["check", str(source), "--rule", "SOMETHING_ELSE"]) == ExitCode.USAGE
+    assert "unknown rule" in capsys.readouterr().err
 
 
 def test_max_findings_limits_output_but_not_the_exit_code(tmp_path, capsys) -> None:
@@ -145,6 +148,10 @@ def test_parse_error_json_carries_rule_and_sentence(tmp_path, capsys) -> None:
     assert finding["hint"].startswith("the unit ends before a required ';'")
     assert finding["source_line"] == "ENDDEF (*BasePicture*)"
     assert (finding["line"], finding["column"]) == (7, 21)
+
+    # Synthetic finding ids are selectable even though they are not validator rules.
+    assert main(["check", str(source), "--rule", "PARSE_ERROR"]) == ExitCode.FINDINGS
+    assert "unexpected end of file" in capsys.readouterr().out
 
 
 def test_decode_error_is_a_located_finding_without_a_position(tmp_path, capsys) -> None:

@@ -97,6 +97,7 @@ tooling and agents that should not write Python glue:
 sattline check SR/*.s --jsonl     # decode + parse + validate, machine-readable
 sattline parse M.s --tree         # the AST as JSON
 sattline query M.s --what writers # one structural question
+sattline rules --json             # the validation rule registry
 sattline diff Old.s New.s         # findings and counts that moved
 sattline version --json           # tool and JSON schema versions
 ```
@@ -220,6 +221,35 @@ program
 ```
 
 Think of the AST as a structured, machine-readable view of the program, that tools (a linter, a refactorer, an editor, a report generator) can walk without re-parsing the text. Since an AST is just nested objects, answering questions about the program becomes ordinary Python.
+
+For a generic traversal, use the public walker instead of copying the recursion:
+
+```python
+from sattline_parser import NodeVisitor, VarRef, walk
+
+for event in walk(basepicture):
+    if isinstance(event.node, VarRef):
+        print(event.relation, event.node.name)
+
+
+class Calls(NodeVisitor):
+    def __init__(self):
+        self.names = []
+
+    def visit_FuncCall(self, call):
+        self.names.append(call.name)
+        self.generic_visit(call)
+
+
+visitor = Calls()
+visitor.visit(basepicture)
+print(visitor.names)
+```
+
+`walk` is pre-order and reports the field that holds each node plus its ancestor
+chain. `NodeVisitor` dispatches on the class name. See
+[docs/ast.md](docs/ast.md) for the covered fields and the parts of the model it
+deliberately does not descend into.
 
 ### Project layer: load a whole project
 

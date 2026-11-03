@@ -15,6 +15,7 @@ so an agent needs neither Python glue nor a lookup table:
 * ``sattline diff`` — the findings and structural counts that moved between two
   versions of a unit.
 * ``sattline corpus`` — batch triage over a source tree.
+* ``sattline rules``: the validation rule registry, with id, name, status, summary.
 * ``sattline version`` — tool and JSON schema versions.
 
 Exit codes are the contract: ``0`` clean, ``1`` findings, ``2`` usage/input,
@@ -33,7 +34,7 @@ from typing import NoReturn
 
 from ._errors import CliError
 from ._exit import ExitCode
-from .cmds import check, corpus, decode, diff, graphics, parse, project, query, version
+from .cmds import check, corpus, decode, diff, graphics, parse, project, query, rules, version
 
 __all__ = ["build_parser", "main"]
 
@@ -59,7 +60,7 @@ def build_parser() -> argparse.ArgumentParser:
         help="print a traceback for internal errors instead of a one-line message",
     )
     subparsers = parser.add_subparsers(dest="command", metavar="<command>", required=True)
-    for module in (check, parse, query, project, graphics, decode, diff, corpus, version):
+    for module in (check, parse, query, project, graphics, decode, diff, corpus, rules, version):
         module.register(subparsers)
     return parser
 

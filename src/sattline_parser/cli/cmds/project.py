@@ -19,7 +19,7 @@ from sattline_parser.project import (
 
 from .._errors import CliError
 from .._exit import ExitCode
-from .._findings import Finding
+from .._findings import PROJECT_LOAD_RULE, Finding
 from .._json import SCHEMA_PREFIX, dumps
 from ._common import add_fail_on, add_output_flags, emit_findings, fails_on, positive_int
 
@@ -79,7 +79,7 @@ def run(args: argparse.Namespace) -> int:
     except ProjectLoadError as exc:
         # A tree that cannot be loaded is a finding about the tree. Anything
         # else is a bug in this tool and must reach main()'s internal-error path.
-        finding = Finding(severity="error", message=f"cannot load project: {exc}", rule="PROJECT_LOAD_ERROR")
+        finding = Finding(severity="error", message=f"cannot load project: {exc}", rule=PROJECT_LOAD_RULE)
         emit_findings([finding], args=args, schema="project", extra={"programs": []})
         return int(ExitCode.FINDINGS)
     programs = project.programs()

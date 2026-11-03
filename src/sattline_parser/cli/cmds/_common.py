@@ -8,8 +8,9 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 
 from ...project.formats import ALL_GRAPHICS_EXTENSIONS
+from ...validation.rules import RuleStatus, UnknownRuleError, require_rule
 from .._errors import CliError
-from .._findings import Finding
+from .._findings import CLI_RULE_IDS, Finding
 from .._json import SCHEMA_PREFIX, dumps
 
 __all__ = [
@@ -26,6 +27,7 @@ __all__ = [
     "positive_int",
     "reject_companion",
     "require_companion",
+    "resolve_rule_filters",
     "selected_findings",
 ]
 
@@ -137,7 +139,7 @@ def add_finding_filters(parser: argparse.ArgumentParser) -> None:
         "--rule",
         action="append",
         metavar="RULE",
-        help="only report this rule id (repeatable; machine ids from --json output)",
+        help="only report this rule (SL-V### id or enum name, repeatable; see 'sattline rules')",
     )
     parser.add_argument(
         "--max-findings",
@@ -147,13 +149,39 @@ def add_finding_filters(parser: argparse.ArgumentParser) -> None:
     )
 
 
+def resolve_rule_filters(values: Sequence[str]) -> tuple[str, ...]:
+    """Resolve ``--rule`` values to canonical finding rule ids.
+
+    Both the ``SL-V###`` id and the enum name are accepted, case-insensitively.
+    Synthetic finding ids such as ``PARSE_ERROR`` are accepted too, because they
+    appear in output but not in the validation registry. An unknown value or a
+    rule that can never produce a finding is a usage error, so a typo cannot
+    silently pass with an empty report.
+    """
+    names: list[str] = []
+    for value in values:
+        synthetic = value.upper()
+        if synthetic in CLI_RULE_IDS:
+            names.append(synthetic)
+            continue
+        try:
+            rule = require_rule(value)
+        except UnknownRuleError as exc:
+            raise CliError(f"{exc} (run 'sattline rules' to list rule ids)") from exc
+        if rule.status is not RuleStatus.ACTIVE:
+            detail = rule.details or rule.summary
+            raise CliError(f"rule {rule.id} ({rule.name}) is {rule.status.value}: {detail}")
+        names.append(rule.name)
+    return tuple(names)
+
+
 def selected_findings(findings: Sequence[Finding], args: argparse.Namespace) -> list[Finding]:
     """Apply ``--severity`` / ``--rule`` filters."""
     selected = list(findings)
     if args.severity != "all":
         selected = [finding for finding in selected if finding.severity == args.severity]
     if args.rule:
-        wanted = set(args.rule)
+        wanted = set(resolve_rule_filters(args.rule))
         selected = [finding for finding in selected if finding.rule in wanted]
     return selected
 

@@ -107,6 +107,7 @@ def test_parser_declares_the_three_p0_commands() -> None:
         "parse",
         "project",
         "query",
+        "rules",
         "version",
     ]
 

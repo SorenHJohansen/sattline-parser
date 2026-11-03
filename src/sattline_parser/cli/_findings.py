@@ -17,14 +17,35 @@ from sattline_parser.validation import Diagnostic
 
 from ._io import display_path
 
-__all__ = ["Finding", "finding_from_diagnostic", "finding_from_parse_error"]
+__all__ = [
+    "CLI_RULE_IDS",
+    "DECODE_RULE",
+    "GRAPHICS_SCAN_RULE",
+    "PARSE_RULE",
+    "PROJECT_LOAD_RULE",
+    "READ_RULE",
+    "Finding",
+    "finding_from_diagnostic",
+    "finding_from_parse_error",
+]
 
 Severity = Literal["error", "warning"]
 
 #: Rule id for a source that does not parse (no validator rule applies).
-_PARSE_RULE = "PARSE_ERROR"
+PARSE_RULE = "PARSE_ERROR"
 #: Rule id for input the decoder refuses (malformed compact/coded stream).
-_DECODE_RULE = "DECODE_ERROR"
+DECODE_RULE = "DECODE_ERROR"
+#: Rule id for a project tree that cannot be loaded.
+PROJECT_LOAD_RULE = "PROJECT_LOAD_ERROR"
+#: Rule id for a graphics companion's own scan messages.
+GRAPHICS_SCAN_RULE = "GRAPHICS_SCAN"
+#: Rule id for a corpus file that cannot be read.
+READ_RULE = "READ_ERROR"
+
+#: Finding ids that do not come from the validation registry but can still be
+#: selected with ``--rule``. The registry is for validator rules; these describe
+#: the input or the project around it.
+CLI_RULE_IDS: frozenset[str] = frozenset({PARSE_RULE, DECODE_RULE, PROJECT_LOAD_RULE, GRAPHICS_SCAN_RULE, READ_RULE})
 
 
 @dataclass(frozen=True, slots=True)
@@ -102,7 +123,7 @@ def finding_from_parse_error(exc: Exception, source_text: str, *, file: str, abs
         return Finding(
             severity="error",
             message=details.sentence or details.message.splitlines()[0],
-            rule=_PARSE_RULE,
+            rule=PARSE_RULE,
             file=display_path(file, absolute=absolute_paths),
             line=details.line,
             column=details.column,
@@ -112,6 +133,6 @@ def finding_from_parse_error(exc: Exception, source_text: str, *, file: str, abs
     return Finding(
         severity="error",
         message=str(exc),
-        rule=_DECODE_RULE,
+        rule=DECODE_RULE,
         file=display_path(file, absolute=absolute_paths),
     )

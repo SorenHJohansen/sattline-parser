@@ -2,6 +2,7 @@
 
 The supported public surface is the names listed in
 `sattline_parser.__all__`, `sattline_parser.api.__all__`,
+`sattline_parser.models.__all__`, `sattline_parser.validation.__all__`,
 `sattline_parser.project.__all__`, and `sattline_parser.builtins.__all__`, plus
 the documented `sattline` command and its JSON schemas. Submodule paths not
 listed there are internal and may change between releases.
@@ -58,6 +59,25 @@ power-user helpers for tooling that needs an intermediate stage.
 `sattline_parser.api`. The `Diagnostic` type and codes are re-exported by
 `sattline_parser`.
 
+### Rule registry
+
+`validation/rules.py` gives every `DiagnosticCode` one `Rule` with an id, enum
+name, default severity, scope, status, summary, and optional details. The
+registry is exported from `sattline_parser.validation`:
+
+| Name | Signature summary | Returns |
+| --- | --- | --- |
+| `RULES` | tuple of every rule, in enum order | `tuple[Rule, ...]` |
+| `RULES_BY_ID`, `RULES_BY_NAME` | case-folded id and name lookups | `dict[str, Rule]` |
+| `find_rule` | `(value)` accepts `SL-V019` or `UNDEFINED_VARIABLE` | `Rule | None` |
+| `Rule` | metadata dataclass with derived `id`, `name`, `status`, `enabled` | value |
+| `RuleScope` | `DECLARATIONS`, `CODE`, `SFC`, `MAPPINGS`, `PROJECT` | `StrEnum` |
+| `RuleStatus` | `ACTIVE`, `RETIRED`, `UNIMPLEMENTED` | `StrEnum` |
+
+The registry is metadata, not an execution switch. `validate_basepicture` still
+runs the full strict pass; `sattline rules` and the documentation table read the
+registry. `RETIRED_CODES` is derived from it.
+
 ## AST types
 
 The top-level package exports:
@@ -71,11 +91,17 @@ The top-level package exports:
 | `BinOp`, `BoolOp`, `Compare`, `NotOp`, `TernaryOp`, `UnaryOp` | Operator nodes |
 | `FuncCall`, `VarRef` | Call and reference nodes |
 | `SLExpression`, `SLStmt` | Type aliases |
+| `walk` | `(node, *, prune=None)` yields every AST node in pre-order |
+| `NodeVisitor` | `visit_<ClassName>` dispatch with `generic_visit` |
+| `WalkEvent` | `(node, relation, parents)` for one visited node |
+| `iter_child_nodes` | `(node)` yields `(relation, child)` pairs |
 
 The full model, including module, SFC, graphics, and declaration types, lives
-in `sattline_parser.models`. Those class names are exported from
-`models.ast_model.__all__` and `models.expressions.__all__`, but the model
-module itself is outside the stable façade. See [ast.md](ast.md).
+in `sattline_parser.models`. `models.__all__` is the stable walker surface
+(`walk`, `NodeVisitor`, `WalkEvent`, `iter_child_nodes`). The node class names
+are exported from `models.ast_model.__all__` and `models.expressions.__all__`,
+but those lists and the node classes are outside the stable façade. See
+[ast.md](ast.md).
 
 ## Graphics
 

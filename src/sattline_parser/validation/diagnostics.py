@@ -74,27 +74,9 @@ class DiagnosticCode(StrEnum):
     UNKNOWN_MODULETYPE_NAME = "SL-V058"
 
 
-#: Codes that are not enforced. They were implemented on the strength of the
-#: editor refusing to *create* such a declaration through its UI, then disproved
-#: by loading the same source directly instead: the UI guard is not a parser
-#: rule, and rejecting files that load and parse was wrong.
-#:
-#: The enum members are kept so existing imports and stored diagnostics stay
-#: valid, but nothing emits them. Each entry is a pending question for the
-#: editors, not a gap in our parser.
-RETIRED_CODES: dict[DiagnosticCode, str] = {
-    DiagnosticCode.DUPLICATE_DATATYPE_NAME: "a datatype name may be declared twice",
-    DiagnosticCode.DUPLICATE_MODULETYPE_NAME: "a module-type name may be declared twice",
-    DiagnosticCode.DUPLICATE_VARIABLE_NAME: "a variable name may be declared twice",
-    DiagnosticCode.DUPLICATE_RECORD_FIELD_NAME: "a record field may be declared twice",
-    DiagnosticCode.BUILTIN_DATATYPE_SHADOWED: "a declaration may reuse a builtin datatype name",
-    DiagnosticCode.INIT_VALUE_TYPE_MISMATCH: "an init value may have a different datatype from its variable",
-    DiagnosticCode.BARE_DURATION_INIT: "a duration variable may be initialized with a bare string",
-    DiagnosticCode.BARE_TIME_INIT: "a time variable may be initialized with a bare string",
-    DiagnosticCode.MALFORMED_DURATION_LITERAL: "an invalid duration literal may load",
-    DiagnosticCode.MALFORMED_TIME_LITERAL: "an invalid time literal may load",
-    DiagnosticCode.SFC_INIT_STEP_PLACEMENT: "a sequence may omit or misplace its init step",
-}
+#: Retired rules and their reasons live in the rule registry, which is the one
+#: place a code's status is declared:
+#: :data:`sattline_parser.validation.rules.RETIRED_CODES`.
 
 
 @dataclass(frozen=True, slots=True)

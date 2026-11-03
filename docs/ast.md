@@ -404,6 +404,51 @@ data lives on `SattLineProgram.graphics`. The fields exist only so a consumer
 that attached its own views to the AST keeps working until it moves that state
 into its own graph model.
 
+## Traversal
+
+`models/walk.py` is the public traversal. `walk(node)` yields a `WalkEvent` for
+every AST node in pre-order. Each event carries the node, the relation that
+holds it in its parent (for example `localvariables[2]` or
+`branches[0][1]`), and the ancestor chain, root first.
+
+```python
+from sattline_parser import NodeVisitor, VarRef, walk
+
+for event in walk(basepicture):
+    if isinstance(event.node, VarRef):
+        print(event.relation, event.node.name)
+
+
+class DeclarationCounter(NodeVisitor):
+    def __init__(self):
+        self.variables = 0
+        self.calls = 0
+
+    def visit_Variable(self, variable):
+        self.variables += 1
+
+    def visit_FuncCall(self, call):
+        self.calls += 1
+        self.generic_visit(call)
+```
+
+`NodeVisitor` dispatches to `visit_<ClassName>` and falls back to
+`generic_visit`, which visits every child that `iter_child_nodes` reports. An
+override decides whether to descend by calling `self.generic_visit(node)`.
+
+The walk covers module containers, declarations, module code, SFC nodes,
+statements, expressions, headers, and comments. It does not descend into
+`GraphObject.properties`, `InteractObject.properties`, `ModuleDef.properties`,
+`ModuleHeader.invocation_arguments`, `parse_tree`, or the deprecated
+`BasePicture.graphics_*` and `library_dependencies` fields. Literal values are
+leaves and are not emitted as nodes. `prune` may stop descent into a node after
+it has been yielded.
+
+`walk` replaces the recursive helpers that consumers would otherwise copy. The
+CLI query command is built on `NodeVisitor`; the validator uses `walk` to
+collect variable references. Rule-specific validation walks stay in
+`validation/` because they interleave scope and type checks with traversal.
+
 ## Formatting
 
 `formatting/formatter.py` renders AST nodes for `__str__` and debugging. It is
@@ -419,3 +464,4 @@ need machine-readable output.
 | `tests/parser/test_parser_core_modules.py` | Module nesting and assembly |
 | `tests/parser/test_parser_core_sfc.py` | SFC node shapes |
 | `tests/parser/test_parser_core_module_definitions.py` | Layout and graphics fields |
+| `tests/parser/test_models_walk.py` | Node coverage, order, ancestry, pruning, visitor dispatch |
