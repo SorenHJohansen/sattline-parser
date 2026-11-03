@@ -1,0 +1,69 @@
+name: Docs
+
+on:
+  pull_request:
+    paths:
+      - "docs/**"
+      - "README.md"
+      - "AGENTS.md"
+      - "CHANGELOG.md"
+      - ".opencode/**"
+      - ".github/pull_request_template.md"
+      - "opencode.json"
+      - "scripts/check_docs.py"
+      - ".github/workflows/docs.yml"
+      - ".github/mermaid-puppeteer.json"
+  push:
+    branches:
+      - main
+    paths:
+      - "docs/**"
+      - "README.md"
+      - "AGENTS.md"
+      - "CHANGELOG.md"
+      - ".opencode/**"
+      - ".github/pull_request_template.md"
+      - "opencode.json"
+      - "scripts/check_docs.py"
+      - ".github/workflows/docs.yml"
+      - ".github/mermaid-puppeteer.json"
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  docs:
+    name: Links, prose, and Mermaid
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v6
+
+      - name: Set up Python 3.13
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: "3.13"
+
+      - name: Validate JSON configuration
+        run: |
+          python -m json.tool opencode.json >/dev/null
+          python -m json.tool .github/mermaid-puppeteer.json >/dev/null
+
+      - name: Check documentation links, prose, and Mermaid extraction
+        run: python scripts/check_docs.py --mermaid-dir /tmp/sattline-mermaid
+
+      - name: Render every Mermaid diagram
+        shell: bash
+        run: |
+          set -euo pipefail
+          for diagram in /tmp/sattline-mermaid/*.mmd; do
+            npx -y @mermaid-js/mermaid-cli@11.17.1 \
+              -p .github/mermaid-puppeteer.json \
+              -i "$diagram" \
+              -o "${diagram%.mmd}.svg"
+          done
