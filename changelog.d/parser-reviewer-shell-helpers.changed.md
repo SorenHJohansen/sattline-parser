@@ -1,0 +1,1 @@
+- **`parser-reviewer` shell helpers.** The read-only review agent now allows `echo`, `head`, and `git branch --show-current` inside multi-segment inspection commands, so a snapshot one-liner no longer fails on a harmless echo segment. Every other shell command stays denied.
