@@ -32,7 +32,7 @@ from ._module_shared import meta_span, v_args
 __all__ = ["ExpressionsMixin", "_ExpressionsMixin"]
 
 #: Terminal type of the ``OutVar_`` prefix; ``InVar_`` is the default.
-_OUTVAR_TOKEN = "OUTVAR_PREFIX"
+_OUTVAR_TOKEN = "OUTVAR_PREFIX"  # nosec B105 - grammar token literal, not a credential
 
 type BoundValue = str | bool | int | float | LitStringTail
 
