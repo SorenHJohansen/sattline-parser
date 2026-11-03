@@ -260,8 +260,8 @@ policy are documented in the README.
   `--report`/`--json`), `diff` (findings and structural counts between two
   units), `corpus` (parallel tree triage with a rule histogram and
   `--fail-on`) and `version` (tool plus schema ids). Every payload is tagged
-  `"schema": "sattline.v1.<command>"`. Exit codes are the contract — `0` clean,
-  `1` findings, `2` usage/input, `3` internal — and a traceback is only printed
+  `"schema": "sattline.v1.<command>"`. Exit codes are the contract: `0` clean,
+  `1` findings, `2` usage/input, `3` internal. A traceback is only printed
   under `--debug`. Findings never print internal rule ids as text; the JSON
   carries them for baselines and diffs. Commands are read-only: no `--fix`, no
   `--write`, no network, no watch mode. Source files are read exactly like
@@ -432,7 +432,7 @@ policy are documented in the README.
 - **Statement semicolons are optional** in code blocks, so
   `Flag = True` followed by a newline terminates a statement.
 
-- **Source files are now decoded strictly as Windows-1252 (cp1252)** — the only
+- **Source files are now decoded strictly as Windows-1252 (cp1252)**, the only
   encoding the real SattLine parser accepts. `read_text_with_fallback` (which
   tried utf-8, then cp1252, then latin-1) is replaced by `read_text_cp1252`,
   which has **no encoding fallback**: bytes that are not valid Windows-1252
@@ -488,7 +488,7 @@ policy are documented in the README.
 
 - **`sattline project` roots follow the loader's model.** Target discovery now
   looks at the artifacts directly inside each root, matching the ordered
-  lookup — a directory that merely *contains* libraries is refused with
+  lookup: a directory that merely *contains* libraries is refused with
   `no source files directly under <root>; pass each library directory as a root`
   instead of silently loading nothing.
 
@@ -538,7 +538,7 @@ policy are documented in the README.
   `LoadMode`, `ProgramFormat`, the graphics companion model (`GraphicsModel`,
   `GraphicsMessage`, `GraphicsCompositeRecord`, `GraphicsPictureDisplayRecord`),
   `SattLineProgram`, `SattLineProject`, `DependencyGraph`, and the structured
-  load errors (`ProjectLoadError` and subclasses). Additive only — artifact
+  load errors (`ProjectLoadError` and subclasses). Additive only; artifact
   discovery and loading behavior land in later phases.
 
 ### Documentation

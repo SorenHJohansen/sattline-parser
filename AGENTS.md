@@ -5,13 +5,37 @@
 ## Quick Reference
 
 **Purpose:** `sattline-parser` owns the SattLine grammar, AST models, and `SLTransformer`. It is a standalone parser core for the SattLine language.
+**Scope:** language infrastructure only. It owns grammar and tokenization, compressed-source preprocessing and provenance, AST models and transformation, syntax diagnostics, graphics companion parsing, project discovery, draft/official resolution, dependency resolution and loading, language-level structural validation, and generic parser/project introspection. It does **not** own analysis policy, lint rules, metrics, refactoring, code generation, graphics correlation, rendering, or consumer-specific behaviour.
 **Boundary:** this package is self-contained and standalone; it must never import from or depend on other tooling packages. It ships standalone on PyPI as an external dependency.
+**Documentation:** `docs/README.md` is the index. Read it before changing an unfamiliar subsystem.
 **Communication:** terse and concrete.
 
 ## Repo Map
 
 | Path | Role |
 | --- | --- |
+| `docs/README.md` | Documentation index and responsibility boundary |
+| `docs/architecture.md` | Layers, module map, import rules, request flow |
+| `docs/parse-pipeline.md` | Bytes to `BasePicture`, failure taxonomy |
+| `docs/grammar.md` | Grammar template, lexer, comments, name folding |
+| `docs/source-provenance.md` | `SourceDocument`, coded streams, marker decoding |
+| `docs/ast.md` | AST model hierarchy and invariants |
+| `docs/transformer.md` | Transformer mixins and construction |
+| `docs/validation.md` | Strict single-source rules and diagnostic codes |
+| `docs/project.md` | Discovery, formats, loading, caches, reachability |
+| `docs/graphics.md` | `.g` / `.y` companion parsing |
+| `docs/cli.md` | Commands, exit codes, findings, JSON schemas |
+| `docs/builtins.md` | Builtin catalogue and record field tables |
+| `docs/api.md` | Public import surface and stability boundary |
+| `docs/testing.md` | Suites, coverage, fuzzing, CI |
+| `docs/development.md` | Setup, workflow, conventions, release |
+| `docs/glossary.md` | Terms and file-extension table |
+| `.opencode/skills/sattline-parser/SKILL.md` | Repo-local skill: map, invariants, recipes, verification |
+| `.opencode/commands/` | Repo-local commands: `verify`, `release`, `review` |
+| `.opencode/agents/parser-reviewer.md` | Read-only review subagent |
+| `.github/pull_request_template.md` | PR checklist for boundary, tests, docs, generated files |
+| `scripts/check_docs.py` | Link, prose, and Mermaid checks for the docs set |
+| `.github/workflows/docs.yml` | Docs CI: links, prose, and Mermaid rendering |
 | `src/sattline_parser/api.py` | Public façade: re-exports the parse pipeline (`source_io`) and the graphics entry points |
 | `src/sattline_parser/source_io.py` | Parser cache, source decoding, and the source→`BasePicture` pipeline |
 | `src/sattline_parser/names.py` | Identifier identity: the CP1252 fold table used by every layer |
@@ -24,7 +48,7 @@
 | `src/sattline_parser/builtins/` | Builtin function signatures and record field specs (generated catalogue) |
 | `src/sattline_parser/validation/` | Validator rules, diagnostics, type graph, builtin call checks |
 | `src/sattline_parser/source_document.py` | Source provenance: original/normalized text + source map, span remapping |
-| `tests/` | Full suite: `tests/parser/`, `tests/project/`, `tests/cli/`, packaging tests |
+| `tests/` | Full suite: `tests/parser/`, `tests/project/`, `tests/cli/`, `tests/builtins/`, packaging tests |
 | `tests/fixtures/corpus/` | Corpus fixtures (`.s` sources only) for regression and fuzz seeding |
 | `tests/fixtures/validation/` | Golden validation manifest and documented behavior differences |
 
@@ -37,6 +61,34 @@
   mechanical `_part1`/`_part2` files; a cohesive module may exceed 500 lines.
 - Do not add imports back into consumer tooling; keep the layers clean.
 - Use the grammar file `src/sattline_parser/grammar/sattline.lark` as canonical.
+- Update `docs/` in the same change as the behavior it describes. A diagram that
+  no longer matches the import graph is a defect.
+- Keep the responsibility boundary explicit: this package is language
+  infrastructure, not analysis. A new analysis feature belongs in a consumer.
+
+## Documentation Rules
+
+- `docs/README.md` is the index and the responsibility statement. Start there.
+- Each document owns one subject and links to the others instead of duplicating
+  a fact.
+- Use tables for anything a future agent will look up: modules, flags, exit
+  codes, rules, fields, extensions.
+- Use Mermaid for graphs that actually exist in the code: layers, pipelines,
+  load order, lexer states. Keep them in sync with the import graph.
+- Record behavior, not origin. Keep the public tree free of third-party names,
+  paths, and build numbers.
+
+## AI Workspace Tooling
+
+- Load the `sattline-parser` skill before an unfamiliar subsystem. It holds the
+  map, recipes, and verification ladder.
+- Use `/verify` for the full check ladder, `/review` for a read-only review, and
+  `/release` for the release checklist.
+- `parser-reviewer` is a read-only subagent. It reports findings, it does not
+  edit files.
+- The pull request template is the smallest checklist a change must satisfy.
+- `scripts/check_docs.py` checks relative links and dash punctuation, and
+  extracts Mermaid blocks for rendering. The Docs workflow renders every block.
 
 ## Public Tree Rule
 
@@ -64,4 +116,4 @@ This repository is public. Describe behavior, not origin.
 
 ## Last Updated
 
-2026-11-02
+2026-11-03
