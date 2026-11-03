@@ -35,35 +35,35 @@ def _character_failure(char: str) -> Any:
     return _Failure()
 
 
-def test_unexpected_input_summary_names_what_was_found_and_expected():
+def test_parse_failure_sentence_names_what_was_found_and_expected():
     eof = _parse_failure({"ENDDEF_KW", "LOCALVARIABLES"}, token=Token("$END", ""))
     token = _parse_failure({"ENDDEF_KW", "LOCALVARIABLES"}, token=Token("NAME", "BADTOKEN"))
     character = _character_failure("?")
 
-    assert parser_api._unexpected_input_summary(eof) == (
+    assert parser_errors._unexpected_description(eof)[0] == (
         "unexpected end of file; expected 'ENDDEF' or 'LOCALVARIABLES'"
     )
-    assert parser_api._unexpected_input_summary(token) == (
+    assert parser_errors._unexpected_description(token)[0] == (
         "unexpected 'BADTOKEN'; expected 'ENDDEF' or 'LOCALVARIABLES'"
     )
-    assert parser_api._unexpected_input_summary(character) == "unexpected character '?'"
+    assert parser_errors._unexpected_description(character)[0] == "unexpected character '?'"
 
 
-def test_unexpected_input_summary_renders_punctuation_and_phrases():
+def test_parse_failure_sentence_renders_punctuation_and_phrases():
     missing_semicolon = _parse_failure({"SEMICOLON", "ENDDEF_KW"}, token=Token("$END", ""))
     header = _parse_failure({"STRING", "NAME"}, token=Token("NAME", "x"), line=1)
 
-    assert parser_api._unexpected_input_summary(missing_semicolon) == (
+    assert parser_errors._unexpected_description(missing_semicolon)[0] == (
         "unexpected end of file; expected ';' or 'ENDDEF'"
     )
-    assert parser_api._unexpected_input_summary(header) == ("unexpected 'x'; expected a name or a string")
+    assert parser_errors._unexpected_description(header)[0] == "unexpected 'x'; expected a name or a string"
 
 
-def test_unexpected_input_summary_caps_the_expectation_list():
+def test_parse_failure_sentence_caps_the_expectation_list():
     expected = {"ENDDEF_KW", "LOCALVARIABLES", "MODULEDEF", "SUBMODULES", "TYPEDEFINITIONS", "MODULEPARAMETERS"}
-    summary = parser_api._unexpected_input_summary(_parse_failure(expected, token=Token("$END", "")))
+    sentence = parser_errors._unexpected_description(_parse_failure(expected, token=Token("$END", "")))[0]
 
-    assert summary.count("'") == 2 * 5
+    assert sentence.count("'") == 2 * 5
 
 
 def test_parse_error_hints_are_actionable():

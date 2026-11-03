@@ -54,7 +54,7 @@ ModuleCode
         {long_name} = 1;
 ENDDEF (*BasePicture*);
 """
-    parser = create_sl_parser()
+    parser = create_parser()
     with pytest.raises(UnexpectedCharacters):
         parser.parse(code)
 
@@ -481,7 +481,7 @@ def test_parser_builds_the_single_authoritative_grammar():
         "        Counter = Counter + 1;\n"
         "ENDDEF (*BasePicture*);\n"
     )
-    parser = create_sl_parser()
+    parser = create_parser()
     assert parser.parse(code).data == "start"
 
 
@@ -509,4 +509,23 @@ def test_parser_resolves_grammar_constants_into_terminal_definitions():
     resolved = parser_api._resolved_grammar()  # pyright: ignore[reportPrivateUsage]
     assert "{GRAMMAR_VALUE_MODULEDEF}" not in resolved
     assert "{GRAMMAR_REGEX_NAME}" not in resolved
+    assert "{GRAMMAR_" not in resolved, "every grammar placeholder must be substituted"
     assert resolved.count('COMMENT_START: "(*"') == 1
+
+
+def test_grammar_template_leaves_literal_braces_alone():
+    # Braces are not template syntax unless their body names a constant, so a
+    # regex quantifier needs no doubling and reaches Lark as written.
+    from sattline_parser.grammar import resolved as resolved_module  # noqa: PLC0415
+
+    text = 'WORD: /\\w{2,3}/ "x"\nIF: "{GRAMMAR_VALUE_IF}"\n'
+    resolved = resolved_module._substitute_placeholders(text, {"GRAMMAR_VALUE_IF": "IF"})  # pyright: ignore[reportPrivateUsage]
+
+    assert resolved == 'WORD: /\\w{2,3}/ "x"\nIF: "IF"\n'
+
+
+def test_grammar_template_rejects_an_unknown_placeholder():
+    from sattline_parser.grammar import resolved as resolved_module  # noqa: PLC0415
+
+    with pytest.raises(RuntimeError, match="Unknown grammar placeholder"):
+        resolved_module._substitute_placeholders("IF: {GRAMMAR_VALUE_TYPO}", {"GRAMMAR_VALUE_IF": "IF"})  # pyright: ignore[reportPrivateUsage]

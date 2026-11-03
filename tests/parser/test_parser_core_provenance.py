@@ -276,7 +276,7 @@ def test_parse_source_file_and_parse_source_text_have_consistent_provenance(tmp_
 def test_describe_parse_error_maps_untagged_exception_with_source_document():
     bad = _COMPRESSED + " THIS IS GARBAGE !!!"
     source_doc = preprocess_source(bad)
-    raw_parser = create_sl_parser()
+    raw_parser = create_parser()
     try:
         raw_parser.parse(source_doc.normalized_text)
     except UnexpectedInput as exc:
@@ -402,7 +402,7 @@ def test_compressed_source_parser_error_at_eof_maps_into_original_source():
     truncated = _COMPRESSED[:code_pos]
     assert truncated
     doc = preprocess_source(truncated)
-    raw_parser = create_sl_parser()
+    raw_parser = create_parser()
     with pytest.raises(UnexpectedInput) as exc_info:
         raw_parser.parse(doc.normalized_text)
     exc = exc_info.value

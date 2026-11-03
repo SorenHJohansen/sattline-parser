@@ -153,17 +153,6 @@ def test_build_lark_parser_tolerates_corrupted_cache_file(monkeypatch, tmp_path)
     assert parser2 is not None
 
 
-def test_create_sl_parser_delegates_to_create_parser(monkeypatch):
-    sentinel = object()
-
-    def fake_create_parser():
-        return sentinel
-
-    monkeypatch.setattr(parser_api, "create_parser", fake_create_parser)
-
-    assert parser_api.create_sl_parser() is sentinel
-
-
 def test_read_text_cp1252_accepts_cp1252_bytes(tmp_path):
     source_file = tmp_path / "cp1252.k"
     source_file.write_bytes("Søren".encode("cp1252"))

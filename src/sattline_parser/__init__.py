@@ -34,13 +34,13 @@ from sattline_parser.validation import Diagnostic, DiagnosticCode, validate_base
 from .__version__ import __version__
 from .api import (
     create_parser,
-    create_sl_parser,
     describe_parse_error,
     parse_and_validate,
     parse_source_file,
     parse_source_text,
 )
 from .grammar import constants
+from .project import parse_graphics_file, parse_graphics_text, resolve_graphics_companion_path
 
 if TYPE_CHECKING:
     from . import fuzz_harness as fuzz_harness
@@ -118,17 +118,19 @@ __all__ = [
     "collect_corpus_inputs",
     "constants",
     "create_parser",
-    "create_sl_parser",
     "describe_parse_error",
     "fuzz_parse_text",
     "generate_random_text",
     "is_compressed",
     "parse_and_validate",
+    "parse_graphics_file",
+    "parse_graphics_text",
     "parse_source_file",
     "parse_source_text",
     "preprocess_sl_text",
     "preprocess_source",
     "render_ide_text",
+    "resolve_graphics_companion_path",
     "run_corpus_regression",
     "run_random_fuzz",
     "validate_basepicture",

@@ -45,8 +45,7 @@ PARSE_FAILURES: tuple[type[Exception], ...] = (
 __all__ = [
     "PARSE_FAILURES",
     "ParseErrorDetails",
-    "_log_parser_failure",
-    "_unexpected_input_summary",
+    "_log_parser_failure",  # imported by source_io as the internal failure logger
     "describe_parse_error",
 ]
 
@@ -202,11 +201,6 @@ def _unexpected_description(exc: UnexpectedInput) -> tuple[str, str | None, tupl
     if labels:
         sentence = f"{sentence}; expected {_join_labels(labels)}"
     return sentence, _unexpected_hint(found, labels, line=getattr(exc, "line", None)), labels, found
-
-
-def _unexpected_input_summary(exc: UnexpectedInput) -> str:
-    """One-line sentence for a parse failure (used in logs)."""
-    return _unexpected_description(exc)[0]
 
 
 def _mapped_error_position(exc: UnexpectedInput, source_document: SourceDocument) -> int | None:
