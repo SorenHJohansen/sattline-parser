@@ -136,12 +136,14 @@ def check_identifiers(bp: BasePicture, errors: list[Diagnostic]) -> None:
         check_identifier(moduletype.name, "Moduletype", moduletype.declaration_span, errors)
         _check_variable_names(moduletype.moduleparameters, errors)
         _check_variable_names(moduletype.localvariables, errors)
-        _check_modulecode_identifiers(moduletype.modulecode, errors)
+        for modulecode in moduletype.modulecodes:
+            _check_modulecode_identifiers(modulecode, errors)
         for submodule in moduletype.submodules:
             _check_submodule_identifiers(submodule, errors)
     _check_variable_names(bp.moduleparameters, errors)
     _check_variable_names(bp.localvariables, errors)
-    _check_modulecode_identifiers(bp.modulecode, errors)
+    for modulecode in bp.modulecodes:
+        _check_modulecode_identifiers(modulecode, errors)
     for submodule in bp.submodules:
         _check_submodule_identifiers(submodule, errors)
 
@@ -159,14 +161,13 @@ def _check_submodule_identifiers(submodule: Submodule, errors: list[Diagnostic])
     if isinstance(submodule, SingleModule):
         _check_variable_names(submodule.moduleparameters, errors)
         _check_variable_names(submodule.localvariables, errors)
-        _check_modulecode_identifiers(submodule.modulecode, errors)
+        for modulecode in submodule.modulecodes:
+            _check_modulecode_identifiers(modulecode, errors)
     for nested in submodule.submodules:
         _check_submodule_identifiers(nested, errors)
 
 
-def _check_modulecode_identifiers(modulecode: ModuleCode | None, errors: list[Diagnostic]) -> None:
-    if modulecode is None:
-        return
+def _check_modulecode_identifiers(modulecode: ModuleCode, errors: list[Diagnostic]) -> None:
     for equation in modulecode.equations or ():
         check_identifier(equation.name, "Equation", None, errors)
     for sequence in modulecode.sequences or ():

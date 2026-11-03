@@ -12,7 +12,18 @@ import pytest
 from sattline_parser.cli._findings import Finding, finding_from_diagnostic
 from sattline_parser.cli._io import display_path
 from sattline_parser.cli._json import to_jsonable
-from sattline_parser.models.ast_model import SourceSpan
+from sattline_parser.cli._validate import summarise
+from sattline_parser.models.ast_model import (
+    BasePicture,
+    Equation,
+    GraphObject,
+    InteractObject,
+    ModuleCode,
+    ModuleDef,
+    ModuleHeader,
+    Sequence,
+    SourceSpan,
+)
 from sattline_parser.project import LoadMode
 from sattline_parser.validation import Diagnostic, DiagnosticCode
 
@@ -70,6 +81,32 @@ def test_to_jsonable_falls_back_to_repr() -> None:
             return "opaque-value"
 
     assert to_jsonable(Opaque(), depth=3) == "opaque-value"
+
+
+def test_summarise_counts_every_block() -> None:
+    picture = BasePicture(
+        header=ModuleHeader(name="Program", invoke_coord=(0.0, 0.0, 0.0, 1.0, 1.0)),
+        moduledefs=[
+            ModuleDef(graph_objects=[GraphObject(type="Rect")]),
+            ModuleDef(interact_objects=[InteractObject(type="Button")]),
+        ],
+        modulecodes=[
+            ModuleCode(sequences=[Sequence(name="Seq", type="SEQUENCE", position=(0.0, 0.0), size=(1.0, 1.0))]),
+            ModuleCode(equations=[Equation(), Equation()]),
+        ],
+    )
+
+    counts = summarise("Program.s", "", picture)["counts"]
+
+    assert counts == {
+        "module_types": 0,
+        "submodules": 0,
+        "local_variables": 0,
+        "sequences": 1,
+        "equations": 2,
+        "graph_objects": 1,
+        "interact_objects": 1,
+    }
 
 
 def test_display_path_respects_the_mode_and_keeps_stdin_names(tmp_path, monkeypatch) -> None:

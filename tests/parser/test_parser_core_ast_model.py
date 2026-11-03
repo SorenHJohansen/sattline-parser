@@ -1,5 +1,8 @@
 # pyright: reportUnknownVariableType=false, reportUnknownMemberType=false, reportUnknownParameterType=false, reportMissingParameterType=false, reportUnknownArgumentType=false, reportCallIssue=false, reportPrivateUsage=false, reportUnusedImport=false
 # ruff: noqa: F403, F405
+import dataclasses
+from collections.abc import Callable
+
 from ._parser_core_test_support import *
 
 
@@ -134,11 +137,52 @@ def test_ast_model_helpers_cover_reduce_usage_and_string_formats(monkeypatch: py
     assert "EquationBlock name='EqEmpty'" in str(empty_statement_module_code)
     assert "Direct = 2" in str(direct_statement_module_code)
     assert "ClippingBounds" in str(module_def)
-    assert "SingleModule{" in str(SingleModule(header=header, moduledef=module_def, modulecode=module_code))
-    assert "FrameModule{" in str(FrameModule(header=header, moduledef=module_def, modulecode=module_code))
+    assert "SingleModule{" in str(SingleModule(header=header, moduledefs=[module_def], modulecodes=[module_code]))
+    assert "FrameModule{" in str(FrameModule(header=header, moduledefs=[module_def], modulecodes=[module_code]))
     assert "ModuleTypeInstance{" in str(child)
-    assert "ModuleType{" in str(ModuleTypeDef(name="ChildType", modulecode=module_code, submodules=[child]))
-    assert "BasePicture{" in str(BasePicture(header=header, moduledef=module_def, modulecode=module_code))
+    assert "ModuleType{" in str(ModuleTypeDef(name="ChildType", modulecodes=[module_code], submodules=[child]))
+    assert "BasePicture{" in str(BasePicture(header=header, moduledefs=[module_def], modulecodes=[module_code]))
+
+
+@pytest.mark.parametrize(
+    "factory",
+    [
+        lambda: SingleModule(header=_module_header("Single")),
+        lambda: FrameModule(header=_module_header("Frame")),
+        lambda: ModuleTypeDef(name="Type"),
+        lambda: BasePicture(header=_module_header("Base")),
+    ],
+)
+def test_singular_block_views_are_read_only_views_of_block_lists(
+    factory: Callable[[], SingleModule | FrameModule | ModuleTypeDef | BasePicture],
+) -> None:
+    module = factory()
+    first_def = ModuleDef()
+    last_def = ModuleDef()
+    first_code = ModuleCode()
+    last_code = ModuleCode()
+
+    field_names = {dataclass_field.name for dataclass_field in dataclasses.fields(module)}
+    assert "moduledef" not in field_names
+    assert "modulecode" not in field_names
+
+    assert module.moduledef is None
+    assert module.modulecode is None
+
+    module.moduledefs = [first_def]
+    module.modulecodes = [first_code]
+    assert module.moduledef is first_def
+    assert module.modulecode is first_code
+
+    module.moduledefs.append(last_def)
+    module.modulecodes.append(last_code)
+    assert module.moduledef is last_def
+    assert module.modulecode is last_code
+
+    with pytest.raises(AttributeError):
+        cast(Any, module).moduledef = first_def
+    with pytest.raises(AttributeError):
+        cast(Any, module).modulecode = first_code
 
 
 def test_datatype_string_formats_its_variables() -> None:

@@ -41,8 +41,6 @@ def analyse(name: str, text: str, *, absolute: bool) -> Analysis:
 
 def summarise(name: str, text: str, picture: BasePicture, *, coded: bool = False) -> dict[str, Any]:
     """A structural summary of one unit (used by ``parse`` and ``diff``)."""
-    moduledef = picture.moduledef
-    modulecode = picture.modulecode
     return {
         "file": name,
         "program": picture.program_name,
@@ -52,9 +50,9 @@ def summarise(name: str, text: str, picture: BasePicture, *, coded: bool = False
             "module_types": len(picture.moduletype_defs),
             "submodules": len(picture.submodules),
             "local_variables": len(picture.localvariables),
-            "sequences": len(modulecode.sequences or ()) if modulecode is not None else 0,
-            "equations": len(modulecode.equations or ()) if modulecode is not None else 0,
-            "graph_objects": len(moduledef.graph_objects or ()) if moduledef is not None else 0,
-            "interact_objects": len(moduledef.interact_objects or ()) if moduledef is not None else 0,
+            "sequences": sum(len(code.sequences or ()) for code in picture.modulecodes),
+            "equations": sum(len(code.equations or ()) for code in picture.modulecodes),
+            "graph_objects": sum(len(module_def.graph_objects or ()) for module_def in picture.moduledefs),
+            "interact_objects": sum(len(module_def.interact_objects or ()) for module_def in picture.moduledefs),
         },
     }
