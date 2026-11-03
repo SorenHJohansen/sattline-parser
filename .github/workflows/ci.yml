@@ -44,6 +44,9 @@ jobs:
       - name: Pyright strict
         run: uv run pyright src tests
 
+      - name: Changelog fragments
+        run: uv run python scripts/build_changelog.py --check
+
       # -c pyproject.toml is required: bandit does not auto-discover
       # [tool.bandit] skips/exclude_dirs in this environment.
       - name: Bandit

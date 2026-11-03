@@ -9,41 +9,6 @@ policy are documented in the README.
 
 ## [Unreleased]
 
-### Changed
-
-- **Typed tail and clause nodes.** Coordinate, header, and property tails are
-  modelled as frozen dataclasses instead of bare strings, dicts, and Lark
-  trees: `VarTail(direction, value)` for `InVar_`/`OutVar_` bindings,
-  `LitStringTail` for quoted symbols, and typed clause payloads such as
-  `EnableClause`, `AssignClause`, `TailedClause`, `ColourSpec`,
-  `ProcedureCall`, and `ModuleArguments`. `ModuleHeader.enable_tail`,
-  `ModuleHeader.invoke_coord_tails`, and `ModuleDef.clipping_tails` now hold
-  these nodes, and the graph, interact, and module-definition property maps are
-  `TypedDict` definitions. Consumers that compared tails to strings or read
-  `properties` as an untyped dict need updating.
-- **File AST cache version 2.** The cached AST shape changed, so existing
-  entries are not reused.
-
-### Removed
-
-- **Singular module block fields.** `SingleModule`, `FrameModule`,
-  `ModuleTypeDef` and `BasePicture` no longer store `moduledef` and
-  `modulecode`. The names remain as read-only properties returning the last
-  entry of `moduledefs` / `modulecodes`, so reading them still works and the two
-  views cannot disagree. Construction through the singular keyword arguments,
-  assignment to the properties, and the corresponding `moduledef` /
-  `modulecode` keys in `sattline parse --tree` output are removed; use the
-  block lists instead.
-
-### Fixed
-
-- **Numeric coordinate tails.** A literal tail such as
-  `ClippingBounds = ( -1.0 : 2.5 , -1.0 ) ( 1.0 , 1.0 )` is recorded as a tail
-  instead of being read as the next coordinate value.
-- **Multi-block identifier checks and counts.** Declaration identifier
-  validation and the `parse` / `diff` structural counts now cover every
-  `ModuleDef` and `ModuleCode` block instead of only the last one.
-
 ## [2026.11.3] - 2026-11-02
 
 ### Added
