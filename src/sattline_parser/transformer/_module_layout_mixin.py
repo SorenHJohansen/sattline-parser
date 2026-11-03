@@ -31,7 +31,7 @@ from ._module_shared import (
     coord_pair,
 )
 
-_OUTVAR_TOKEN = "OUTVAR_PREFIX"
+_OUTVAR_TOKEN = "OUTVAR_PREFIX"  # nosec B105 - grammar token literal, not a credential
 _PREFIX_TOKENS = ("INVAR_PREFIX", _OUTVAR_TOKEN)
 
 
