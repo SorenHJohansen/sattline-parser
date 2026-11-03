@@ -9,7 +9,7 @@ def _header(name: str) -> ModuleHeader:
 def test_iter_moduletype_refs_walks_nested_frames_and_instances() -> None:
     deep = ModuleTypeInstance(header=_header("Deep"), moduletype_name="DeepType")
     frame = FrameModule(header=_header("Frame"), submodules=[deep])
-    single = SingleModule(header=_header("Single"), moduledef=None, submodules=[frame])
+    single = SingleModule(header=_header("Single"), submodules=[frame])
 
     assert list(iter_moduletype_refs([single])) == ["DeepType"]
 

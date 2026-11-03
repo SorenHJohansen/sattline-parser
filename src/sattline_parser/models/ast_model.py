@@ -420,23 +420,53 @@ class ModuleHeader:
     description_comments: list[CodeComment] = field(default_factory=code_comment_list)
 
 
+class _ModuleBlockViews:
+    """Read-only singular views over the ``moduledefs``/``modulecodes`` lists.
+
+    The lists are the single source of truth. ``moduledef`` and ``modulecode``
+    are derived properties so a consumer reading "the last block" can never
+    observe a value that differs from the blocks the transformer stored.
+    """
+
+    # Deliberately a plain class: the annotations below only type the property
+    # access. Decorating this base with ``@dataclass`` would turn them into
+    # duplicate fields and reintroduce the divergence this view prevents.
+    moduledefs: list[ModuleDef]
+    modulecodes: list[ModuleCode]
+
+    @property
+    def moduledef(self) -> ModuleDef | None:
+        """The last ``ModuleDef`` block, or ``None`` when the module has none."""
+        return self.moduledefs[-1] if self.moduledefs else None
+
+    @property
+    def modulecode(self) -> ModuleCode | None:
+        """The last ``ModuleCode`` block, or ``None`` when the module has none."""
+        return self.modulecodes[-1] if self.modulecodes else None
+
+    def __setstate__(self, state: dict[str, Any]) -> None:
+        # Older pickles stored the singular blocks directly. They are derived
+        # views now, so drop the stale keys instead of resurrecting duplicates.
+        state = dict(state)
+        state.pop("moduledef", None)
+        state.pop("modulecode", None)
+        self.__dict__.update(state)
+
+
 @dataclass
-class SingleModule:
+class SingleModule(_ModuleBlockViews):
     header: ModuleHeader
-    moduledef: ModuleDef | None
     datecode: int | None = None
     moduleparameters: list[Variable] = field(default_factory=variable_list)
     localvariables: list[Variable] = field(default_factory=variable_list)
     submodules: list[SingleModule | FrameModule | ModuleTypeInstance] = field(default_factory=submodule_list)
-    modulecode: ModuleCode | None = None
     #: Every ``ModuleDef`` block from a ``moduledef_block*`` run, in source
     #: order. Legacy coded files repeat one ``ModuleDef ... [ModuleCode ...]
-    #: ENDDEF`` block per layer, so ``moduledef`` alone cannot represent them
+    #: ENDDEF`` block per layer, so a singular field alone cannot represent them
     #: without silently dropping all but the last block.
     moduledefs: list[ModuleDef] = field(default_factory=moduledef_list)
     #: Every ``ModuleCode`` block from a ``moduledef_block*`` run, in source
-    #: order (``moduledef``/``modulecode`` expose the last block for backwards
-    #: compatibility; nothing is lost).
+    #: order. ``modulecode`` is a derived read-only property over this list.
     modulecodes: list[ModuleCode] = field(default_factory=modulecode_list)
     parametermappings: list[ParameterMapping] = field(default_factory=parameter_mapping_list)
     trailing_comments: list[CodeComment] = field(default_factory=code_comment_list)
@@ -446,14 +476,12 @@ class SingleModule:
 
 
 @dataclass
-class FrameModule:
+class FrameModule(_ModuleBlockViews):
     header: ModuleHeader
     datecode: int | None = None
     moduleparameters: list[Variable] = field(default_factory=variable_list)
     localvariables: list[Variable] = field(default_factory=variable_list)
     submodules: list[SingleModule | FrameModule | ModuleTypeInstance] = field(default_factory=submodule_list)
-    moduledef: ModuleDef | None = None
-    modulecode: ModuleCode | None = None
     moduledefs: list[ModuleDef] = field(default_factory=moduledef_list)
     modulecodes: list[ModuleCode] = field(default_factory=modulecode_list)
     trailing_comments: list[CodeComment] = field(default_factory=code_comment_list)
@@ -473,15 +501,13 @@ class ModuleTypeInstance:
 
 
 @dataclass
-class ModuleTypeDef:
+class ModuleTypeDef(_ModuleBlockViews):
     name: str
     datecode: int | None = None
     is_private: bool = False
     moduleparameters: list[Variable] = field(default_factory=variable_list)
     localvariables: list[Variable] = field(default_factory=variable_list)
     submodules: list[SingleModule | FrameModule | ModuleTypeInstance] = field(default_factory=submodule_list)
-    moduledef: ModuleDef | None = None
-    modulecode: ModuleCode | None = None
     moduledefs: list[ModuleDef] = field(default_factory=moduledef_list)
     modulecodes: list[ModuleCode] = field(default_factory=modulecode_list)
     parametermappings: list[ParameterMapping] = field(default_factory=parameter_mapping_list)
@@ -498,7 +524,7 @@ class ModuleTypeDef:
 
 
 @dataclass
-class BasePicture:
+class BasePicture(_ModuleBlockViews):
     header: ModuleHeader
     name: str = "BasePicture"
     program_name: str | None = None
@@ -508,8 +534,6 @@ class BasePicture:
     moduleparameters: list[Variable] = field(default_factory=variable_list)
     localvariables: list[Variable] = field(default_factory=variable_list)
     submodules: list[SingleModule | FrameModule | ModuleTypeInstance] = field(default_factory=submodule_list)
-    moduledef: ModuleDef | None = None
-    modulecode: ModuleCode | None = None
     moduledefs: list[ModuleDef] = field(default_factory=moduledef_list)
     modulecodes: list[ModuleCode] = field(default_factory=modulecode_list)
     origin_file: str | None = None
@@ -550,7 +574,7 @@ class BasePicture:
         return state
 
     def __setstate__(self, state: dict[str, Any]) -> None:
-        self.__dict__.update(state)
+        super().__setstate__(state)
         for dataclass_field in fields(type(self)):
             if dataclass_field.name in self.__dict__:
                 continue

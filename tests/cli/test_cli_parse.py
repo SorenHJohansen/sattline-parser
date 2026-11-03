@@ -48,6 +48,12 @@ def test_tree_serialises_the_ast_with_a_depth_limit(tmp_path, capsys) -> None:
     payload = json.loads(capsys.readouterr().out)
     assert payload["schema"] == "sattline.v1.parse"
     assert payload["tree"]["name"] == "BasePicture"
+    # The block lists are the only serialised representation; the singular
+    # last-block views are derived properties, not dataclass fields.
+    assert "moduledef" not in payload["tree"]
+    assert "modulecode" not in payload["tree"]
+    assert isinstance(payload["tree"]["moduledefs"], list)
+    assert isinstance(payload["tree"]["modulecodes"], list)
     # Depth-limited values become placeholders instead of disappearing silently.
     assert payload["tree"]["moduletype_defs"] == []
     assert payload["tree"]["localvariables"] == ["<Variable>"]

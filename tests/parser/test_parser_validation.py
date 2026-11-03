@@ -859,10 +859,19 @@ def test_modulecode_without_sequences_or_equations_is_clean():
     assert validate_basepicture(empty) == ()
 
 
+def test_identifier_checks_cover_every_modulecode_block():
+    bp = _base_picture()
+    bp.modulecodes = [
+        ModuleCode(equations=[_equation(name="First")]),
+        ModuleCode(equations=[_equation(name="X" * 21)]),
+    ]
+    codes = [diagnostic.code for diagnostic in validate_basepicture(bp)]
+    assert codes.count(DiagnosticCode.IDENTIFIER_TOO_LONG) == 1
+
+
 def test_moduletype_and_nested_module_walks():
     child_type = SingleModule(
         header=_module_header("Child"),
-        moduledef=None,
         localvariables=[_var("Local", "integer")],
         modulecodes=[ModuleCode(equations=[_equation(Assignment(VarRef("Local"), 1))])],
     )

@@ -23,6 +23,8 @@ from sattline_parser.models.ast_model import (
     BasePicture,
     CodeComment,
     CodeItem,
+    ModuleCode,
+    ModuleDef,
     ModuleHeader,
     ParameterMapping,
     Sequence,
@@ -334,9 +336,19 @@ def test_base_picture_pickle_roundtrip() -> None:
 
 def test_base_picture_setstate_backfills_fields() -> None:
     restored = BasePicture.__new__(BasePicture)
-    restored.__setstate__({"_custom": 1})
+    restored.__setstate__(
+        {
+            "_custom": 1,
+            "moduledef": ModuleDef(),
+            "modulecode": ModuleCode(),
+        }
+    )
     assert restored.name == "BasePicture"
     assert restored.parse_tree is None
+    assert restored.moduledef is None
+    assert restored.modulecode is None
+    assert "moduledef" not in restored.__dict__
+    assert "modulecode" not in restored.__dict__
 
 
 # ---- fuzz harness ----

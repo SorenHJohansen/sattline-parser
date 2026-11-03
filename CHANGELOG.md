@@ -7,6 +7,25 @@ and this project uses calendar versioning (`YYYY.M.N`). The version orders
 releases; it is not a compatibility contract. The public API and its stability
 policy are documented in the README.
 
+## [Unreleased]
+
+### Removed
+
+- **Singular module block fields.** `SingleModule`, `FrameModule`,
+  `ModuleTypeDef` and `BasePicture` no longer store `moduledef` and
+  `modulecode`. The names remain as read-only properties returning the last
+  entry of `moduledefs` / `modulecodes`, so reading them still works and the two
+  views cannot disagree. Construction through the singular keyword arguments,
+  assignment to the properties, and the corresponding `moduledef` /
+  `modulecode` keys in `sattline parse --tree` output are removed; use the
+  block lists instead.
+
+### Fixed
+
+- **Multi-block identifier checks and counts.** Declaration identifier
+  validation and the `parse` / `diff` structural counts now cover every
+  `ModuleDef` and `ModuleCode` block instead of only the last one.
+
 ## [2026.11.3] - 2026-11-02
 
 ### Added

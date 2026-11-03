@@ -117,8 +117,8 @@ def _walk_unit(picture: m.BasePicture, path: tuple[str, ...]) -> Iterator[QueryR
             (*path, module_type.name),
             module_type.localvariables,
             module_type.moduleparameters,
-            module_type.moduledefs or [module_type.moduledef],
-            module_type.modulecodes or [module_type.modulecode],
+            module_type.moduledefs,
+            module_type.modulecodes,
             module_type.submodules,
         )
     yield from _walk_module(
@@ -135,8 +135,8 @@ def _walk_module(
     path: tuple[str, ...],
     localvariables: Iterable[m.Variable],
     parameters: Iterable[m.Variable],
-    moduledefs: Iterable[m.ModuleDef | None],
-    modulecodes: Iterable[m.ModuleCode | None],
+    moduledefs: Iterable[m.ModuleDef],
+    modulecodes: Iterable[m.ModuleCode],
     submodules: Iterable[m.SingleModule | m.FrameModule | m.ModuleTypeInstance],
 ) -> Iterator[QueryRow]:
     for variable in localvariables:
@@ -144,8 +144,6 @@ def _walk_module(
     for variable in parameters:
         yield _symbol("parameter", variable.name, path)
     for moduledef in moduledefs:
-        if moduledef is None:  # pragma: no cover - every module body requires a moduledef
-            continue
         for graph_object in moduledef.graph_objects or ():
             yield QueryRow.at(
                 "graph-objects",
@@ -157,8 +155,6 @@ def _walk_module(
         for interact_object in moduledef.interact_objects or ():
             yield QueryRow(kind="interact-objects", name=interact_object.type, module=_module_path(path))
     for modulecode in modulecodes:
-        if modulecode is None:
-            continue
         for sequence in modulecode.sequences or ():
             yield QueryRow(
                 kind="sequences",
@@ -191,8 +187,8 @@ def _walk_submodule(
         child_path,
         variables,
         parameters,
-        submodule.moduledefs or [submodule.moduledef],
-        submodule.modulecodes or [submodule.modulecode],
+        submodule.moduledefs,
+        submodule.modulecodes,
         submodule.submodules,
     )
 
