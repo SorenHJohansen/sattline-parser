@@ -97,7 +97,7 @@ def finding_from_diagnostic(diagnostic: Diagnostic, *, file: str, source_text: s
     span = diagnostic.span
     line = span.line if span is not None else None
     return Finding(
-        severity=diagnostic.severity.value,
+        severity="error",
         message=diagnostic.message,
         rule=diagnostic.code.name,
         file=display_path(file, absolute=absolute_paths),

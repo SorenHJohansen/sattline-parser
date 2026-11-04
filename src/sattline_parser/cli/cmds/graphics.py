@@ -97,7 +97,7 @@ def _emit_document(
             "file": name,
             "bindings": rows,
             "messages": messages,
-            **finding_fields(findings, args=args),
+            **finding_fields(findings, args=args, include_warnings=True),
         }
         print(dumps(payload, compact=bool(args.jsonl)))
         return

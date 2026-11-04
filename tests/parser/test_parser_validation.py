@@ -22,7 +22,6 @@ from sattline_parser.validation.builtins import (
 from sattline_parser.validation.diagnostics import (
     Diagnostic,
     DiagnosticCode,
-    DiagnosticSeverity,
 )
 from sattline_parser.validation.rules import RETIRED_CODES
 from sattline_parser.validation.symbols import SFC_RUNTIME_CONSTANTS, build_scope, resolve_var
@@ -1013,7 +1012,6 @@ def test_param_transfer_compatibilities_clean():
 
 def test_diagnostic_model_defaults():
     diag = Diagnostic(code=DiagnosticCode.CONSECUTIVE_SEQUENCE_STEPS, message="m")
-    assert diag.severity is DiagnosticSeverity.ERROR
     assert diag.span is None
     assert diag.code.value == "SL-V016"
     assert isinstance(DiagnosticCode.DUPLICATE_VARIABLE_NAME, DiagnosticCode)

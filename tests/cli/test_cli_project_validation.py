@@ -19,7 +19,7 @@ def test_project_reports_validation_findings_and_fails(tmp_path, capsys) -> None
     payload = json.loads(capsys.readouterr().out)
     assert payload["validation"]
     assert payload["validation"][0]["code"] == "SL-V016"
-    assert payload["validation"][0]["severity"] == "error"
+    assert "severity" not in payload["validation"][0]
     assert payload["validation"][0]["tentative"] is False
     assert payload["programs"][0]["library"] == tmp_path.name
 
@@ -52,10 +52,9 @@ def test_project_text_output_lists_validation_findings(tmp_path, capsys) -> None
     assert "SL-V016" in out
 
 
-def test_project_fail_on_warning_fails_on_any_finding(tmp_path, capsys) -> None:
+def test_project_rejects_removed_fail_on_values(tmp_path, capsys) -> None:
     write_source(tmp_path, "Sample.s", CONSECUTIVE_STEPS_SOURCE)
 
-    assert main(["project", str(tmp_path), "--json", "--fail-on", "warning"]) == ExitCode.FINDINGS
-
-    payload = json.loads(capsys.readouterr().out)
-    assert payload["validation"]
+    for value in ("warning", "any"):
+        assert main(["project", str(tmp_path), "--fail-on", value]) == ExitCode.USAGE
+        assert "expected one of" in capsys.readouterr().err

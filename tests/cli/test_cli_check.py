@@ -22,8 +22,16 @@ from ._cli_support import (
 def test_unknown_fail_on_value_is_a_usage_error(tmp_path, capsys) -> None:
     source = write_source(tmp_path, "M.s", VALID_SOURCE)
 
-    assert main(["check", str(source), "--fail-on", "sometimes"]) == ExitCode.USAGE
-    assert "expected one of" in capsys.readouterr().err
+    for value in ("sometimes", "any", "warning"):
+        assert main(["check", str(source), "--fail-on", value]) == ExitCode.USAGE
+        assert "expected one of" in capsys.readouterr().err
+
+
+def test_removed_severity_filter_is_a_usage_error(tmp_path, capsys) -> None:
+    source = write_source(tmp_path, "M.s", VALID_SOURCE)
+
+    assert main(["check", str(source), "--severity", "error"]) == ExitCode.USAGE
+    assert "unrecognized arguments" in capsys.readouterr().err
 
 
 def test_clean_source_prints_nothing_and_succeeds(tmp_path, capsys) -> None:
@@ -55,7 +63,7 @@ def test_json_document_carries_the_structured_finding(tmp_path, capsys) -> None:
     payload = json.loads(capsys.readouterr().out)
     assert payload["schema"] == "sattline.v1.check"
     assert payload["ok"] is False
-    assert payload["counts"] == {"error": 1, "warning": 0}
+    assert payload["counts"] == {"error": 1}
     [finding] = payload["findings"]
     assert finding == {
         "severity": "error",
@@ -83,15 +91,12 @@ def test_jsonl_streams_findings_then_a_summary(tmp_path, capsys) -> None:
     assert json.loads(lines[1]) == {
         "schema": "sattline.v1.check",
         "summary": True,
-        "counts": {"error": 1, "warning": 0},
+        "counts": {"error": 1},
     }
 
 
-def test_severity_and_rule_filters(tmp_path, capsys) -> None:
+def test_rule_filter(tmp_path, capsys) -> None:
     source = write_source(tmp_path, "Steps.s", CONSECUTIVE_STEPS_SOURCE)
-
-    assert main(["check", str(source), "--severity", "warning"]) == ExitCode.OK
-    assert capsys.readouterr().out == ""
 
     assert main(["check", str(source), "--rule", "CONSECUTIVE_SEQUENCE_STEPS"]) == ExitCode.FINDINGS
     assert "Consecutive SFC steps" in capsys.readouterr().out
@@ -121,7 +126,7 @@ def test_fail_on_policy(tmp_path, capsys) -> None:
     assert main(["check", str(source), "--fail-on", "never"]) == ExitCode.OK
     assert "Consecutive SFC steps" in capsys.readouterr().out
 
-    assert main(["check", str(source), "--fail-on", "any"]) == ExitCode.FINDINGS
+    assert main(["check", str(source), "--fail-on", "error"]) == ExitCode.FINDINGS
     capsys.readouterr()
 
 

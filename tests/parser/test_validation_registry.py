@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from sattline_parser.validation.diagnostics import DiagnosticCode, DiagnosticSeverity
+from sattline_parser.validation.diagnostics import DiagnosticCode
 from sattline_parser.validation.rules import (
     RETIRED_CODES,
     RULES,
@@ -57,11 +57,10 @@ def test_ids_and_names_are_unique_and_well_formed() -> None:
     assert all(rule.id.startswith("SL-V") and len(rule.id) == 7 for rule in RULES)
 
 
-def test_every_rule_has_a_summary_and_a_severity() -> None:
+def test_every_rule_has_a_summary() -> None:
     for rule in RULES:
         assert rule.summary
         assert rule.summary.endswith(".")
-        assert isinstance(rule.severity, DiagnosticSeverity)
 
 
 def test_retired_codes_come_from_the_registry() -> None:
@@ -149,7 +148,6 @@ def test_rule_json_shape() -> None:
     assert payload == {
         "id": "SL-V019",
         "name": "UNDEFINED_VARIABLE",
-        "severity": "error",
         "scope": "code",
         "status": "active",
         "retired": False,

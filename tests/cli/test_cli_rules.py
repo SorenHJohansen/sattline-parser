@@ -56,7 +56,7 @@ def test_rules_json_matches_the_registry(capsys) -> None:
     assert payload["schema"] == "sattline.v1.rules"
     assert payload["count"] == len([rule for rule in RULES if not rule.retired])
     assert any(row["id"] == "SL-V019" for row in payload["rules"])
-    assert all("status" in row and "severity" in row for row in payload["rules"])
+    assert all("status" in row and "severity" not in row for row in payload["rules"])
 
 
 def test_rules_jsonl_ends_with_a_summary(capsys) -> None:

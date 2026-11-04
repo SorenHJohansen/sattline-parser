@@ -1,7 +1,7 @@
 """The rule registry: one entry for every diagnostic code.
 
-The registry is the single source of truth for a rule's identity, default
-severity, scope, availability, and prose. It does not run rules; the validator
+The registry is the single source of truth for a rule's identity, scope,
+availability, and prose. It does not run rules; the validator
 still owns execution. Keeping the metadata here lets the CLI, the documentation
 table, and the completeness tests agree without copying the enum.
 
@@ -17,7 +17,7 @@ import difflib
 from dataclasses import dataclass
 from enum import StrEnum
 
-from sattline_parser.validation.diagnostics import DiagnosticCode, DiagnosticSeverity
+from sattline_parser.validation.diagnostics import DiagnosticCode
 
 __all__ = [
     "RETIRED_CODES",
@@ -66,7 +66,6 @@ class Rule:
 
     code: DiagnosticCode
     summary: str
-    severity: DiagnosticSeverity = DiagnosticSeverity.ERROR
     scope: RuleScope = RuleScope.DECLARATIONS
     implemented: bool = True
     retired: bool = False
@@ -101,7 +100,6 @@ class Rule:
         return {
             "id": self.id,
             "name": self.name,
-            "severity": self.severity.value,
             "scope": self.scope.value,
             "status": self.status.value,
             "retired": self.retired,
@@ -505,14 +503,11 @@ def render_markdown_table(*, include_retired: bool = True) -> str:
     the two agree, so the documentation table cannot drift from the enum.
     """
     lines = [
-        "| Id | Name | Status | Severity | Scope | Summary |",
-        "| --- | --- | --- | --- | --- | --- |",
+        "| Id | Name | Status | Scope | Summary |",
+        "| --- | --- | --- | --- | --- |",
     ]
     for rule in RULES:
         if rule.retired and not include_retired:
             continue
-        lines.append(
-            f"| `{rule.id}` | `{rule.name}` | {rule.status.value} | "
-            f"{rule.severity.value} | {rule.scope.value} | {rule.summary} |"
-        )
+        lines.append(f"| `{rule.id}` | `{rule.name}` | {rule.status.value} | {rule.scope.value} | {rule.summary} |")
     return "\n".join(lines)

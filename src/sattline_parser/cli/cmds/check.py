@@ -50,11 +50,5 @@ def run(args: argparse.Namespace) -> int:
         extra={"files": list(args.paths)},
     )
     return int(
-        ExitCode.FINDINGS
-        if fails_on(
-            sum(1 for finding in reported if finding.is_error),
-            sum(1 for finding in reported if finding.severity == "warning"),
-            args.fail_on,
-        )
-        else ExitCode.OK
+        ExitCode.FINDINGS if fails_on(sum(1 for finding in reported if finding.is_error), args.fail_on) else ExitCode.OK
     )

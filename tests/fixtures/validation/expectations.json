@@ -35,15 +35,13 @@
         "code": "SL-V021",
         "column": 7,
         "length": 34,
-        "line": 33,
-        "severity": "error"
+        "line": 33
       },
       {
         "code": "SL-V056",
         "column": 7,
         "length": 80,
-        "line": 25,
-        "severity": "error"
+        "line": 25
       }
     ],
     "invalid/AnnotationTailUndefined.s": [
@@ -51,29 +49,25 @@
         "code": "SL-V019",
         "column": 13,
         "length": 11,
-        "line": 11,
-        "severity": "error"
+        "line": 11
       },
       {
         "code": "SL-V019",
         "column": 38,
         "length": 13,
-        "line": 22,
-        "severity": "error"
+        "line": 22
       },
       {
         "code": "SL-V019",
         "column": 25,
         "length": 13,
-        "line": 24,
-        "severity": "error"
+        "line": 24
       },
       {
         "code": "SL-V019",
         "column": 20,
         "length": 13,
-        "line": 28,
-        "severity": "error"
+        "line": 28
       }
     ],
     "invalid/AssignmentFamilyMismatch.s": [
@@ -81,15 +75,13 @@
         "code": "SL-V029",
         "column": 7,
         "length": 14,
-        "line": 29,
-        "severity": "error"
+        "line": 29
       },
       {
         "code": "SL-V029",
         "column": 7,
         "length": 14,
-        "line": 31,
-        "severity": "error"
+        "line": 31
       }
     ],
     "invalid/BadBareDurationString.s": [],
@@ -101,8 +93,7 @@
         "code": "SL-V018",
         "column": 4,
         "length": 7,
-        "line": 14,
-        "severity": "error"
+        "line": 14
       }
     ],
     "invalid/BuiltinOutArgNotVariable.s": [
@@ -110,8 +101,7 @@
         "code": "SL-V014",
         "column": 7,
         "length": 71,
-        "line": 26,
-        "severity": "error"
+        "line": 26
       }
     ],
     "invalid/BuiltinWrongArity.s": [
@@ -119,8 +109,7 @@
         "code": "SL-V013",
         "column": 15,
         "length": 26,
-        "line": 22,
-        "severity": "error"
+        "line": 22
       }
     ],
     "invalid/CodedRawKeyword.s": [
@@ -133,8 +122,7 @@
         "code": "SL-V016",
         "column": 7,
         "length": 57,
-        "line": 27,
-        "severity": "error"
+        "line": 27
       }
     ],
     "invalid/ConstVarAsBuiltinOutArg.s": [
@@ -142,8 +130,7 @@
         "code": "SL-V007",
         "column": 7,
         "length": 27,
-        "line": 22,
-        "severity": "error"
+        "line": 22
       }
     ],
     "invalid/CoordInVarTail.s": [
@@ -156,8 +143,7 @@
         "code": "SL-V032",
         "column": 28,
         "length": 10,
-        "line": 21,
-        "severity": "error"
+        "line": 21
       }
     ],
     "invalid/CrossModuleContractMismatch.s": [
@@ -165,8 +151,7 @@
         "code": "SL-V027",
         "column": 7,
         "length": 26,
-        "line": 37,
-        "severity": "error"
+        "line": 37
       }
     ],
     "invalid/DatatypeShadowsBuiltinName.s": [],
@@ -183,8 +168,7 @@
         "code": "SL-V021",
         "column": 7,
         "length": 56,
-        "line": 28,
-        "severity": "error"
+        "line": 28
       }
     ],
     "invalid/DuplicateSiblingSubmodules.s": [
@@ -192,8 +176,7 @@
         "code": "SL-V004",
         "column": 4,
         "length": 63,
-        "line": 28,
-        "severity": "error"
+        "line": 28
       }
     ],
     "invalid/DuplicateVariableNames.s": [],
@@ -202,8 +185,7 @@
         "code": "SL-V030",
         "column": 25,
         "length": 9,
-        "line": 23,
-        "severity": "error"
+        "line": 23
       }
     ],
     "invalid/EncodingStress.s": [
@@ -231,15 +213,13 @@
         "code": "SL-V030",
         "column": 10,
         "length": 1,
-        "line": 24,
-        "severity": "error"
+        "line": 24
       },
       {
         "code": "SL-V030",
         "column": 13,
         "length": 5,
-        "line": 26,
-        "severity": "error"
+        "line": 26
       }
     ],
     "invalid/InitValueTypeMismatch.s": [],
@@ -263,22 +243,19 @@
         "code": "SL-V028",
         "column": 14,
         "length": 9,
-        "line": 27,
-        "severity": "error"
+        "line": 27
       },
       {
         "code": "SL-V028",
         "column": 27,
         "length": 18,
-        "line": 27,
-        "severity": "error"
+        "line": 27
       },
       {
         "code": "SL-V028",
         "column": 27,
         "length": 18,
-        "line": 27,
-        "severity": "error"
+        "line": 27
       }
     ],
     "invalid/NotSattLine.s": [
@@ -291,8 +268,7 @@
         "code": "SL-V005",
         "column": 10,
         "length": 11,
-        "line": 20,
-        "severity": "error"
+        "line": 20
       }
     ],
     "invalid/OldNewOnNonStateRecordField.s": [
@@ -300,8 +276,7 @@
         "code": "SL-V006",
         "column": 16,
         "length": 13,
-        "line": 30,
-        "severity": "error"
+        "line": 30
       }
     ],
     "invalid/OpSaveAndStateCombined.s": [
@@ -309,15 +284,13 @@
         "code": "SL-V031",
         "column": 4,
         "length": 13,
-        "line": 19,
-        "severity": "error"
+        "line": 19
       },
       {
         "code": "SL-V031",
         "column": 4,
         "length": 14,
-        "line": 20,
-        "severity": "error"
+        "line": 20
       }
     ],
     "invalid/OpSaveConstCombined.s": [
@@ -325,8 +298,7 @@
         "code": "SL-V031",
         "column": 4,
         "length": 5,
-        "line": 25,
-        "severity": "error"
+        "line": 25
       }
     ],
     "invalid/OversizedInput.s": [
@@ -344,8 +316,7 @@
         "code": "SL-V034",
         "column": 4,
         "length": 3,
-        "line": 18,
-        "severity": "error"
+        "line": 18
       }
     ],
     "invalid/ReservedNameVarOn.s": [
@@ -353,8 +324,7 @@
         "code": "SL-V034",
         "column": 4,
         "length": 2,
-        "line": 18,
-        "severity": "error"
+        "line": 18
       }
     ],
     "invalid/SFCAlternativeBranchStartsWithStep.s": [
@@ -362,22 +332,19 @@
         "code": "SL-V036",
         "column": 7,
         "length": 224,
-        "line": 25,
-        "severity": "error"
+        "line": 25
       },
       {
         "code": "SL-V036",
         "column": 7,
         "length": 34,
-        "line": 33,
-        "severity": "error"
+        "line": 33
       },
       {
         "code": "SL-V023",
         "column": 10,
         "length": 73,
-        "line": 26,
-        "severity": "error"
+        "line": 26
       }
     ],
     "invalid/SFCInitStepNotFirst.s": [],
@@ -387,8 +354,7 @@
         "code": "SL-V024",
         "column": 10,
         "length": 37,
-        "line": 25,
-        "severity": "error"
+        "line": 25
       }
     ],
     "invalid/SeqForkUnknownTarget.s": [
@@ -396,8 +362,7 @@
         "code": "SL-V017",
         "column": 10,
         "length": 80,
-        "line": 30,
-        "severity": "error"
+        "line": 30
       }
     ],
     "invalid/SequenceParallel.s": [
@@ -405,8 +370,7 @@
         "code": "SL-V033",
         "column": 7,
         "length": 12,
-        "line": 27,
-        "severity": "error"
+        "line": 27
       }
     ],
     "invalid/StandaloneSeqBreak.s": [
@@ -419,8 +383,7 @@
         "code": "SL-V015",
         "column": 17,
         "length": 37,
-        "line": 22,
-        "severity": "error"
+        "line": 22
       }
     ],
     "invalid/SubSequenceDefinition.s": [
@@ -428,8 +391,7 @@
         "code": "SL-V033",
         "column": 7,
         "length": 14,
-        "line": 24,
-        "severity": "error"
+        "line": 24
       }
     ],
     "invalid/TemporalVsTemporalCompare.s": [
@@ -437,85 +399,73 @@
         "code": "SL-V028",
         "column": 14,
         "length": 19,
-        "line": 44,
-        "severity": "error"
+        "line": 44
       },
       {
         "code": "SL-V028",
         "column": 14,
         "length": 19,
-        "line": 44,
-        "severity": "error"
+        "line": 44
       },
       {
         "code": "SL-V028",
         "column": 14,
         "length": 18,
-        "line": 45,
-        "severity": "error"
+        "line": 45
       },
       {
         "code": "SL-V028",
         "column": 14,
         "length": 18,
-        "line": 45,
-        "severity": "error"
+        "line": 45
       },
       {
         "code": "SL-V028",
         "column": 14,
         "length": 19,
-        "line": 46,
-        "severity": "error"
+        "line": 46
       },
       {
         "code": "SL-V028",
         "column": 14,
         "length": 19,
-        "line": 46,
-        "severity": "error"
+        "line": 46
       },
       {
         "code": "SL-V028",
         "column": 14,
         "length": 18,
-        "line": 47,
-        "severity": "error"
+        "line": 47
       },
       {
         "code": "SL-V028",
         "column": 14,
         "length": 18,
-        "line": 47,
-        "severity": "error"
+        "line": 47
       },
       {
         "code": "SL-V028",
         "column": 14,
         "length": 20,
-        "line": 48,
-        "severity": "error"
+        "line": 48
       },
       {
         "code": "SL-V028",
         "column": 14,
         "length": 20,
-        "line": 48,
-        "severity": "error"
+        "line": 48
       },
       {
         "code": "SL-V028",
         "column": 14,
         "length": 19,
-        "line": 49,
-        "severity": "error"
+        "line": 49
       },
       {
         "code": "SL-V028",
         "column": 14,
         "length": 19,
-        "line": 49,
-        "severity": "error"
+        "line": 49
       }
     ],
     "invalid/TerminalSeqStep.s": [
@@ -523,8 +473,7 @@
         "code": "SL-V033",
         "column": 7,
         "length": 12,
-        "line": 20,
-        "severity": "error"
+        "line": 20
       }
     ],
     "invalid/UndefinedVariableRef.s": [
@@ -532,8 +481,7 @@
         "code": "SL-V019",
         "column": 24,
         "length": 5,
-        "line": 22,
-        "severity": "error"
+        "line": 22
       }
     ],
     "invalid/UnknownDatatypeName.s": [
@@ -541,8 +489,7 @@
         "code": "SL-V020",
         "column": 4,
         "length": 4,
-        "line": 14,
-        "severity": "error"
+        "line": 14
       }
     ],
     "invalid/UnterminatedComment.s": [
@@ -555,8 +502,7 @@
         "code": "SL-V007",
         "column": 7,
         "length": 20,
-        "line": 21,
-        "severity": "error"
+        "line": 21
       }
     ],
     "invalid/WriteToOldState.s": [
@@ -564,8 +510,7 @@
         "code": "SL-V035",
         "column": 7,
         "length": 11,
-        "line": 27,
-        "severity": "error"
+        "line": 27
       }
     ],
     "valid/AllDatatypes.s": [],

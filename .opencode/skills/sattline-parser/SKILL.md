@@ -119,7 +119,7 @@ review. The `/release` command runs the release checklist.
    `validation/rules.py`.
 2. Add a `DiagnosticCode` member.
 3. Add the matching `Rule` to `validation/rules.py` with its summary, scope,
-   severity, and status.
+   and status.
 4. Put the rule in the owning module: declarations in `declarations.py`, code
    and SFC in `code.py`, type facts in `typing.py`, transfers in `transfers.py`.
 5. Emit a `Diagnostic` with a sentence and a `span`.

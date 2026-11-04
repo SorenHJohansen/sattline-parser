@@ -111,7 +111,6 @@ def _validation_rows(programs: Mapping[str, SattLineProgram]) -> list[dict[str, 
                 {
                     "program": program.name,
                     "code": diagnostic.code.value,
-                    "severity": diagnostic.severity.value,
                     "message": diagnostic.message,
                     "line": None if span is None else span.line,
                     "column": None if span is None else span.column,
@@ -122,11 +121,7 @@ def _validation_rows(programs: Mapping[str, SattLineProgram]) -> list[dict[str, 
 
 
 def _validation_fails(rows: Sequence[Mapping[str, object]], fail_on: str) -> bool:
-    return fails_on(
-        sum(1 for row in rows if row["severity"] == "error"),
-        sum(1 for row in rows if row["severity"] == "warning"),
-        fail_on,
-    )
+    return fails_on(len(rows), fail_on)
 
 
 def _load(args: argparse.Namespace) -> SattLineProject:

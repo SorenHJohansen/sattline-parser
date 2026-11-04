@@ -44,6 +44,20 @@ def test_graphics_reports_a_scan_warning_as_a_finding(tmp_path, capsys) -> None:
 
     out = capsys.readouterr().out
     assert "bindings: 1" in out
+    assert "Could not parse graphics expression" in out
+
+
+def test_graphics_json_counts_keep_the_warning_bucket(tmp_path, capsys) -> None:
+    companion = write_source(tmp_path, "M.y", " Expr  True  3 (((\r\n")
+
+    assert main(["graphics", str(companion), "--json"]) == ExitCode.OK
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["counts"] == {"error": 0, "warning": 1}
+    assert payload["ok"] is True
+
+    assert main(["graphics", str(companion), "--jsonl"]) == ExitCode.OK
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["counts"] == {"error": 0, "warning": 1}
 
 
 def test_non_companion_and_missing_files_are_refused(tmp_path, capsys) -> None:

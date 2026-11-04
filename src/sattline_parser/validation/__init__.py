@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from sattline_parser.validation.diagnostics import Diagnostic, DiagnosticCode, DiagnosticSeverity
+from sattline_parser.validation.diagnostics import Diagnostic, DiagnosticCode
 from sattline_parser.validation.rules import (
     RETIRED_CODES,
     RULES,
@@ -27,7 +27,6 @@ __all__ = [
     "RULES_BY_NAME",
     "Diagnostic",
     "DiagnosticCode",
-    "DiagnosticSeverity",
     "Rule",
     "RuleScope",
     "RuleStatus",

@@ -15,9 +15,7 @@ __all__ = ["register", "run"]
 
 
 def register(subparsers: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:  # pyright: ignore[reportPrivateUsage]
-    parser: argparse.ArgumentParser = subparsers.add_parser(
-        "rules", help="list validator rules by id, name, severity and status"
-    )
+    parser: argparse.ArgumentParser = subparsers.add_parser("rules", help="list validator rules by id, name and status")
     parser.add_argument(
         "rule",
         nargs="?",
@@ -81,7 +79,6 @@ def _emit(rules: list[Rule], *, args: argparse.Namespace) -> None:
 def _print_rule(rule: Rule) -> None:
     print(f"{rule.id}  {rule.name}")
     print(f"  status:   {rule.status.value}")
-    print(f"  severity: {rule.severity.value}")
     print(f"  scope:    {rule.scope.value}")
     print(f"  summary:  {rule.summary}")
     if rule.details is not None:
