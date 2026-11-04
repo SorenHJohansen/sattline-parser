@@ -7,6 +7,7 @@ one pair or a list of them.
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from typing import TypedDict
 
 from lark import Tree
@@ -28,6 +29,7 @@ __all__ = [
     "InteractProperties",
     "ModuleDefProperties",
     "graph_properties",
+    "interact_body_payloads",
     "interact_properties",
     "module_def_properties",
 ]
@@ -35,13 +37,32 @@ __all__ = [
 #: One entry of :attr:`InteractProperties.body`.
 #:
 #: Each entry is the raw grammar tree, not the clause itself. For an
-#: ``interact_body`` tree the typed clause is ``entry.children[0]`` (a
+#: ``interact_body`` tree the typed clause is one of its children (a
 #: ``ColourSpec``, ``EnableClause``, ``AssignClause``, ``FlagClause``,
 #: ``ScaleSelector``, ``PickButton``, ``TailedClause``, ``Tail``, or ``int``).
-#: ``comments`` and ``alignment`` entries stay raw trees as well. A precise
-#: clause union would require flattening these trees, which changes the public
-#: AST shape and belongs in a separate design change.
+#: ``comment``/``comments`` and ``alignment`` entries stay raw trees as well. A
+#: precise clause union would require flattening these trees, which changes the
+#: public AST shape and belongs in a separate design change. Use
+#: :func:`interact_body_payloads` to read the typed payloads without changing
+#: the stored shape.
 type InteractBodyEntry = Tree[object]
+
+
+def interact_body_payloads(body: list[InteractBodyEntry] | None) -> Iterator[object]:
+    """Yield the typed payload of each ``interact_body`` entry.
+
+    ``comment``/``comments`` and ``alignment`` wrappers carry no modelled
+    clause and are skipped. The raw tree shape of ``body`` stays unchanged for
+    existing consumers; the walker uses this view to reach the typed payloads.
+    """
+    for entry in body or ():
+        data = getattr(entry, "data", None)
+        if data == "interact_body":
+            yield from entry.children
+        elif data in {"comment", "comments", "alignment"}:
+            continue
+        else:
+            yield entry
 
 
 class GraphProperties(TypedDict, total=False):
@@ -63,6 +84,8 @@ class GraphProperties(TypedDict, total=False):
     text_vars: list[str]
     #: ``KEY_ENABLE``
     enable: bool
+    #: ``KEY_ENABLE_TAIL``
+    enable_tail: Tail
 
 
 class InteractProperties(TypedDict, total=False):

@@ -135,6 +135,8 @@ class _GraphicsInteractMixin:
                 properties[const.KEY_LAYER] = item.layer
             if item.enable is not None:
                 properties[const.KEY_ENABLE] = item.enable.enabled
+                if item.enable.tail is not None:
+                    properties[const.KEY_ENABLE_TAIL] = item.enable.tail
             if item.colours:
                 properties[const.KEY_COLOURS] = list(item.colours)
 

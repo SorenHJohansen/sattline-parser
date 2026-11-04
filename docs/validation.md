@@ -70,12 +70,14 @@ flowchart TB
     ROOT --> R4["check_variable_declarations"]
     ROOT --> R5["check_record_fields"]
     ROOT --> R6["check_sibling_submodules"]
-    ROOT --> R7["check_coordinate_tail_types"]
+    ROOT --> R7["check_annotation_tails"]
     ROOT --> R8["walk base module code"]
     ROOT --> R9["walk submodules and module types"]
     R9 --> S1["per module scope"]
     S1 --> S2["declarations, siblings, layout"]
     S2 --> S3["module code"]
+    S2 --> S5["module layout tails"]
+    R9 --> S6["submodule header tails<br/>parent scope"]
     S3 --> S4["nested submodules"]
 ```
 
@@ -83,11 +85,35 @@ Scopes nest: a module sees its own parameters and locals, then its enclosing
 module's, up to the `BasePicture` scope. Record field access resolves through
 the top-level `DATATYPE` definitions and the builtin record specifications.
 
+Annotation tails are checked in the scope that encloses their container: the
+base scope for the unit header and base `ModuleDef`, the parent scope for a
+submodule header, and the module scope for that module's `ModuleDef`. The
+walker emits each tail once, so a tail shared between a typed clause and the
+flat `properties["tails"]` view is not reported twice.
+
+Expression tails are walked like any other expression: an unresolved name is
+`SL-V019`, and ordinary operator diagnostics apply. An `Enable_` expression tail
+must be boolean (`SL-V030`). A `ModuleDef` coordinate tail must be real
+(`SL-V032`). Bound `InVar_`/`OutVar_` names produce no diagnostic because the
+parser does not evidence how the name resolves. The query command reports those
+names as unresolved uses instead.
+
+`ModuleHeader.invoke_coord_tails` folds coordinate tails, `Module_In_View`
+tails, and invocation-assignment tails into one field. Only the undefined-name
+walk applies there: the field cannot distinguish a coordinate position from a
+boolean condition, so `SL-V032` and the `Module_In_View` boolean rule are not
+applied to header tails. Splitting the header field is a separate change.
+
+These rules keep the `code` rule scope because annotation tails are code
+expressions. The rule-group table names `annotations.py` as the file that emits
+them, not a separate scope.
+
 ## Rule groups
 
 | Module | Rules |
 | --- | --- |
 | `declarations.py` | Reserved names, identifier length and keywords, sibling submodule uniqueness, declaration modifiers, datatype references, record fields |
+| `annotations.py` | Header, graphics, interact, and module-layout tails: undefined names, boolean `Enable_` conditions, real coordinate positions |
 | `code.py` | Module code and SFC: expressions, assignments, calls, conditions, `:Old`/`:New`, const writes, sequence structure, fork targets |
 | `sequences.py` | SFC position grammar: S/T/M body shapes for closed, transition, step, and open bodies |
 | `transfers.py` | Parameter-transfer type compatibility when the module type is declared in the same file |
@@ -227,7 +253,7 @@ here. `sattline rules` exposes the same data on the command line.
 | `SL-V027` | `PARAM_TRANSFER_TYPE_MISMATCH` | active | error | mappings | A submodule argument must be type compatible with the declared module-type parameter. |
 | `SL-V028` | `OPERAND_NOT_NUMERIC` | active | error | code | Arithmetic and unary operators require integer or real operands. |
 | `SL-V029` | `ASSIGNMENT_TYPE_MISMATCH` | active | error | code | An assigned value must have a datatype compatible with the target. |
-| `SL-V030` | `CONDITION_NOT_BOOLEAN` | active | error | code | IF, ELSIF, and WAIT_FOR conditions must be boolean. |
+| `SL-V030` | `CONDITION_NOT_BOOLEAN` | active | error | code | IF, ELSIF, WAIT_FOR, and Enable_ tail conditions must be boolean. |
 | `SL-V031` | `ATTRIBUTE_COMBINATION_INVALID` | active | error | declarations | Declaration attributes must appear in an accepted order and combination. |
 | `SL-V032` | `COORDINATE_NOT_REAL` | active | error | code | A coordinate value must be real. |
 | `SL-V033` | `SEQUENCE_ENDS_WITH_STEP` | active | error | sfc | A closed sequence must end with a transition, not a step. |

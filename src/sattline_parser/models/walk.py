@@ -5,28 +5,60 @@ field that holds it. ``NodeVisitor`` is the subclassing form: override a
 ``visit_<ClassName>`` method and call ``generic_visit`` to descend.
 
 The walk is structural. It visits model nodes (declarations, module and code
-containers, SFC nodes, statements, and expressions) and their list fields. It
-does not descend into ``GraphObject.properties``, ``InteractObject.properties``,
-``ModuleDef.properties``, ``ModuleHeader.invocation_arguments``, ``parse_tree``,
-or the deprecated ``BasePicture.graphics_*`` and ``library_dependencies``
-fields. Those are attached data, debugging state, or another layer's transport,
-not AST children. Literal values (``bool``, ``int``, ``float``, ``str``) are
-leaves and are not visited as nodes.
+containers, SFC nodes, statements, expressions, and the typed clause and tail
+payloads attached to graphics, interact, and module-definition nodes). It
+descends into ``GraphObject.properties``, ``InteractObject.properties``, and
+``ModuleDef.properties`` in the documented property order below. It does not
+descend into ``ModuleHeader.invocation_arguments`` (marker names only),
+``parse_tree``, or the deprecated ``BasePicture.graphics_*`` and
+``library_dependencies`` fields. Literal values (``bool``, ``int``, ``float``,
+``str``) are leaves and are not visited as nodes.
+
+Property order:
+
+* ``GraphObject``: ``colours``, ``enable_tail``, ``tails``, then the non-node
+  keys (``coords``, ``segment_point``, ``polygon_type``, ``layer``,
+  ``text_vars``, ``enable``).
+* ``InteractObject``: ``procedure``, ``assigns``, ``enables``, ``flags``,
+  ``colours``, ``body``, ``tails``, then the non-node keys (``coords``,
+  ``layers``).
+* ``ModuleDef``: ``clipping_tails``, ``properties["tails"]``,
+  ``graph_objects``, ``interact_objects``.
+
+The flat ``properties["tails"]`` list is a derived view: a tail owned by a
+clause is emitted through that clause, and only the unowned (coordinate) tails
+are emitted from the flat list. The same rule applies to ``ModuleDef``, where
+``clipping_tails`` owns the entries also present in ``properties["tails"]``.
+Every tail node therefore appears once. The order is load-bearing: ``tails`` is
+visited last among the node-bearing keys, so the clauses have already recorded
+their tails before the flat list is filtered.
 
 The order is deterministic: the declared field order of each node, with list
-elements in source order. It is the same tree every caller sees, so a consumer
-no longer needs to reimplement the recursion. The walk uses an explicit stack
-and keeps ancestors as a persistent chain, so a deep tree is walked in linear
-time without growing the Python call stack.
+elements in source order, except for the property maps, which use the order
+above. It is the same tree every caller sees, so a consumer no longer needs to
+reimplement the recursion. The walk uses an explicit stack and keeps ancestors
+as a persistent chain, so a deep tree is walked in linear time without growing
+the Python call stack.
 """
 
 from __future__ import annotations
 
 from collections.abc import Callable, Iterable, Iterator, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, is_dataclass
+from dataclasses import fields as dataclass_fields
 from typing import cast, overload
 
 from . import ast_model as m
+from .clauses import (
+    AssignClause,
+    ColourSpec,
+    EnableClause,
+    FlagClause,
+    PickButton,
+    ProcedureCall,
+    ScaleSelector,
+    TailedClause,
+)
 from .expressions import (
     Assignment,
     BinOp,
@@ -40,7 +72,8 @@ from .expressions import (
     UnaryOp,
     VarRef,
 )
-from .tails import is_expression_tail
+from .properties import InteractBodyEntry, interact_body_payloads
+from .tails import LitStringTail, VarTail
 
 __all__ = ["NodeVisitor", "WalkEvent", "iter_child_nodes", "walk"]
 
@@ -71,17 +104,27 @@ _NODE_TYPES: tuple[type[object], ...] = (
     m.Sequence,
     m.SingleModule,
     m.Variable,
+    AssignClause,
     Assignment,
     BinOp,
     BoolOp,
+    ColourSpec,
     Compare,
+    EnableClause,
+    FlagClause,
     FuncCall,
     FuncCallStmt,
     IfStmt,
+    LitStringTail,
     NotOp,
+    PickButton,
+    ProcedureCall,
+    ScaleSelector,
+    TailedClause,
     TernaryOp,
     UnaryOp,
     VarRef,
+    VarTail,
 )
 
 
@@ -194,11 +237,109 @@ def _listed(prefix: str, values: Iterable[object]) -> Iterator[tuple[str, object
         yield f"{prefix}[{index}]", value
 
 
-def _expression_tails(prefix: str, values: Iterable[object]) -> Iterator[tuple[str, object]]:
-    """Yield only the computed tails; bound tail wrappers are annotation leaves."""
-    for index, value in enumerate(values):
-        if is_expression_tail(value):
-            yield f"{prefix}[{index}]", value
+#: Node-bearing keys of ``GraphProperties`` in the order the walker visits them.
+#: The non-node keys stay in the tuple so a property added to the TypedDict
+#: forces a decision here; a test compares the tuple with the annotation keys.
+_GRAPH_PROPERTY_ORDER: tuple[str, ...] = (
+    "colours",
+    "enable_tail",
+    "tails",
+    "coords",
+    "segment_point",
+    "polygon_type",
+    "layer",
+    "text_vars",
+    "enable",
+)
+
+#: Node-bearing keys of ``InteractProperties`` in walk order.
+_INTERACT_PROPERTY_ORDER: tuple[str, ...] = (
+    "procedure",
+    "assigns",
+    "enables",
+    "flags",
+    "colours",
+    "body",
+    "tails",
+    "coords",
+    "layers",
+)
+
+#: Expression node classes that can stand as a tail or a clause value.
+_EXPRESSION_NODE_TYPES: tuple[type[object], ...] = (
+    VarRef,
+    BoolOp,
+    NotOp,
+    Compare,
+    BinOp,
+    UnaryOp,
+    FuncCall,
+    TernaryOp,
+)
+
+
+def _nodes(prefix: str, value: object) -> Iterator[tuple[str, object]]:
+    """Yield ``value`` or each node item of a list/tuple, labelled by ``prefix``."""
+    if isinstance(value, list | tuple):
+        for index, item in enumerate(cast("Sequence[object]", value)):
+            if isinstance(item, _NODE_TYPES):
+                yield f"{prefix}[{index}]", item
+    elif isinstance(value, _NODE_TYPES):
+        yield prefix, value
+
+
+def _is_tail_value(value: object) -> bool:
+    return isinstance(value, (VarTail, LitStringTail, *_EXPRESSION_NODE_TYPES))
+
+
+def _collect_tail_ids(value: object, into: set[int]) -> None:
+    """Collect the ids of every tail reachable through ``value``.
+
+    Used to keep the flat ``properties["tails"]`` view from emitting a tail a
+    second time when the same object is owned by a typed clause.
+    """
+    if _is_tail_value(value):
+        into.add(id(value))
+        return
+    if isinstance(value, list | tuple):
+        for item in cast("Sequence[object]", value):
+            _collect_tail_ids(item, into)
+        return
+    if is_dataclass(value):
+        for field in dataclass_fields(value):
+            _collect_tail_ids(getattr(value, field.name), into)
+
+
+def _unowned_tails(prefix: str, values: object, owned: set[int]) -> Iterator[tuple[str, object]]:
+    """Yield the flat tail entries whose owner did not already emit them."""
+    if not isinstance(values, list | tuple):
+        return
+    for index, value in enumerate(cast("Sequence[object]", values)):
+        if id(value) in owned or not isinstance(value, _NODE_TYPES):
+            continue
+        yield f"{prefix}[{index}]", value
+
+
+def _property_children(node: m.GraphObject | m.InteractObject, order: tuple[str, ...]) -> Iterator[tuple[str, object]]:
+    """Yield the node-valued properties of a graphics or interact object."""
+    properties = node.properties
+    owned: set[int] = set()
+    for key in order:
+        value = properties.get(key)
+        if value is None:
+            continue
+        if key == "tails":
+            yield from _unowned_tails("properties.tails", value, owned)
+            continue
+        if key == "body" and isinstance(node, m.InteractObject):
+            for index, entry in enumerate(cast("list[InteractBodyEntry]", value)):
+                for payload in interact_body_payloads([entry]):
+                    _collect_tail_ids(payload, owned)
+                    if isinstance(payload, _NODE_TYPES):
+                        yield f"properties.body[{index}]", payload
+            continue
+        _collect_tail_ids(value, owned)
+        yield from _nodes(f"properties.{key}", value)
 
 
 def iter_child_nodes(node: object) -> Iterator[tuple[str, object]]:
@@ -213,9 +354,20 @@ def iter_child_nodes(node: object) -> Iterator[tuple[str, object]]:
                 yield f"[{index}]", child
         return
     yield from _container_children(node)
+    yield from _graphics_children(node)
     yield from _declaration_children(node)
     yield from _code_children(node)
     yield from _expression_children(node)
+    yield from _clause_children(node)
+
+
+def _graphics_children(node: object) -> Iterator[tuple[str, object]]:
+    """Children of graphics and interact objects: their typed property payloads."""
+    if isinstance(node, m.GraphObject):
+        yield from _property_children(node, _GRAPH_PROPERTY_ORDER)
+        return
+    if isinstance(node, m.InteractObject):
+        yield from _property_children(node, _INTERACT_PROPERTY_ORDER)
 
 
 def _container_children(node: object) -> Iterator[tuple[str, object]]:
@@ -272,9 +424,9 @@ def _container_children(node: object) -> Iterator[tuple[str, object]]:
         return
 
     if isinstance(node, m.ModuleHeader):
-        if node.enable_tail is not None and is_expression_tail(node.enable_tail):
-            yield "enable_tail", node.enable_tail
-        yield from _expression_tails("invoke_coord_tails", node.invoke_coord_tails)
+        if node.enable_tail is not None:
+            yield from _nodes("enable_tail", node.enable_tail)
+        yield from _nodes("invoke_coord_tails", node.invoke_coord_tails)
         if node.groupconn is not None:
             yield "groupconn", node.groupconn
         yield from _listed("description_comments", node.description_comments)
@@ -294,7 +446,10 @@ def _declaration_children(node: object) -> Iterator[tuple[str, object]]:
         return
 
     if isinstance(node, m.ModuleDef):
-        yield from _expression_tails("clipping_tails", node.clipping_tails or ())
+        clipping_tails = node.clipping_tails or ()
+        yield from _nodes("clipping_tails", clipping_tails)
+        owned = {id(tail) for tail in clipping_tails}
+        yield from _unowned_tails("properties.tails", node.properties.get("tails"), owned)
         yield from _listed("graph_objects", node.graph_objects)
         yield from _listed("interact_objects", node.interact_objects)
 
@@ -381,6 +536,41 @@ def _expression_children(node: object) -> Iterator[tuple[str, object]]:
             yield f"branches[{branch_index}][1]", value
         if node.else_expr is not None:
             yield "else_expr", node.else_expr
+
+
+def _clause_children(node: object) -> Iterator[tuple[str, object]]:
+    """Children of the typed clause and tail payloads."""
+    if isinstance(node, EnableClause):
+        if node.tail is not None and isinstance(node.tail, _NODE_TYPES):
+            yield "tail", node.tail
+        return
+
+    if isinstance(node, AssignClause | TailedClause):
+        if isinstance(node.value, _NODE_TYPES):
+            yield "value", node.value
+        if node.tail is not None and isinstance(node.tail, _NODE_TYPES):
+            yield "tail", node.tail
+        return
+
+    if isinstance(node, FlagClause):
+        if node.tail is not None and isinstance(node.tail, _NODE_TYPES):
+            yield "tail", node.tail
+        return
+
+    if isinstance(node, ColourSpec):
+        if node.width is not None:
+            yield "width", node.width
+        yield from _listed("assignments", node.assignments)
+        if node.style is not None:
+            yield "style", node.style
+        return
+
+    if isinstance(node, ProcedureCall):
+        yield from _nodes("args", node.args)
+        return
+
+    if isinstance(node, VarTail) and isinstance(node.value, LitStringTail):
+        yield "value", node.value
 
 
 def walk(node: object, *, prune: Callable[[object], bool] | None = None) -> Iterator[WalkEvent]:

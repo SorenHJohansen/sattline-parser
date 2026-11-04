@@ -71,6 +71,7 @@ _INVALID_VALIDATION_FIXTURES: dict[str, str] = {
     "WriteToOldState": "SL-V035",
     "AssignmentFamilyMismatch": "SL-V029",
     "IfConditionNotBoolean": "SL-V030",
+    "EnableTailNotBoolean": "SL-V030",
 }
 
 #: Fixtures for rules the real parser does NOT enforce. Kept as files so the
@@ -1263,6 +1264,204 @@ def test_coordinate_tail_rule_skips_reference_names():
     bp = _base_picture()
     bp.moduledefs = [module_def]
     assert [d.code.value for d in validate_basepicture(bp)] == []
+
+
+def test_graph_enable_tail_reports_undefined_variable():
+    """A parenthesised Enable_ tail is a real expression use (SL-V019)."""
+    bp = _base_picture()
+    bp.moduledefs = [
+        ModuleDef(
+            graph_objects=[
+                GraphObject("RectangleObject", properties={"enable_tail": VarRef("MissingEnable")}),
+            ]
+        )
+    ]
+
+    diagnostics = [d for d in validate_basepicture(bp) if d.code is DiagnosticCode.UNDEFINED_VARIABLE]
+
+    assert [d.code.value for d in diagnostics] == ["SL-V019"]
+    assert "MissingEnable" in diagnostics[0].message
+
+
+def test_graph_enable_tail_must_be_boolean():
+    """An Enable_ expression tail uses the boolean-condition rule (SL-V030)."""
+    bp = _base_picture()
+    bp.localvariables = [_var("Count", "integer")]
+    bp.moduledefs = [
+        ModuleDef(
+            graph_objects=[
+                GraphObject("RectangleObject", properties={"enable_tail": BinOp(VarRef("Count"), "+", 1)}),
+            ]
+        )
+    ]
+
+    diagnostics = [d for d in validate_basepicture(bp) if d.code is DiagnosticCode.CONDITION_NOT_BOOLEAN]
+
+    assert [d.code.value for d in diagnostics] == ["SL-V030"]
+    assert "Enable_ tail condition" in diagnostics[0].message
+
+
+def test_graph_colour_tail_reports_undefined_variable_once():
+    """A colour tail is checked, and the flat tails view does not duplicate it."""
+    missing = VarRef("MissingColour")
+    colour = ColourSpec(
+        kind="outline",
+        assignments=(TailedClause(key="Colour0", value=1, tail=missing),),
+    )
+    bp = _base_picture()
+    bp.moduledefs = [
+        ModuleDef(
+            graph_objects=[
+                GraphObject("RectangleObject", properties={"colours": [colour], "tails": [missing]}),
+            ]
+        )
+    ]
+
+    diagnostics = [d for d in validate_basepicture(bp) if d.code is DiagnosticCode.UNDEFINED_VARIABLE]
+
+    assert [d.code.value for d in diagnostics] == ["SL-V019"]
+    assert "MissingColour" in diagnostics[0].message
+
+
+def test_interact_enable_and_assign_tails_report_undefined_variables():
+    """Interact clauses carry expression tails that must resolve in scope."""
+    bp = _base_picture()
+    bp.moduledefs = [
+        ModuleDef(
+            interact_objects=[
+                InteractObject(
+                    "ComBut_",
+                    properties={
+                        "enables": [EnableClause(True, VarRef("MissingEnable"))],
+                        "assigns": [AssignClause("Value", 0, VarRef("MissingAssign"))],
+                        "body": [VarRef("MissingBody")],
+                        "tails": [VarRef("MissingFlat")],
+                    },
+                )
+            ]
+        )
+    ]
+
+    messages = [d.message for d in validate_basepicture(bp) if d.code is DiagnosticCode.UNDEFINED_VARIABLE]
+
+    assert len(messages) == 4
+    assert any("MissingEnable" in message for message in messages)
+    assert any("MissingAssign" in message for message in messages)
+    assert any("MissingBody" in message for message in messages)
+    assert any("MissingFlat" in message for message in messages)
+
+
+def test_header_enable_tail_reports_undefined_and_non_boolean():
+    """The unit header is checked in the base scope, not skipped."""
+    missing = _base_picture()
+    missing.header = ModuleHeader(
+        name="Base",
+        invoke_coord=(0.0, 0.0, 0.0, 1.0, 1.0),
+        enable_tail=VarRef("MissingHeaderEnable"),
+    )
+    undefined = [d for d in validate_basepicture(missing) if d.code is DiagnosticCode.UNDEFINED_VARIABLE]
+    assert [d.code.value for d in undefined] == ["SL-V019"]
+
+    integer_tail = _base_picture()
+    integer_tail.localvariables = [_var("Count", "integer")]
+    integer_tail.header = ModuleHeader(
+        name="Base",
+        invoke_coord=(0.0, 0.0, 0.0, 1.0, 1.0),
+        enable_tail=BinOp(VarRef("Count"), "+", 1),
+    )
+    not_boolean = [d for d in validate_basepicture(integer_tail) if d.code is DiagnosticCode.CONDITION_NOT_BOOLEAN]
+    assert [d.code.value for d in not_boolean] == ["SL-V030"]
+
+
+def test_header_coordinate_tail_reports_undefined_variable():
+    bp = _base_picture()
+    bp.header = ModuleHeader(
+        name="Base",
+        invoke_coord=(0.0, 0.0, 0.0, 1.0, 1.0),
+        invoke_coord_tails=[VarRef("MissingCoord")],
+    )
+
+    diagnostics = [d for d in validate_basepicture(bp) if d.code is DiagnosticCode.UNDEFINED_VARIABLE]
+
+    assert [d.code.value for d in diagnostics] == ["SL-V019"]
+    assert "MissingCoord" in diagnostics[0].message
+
+
+def test_submodule_header_tail_uses_parent_scope():
+    """A submodule header is evaluated in the invoking module's scope."""
+    header = ModuleHeader(
+        name="Child",
+        invoke_coord=(0.0, 0.0, 0.0, 1.0, 1.0),
+        invoke_coord_tails=[VarRef("ParentVar")],
+    )
+    child = SingleModule(header=header, localvariables=[_var("ChildVar", "integer")])
+    bp = _base_picture()
+    bp.localvariables = [_var("ParentVar", "integer")]
+    bp.submodules = [child]
+
+    assert [d.code.value for d in validate_basepicture(bp)] == []
+
+    header.invoke_coord_tails = [VarRef("ChildVar")]
+    assert [d.code.value for d in validate_basepicture(bp) if d.code is DiagnosticCode.UNDEFINED_VARIABLE] == [
+        "SL-V019"
+    ]
+
+
+def test_moduletype_layout_coordinate_tail_is_checked():
+    """Module-type layout blocks use the module-type scope."""
+    moduletype = ModuleTypeDef(
+        name="Type",
+        localvariables=[_var("Source", "integer")],
+        moduledefs=[
+            ModuleDef(
+                clipping_bounds=((-1.0, -1.0), (1.0, 1.0)),
+                clipping_tails=[BinOp(VarRef("Source"), "+", 1)],
+            )
+        ],
+    )
+    bp = _base_picture()
+    bp.moduletype_defs = [moduletype]
+
+    diagnostics = [d for d in validate_basepicture(bp) if d.code is DiagnosticCode.COORDINATE_NOT_REAL]
+
+    assert [d.code.value for d in diagnostics] == ["SL-V032"]
+
+
+def test_bound_tail_names_are_not_diagnosed_in_annotations():
+    """InVar_/OutVar_ names stay silent; query reports them as unresolved uses."""
+    bp = _base_picture()
+    bp.header = ModuleHeader(
+        name="Base",
+        invoke_coord=(0.0, 0.0, 0.0, 1.0, 1.0),
+        enable_tail=VarTail("in", "MissingHeaderEnable"),
+        invoke_coord_tails=[VarTail("out", LitStringTail("LitString", "MissingCoord"))],
+    )
+    bp.moduledefs = [
+        ModuleDef(
+            graph_objects=[
+                GraphObject("RectangleObject", properties={"enable_tail": VarTail("in", "MissingGraphEnable")}),
+            ]
+        )
+    ]
+
+    assert [d.code.value for d in validate_basepicture(bp)] == []
+
+
+def test_shared_module_def_tail_is_checked_once():
+    """clipping_tails owns the entry also present in properties["tails"]."""
+    tail = BinOp(VarRef("Source"), "+", 1)
+    module_def = ModuleDef(
+        clipping_bounds=((-1.0, -1.0), (1.0, 1.0)),
+        clipping_tails=[tail],
+        properties={"tails": [tail]},
+    )
+    bp = _base_picture()
+    bp.localvariables = [_var("Source", "integer")]
+    bp.moduledefs = [module_def]
+
+    diagnostics = [d for d in validate_basepicture(bp) if d.code is DiagnosticCode.COORDINATE_NOT_REAL]
+
+    assert [d.code.value for d in diagnostics] == ["SL-V032"]
 
 
 def test_sequence_ends_with_step_skips_open_sequences():

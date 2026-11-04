@@ -11,7 +11,6 @@ element names.
 
 from __future__ import annotations
 
-from sattline_parser.grammar import constants as const
 from sattline_parser.models import walk
 from sattline_parser.models.ast_model import (
     BasePicture,
@@ -19,7 +18,6 @@ from sattline_parser.models.ast_model import (
     Equation,
     FrameModule,
     ModuleCode,
-    ModuleDef,
     ModuleTypeInstance,
     Sequence,
     SFCAlternative,
@@ -49,7 +47,6 @@ from sattline_parser.models.expressions import (
     UnaryOp,
     VarRef,
 )
-from sattline_parser.models.tails import is_expression_tail
 from sattline_parser.names import fold_identifier
 from sattline_parser.validation.builtins import builtin_function_signature
 from sattline_parser.validation.diagnostics import Diagnostic, DiagnosticCode
@@ -570,46 +567,6 @@ def _expression_span(expr: SLExpression) -> SourceSpan | None:
     """Span of a parsed expression node; primitives carry none."""
     span = getattr(expr, "span", None)
     return span if isinstance(span, SourceSpan) else None
-
-
-def check_coordinate_tail_types(
-    module_def: ModuleDef,
-    scope: Scope,
-    records: dict[str, DataType],
-    type_graph: TypeGraph,
-    errors: list[Diagnostic],
-) -> None:
-    """A coordinate position must be real, never integer (SL-V032).
-
-    The diagnostic reads *"The expression is of an invalid type Source + 1"*
-    for an integer-typed ``ClippingBounds`` corner tail, and the error disappears
-    once the same tail is declared ``real``. The constraint is on the coordinate
-    *position*, so it applies to every collected tail, not just computed ones:
-    a bare integer variable in a corner is rejected the same way.
-
-    ``VarTail`` tails are skipped. An ``InVar_ "Name"`` tail carries a variable
-    *reference*, not a value, and resolving the name is not evidenced.
-    Unknown types stay silent, as elsewhere in this module.
-    """
-    seen: set[int] = set()
-    tails: list[object] = [*(module_def.clipping_tails or []), *(module_def.properties.get(const.KEY_TAILS) or [])]
-    for tail in tails:
-        if not is_expression_tail(tail):
-            continue
-        if id(tail) in seen:
-            continue
-        seen.add(id(tail))
-        inferred = infer_expr_type(tail, scope, records, type_graph)
-        if inferred is not None and fold_identifier(inferred) != fold_identifier(Simple_DataType.REAL.value):
-            errors.append(
-                Diagnostic(
-                    code=DiagnosticCode.COORDINATE_NOT_REAL,
-                    message=(
-                        f"Coordinate position is of an invalid type: it is {inferred}, but a coordinate must be a real"
-                    ),
-                    span=_expression_span(tail),
-                )
-            )
 
 
 def _check_assignment(

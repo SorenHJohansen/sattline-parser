@@ -300,7 +300,7 @@ RULES: tuple[Rule, ...] = (
     ),
     _rule(
         DiagnosticCode.CONDITION_NOT_BOOLEAN,
-        "IF, ELSIF, and WAIT_FOR conditions must be boolean.",
+        "IF, ELSIF, WAIT_FOR, and Enable_ tail conditions must be boolean.",
         scope=RuleScope.CODE,
     ),
     _rule(

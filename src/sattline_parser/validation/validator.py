@@ -20,14 +20,16 @@ from sattline_parser.models.ast_model import (
     BasePicture,
     DataType,
     FrameModule,
+    ModuleDef,
+    ModuleHeader,
     ModuleTypeDef,
     ModuleTypeInstance,
     SingleModule,
     Variable,
 )
 from sattline_parser.names import fold_identifier
+from sattline_parser.validation.annotations import check_annotation_tails
 from sattline_parser.validation.code import (
-    check_coordinate_tail_types,
     collect_program_sfc_names,
     walk_module_code,
 )
@@ -68,6 +70,23 @@ class _ValidationContext:
     type_graph: TypeGraph
     allow_unresolved_external_datatypes: bool
     sfc_names: frozenset[str]
+
+
+def _check_annotation_tails(
+    container: ModuleHeader | ModuleDef,
+    scope: Scope,
+    context: _ValidationContext,
+    errors: list[Diagnostic],
+) -> None:
+    """Check annotation tails for a header or module definition in ``scope``."""
+    check_annotation_tails(
+        container,
+        scope,
+        context.records,
+        context.type_graph,
+        context.sfc_names,
+        errors,
+    )
 
 
 def validate_basepicture(
@@ -116,8 +135,9 @@ def validate_basepicture(
         allow_unresolved_external_datatypes=allow_unresolved_external_datatypes,
     )
     check_sibling_submodules(bp.submodules, errors)
+    _check_annotation_tails(bp.header, base_scope, context, errors)
     for module_def in bp.moduledefs:
-        check_coordinate_tail_types(module_def, base_scope, context.records, context.type_graph, errors)
+        _check_annotation_tails(module_def, base_scope, context, errors)
 
     for code in bp.modulecodes:
         walk_module_code(
@@ -142,6 +162,7 @@ def _walk_submodule(
     context: _ValidationContext,
     errors: list[Diagnostic],
 ) -> None:
+    _check_annotation_tails(child.header, parent, context, errors)
     if isinstance(child, ModuleTypeInstance):
         moduletype = context.moduletypes.get(fold_identifier(child.moduletype_name))
         if moduletype is None:
@@ -178,6 +199,8 @@ def _walk_moduletype_def(
         allow_unresolved_external_datatypes=context.allow_unresolved_external_datatypes,
     )
     check_sibling_submodules(moduletype.submodules, errors)
+    for module_def in moduletype.moduledefs:
+        _check_annotation_tails(module_def, scope, context, errors)
     for code in moduletype.modulecodes:
         walk_module_code(
             code,
@@ -219,7 +242,7 @@ def _walk_definition(
     )
     check_sibling_submodules(child.submodules, errors)
     for module_def in child.moduledefs:
-        check_coordinate_tail_types(module_def, scope, context.records, context.type_graph, errors)
+        _check_annotation_tails(module_def, scope, context, errors)
     for code in child.modulecodes:
         walk_module_code(
             code,

@@ -245,6 +245,13 @@ type-check them. `clipping_bounds` keeps only the resolved float values.
   fractions, alignment, pick buttons, scale selectors;
 - `InVar_` / `OutVar_` tails.
 
+A graph object keeps the enable tail in `properties["enable_tail"]` as well as
+the resolved boolean in `properties["enable"]`. Interact objects keep their
+`EnableClause` payloads in `enables` or `body`. The flat
+`properties["tails"]` list is a derived view over the same tail objects; the
+walker emits a clause-owned tail through its clause and only the remaining
+coordinate tails from the flat list.
+
 Free-form interactor names are accepted on purpose. The transformer preserves
 them as `InteractObject.type` strings; the package does not decide which
 free-form names are valid UI widgets.
