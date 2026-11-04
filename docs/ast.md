@@ -35,7 +35,11 @@ classDiagram
         invocation_arguments: tuple[str, ...]
         layer_info: int | None
         enable: bool | None
+        enable_tail: Tail | None
         module_in_view: bool | None
+        zoom_limits: tuple[float, float] | None
+        zoomable: bool
+        invoke_coord_tails: list[Tail]
         groupconn: VarRef | None
         description_comments: list[CodeComment]
     }
@@ -178,6 +182,17 @@ classDiagram
         properties: dict
     }
 
+    class GraphObject {
+        type: str
+        properties: GraphProperties
+        span: SourceSpan | None
+    }
+
+    class InteractObject {
+        type: str
+        properties: InteractProperties
+    }
+
     class ModuleCode {
         sequences: list[Sequence] | None
         equations: list[Equation] | None
@@ -219,9 +234,11 @@ though the dataclasses expose them as a mapping.
 
 `InteractProperties.body` is `list[Tree[object]] | None`. Each entry is the raw
 grammar tree, not the clause: an `interact_body` entry has the typed clause in
-`children[0]`, and `comments` and `alignment` entries stay raw trees too. A
-precise union of clause types would require flattening those trees, which
-changes the public AST shape and is a separate design change.
+its children, and `comment`/`comments` and `alignment` entries stay raw trees
+too. A precise union of clause types would require flattening those trees,
+which changes the public AST shape and is a separate design change.
+`models.properties.interact_body_payloads` reads the typed payloads without
+changing the stored shape; the public walker uses it.
 
 ## SFC nodes
 
@@ -449,12 +466,32 @@ class DeclarationCounter(NodeVisitor):
 override decides whether to descend by calling `self.generic_visit(node)`.
 
 The walk covers module containers, declarations, module code, SFC nodes,
-statements, expressions, headers, and comments. It does not descend into
-`GraphObject.properties`, `InteractObject.properties`, `ModuleDef.properties`,
-`ModuleHeader.invocation_arguments`, `parse_tree`, or the deprecated
-`BasePicture.graphics_*` and `library_dependencies` fields. Literal values are
-leaves and are not emitted as nodes. `prune` may stop descent into a node after
-it has been yielded.
+statements, expressions, headers, comments, and the typed clause and tail
+payloads attached to graphics, interact, and module-definition nodes. It
+descends into `GraphObject.properties`, `InteractObject.properties`, and
+`ModuleDef.properties`. `ModuleHeader.invocation_arguments` holds marker names
+only and is not walked; header argument tails live in `invoke_coord_tails`.
+`parse_tree`, `BasePicture.graphics_*`, and `library_dependencies` are not
+walked. Literal values are leaves and are not emitted as nodes. `prune` may stop
+descent into a node after it has been yielded.
+
+Property payloads are visited in a fixed order:
+
+| Container | Node-bearing keys, in walk order |
+| --- | --- |
+| `GraphObject` | `colours`, `enable_tail`, `tails` |
+| `InteractObject` | `procedure`, `assigns`, `enables`, `flags`, `colours`, `body`, `tails` |
+| `ModuleDef` | `clipping_tails`, `properties["tails"]`, `graph_objects`, `interact_objects` |
+
+The non-node keys (`coords`, `segment_point`, `polygon_type`, `layer`,
+`text_vars`, `enable`, and `layers`) stay in the order tuple so a new property
+forces a walker decision, but they produce no nodes.
+
+The flat `properties["tails"]` list is a derived view. A tail owned by a clause
+is emitted through that clause, and only the unowned (coordinate) tails are
+emitted from the flat list. `ModuleDef.clipping_tails` owns the entries also
+present in its `properties["tails"]`. Every tail node therefore appears once,
+and a query or validation pass does not need to deduplicate shared payloads.
 
 `walk` uses an explicit stack and keeps ancestors as a persistent chain.
 `WalkEvent.parents` expands its sequence view only when read, so a deep tree is

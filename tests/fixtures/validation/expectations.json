@@ -46,6 +46,36 @@
         "severity": "error"
       }
     ],
+    "invalid/AnnotationTailUndefined.s": [
+      {
+        "code": "SL-V019",
+        "column": 13,
+        "length": 11,
+        "line": 11,
+        "severity": "error"
+      },
+      {
+        "code": "SL-V019",
+        "column": 38,
+        "length": 13,
+        "line": 22,
+        "severity": "error"
+      },
+      {
+        "code": "SL-V019",
+        "column": 25,
+        "length": 13,
+        "line": 24,
+        "severity": "error"
+      },
+      {
+        "code": "SL-V019",
+        "column": 20,
+        "length": 13,
+        "line": 28,
+        "severity": "error"
+      }
+    ],
     "invalid/AssignmentFamilyMismatch.s": [
       {
         "code": "SL-V029",
@@ -167,6 +197,15 @@
       }
     ],
     "invalid/DuplicateVariableNames.s": [],
+    "invalid/EnableTailNotBoolean.s": [
+      {
+        "code": "SL-V030",
+        "column": 25,
+        "length": 9,
+        "line": 23,
+        "severity": "error"
+      }
+    ],
     "invalid/EncodingStress.s": [
       {
         "parse_error": true

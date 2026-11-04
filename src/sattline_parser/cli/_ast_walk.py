@@ -11,7 +11,9 @@ from dataclasses import dataclass
 
 from sattline_parser.models import NodeVisitor
 from sattline_parser.models import ast_model as m
+from sattline_parser.models.clauses import PickButton
 from sattline_parser.models.expressions import Assignment, FuncCall, FuncCallStmt, IfStmt, VarRef
+from sattline_parser.models.tails import LitStringTail, VarTail
 
 __all__ = ["QUERY_KINDS", "QueryRow", "iter_rows"]
 
@@ -102,6 +104,7 @@ class _QueryVisitor(NodeVisitor):
         self._path: list[str] = []
 
     def visit_BasePicture(self, picture: m.BasePicture) -> None:
+        self.visit(picture.header)
         for module_type in picture.moduletype_defs:
             self.rows.append(
                 _symbol("module_type", module_type.name, self._module_path(), module_type.declaration_span)
@@ -124,6 +127,14 @@ class _QueryVisitor(NodeVisitor):
             )
         for interact_object in module_def.interact_objects or ():
             self.rows.append(QueryRow(kind="interact-objects", name=interact_object.type, module=self._module_path()))
+        self.generic_visit(module_def)
+
+    def visit_ModuleHeader(self, header: m.ModuleHeader) -> None:
+        """Visit header tails; ``groupconn`` names a scan group, not a variable."""
+        if header.enable_tail is not None:
+            self.visit(header.enable_tail)
+        for tail in header.invoke_coord_tails:
+            self.visit(tail)
 
     def visit_ModuleCode(self, module_code: m.ModuleCode) -> None:
         for sequence in module_code.sequences or ():
@@ -201,6 +212,34 @@ class _QueryVisitor(NodeVisitor):
     def visit_VarRef(self, reference: VarRef) -> None:
         self.rows.append(QueryRow.at("references", reference.name, span=reference.span, module=self._module_path()))
 
+    def visit_VarTail(self, tail: VarTail) -> None:
+        """Report a bound ``InVar_``/``OutVar_`` name as an unresolved use.
+
+        The parser records the written symbol but does not evidence how it
+        resolves, so the row is deliberately labelled unresolved rather than
+        claiming a declaration. Bound tails carry no source span.
+        """
+        name = _bound_tail_name(tail)
+        if name is not None:
+            self.rows.append(QueryRow(kind="references", name=name, detail="unresolved", module=self._module_path()))
+
+    def visit_LitStringTail(self, _tail: LitStringTail) -> None:
+        """The owning ``VarTail`` already reported the name."""
+
+    def visit_GraphObject(self, graph_object: m.GraphObject) -> None:
+        """Report text-object variable names, then walk the property payloads."""
+        for name in graph_object.properties.get("text_vars") or ():
+            self.rows.append(QueryRow(kind="references", name=name, detail="text variable", module=self._module_path()))
+        self.generic_visit(graph_object)
+
+    def visit_PickButton(self, button: PickButton) -> None:
+        if button.is_reference:
+            self.rows.append(
+                QueryRow(
+                    kind="references", name=button.value, detail="pick-button reference", module=self._module_path()
+                )
+            )
+
     def visit_FuncCall(self, call: FuncCall) -> None:
         self._visit_call(call)
         for argument in call.args:
@@ -232,9 +271,11 @@ class _QueryVisitor(NodeVisitor):
                     "module_instance", submodule.header.name, self._module_path(), submodule.header.declaration_span
                 )
             )
+            self.visit(submodule.header)
             return
         header = submodule.header
         self.rows.append(_symbol("submodule", header.name, self._module_path(), header.declaration_span))
+        self.visit(header)
         self._path.append(header.name)
         self._visit_module_body(submodule, declarations=isinstance(submodule, m.SingleModule))
         self._path.pop()
@@ -251,3 +292,13 @@ def _symbol(kind: str, name: str, module: str | None, span: m.SourceSpan | None 
 def _graph_object_detail(graph_object: m.GraphObject) -> str:
     layer = graph_object.properties.get("layer")
     return f"layer {layer}" if layer is not None else "graph object"
+
+
+def _bound_tail_name(tail: VarTail) -> str | None:
+    """The symbol a bare bound tail names, or ``None`` for a literal value.
+
+    A ``LitStringTail`` is a quoted symbol, not a variable path, so it is not
+    reported as a variable use.
+    """
+    value = tail.value
+    return value if isinstance(value, str) else None

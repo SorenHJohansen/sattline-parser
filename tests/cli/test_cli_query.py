@@ -234,6 +234,50 @@ def test_graph_and_interact_objects(tmp_path, capsys) -> None:
     assert "interact-objects ComBut_ [Child]" in capsys.readouterr().out
 
 
+_ANNOTATION_TAIL_SOURCE = (
+    '"Syntax version 2.23, date: 2026-11-04-00:00:00.000 N"\n'
+    '"Original file date: ---"\n'
+    '"Program date: 2026-11-04-00:00:00.000, name: AnnotationTails"\n'
+    "BasePicture Invocation ( 0.0 : (HeaderCoord) , 0.0 , 0.0 , 1.0 , 1.0 Enable_ = True : (HeaderFlag) ) : MODULEDEFINITION DateCode_ 1\n"
+    "LOCALVARIABLES\n"
+    "   Flag: boolean := False;\n"
+    "   Count: integer := 0;\n"
+    "ModuleDef\n"
+    "ClippingBounds = ( -1.0 , -1.0 ) ( 1.0 , 1.0 )\n"
+    "GraphObjects :\n"
+    '   TextObject ( 0.0 , 0.0 ) ( 1.0 , 1.0 ) "Count" VarName\n'
+    "      OutlineColour : Colour0 = 1 : (Flag)\n"
+    "   RectangleObject ( 0.0 , 0.0 ) ( 1.0 , 1.0 )\n"
+    "      Enable_ = True : (Flag)\n"
+    "InteractObjects :\n"
+    "   TextBox_ ( 0.0 , 0.0 ) ( 1.0 , 1.0 )\n"
+    "      Int_Value\n"
+    '      Enable_ = True : InVar_ "ToggleBit"\n'
+    '      IntObjPickButton = "PickVar" VarName\n'
+    '      Value = 0 : InVar_ LitString "QuotedAssign"\n'
+    "      Value2 = 0 : InVar_ 1\n"
+    "      Value3 = 0 : (Flag)\n"
+    "ENDDEF (*BasePicture*);\n"
+)
+
+
+def test_references_include_annotation_tails(tmp_path, capsys) -> None:
+    source = write_source(tmp_path, "AnnotationTails.s", _ANNOTATION_TAIL_SOURCE)
+
+    assert main(["query", str(source), "--what", "references"]) == ExitCode.OK
+
+    out = capsys.readouterr().out
+    assert "references HeaderCoord" in out
+    assert "references HeaderFlag" in out
+    assert "references Count (text variable)" in out
+    assert "references PickVar (pick-button reference)" in out
+    assert "references ToggleBit (unresolved)" in out
+    # A LitString tail is a quoted symbol, not a variable path.
+    assert "QuotedAssign" not in out
+    # The colour tail is also in the flat tails list; the walker must emit it once.
+    assert out.count("references Flag") == 3
+
+
 def test_json_and_jsonl_rows(tmp_path, capsys) -> None:
     source = write_source(tmp_path, "Query.s", VALID_SOURCE)
 

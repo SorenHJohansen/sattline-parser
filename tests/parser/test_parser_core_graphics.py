@@ -3,6 +3,20 @@
 from ._parser_core_test_support import *
 
 
+def test_graphics_interact_mixin_keeps_graph_object_enable_tail():
+    mixin = _GraphicsHarness()
+    tail = VarTail("in", "Flag")
+    graph_object = mixin.rectangle_object(
+        [
+            InterimCoords(coords=((0.0, 0.0), (1.0, 1.0))),
+            CommonProperties(enable=EnableClause(True, tail)),
+        ]
+    )
+
+    assert graph_object.properties[parser_const.KEY_ENABLE] is True
+    assert graph_object.properties[parser_const.KEY_ENABLE_TAIL] == tail
+
+
 def test_graphics_interact_mixin_builds_graph_objects_and_lists():
     mixin = _GraphicsHarness()
     coords = ((1.0, 2.0), (3.0, 4.0))

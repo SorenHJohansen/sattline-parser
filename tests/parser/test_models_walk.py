@@ -6,9 +6,17 @@ from __future__ import annotations
 import dataclasses
 from pathlib import Path
 
+from lark import Tree
+
 from sattline_parser import NodeVisitor, parse_source_file, walk
-from sattline_parser.models import ast_model, expressions, iter_child_nodes
+from sattline_parser.models import ast_model, clauses, expressions, iter_child_nodes, tails
 from sattline_parser.models import ast_model as m
+from sattline_parser.models.clauses import (
+    ColourSpec,
+    EnableClause,
+    FlagClause,
+    TailedClause,
+)
 from sattline_parser.models.expressions import (
     Assignment,
     BinOp,
@@ -22,7 +30,9 @@ from sattline_parser.models.expressions import (
     UnaryOp,
     VarRef,
 )
-from sattline_parser.models.walk import _NODE_TYPES
+from sattline_parser.models.properties import GraphProperties, InteractProperties, interact_body_payloads
+from sattline_parser.models.tails import LitStringTail, VarTail
+from sattline_parser.models.walk import _GRAPH_PROPERTY_ORDER, _INTERACT_PROPERTY_ORDER, _NODE_TYPES
 
 _CORPUS = Path(__file__).resolve().parents[1] / "fixtures" / "corpus" / "valid"
 
@@ -204,6 +214,138 @@ def test_walk_reports_a_mapping_target_without_a_source() -> None:
     assert [event.relation for event in walk(mapping)] == ["", "target"]
 
 
+def test_walk_visits_graph_property_tails_once() -> None:
+    """A clause-owned tail is emitted through its clause, not the flat list."""
+    clause_tail = VarRef("ColourVar")
+    coordinate_tail = VarRef("CoordVar")
+    colour = ColourSpec(
+        kind="outline",
+        assignments=(TailedClause(key="Colour0", value=1, tail=clause_tail),),
+    )
+    graph_object = m.GraphObject(
+        "RectangleObject",
+        properties={"colours": [colour], "tails": [coordinate_tail, clause_tail]},
+    )
+
+    events = list(walk(graph_object))
+    clause_events = [event for event in events if event.node is clause_tail]
+    relations = [event.relation for event in events]
+
+    assert len(clause_events) == 1
+    assert isinstance(clause_events[0].parents[-1], TailedClause)
+    assert "properties.colours[0]" in relations
+    assert "properties.tails[0]" in relations
+    assert "properties.tails[1]" not in relations
+
+
+def test_walk_visits_interact_clause_and_body_tails_once() -> None:
+    enable_tail = VarRef("EnableVar")
+    body_tail = VarRef("BodyVar")
+    flag_tail = VarRef("FlagTail")
+    interact = m.InteractObject(
+        "TextBox_",
+        properties={
+            "enables": [EnableClause(True, enable_tail)],
+            "body": [
+                TailedClause(key="Value", value=0, tail=body_tail),
+                FlagClause("FlagName", tail=flag_tail),
+            ],
+            "tails": [enable_tail, body_tail, flag_tail],
+        },
+    )
+
+    events = list(walk(interact))
+    enable_events = [event for event in events if event.node is enable_tail]
+    body_events = [event for event in events if event.node is body_tail]
+    flag_events = [event for event in events if event.node is flag_tail]
+
+    assert len(enable_events) == 1
+    assert len(body_events) == 1
+    assert len(flag_events) == 1
+    assert isinstance(enable_events[0].parents[-1], EnableClause)
+    assert isinstance(body_events[0].parents[-1], TailedClause)
+    assert isinstance(flag_events[0].parents[-1], FlagClause)
+    assert not any(event.relation.startswith("properties.tails") for event in events)
+
+
+def test_walk_visits_module_def_clipping_tails_once() -> None:
+    tail = VarRef("Source")
+    module_def = m.ModuleDef(clipping_tails=[tail], properties={"tails": [tail]})
+
+    events = list(walk(module_def))
+
+    assert [event.relation for event in events if event.node is tail] == ["clipping_tails[0]"]
+
+
+def test_walk_emits_bound_tail_nodes() -> None:
+    litstring = LitStringTail("LitString", "Symbol")
+    bound = VarTail("out", litstring)
+    header = m.ModuleHeader(
+        name="Header",
+        invoke_coord=(0.0, 0.0, 0.0, 1.0, 1.0),
+        invoke_coord_tails=[bound],
+    )
+
+    events = list(walk(header))
+
+    assert [event.relation for event in events if event.node is bound] == ["invoke_coord_tails[0]"]
+    assert [event.relation for event in events if event.node is litstring] == ["value"]
+
+
+def test_walk_property_order_covers_every_typed_dict_key() -> None:
+    assert set(_GRAPH_PROPERTY_ORDER) == set(GraphProperties.__annotations__)
+    assert set(_INTERACT_PROPERTY_ORDER) == set(InteractProperties.__annotations__)
+
+
+def test_walk_property_order_keeps_tails_after_clause_owners() -> None:
+    graph_owners = {"colours", "enable_tail"}
+    interact_owners = {"procedure", "assigns", "enables", "flags", "colours", "body"}
+
+    assert _GRAPH_PROPERTY_ORDER.index("tails") > max(_GRAPH_PROPERTY_ORDER.index(key) for key in graph_owners)
+    assert _INTERACT_PROPERTY_ORDER.index("tails") > max(_INTERACT_PROPERTY_ORDER.index(key) for key in interact_owners)
+
+
+def test_iter_child_nodes_filters_non_node_property_values() -> None:
+    tail = VarRef("Tail")
+    graph_object = m.GraphObject(
+        "RectangleObject",
+        properties={
+            "coords": ((0.0, 0.0), (1.0, 1.0)),
+            "polygon_type": ["Polyline"],
+            "text_vars": ["Caption"],
+            "tails": [tail],
+        },
+    )
+
+    children = list(iter_child_nodes(graph_object))
+
+    assert children == [("properties.tails[0]", tail)]
+
+
+def test_walk_clause_without_a_tail_has_no_children() -> None:
+    assert [event.relation for event in walk(EnableClause(True, None))] == [""]
+
+
+def test_walk_emits_a_node_valued_clause() -> None:
+    value = VarRef("SomeVar")
+    clause = TailedClause(key="Value", value=value, tail=None)
+
+    assert [event.relation for event in walk(clause)] == ["", "value"]
+
+
+def test_interact_body_payloads_unwrap_clauses_and_skip_ui_wrappers() -> None:
+    clause = EnableClause(True, VarTail("in", "X"))
+    unknown = Tree("other", ["x"])
+    body = [
+        Tree("interact_body", [clause]),
+        Tree("comments", []),
+        Tree("alignment", []),
+        unknown,
+    ]
+
+    assert list(interact_body_payloads(body)) == [clause, unknown]
+
+
 def test_walk_handles_a_transition_without_a_condition() -> None:
     transition = m.SFCTransition(name="Bare", condition=None)
 
@@ -225,12 +367,30 @@ def test_walk_skips_non_node_items_in_a_sequence() -> None:
     assert [event.node for event in events] == [VarRef("A")]
 
 
-_NOT_AST_NODE = {ast_model.SourceSpan, ast_model.GraphicsBinding}
+_NOT_AST_NODE = {
+    ast_model.SourceSpan,
+    ast_model.GraphicsBinding,
+    # Transformer intermediates: their content is folded into an owner before
+    # the AST is returned, or they are only arguments to the transformer.
+    clauses.ClippingClause,
+    clauses.CommonProperties,
+    clauses.Grid,
+    clauses.ModuleArguments,
+    clauses.ModuleInViewClause,
+    clauses.ModuleMarker,
+    clauses.ModuleOptions,
+    clauses.SeqLayers,
+    clauses.TwoLayers,
+    clauses.ZoomLimits,
+    clauses.Zoomable,
+    tails.ClipValue,
+    tails.CoordinateClipping,
+}
 
 
 def test_every_exported_dataclass_node_is_in_the_walker_registry() -> None:
     exported: list[type[object]] = []
-    for module in (ast_model, expressions):
+    for module in (ast_model, expressions, clauses, tails):
         for name in module.__all__:
             value = getattr(module, name)
             if isinstance(value, type) and dataclasses.is_dataclass(value):
