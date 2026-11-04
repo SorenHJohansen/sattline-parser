@@ -36,7 +36,8 @@
 | `.github/pull_request_template.md` | PR checklist for boundary, tests, docs, generated files |
 | `scripts/check_docs.py` | Link, prose, and Mermaid checks for the docs set |
 | `.github/workflows/docs.yml` | Docs CI: links, prose, and Mermaid rendering |
-| `src/sattline_parser/api.py` | Public façade: re-exports the parse pipeline (`source_io`) and the graphics entry points |
+| `src/sattline_parser/api.py` | Public façade: re-exports the parse pipeline from `source_io` and `validate_basepicture` |
+| `src/sattline_parser/ast.py` | Supported AST surface: every node, clause, tail, `SourceSpan`, and the walker |
 | `src/sattline_parser/source_io.py` | Parser cache, source decoding, and the source→`BasePicture` pipeline |
 | `src/sattline_parser/names.py` | Identifier identity: the CP1252 fold table used by every layer |
 | `src/sattline_parser/grammar/` | Lark grammar (`sattline.lark`), `constants.py`, `sattline_lexer.py` |

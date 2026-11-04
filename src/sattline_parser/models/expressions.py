@@ -1,10 +1,14 @@
-"""Typed AST nodes for SattLine expressions and statements.
+"""Typed AST nodes for SattLine expressions, statements, and comments.
 
-All nodes are frozen dataclasses — safe to hash, compare, and serialise.
-Every node carries an optional ``span`` (:class:`SourceSpan`, from
-``ast_model``) recording the source position of the construct's first token;
-parsed nodes always have it set, manually constructed nodes default to
-``None``.
+All nodes are frozen dataclasses, so they are safe to hash, compare, and
+serialise. Every node carries an optional ``span`` (:class:`SourceSpan`)
+recording the source position of the construct's first token; parsed nodes
+always have it set, manually constructed nodes default to ``None``.
+
+``CodeComment`` lives here rather than in ``ast_model`` so the property maps
+can refer to it without importing the module that owns the root nodes.
+``ast_model`` re-exports it, so ``BasePicture`` and the ``CodeItem`` alias
+keep one canonical class.
 
 Expression type hierarchy
 --------------------------
@@ -26,7 +30,9 @@ SLExpression = VarRef | bool | IntLiteral | FloatLiteral | str
 Statement type hierarchy
 -------------------------
 SLStmt = Assignment | FuncCallStmt | IfStmt
-       (+ CodeComment from ast_model, kept as CodeItem alias there)
+
+  A preserved ``CodeComment`` is a code item, not a statement; see ``CodeItem``
+  in ``ast_model``.
 
   Assignment    — variable = expression
   FuncCallStmt  — call as standalone statement (no assignment target)
@@ -39,12 +45,13 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Literal
 
 if TYPE_CHECKING:
-    from .ast_model import CodeComment, SourceSpan
+    from .ast_model import SourceSpan
 
 __all__ = [
     "Assignment",
     "BinOp",
     "BoolOp",
+    "CodeComment",
     "Compare",
     "FuncCall",
     "FuncCallStmt",
@@ -56,6 +63,35 @@ __all__ = [
     "UnaryOp",
     "VarRef",
 ]
+
+
+# ---------------------------------------------------------------------------
+# Preserved comments
+# ---------------------------------------------------------------------------
+
+
+@dataclass(frozen=True)
+class CodeComment:
+    """A preserved SattLine ``(* ... *)`` comment classified by syntactic role.
+
+    ``text`` holds the full lossless comment text including the ``(*`` and
+    ``*)`` delimiters; ``content`` is the inner text without the delimiters.
+    """
+
+    text: str
+    span: SourceSpan | None = None
+
+    @property
+    def content(self) -> str:
+        inner = self.text
+        if inner.startswith("(*"):
+            inner = inner[2:]
+        if inner.endswith("*)"):
+            inner = inner[:-2]
+        return inner
+
+    def __str__(self) -> str:
+        return self.text
 
 
 # ---------------------------------------------------------------------------
@@ -199,6 +235,7 @@ class IfStmt:
     span: SourceSpan | None = None
 
 
-# Convenience type alias for statement nodes (CodeComment excluded here
-# to avoid circular import; use CodeItem from ast_model for the full set).
+# Convenience type alias for statement nodes. ``CodeComment`` is deliberately
+# absent: a comment is a code item, not a statement. Use ``CodeItem`` from
+# ``ast_model`` for the full set of items a code list can hold.
 type SLStmt = Assignment | FuncCallStmt | IfStmt

@@ -2,10 +2,11 @@
 
 The supported public surface is the names listed in
 `sattline_parser.__all__`, `sattline_parser.api.__all__`,
-`sattline_parser.models.__all__`, `sattline_parser.validation.__all__`,
-`sattline_parser.project.__all__`, and `sattline_parser.builtins.__all__`, plus
-the documented `sattline` command and its JSON schemas. Submodule paths not
-listed there are internal and may change between releases.
+`sattline_parser.ast.__all__`, `sattline_parser.models.__all__`,
+`sattline_parser.validation.__all__`, `sattline_parser.project.__all__`, and
+`sattline_parser.builtins.__all__`, plus the documented `sattline` command and
+its JSON schemas. Submodule paths not listed there are internal and may change
+between releases.
 
 ## Two import doors
 
@@ -13,14 +14,16 @@ listed there are internal and may change between releases.
 flowchart LR
     TOP["sattline_parser<br/>top-level __all__"] --> CORE["parse and preprocess surface"]
     TOP --> TYPES["AST and diagnostic types"]
+    TOP --> GRAPH["graphics entry points"]
     TOP --> FUZZ["lazy fuzz exports"]
+    AST["sattline_parser.ast<br/>full model surface"] --> TYPES
     FAÇADE["sattline_parser.api"] --> CORE
-    FAÇADE --> GRAPH["graphics entry points"]
     FAÇADE --> VALID["validate_basepicture"]
 ```
 
 Use the top-level package for ordinary parsing. Use `sattline_parser.api` when
-you want the parser pipeline and graphics entry points in one import.
+you want the parser pipeline in one import. Use `sattline_parser.ast` when you
+need the model itself.
 
 ## Parse and preprocess
 
@@ -80,27 +83,30 @@ registry. `RETIRED_CODES` is derived from it.
 
 ## AST types
 
-The top-level package exports:
+`sattline_parser.ast` is the supported model surface. It re-exports every node,
+clause payload, and tail type together with the traversal helpers:
 
 | Name | Meaning |
 | --- | --- |
 | `BasePicture` | Root node |
 | `SourceSpan` | Original-source range |
-| `SLTransformer` | The tree transformer |
-| `Assignment`, `FuncCallStmt`, `IfStmt` | Statement nodes |
-| `BinOp`, `BoolOp`, `Compare`, `NotOp`, `TernaryOp`, `UnaryOp` | Operator nodes |
-| `FuncCall`, `VarRef` | Call and reference nodes |
-| `SLExpression`, `SLStmt` | Type aliases |
+| `ModuleHeader`, `ModuleDef`, `ModuleCode`, `SingleModule`, `FrameModule`, `ModuleTypeInstance`, `ModuleTypeDef` | Module and layout nodes |
+| `Sequence`, `Equation`, `SFCStep`, `SFCTransition`, and the other `SFC*` nodes | Code and SFC nodes |
+| `Variable`, `DataType`, `ParameterMapping`, `MappingSource` | Declarations |
+| `GraphObject`, `InteractObject`, `GraphicsBinding` | Graphics and interact nodes |
+| `AssignClause`, `EnableClause`, `TailedClause`, `ColourSpec`, `PickButton`, and the other clause payloads | Typed clause payloads |
+| `VarTail`, `LitStringTail`, `Tail` | Bound and computed tails |
 | `walk` | `(node, *, prune=None)` yields every AST node in pre-order |
 | `NodeVisitor` | `visit_<ClassName>` dispatch with `generic_visit` |
 | `WalkEvent` | `(node, relation, parents)` for one visited node; `parents` is a sequence view expanded on access and costs O(depth) per read |
 | `iter_child_nodes` | `(node)` yields `(relation, child)` pairs |
 
-The full model, including module, SFC, graphics, and declaration types, lives
-in `sattline_parser.models`. `models.__all__` is the stable walker surface
-(`walk`, `NodeVisitor`, `WalkEvent`, `iter_child_nodes`). The node class names
-are exported from `models.ast_model.__all__` and `models.expressions.__all__`,
-but those lists and the node classes are outside the stable façade. See
+The top-level package keeps the root, span, expression, statement, and walker
+names for short scripts, and exports `SLTransformer`. The full model, including
+module, SFC, graphics, declaration, clause, and tail types, is published by
+`sattline_parser.ast`. The class names are still importable from
+`sattline_parser.models.ast_model` and `sattline_parser.models.expressions` for
+historical reasons, but the supported import path is `sattline_parser.ast`. See
 [ast.md](ast.md).
 
 ## Graphics
@@ -112,7 +118,7 @@ but those lists and the node classes are outside the stable façade. See
 | `resolve_graphics_companion_path` | `(code_path, *, mode)` | `Path | None` |
 
 These live in `sattline_parser.project` and are re-exported by
-`sattline_parser.api`.
+`sattline_parser`, not by `sattline_parser.api`.
 
 ## Fuzz exports
 

@@ -142,7 +142,7 @@ classDiagram
 
     class ParameterMapping {
         target: VarRef
-        source_type: str
+        source_type: MappingSource
         is_duration: bool
         is_source_global: bool
         source: VarRef | None
@@ -165,6 +165,10 @@ order matters: `State OpSave` is valid, while `OpSave State` and
 
 `datecode` is `None` when the source omitted it. The parser never stamps an
 import date or invents a default. Stamping is a separate consumer operation.
+
+`ParameterMapping.source_type` is a `MappingSource` member: `VARIABLE` for a
+variable or dotted field reference, `VALUE` for a literal or a
+`Duration_Value`/`Time_Value` payload.
 
 ## Code and sequences
 
@@ -408,7 +412,9 @@ original source, even after decoding. See
 `CodeComment.text` is the full lossless comment including `(*` and `*)`.
 `content` is the inner text without the delimiters. Comments are preserved on
 the AST field that matches their syntactic role, not flattened into a global
-list.
+list. The class is defined in `models/expressions.py` and re-exported by
+`models/ast_model.py`, so `CodeItem` and every comment-bearing field use one
+canonical class.
 
 ## Serialization and pickling
 
@@ -424,13 +430,15 @@ decoded into the current model.
 
 ## Traversal
 
-`models/walk.py` is the public traversal. `walk(node)` yields a `WalkEvent` for
-every AST node in pre-order. Each event carries the node, the relation that
-holds it in its parent (for example `localvariables[2]` or
-`branches[0][1]`), and the ancestor chain, root first.
+Import the model through `sattline_parser.ast`. `models/walk.py` is the public
+traversal. `walk(node)` yields a `WalkEvent` for every AST node in pre-order.
+Each event carries the node, the relation that holds it in its parent (for
+example `localvariables[2]` or `branches[0][1]`), and the ancestor chain, root
+first.
 
 ```python
-from sattline_parser import NodeVisitor, VarRef, walk
+from sattline_parser import parse_source_file
+from sattline_parser.ast import NodeVisitor, VarRef, walk
 
 for event in walk(basepicture):
     if isinstance(event.node, VarRef):
@@ -512,4 +520,5 @@ need machine-readable output.
 | `tests/parser/test_parser_core_sfc.py` | SFC node shapes |
 | `tests/parser/test_parser_core_module_definitions.py` | Layout and graphics fields |
 | `tests/parser/test_models_walk.py` | Node coverage, order, ancestry, pruning, visitor dispatch |
+| `tests/parser/test_ast_namespace.py` | Every node type and model dataclass is on the `sattline_parser.ast` surface |
 | `tests/parser/test_parser_core_deep_structures.py` | Deep-tree walk, clean nesting errors, iterative remapping |

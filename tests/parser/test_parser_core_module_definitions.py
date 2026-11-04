@@ -123,7 +123,7 @@ def test_modules_mixin_wrapper_rules_and_invocation_errors():
         [
             ParameterMapping(
                 target=VarRef("Target"),
-                source_type=parser_const.TREE_TAG_VARIABLE_NAME,
+                source_type=MappingSource.VARIABLE,
                 is_source_global=False,
                 is_duration=False,
                 source=VarRef("Source"),
@@ -257,7 +257,7 @@ def test_modules_mixin_layout_helpers_cover_moduledef_and_numeric_errors():
     assert mixin.ZOOMABLE(None) == Zoomable()
     assert mixin.grid([Token("JUNK", ","), 0.5, 1.5]) == Grid(1.5)
     assert mixin.two_layers([Token("JUNK", ":"), 3.0]) == TwoLayers(3.0)
-    assert mixin.moduledef_opts_seq([Grid(0.5), Grid(0.75)]).children == [ModuleOptions(grid=0.75)]
+    assert mixin.moduledef_opts([Grid(0.5), Grid(0.75)]) == ModuleOptions(grid=0.75)
 
     moduledef = mixin.moduledef(
         [

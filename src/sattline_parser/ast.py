@@ -1,0 +1,191 @@
+"""Supported AST surface for the SattLine parser.
+
+This module is the stable import door for the syntax tree. It re-exports every
+node, clause payload, and tail type together with the traversal helpers, so a
+consumer never has to import from ``sattline_parser.models`` submodules, whose
+layout is an implementation detail.
+
+Use it for ordinary tree work::
+
+    from sattline_parser import parse_source_file
+    from sattline_parser.ast import VarRef, walk
+
+    picture = parse_source_file(path)
+    for event in walk(picture):
+        if isinstance(event.node, VarRef):
+            print(event.relation, event.node.name)
+
+``walk`` is node-only. Literal values are leaves; the walker does not emit
+them. ``NodeVisitor`` is the subclassing form, and ``WalkEvent`` carries the
+relation and ancestry of each visited node.
+"""
+
+from __future__ import annotations
+
+from .models.ast_model import (
+    BasePicture,
+    CodeItem,
+    DataType,
+    Equation,
+    FloatLiteral,
+    FrameModule,
+    GraphicsBinding,
+    GraphObject,
+    InteractObject,
+    IntLiteral,
+    MappingSource,
+    ModuleCode,
+    ModuleDef,
+    ModuleHeader,
+    ModuleTypeDef,
+    ModuleTypeInstance,
+    ParameterMapping,
+    Sequence,
+    SFCAlternative,
+    SFCBodyItem,
+    SFCCodeBlocks,
+    SFCFork,
+    SFCParallel,
+    SFCStep,
+    SFCSubsequence,
+    SFCTransition,
+    SFCTransitionSub,
+    Simple_DataType,
+    SingleModule,
+    SourceSpan,
+    Variable,
+)
+from .models.clauses import (
+    AssignClause,
+    ClippingClause,
+    ColourSpec,
+    CommonProperties,
+    CoordBox,
+    CoordPair,
+    EnableClause,
+    FlagClause,
+    Grid,
+    ModuleArguments,
+    ModuleInViewClause,
+    ModuleMarker,
+    ModuleOptions,
+    PickButton,
+    ProcedureCall,
+    ScaleSelector,
+    SeqLayers,
+    TailedClause,
+    TwoLayers,
+    Zoomable,
+    ZoomLimits,
+)
+from .models.expressions import (
+    Assignment,
+    BinOp,
+    BoolOp,
+    CodeComment,
+    Compare,
+    FuncCall,
+    FuncCallStmt,
+    IfStmt,
+    NotOp,
+    SLExpression,
+    SLStmt,
+    TernaryOp,
+    UnaryOp,
+    VarRef,
+)
+from .models.tails import (
+    ClipValue,
+    CoordinateClipping,
+    LitStringTail,
+    Tail,
+    VarTail,
+    is_expression_tail,
+    tail_list,
+)
+from .models.walk import (
+    NodeVisitor,
+    WalkEvent,
+    iter_child_nodes,
+    walk,
+)
+
+__all__ = [
+    "AssignClause",
+    "Assignment",
+    "BasePicture",
+    "BinOp",
+    "BoolOp",
+    "ClipValue",
+    "ClippingClause",
+    "CodeComment",
+    "CodeItem",
+    "ColourSpec",
+    "CommonProperties",
+    "Compare",
+    "CoordBox",
+    "CoordPair",
+    "CoordinateClipping",
+    "DataType",
+    "EnableClause",
+    "Equation",
+    "FlagClause",
+    "FloatLiteral",
+    "FrameModule",
+    "FuncCall",
+    "FuncCallStmt",
+    "GraphObject",
+    "GraphicsBinding",
+    "Grid",
+    "IfStmt",
+    "IntLiteral",
+    "InteractObject",
+    "LitStringTail",
+    "MappingSource",
+    "ModuleArguments",
+    "ModuleCode",
+    "ModuleDef",
+    "ModuleHeader",
+    "ModuleInViewClause",
+    "ModuleMarker",
+    "ModuleOptions",
+    "ModuleTypeDef",
+    "ModuleTypeInstance",
+    "NodeVisitor",
+    "NotOp",
+    "ParameterMapping",
+    "PickButton",
+    "ProcedureCall",
+    "SFCAlternative",
+    "SFCBodyItem",
+    "SFCCodeBlocks",
+    "SFCFork",
+    "SFCParallel",
+    "SFCStep",
+    "SFCSubsequence",
+    "SFCTransition",
+    "SFCTransitionSub",
+    "SLExpression",
+    "SLStmt",
+    "ScaleSelector",
+    "SeqLayers",
+    "Sequence",
+    "Simple_DataType",
+    "SingleModule",
+    "SourceSpan",
+    "Tail",
+    "TailedClause",
+    "TernaryOp",
+    "TwoLayers",
+    "UnaryOp",
+    "VarRef",
+    "VarTail",
+    "Variable",
+    "WalkEvent",
+    "ZoomLimits",
+    "Zoomable",
+    "is_expression_tail",
+    "iter_child_nodes",
+    "tail_list",
+    "walk",
+]

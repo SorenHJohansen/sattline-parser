@@ -8,6 +8,7 @@ from sattline_parser.models.ast_model import (
     FloatLiteral,
     InitValue,
     IntLiteral,
+    MappingSource,
     ModuleHeader,
     ParameterMapping,
     Simple_DataType,
@@ -358,7 +359,7 @@ def _mapping(
 ) -> ParameterMapping:
     return ParameterMapping(
         target=VarRef(target),
-        source_type="value",
+        source_type=MappingSource.VALUE,
         is_duration=is_duration,
         is_source_global=is_global,
         source=VarRef(source) if source else None,

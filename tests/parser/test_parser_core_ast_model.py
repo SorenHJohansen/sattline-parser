@@ -35,7 +35,7 @@ def test_ast_model_helpers_cover_reduce_usage_and_string_formats(monkeypatch: py
         str(
             ParameterMapping(
                 target=VarRef("Target"),
-                source_type=parser_const.TREE_TAG_VARIABLE_NAME,
+                source_type=MappingSource.VARIABLE,
                 is_duration=False,
                 is_source_global=True,
             )
@@ -46,7 +46,7 @@ def test_ast_model_helpers_cover_reduce_usage_and_string_formats(monkeypatch: py
         str(
             ParameterMapping(
                 target=VarRef("Target"),
-                source_type=parser_const.TREE_TAG_VARIABLE_NAME,
+                source_type=MappingSource.VARIABLE,
                 is_duration=False,
                 is_source_global=True,
                 source=VarRef("GlobalSrc"),
@@ -58,7 +58,7 @@ def test_ast_model_helpers_cover_reduce_usage_and_string_formats(monkeypatch: py
         str(
             ParameterMapping(
                 target=VarRef("Target"),
-                source_type=parser_const.TREE_TAG_VARIABLE_NAME,
+                source_type=MappingSource.VARIABLE,
                 is_duration=False,
                 source=VarRef("Source"),
                 is_source_global=False,
@@ -70,7 +70,7 @@ def test_ast_model_helpers_cover_reduce_usage_and_string_formats(monkeypatch: py
         str(
             ParameterMapping(
                 target=VarRef("Target"),
-                source_type=parser_const.KEY_VALUE,
+                source_type=MappingSource.VALUE,
                 is_duration=False,
                 source_literal=42,
                 is_source_global=False,
@@ -82,7 +82,7 @@ def test_ast_model_helpers_cover_reduce_usage_and_string_formats(monkeypatch: py
         str(
             ParameterMapping(
                 target=VarRef("Target"),
-                source_type=parser_const.KEY_VALUE,
+                source_type=MappingSource.VALUE,
                 is_duration=False,
                 is_source_global=False,
             )

@@ -6,7 +6,7 @@ from __future__ import annotations
 
 from typing import Literal, cast
 
-from lark import Token, Tree
+from lark import Token
 
 from sattline_parser.grammar import constants as const
 from sattline_parser.models.ast_model import GraphObject, InteractObject, ModuleDef
@@ -23,13 +23,7 @@ from sattline_parser.models.clauses import (
 )
 from sattline_parser.models.tails import ClipValue, CoordinateClipping, LitStringTail, Tail, VarTail
 
-from ._module_shared import (
-    CoordTail,
-    InterimCoords,
-    TransformerItem,
-    TransformerTree,
-    coord_pair,
-)
+from ._module_shared import CoordTail, InterimCoords, TransformerItem, coord_pair
 
 _OUTVAR_TOKEN = "OUTVAR_PREFIX"  # nosec B105 - grammar token literal, not a credential
 _PREFIX_TOKENS = ("INVAR_PREFIX", _OUTVAR_TOKEN)
@@ -233,10 +227,6 @@ class ModuleLayoutMixin:
     def moduledef_opts(self, items: list[TransformerItem]) -> ModuleOptions:
         """Grammar moduledef_opts -> every module option merged into one payload."""
         return _module_options(items)
-
-    def moduledef_opts_seq(self, items: list[TransformerItem]) -> TransformerTree:
-        """Grammar moduledef_opts_seq -> Tree with the merged option payload."""
-        return Tree(const.TREE_TAG_MODULEDEF_OPTS_SEQ, [_module_options(items)])
 
     @staticmethod
     def _apply_clipping_bounds(module_def: ModuleDef, clause: ClippingClause) -> None:

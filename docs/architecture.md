@@ -14,6 +14,7 @@ flowchart TB
 
     subgraph L5["Public façade"]
         API["api.py"]
+        ASTSURF["ast.py"]
         INIT["__init__.py"]
     end
 
@@ -47,11 +48,12 @@ flowchart TB
     CLI -->|graphics| PROJECT
     API --> SOURCE_IO
     API --> VALIDATION
-    API -->|graphics| PROJECT
     INIT --> API
+    INIT --> ASTSURF
     INIT --> TRANSFORMER
     INIT --> PREPROCESS
     INIT --> VALIDATION
+    ASTSURF --> MODELS
 
     PROJECT --> SOURCE_IO
     PROJECT --> VALIDATION
@@ -89,8 +91,11 @@ The important import-direction rules:
 - `source_io` imports neither `api` nor `project`. It is the shared floor.
 - `project/loader.py` imports `source_io.parse_source_file` and
   `validation.validate_basepicture`. It never imports `api`.
-- `api.py` re-exports `source_io` and the graphics entry points. It is a
-  façade, not an implementation.
+- `api.py` re-exports `source_io`, `errors`, and `validation`. It is a façade,
+  not an implementation. The top-level package re-exports the graphics entry
+  points from the project layer.
+- `ast.py` is a façade over `models/`: every node, clause, tail, and walker
+  name crosses one import door, and it depends on nothing above `models/`.
 - `cli/` imports the public API and the project layer, and duplicates no parse
   or validation behaviour.
 
@@ -99,7 +104,8 @@ The important import-direction rules:
 | Path | Responsibility | Read when |
 | --- | --- | --- |
 | `src/sattline_parser/__init__.py` | Public names, version, lazy fuzz exports | You need the stable import surface |
-| `src/sattline_parser/api.py` | Public façade over `source_io`, `errors`, `validation`, graphics | You add a public entry point |
+| `src/sattline_parser/api.py` | Public façade over `source_io`, `errors`, and `validation` | You add a public parse or validation entry point |
+| `src/sattline_parser/ast.py` | Supported AST surface: every node, clause, tail, and the walker | You import or document the model |
 | `src/sattline_parser/source_io.py` | Parser cache, decoding, the source-to-`BasePicture` pipeline | You change parse orchestration |
 | `src/sattline_parser/source_document.py` | Original/normalized text and offset mapping | You change positions |
 | `src/sattline_parser/errors.py` | Parse-error sentences, structured details, logging | You change diagnostics |

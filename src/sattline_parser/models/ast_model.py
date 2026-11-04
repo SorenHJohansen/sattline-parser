@@ -4,10 +4,9 @@ from __future__ import annotations
 
 import textwrap
 from dataclasses import dataclass, field
-from enum import Enum
+from enum import Enum, StrEnum
 from typing import Any, Literal
 
-from ..grammar import constants as const
 from ..names import fold_identifier
 from ._ast_model_support import (
     InitValue,
@@ -35,6 +34,7 @@ from .expressions import (
     Assignment,
     BinOp,
     BoolOp,
+    CodeComment,
     Compare,
     FuncCall,
     FuncCallStmt,
@@ -75,6 +75,7 @@ __all__ = [
     "IfStmt",
     "IntLiteral",
     "InteractObject",
+    "MappingSource",
     "ModuleCode",
     "ModuleDef",
     "ModuleHeader",
@@ -122,30 +123,6 @@ class SourceSpan:
 
     def __reduce__(self):
         return (type(self), (self.start, self.end, self.line, self.column))
-
-
-@dataclass(frozen=True)
-class CodeComment:
-    """A preserved SattLine ``(* ... *)`` comment classified by syntactic role.
-
-    ``text`` holds the full lossless comment text including the ``(*`` and
-    ``*)`` delimiters; ``content`` is the inner text without the delimiters.
-    """
-
-    text: str
-    span: SourceSpan | None = None
-
-    @property
-    def content(self) -> str:
-        inner = self.text
-        if inner.startswith("(*"):
-            inner = inner[2:]
-        if inner.endswith("*)"):
-            inner = inner[:-2]
-        return inner
-
-    def __str__(self) -> str:
-        return self.text
 
 
 # CodeItem: the element type of Equation.code and SFCCodeBlocks enter/active/exit.
@@ -277,10 +254,21 @@ class DataType:
         return "Datatype{\n" + textwrap.indent("\n".join(lines), "    ") + "}"
 
 
+class MappingSource(StrEnum):
+    """Where the value of a parameter mapping comes from.
+
+    ``VARIABLE`` is a variable or dotted field reference. ``VALUE`` is a
+    literal or a parsed ``Duration_Value``/``Time_Value`` payload.
+    """
+
+    VARIABLE = "variable_name"
+    VALUE = "value"
+
+
 @dataclass
 class ParameterMapping:
     target: VarRef
-    source_type: str
+    source_type: MappingSource
     is_duration: bool
     is_source_global: bool
     source: VarRef | None = None
@@ -295,7 +283,7 @@ class ParameterMapping:
                 return f"{tgt} => GLOBAL {self.source.name}"
             return f"{tgt} => GLOBAL"
 
-        if self.source_type == const.TREE_TAG_VARIABLE_NAME and self.source:
+        if self.source_type is MappingSource.VARIABLE and self.source:
             return f"{tgt} => {self.source.name}"
 
         if self.source_literal is not None:

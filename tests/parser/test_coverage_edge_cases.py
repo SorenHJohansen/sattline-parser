@@ -24,6 +24,7 @@ from sattline_parser.models.ast_model import (
     BasePicture,
     CodeComment,
     CodeItem,
+    MappingSource,
     ModuleHeader,
     ParameterMapping,
     Sequence,
@@ -392,7 +393,7 @@ def test_parser_fuzzer_propagates_internal_exceptions(monkeypatch: pytest.Monkey
 def test_parameter_mapping_str_variable_source() -> None:
     mapping = ParameterMapping(
         target=VarRef("A"),
-        source_type=const.TREE_TAG_VARIABLE_NAME,
+        source_type=MappingSource.VARIABLE,
         is_duration=False,
         is_source_global=False,
         source=VarRef("B"),
@@ -403,7 +404,7 @@ def test_parameter_mapping_str_variable_source() -> None:
 def test_parameter_mapping_global_source() -> None:
     mapping = ParameterMapping(
         target=VarRef("A"),
-        source_type=const.TREE_TAG_VARIABLE_NAME,
+        source_type=MappingSource.VARIABLE,
         is_duration=False,
         is_source_global=True,
     )
