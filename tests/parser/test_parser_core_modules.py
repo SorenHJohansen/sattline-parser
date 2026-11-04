@@ -69,6 +69,7 @@ def test_modules_mixin_module_header_collects_argument_metadata():
 def test_modules_mixin_arguments_collect_every_typed_argument_kind():
     mixin = _ModulesHarness()
     args = mixin.arguments(
+        Meta(),
         [
             Token("JUNK", ","),
             3,
@@ -78,7 +79,7 @@ def test_modules_mixin_arguments_collect_every_typed_argument_kind():
             Zoomable(),
             ModuleMarker("SymbolModule"),
             AssignClause("Field", 1, VarTail("in", "A")),
-        ]
+        ],
     )
 
     assert args == ModuleArguments(
@@ -115,7 +116,7 @@ def test_modules_mixin_coordinate_helpers_preserve_pairs_tails_and_clipping_tree
     assert mixin.origo_size_pair([InterimCoords(coords=(1.0, 2.0)), InterimCoords(coords=(3.0, 4.0))]) == (
         InterimCoords(coords=((1.0, 2.0), (3.0, 4.0)), tails=None)
     )
-    assert mixin.coord_invar_tail([Token("COMMA", ","), "WidthSource"]) == CoordTail("WidthSource")
+    assert mixin.coord_invar_tail(Meta(), [Token("COMMA", ","), "WidthSource"]) == CoordTail("WidthSource")
     assert clipping == CoordinateClipping((ClipValue(1.0),))
 
     with pytest.raises(ValueError, match="coordinates missing REAL values"):

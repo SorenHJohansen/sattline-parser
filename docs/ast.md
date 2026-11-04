@@ -184,6 +184,7 @@ classDiagram
         graph_objects: list[GraphObject]
         interact_objects: list[InteractObject]
         properties: dict
+        span: SourceSpan | None
     }
 
     class GraphObject {
@@ -195,6 +196,7 @@ classDiagram
     class InteractObject {
         type: str
         properties: InteractProperties
+        span: SourceSpan | None
     }
 
     class ModuleCode {
@@ -244,6 +246,13 @@ for `LeftAligned`/`RightAligned`, and the typed clauses (`EnableClause`,
 `ScaleSelector`). Preserved comments are `CodeComment` values. No Lark tree
 reaches a caller, so a consumer reads body entries directly instead of
 unwrapping a grammar node.
+
+Every clause payload, tail, interact object, and module definition also carries
+a `span` (`SourceSpan | None`) recording the source range of the rule that
+produced it. A span is layout metadata: it does not participate in equality, so
+two structurally identical payloads from different files compare equal. Read
+`.span` when you need the provenance. A bound tail exposes the written name
+through `VarTail.bound_name`.
 
 ## SFC nodes
 

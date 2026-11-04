@@ -217,11 +217,16 @@ class _QueryVisitor(NodeVisitor):
 
         The parser records the written symbol but does not evidence how it
         resolves, so the row is deliberately labelled unresolved rather than
-        claiming a declaration. Bound tails carry no source span.
+        claiming a declaration. A quoted ``LitString`` symbol is not a variable
+        path, so it is skipped.
         """
-        name = _bound_tail_name(tail)
+        if isinstance(tail.value, LitStringTail):
+            return
+        name = tail.bound_name
         if name is not None:
-            self.rows.append(QueryRow(kind="references", name=name, detail="unresolved", module=self._module_path()))
+            self.rows.append(
+                QueryRow.at("references", name, span=tail.span, detail="unresolved", module=self._module_path())
+            )
 
     def visit_LitStringTail(self, _tail: LitStringTail) -> None:
         """The owning ``VarTail`` already reported the name."""
@@ -292,13 +297,3 @@ def _symbol(kind: str, name: str, module: str | None, span: m.SourceSpan | None 
 def _graph_object_detail(graph_object: m.GraphObject) -> str:
     layer = graph_object.properties.get("layer")
     return f"layer {layer}" if layer is not None else "graph object"
-
-
-def _bound_tail_name(tail: VarTail) -> str | None:
-    """The symbol a bare bound tail names, or ``None`` for a literal value.
-
-    A ``LitStringTail`` is a quoted symbol, not a variable path, so it is not
-    reported as a variable use.
-    """
-    value = tail.value
-    return value if isinstance(value, str) else None

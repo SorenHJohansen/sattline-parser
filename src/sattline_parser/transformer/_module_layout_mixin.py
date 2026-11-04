@@ -4,7 +4,7 @@
 
 from __future__ import annotations
 
-from typing import Literal, cast
+from typing import Any, Literal, cast
 
 from lark import Token
 
@@ -23,7 +23,7 @@ from sattline_parser.models.clauses import (
 )
 from sattline_parser.models.tails import ClipValue, CoordinateClipping, LitStringTail, Tail, VarTail
 
-from ._module_shared import CoordTail, InterimCoords, TransformerItem, coord_pair
+from ._module_shared import CoordTail, InterimCoords, TransformerItem, coord_pair, meta_span, v_args
 
 _OUTVAR_TOKEN = "OUTVAR_PREFIX"  # nosec B105 - grammar token literal, not a credential
 _PREFIX_TOKENS = ("INVAR_PREFIX", _OUTVAR_TOKEN)
@@ -106,7 +106,8 @@ class ModuleLayoutMixin:
             tails or None,
         )
 
-    def coord_invar_tail(self, items: list[TransformerItem]) -> CoordTail:
+    @v_args(meta=True)
+    def coord_invar_tail(self, meta: Any, items: list[TransformerItem]) -> CoordTail:
         """Grammar coord_invar_tail -> one bound or computed coordinate tail."""
         saw_prefix = False
         direction: Literal["in", "out"] = "in"
@@ -126,7 +127,7 @@ class ModuleLayoutMixin:
             return CoordTail(cast(Tail, value))
         if not isinstance(value, str | bool | int | float | LitStringTail):
             raise ValueError(f"coord_invar_tail expected a literal after InVar_/OutVar_; got: {value!r}")
-        return CoordTail(VarTail(direction, value))
+        return CoordTail(VarTail(direction, value, meta_span(meta)))
 
     def coord_clippingbounds(self, items: list[TransformerItem]) -> CoordinateClipping:
         """Grammar coord_clippingbounds -> the nested clipping specification."""
@@ -161,11 +162,12 @@ class ModuleLayoutMixin:
         """Grammar clip_values -> every nested clipping value."""
         return CoordinateClipping(tuple(item for item in items if isinstance(item, ClipValue)))
 
-    def clippingbounds(self, items: list[TransformerItem]) -> ClippingClause:
+    @v_args(meta=True)
+    def clippingbounds(self, meta: Any, items: list[TransformerItem]) -> ClippingClause:
         """Grammar clippingbounds -> the resolved corners and their corner tails."""
         for item in items:
             if isinstance(item, InterimCoords):
-                return ClippingClause(cast(CoordBox, item.coords), tuple(item.tails or ()))
+                return ClippingClause(cast(CoordBox, item.coords), tuple(item.tails or ()), meta_span(meta))
         raise ValueError("clippingbounds expected a payload; got no items")
 
     def seq_layers(self, items: list[TransformerItem]) -> SeqLayers:
@@ -177,12 +179,13 @@ class ModuleLayoutMixin:
             return SeqLayers(cast(dict[str, float], value))
         raise ValueError(f"seq_layers expected a layer mapping or REAL; got: {value!r}")
 
-    def zoomlimits(self, items: list[TransformerItem]) -> ZoomLimits:
+    @v_args(meta=True)
+    def zoomlimits(self, meta: Any, items: list[TransformerItem]) -> ZoomLimits:
         """Grammar zoomlimits -> min/max zoom values."""
         values = _float_values(items)
         if len(values) < 2:
             raise ValueError(f"zoomlimits expected two REAL values; got: {items!r}")
-        return ZoomLimits(values[-2], values[-1])
+        return ZoomLimits(values[-2], values[-1], meta_span(meta))
 
     def ZOOMABLE(self, _: object) -> Zoomable:
         """Grammar ZOOMABLE -> the module's zoomable marker."""
@@ -257,9 +260,11 @@ class ModuleLayoutMixin:
         if options.grid is not None:
             module_def.grid = options.grid
 
-    def moduledef(self, items: list[TransformerItem]) -> ModuleDef:
+    @v_args(meta=True)
+    def moduledef(self, meta: Any, items: list[TransformerItem]) -> ModuleDef:
         """Grammar moduledef -> ModuleDef with graphics, layout, and interact objects."""
         module_def = ModuleDef()
+        module_def.span = meta_span(meta)
         for it in items:
             if isinstance(it, ClippingClause):
                 self._apply_clipping_bounds(module_def, it)

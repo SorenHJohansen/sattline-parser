@@ -131,7 +131,7 @@ def test_typed_tail_nodes_survive_a_pickle_round_trip() -> None:
 
     assert restored == picture
     assert restored.header.invoke_coord_tails == [VarTail("out", LitStringTail("LitString", "Symbol"))]
-    assert FILE_AST_CACHE_VERSION == 4
+    assert FILE_AST_CACHE_VERSION == 5
 
 
 def test_envelope_round_trip() -> None:

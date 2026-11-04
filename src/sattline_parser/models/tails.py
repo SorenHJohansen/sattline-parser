@@ -8,15 +8,19 @@ The grammar offers two tail shapes:
 
 Both used to arrive as untyped ``str``/``Tree`` items. They are modelled here so
 every consumer can tell a bound tail from an expression without sniffing Lark
-trees.
+trees. A tail carries the source span of the rule that produced it, and a bound
+tail exposes the written name through :attr:`VarTail.bound_name`.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import Literal, TypeGuard
+from dataclasses import dataclass, field
+from typing import TYPE_CHECKING, Literal, TypeGuard
 
 from .expressions import BinOp, BoolOp, Compare, FuncCall, NotOp, SLExpression, TernaryOp, UnaryOp, VarRef
+
+if TYPE_CHECKING:
+    from .ast_model import SourceSpan
 
 __all__ = [
     "ClipValue",
@@ -35,6 +39,7 @@ class LitStringTail:
 
     keyword: str
     text: str
+    span: SourceSpan | None = field(default=None, compare=False, metadata={"layout": True})
 
 
 @dataclass(frozen=True)
@@ -42,11 +47,28 @@ class VarTail:
     """A ``: InVar_ ...`` or ``: OutVar_ ...`` tail.
 
     ``direction`` records which prefix was written, so a consumer no longer has
-    to read it back from a Lark tree node name.
+    to read it back from a Lark tree node name. :attr:`bound_name` is the name
+    the tail binds, or ``None`` when the tail holds a non-name literal.
     """
 
     direction: Literal["in", "out"]
     value: str | bool | int | float | LitStringTail
+    span: SourceSpan | None = field(default=None, compare=False, metadata={"layout": True})
+
+    @property
+    def bound_name(self) -> str | None:
+        """The written name this tail binds, or ``None`` for a literal value.
+
+        A ``str`` value is the quoted name the source wrote. A
+        ``LitStringTail`` is a quoted symbol; its ``text`` is the name. A
+        boolean or numeric value binds no name.
+        """
+        value = self.value
+        if isinstance(value, LitStringTail):
+            return value.text
+        if isinstance(value, str):
+            return value
+        return None
 
 
 @dataclass(frozen=True)

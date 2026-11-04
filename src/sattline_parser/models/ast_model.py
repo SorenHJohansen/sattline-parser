@@ -305,6 +305,8 @@ class GraphObject:
 class InteractObject:
     type: str
     properties: InteractProperties = field(default_factory=interact_properties)
+    #: Source span of the object rule, when positions are propagated.
+    span: SourceSpan | None = field(default=None, compare=False, metadata={"layout": True})
 
 
 @dataclass
@@ -329,6 +331,8 @@ class ModuleDef:
     graph_objects: list[GraphObject] = field(default_factory=graph_object_list)
     interact_objects: list[InteractObject] = field(default_factory=interact_object_list)
     properties: ModuleDefProperties = field(default_factory=module_def_properties)
+    #: Source span of the ``ModuleDef`` block, when positions are propagated.
+    span: SourceSpan | None = field(default=None, compare=False, metadata={"layout": True})
 
     def __str__(self) -> str:
         lines = [

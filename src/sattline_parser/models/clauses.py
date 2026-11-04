@@ -9,7 +9,7 @@ argument list accepted.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Literal
 
 from .expressions import SLExpression
@@ -52,7 +52,7 @@ class Alignment:
     """A ``LeftAligned`` or ``RightAligned`` interactor body line."""
 
     value: Literal["left", "right"]
-    span: SourceSpan | None = None
+    span: SourceSpan | None = field(default=None, compare=False, metadata={"layout": True})
 
 
 @dataclass(frozen=True)
@@ -61,6 +61,7 @@ class EnableClause:
 
     enabled: bool
     tail: Tail | None = None
+    span: SourceSpan | None = field(default=None, compare=False, metadata={"layout": True})
 
 
 @dataclass(frozen=True)
@@ -69,6 +70,7 @@ class ModuleInViewClause:
 
     in_view: bool
     tail: Tail | None = None
+    span: SourceSpan | None = field(default=None, compare=False, metadata={"layout": True})
 
 
 @dataclass(frozen=True)
@@ -78,6 +80,7 @@ class AssignClause:
     name: str
     value: SLExpression
     tail: Tail | None = None
+    span: SourceSpan | None = field(default=None, compare=False, metadata={"layout": True})
 
 
 @dataclass(frozen=True)
@@ -87,6 +90,7 @@ class FlagClause:
     name: str
     extra: str | None = None
     tail: Tail | None = None
+    span: SourceSpan | None = field(default=None, compare=False, metadata={"layout": True})
 
 
 @dataclass(frozen=True)
@@ -96,6 +100,7 @@ class TailedClause:
     key: str
     value: SLExpression
     tail: Tail | None = None
+    span: SourceSpan | None = field(default=None, compare=False, metadata={"layout": True})
 
 
 @dataclass(frozen=True)
@@ -106,6 +111,7 @@ class ColourSpec:
     width: TailedClause | None = None
     assignments: tuple[TailedClause, ...] = ()
     style: TailedClause | None = None
+    span: SourceSpan | None = field(default=None, compare=False, metadata={"layout": True})
 
     @property
     def tails(self) -> tuple[Tail, ...]:
@@ -139,6 +145,7 @@ class ClippingClause:
 
     bounds: CoordBox
     tails: tuple[Tail, ...] = ()
+    span: SourceSpan | None = field(default=None, compare=False, metadata={"layout": True})
 
 
 @dataclass(frozen=True)
@@ -146,6 +153,7 @@ class ScaleSelector:
     """The bare ``Relative_``/``Abs_`` interactor selector."""
 
     mode: Literal["relative", "abs"]
+    span: SourceSpan | None = field(default=None, compare=False, metadata={"layout": True})
 
 
 @dataclass(frozen=True)
@@ -154,6 +162,7 @@ class PickButton:
 
     value: str
     is_reference: bool = False
+    span: SourceSpan | None = field(default=None, compare=False, metadata={"layout": True})
 
 
 @dataclass(frozen=True)
@@ -162,6 +171,7 @@ class ProcedureCall:
 
     name: str
     args: tuple[Tail, ...] = ()
+    span: SourceSpan | None = field(default=None, compare=False, metadata={"layout": True})
 
 
 @dataclass(frozen=True)
@@ -170,6 +180,7 @@ class ZoomLimits:
 
     minimum: float
     maximum: float
+    span: SourceSpan | None = field(default=None, compare=False, metadata={"layout": True})
 
 
 @dataclass(frozen=True)
@@ -182,6 +193,7 @@ class ModuleMarker:
     """A marker-only invocation argument, e.g. ``SymbolModule``."""
 
     kind: str
+    span: SourceSpan | None = field(default=None, compare=False, metadata={"layout": True})
 
 
 @dataclass(frozen=True)
@@ -250,3 +262,4 @@ class ModuleArguments:
     zoomable: bool = False
     markers: tuple[ModuleMarker, ...] = ()
     assigns: tuple[AssignClause, ...] = ()
+    span: SourceSpan | None = field(default=None, compare=False, metadata={"layout": True})
