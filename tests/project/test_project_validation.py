@@ -9,6 +9,7 @@ import pytest
 
 from sattline_parser.api import parse_source_text
 from sattline_parser.project import LoadMode, LoadValidation, SattLineProject
+from sattline_parser.project._cycles import cycle_key, dependency_cycles
 from sattline_parser.project.loader import ProjectLoader
 from sattline_parser.project.models import SattLineProgram
 
@@ -348,6 +349,36 @@ def test_cycles_are_returned_as_paths(tmp_path: Path) -> None:
     _write(root, "B.l", "A\n")
     project = _load(root, "A")
     assert project.cycles() == (("a", "b", "a"),)
+
+
+def test_loader_canonicalises_the_cycle_entry_point(tmp_path: Path) -> None:
+    root = tmp_path / "libs"
+    root.mkdir()
+    _write(root, "A.s", _source("A"))
+    _write(root, "B.s", _source("B"))
+    _write(root, "C.s", _source("C"))
+    _write(root, "A.l", "B\n")
+    _write(root, "B.l", "C\n")
+    _write(root, "C.l", "A\n")
+    project = _load(root, "B")
+    assert project.cycles() == (("a", "b", "c", "a"),)
+
+
+def test_cycle_key_keeps_direction_and_folds_rotation() -> None:
+    assert cycle_key(("a", "b", "c", "a")) == cycle_key(("b", "c", "a", "b")) == ("a", "b", "c")
+    assert cycle_key(("a", "b", "c", "a")) != cycle_key(("a", "c", "b", "a"))
+    assert cycle_key(()) == ()
+
+
+def test_dependency_cycles_does_not_collapse_orderings_with_the_same_members() -> None:
+    edges = (("a", "b"), ("b", "c"), ("c", "a"), ("a", "c"), ("c", "b"), ("b", "a"))
+    assert dependency_cycles(edges) == (
+        ("a", "b", "a"),
+        ("a", "b", "c", "a"),
+        ("a", "c", "a"),
+        ("a", "c", "b", "a"),
+        ("b", "c", "b"),
+    )
 
 
 def test_libraries_reports_every_resolving_root(tmp_path: Path) -> None:

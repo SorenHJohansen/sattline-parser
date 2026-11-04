@@ -32,6 +32,7 @@ from sattline_parser.source_io import parse_source_file, read_text_cp1252
 from sattline_parser.validation import validate_basepicture
 from sattline_parser.validation.diagnostics import Diagnostic, DiagnosticCode
 
+from ._cycles import canonical_cycle, cycle_key
 from .ast_cache import FileASTCache
 from .discovery import ProjectLookup
 from .errors import ArtifactLoadError, DependencyNotFoundError, DependencyParseError, ProjectLoadError
@@ -102,6 +103,7 @@ class ProjectLoader:
         self._loading: list[str] = []
         self._diagnostics: list[LoadDiagnostic] = []
         self._cycles: list[tuple[str, ...]] = []
+        self._cycle_keys: set[tuple[str, ...]] = set()
         self._incomplete: set[str] = set()
         #: name -> datecode -> program keys declaring it. Conflict checks are
         #: scoped to a program's visible closure, so unrelated programs that
@@ -165,14 +167,16 @@ class ProjectLoader:
             # diagnostic and the graph keeps the edge. The path is also recorded
             # as data for consumers that want to display it.
             start = self._loading.index(key)
-            cycle = (*self._loading[start:], key)
-            if cycle not in self._cycles:
+            cycle = canonical_cycle((*self._loading[start:], key))
+            identity = cycle_key(cycle)
+            if identity not in self._cycle_keys:
+                self._cycle_keys.add(identity)
                 self._cycles.append(cycle)
-            self._diagnose(
-                LoadDiagnosticKind.DEPENDENCY_CYCLE,
-                declared_by or name,
-                f"dependency cycle: {' -> '.join(cycle)}",
-            )
+                self._diagnose(
+                    LoadDiagnosticKind.DEPENDENCY_CYCLE,
+                    declared_by or name,
+                    f"dependency cycle: {' -> '.join(cycle)}",
+                )
             return
         self._loading.append(key)
         try:

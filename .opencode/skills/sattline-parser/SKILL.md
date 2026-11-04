@@ -66,6 +66,9 @@ Do not read the whole `docs/` tree up front. Load the matching document.
 - Never edit `src/sattline_parser/builtins/catalogue.json` by hand. Edit
   `scripts/builtin_catalogue_source.json` and run the generator.
 - Keep Python files Pyright strict-clean.
+- No deprecation windows and no compatibility shims. Remove a superseded field,
+  alias, or name in the same breaking release. Bump a cache version and discard
+  old entries instead of reading an older shape.
 - Update `docs/` with the behaviour it describes.
 - Never commit directly to `main`. Use a branch and a pull request.
 - Record behaviour, not origin. Keep third-party names and build details out

@@ -12,6 +12,7 @@ the focused test passes, then the wider gates pass.
 | `tests/cli/` | Every subcommand, exit codes, JSON output, refusal rules |
 | `tests/builtins/` | Catalogue freshness and signature shape |
 | `tests/test_packaging.py` | Installed-package smoke tests outside the parser tree |
+| `benchmarks/` | pytest-benchmark parse and traversal timings, outside the coverage suite |
 | `tests/fixtures/corpus/` | Every fixture is a `.s` source, grouped by expected behaviour |
 | `tests/fixtures/validation/expectations.json` | Golden expectations for validation findings |
 | `tests/conftest.py` | Shared pytest configuration |
@@ -54,7 +55,14 @@ pytest tests/parser -q                      # parser only
 pytest tests/parser/test_parser_core_grammar.py -q
 pytest -q -m "not slow"                     # skip slow tests
 python scripts/check_branch_coverage.py     # full suite plus both coverage gates
+pytest benchmarks --no-cov -q               # parse and traversal benchmarks
+pytest benchmarks --no-cov -q --benchmark-json=benchmark.json
 ```
+
+`benchmarks/` is outside `testpaths`, so the coverage gate never depends on it.
+The benchmark job uploads `benchmark.json` as a CI artifact. It is observational
+and does not fail on a regression because the repository has no committed
+baseline.
 
 `pyproject.toml` configures:
 
@@ -122,7 +130,8 @@ pip install -e ".[dev,fuzz]"   # Linux / FreeBSD only
 ```mermaid
 flowchart LR
     PR["pull request or push"] --> L["lint"]
-    PR --> T["tests 3.12 and 3.13"]
+    PR --> T["tests 3.12, 3.13, and 3.14"]
+    PR --> B["benchmarks"]
     PR --> F["fuzz"]
     PR --> S["security"]
     PR --> D["docs"]
@@ -133,6 +142,8 @@ flowchart LR
     L --> L5["pre-commit"]
     T --> T1["check_branch_coverage.py"]
     T --> T2["coverage.xml exists"]
+    B --> B1["pytest-benchmark"]
+    B --> B2["benchmark.json artifact"]
     F --> F1["corpus regression"]
     F --> F2["random fuzz smoke"]
     S --> S1["pip-audit"]
@@ -165,9 +176,9 @@ A diagram that does not parse fails the job.
 ## Quality commands
 
 ```bash
-ruff check src tests scripts
-ruff format --check src tests scripts
-pyright src tests
+ruff check src tests scripts benchmarks
+ruff format --check src tests scripts benchmarks
+pyright src tests benchmarks
 bandit -q -r src -x tests -c pyproject.toml
 pip-audit
 pre-commit run --all-files

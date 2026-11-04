@@ -9,10 +9,9 @@ containers, SFC nodes, statements, expressions, and the typed clause and tail
 payloads attached to graphics, interact, and module-definition nodes). It
 descends into ``GraphObject.properties``, ``InteractObject.properties``, and
 ``ModuleDef.properties`` in the documented property order below. It does not
-descend into ``ModuleHeader.invocation_arguments`` (marker names only),
-``parse_tree``, or the deprecated ``BasePicture.graphics_*`` and
-``library_dependencies`` fields. Literal values (``bool``, ``int``, ``float``,
-``str``) are leaves and are not visited as nodes.
+descend into ``ModuleHeader.invocation_arguments`` (marker names only) or
+``parse_tree``. Literal values (``bool``, ``int``, ``float``, ``str``) are
+leaves and are not visited as nodes.
 
 Property order:
 

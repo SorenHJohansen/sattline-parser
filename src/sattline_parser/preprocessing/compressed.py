@@ -24,7 +24,6 @@ from sattline_parser.source_document import GENERATED, SourceDocument
 
 __all__ = [
     "SCANNER_TOKENS",
-    "SEED_MAPPING",
     "PreprocessError",
     "decode_compressed",
     "is_compressed",
@@ -47,9 +46,6 @@ _TOKEN_DATA: dict[str, str] = {
 #: Read-only view of the token table: decoding must be a pure function, so no
 #: caller may mutate the mapping that every later decode reads.
 SCANNER_TOKENS: Mapping[str, str] = MappingProxyType(_TOKEN_DATA)
-
-#: Historical name for :data:`SCANNER_TOKENS`, kept for API compatibility.
-SEED_MAPPING: Mapping[str, str] = SCANNER_TOKENS
 
 _MARKER_RE = re.compile(r"#[0-9A-Za-z;:=><?]{1,2}")
 _WHITESPACE_RE = re.compile(r"\s+")
@@ -415,7 +411,7 @@ def preprocess_sl_text(text: str) -> tuple[str, dict[str, str]]:
     marker substitution table; it is **not** a position map. Use
     :func:`preprocess_source` to obtain original-source provenance.
     """
-    mapping = dict(SEED_MAPPING)
+    mapping = dict(SCANNER_TOKENS)
     decoded = decode_compressed(text, mapping)
     return decoded, mapping
 
@@ -433,6 +429,6 @@ def preprocess_source(text: str) -> SourceDocument:
     # heuristic also fires on partially hand-coded text where raw keywords are
     # ordinary source. The two are distinguished per token from the character
     # provenance (see ``grammar.sattline_lexer``).
-    mapping = dict(SEED_MAPPING)
+    mapping = dict(SCANNER_TOKENS)
     decoded, char_map = _decode_with_map(text, mapping)
     return SourceDocument(text, decoded, tuple(char_map))

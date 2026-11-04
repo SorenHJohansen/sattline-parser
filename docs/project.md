@@ -118,6 +118,12 @@ sees a key already in `_loading`, it records the path
 diagnostic, and returns. The graph keeps the edge. Consumers can render the
 path or compare it.
 
+A cycle is identified by its directed node sequence, not by its member set.
+`alpha -> beta -> gamma -> alpha` and `alpha -> gamma -> beta -> alpha` are
+different cycles and are both reported. Rotations of the same sequence describe
+the same cycle, so every path is rotated to start at its smallest node name and
+recorded once. The CLI reports the same canonical paths in edge order.
+
 ## Sidecars
 
 ```mermaid

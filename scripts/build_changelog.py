@@ -1,8 +1,8 @@
 """Assemble ``changelog.d`` fragments into ``CHANGELOG.md``.
 
 A pull request adds one fragment per user-visible change, named
-``<slug>.<type>.md``, where ``type`` is one of the Keep a Changelog headings.
-The fragment holds the bullet text only. Because every PR creates its own
+``<slug>.<type>.md``, where ``type`` is one of the supported Keep a Changelog
+headings. The fragment holds the bullet text only. Because every PR creates its own
 file, two open PRs never edit the same changelog lines.
 
 Usage::
@@ -32,7 +32,6 @@ UNRELEASED_ERROR = "CHANGELOG.md [Unreleased] must stay empty; add a changelog.d
 SECTION_TITLES: dict[str, str] = {
     "added": "Added",
     "changed": "Changed",
-    "deprecated": "Deprecated",
     "removed": "Removed",
     "fixed": "Fixed",
     "security": "Security",

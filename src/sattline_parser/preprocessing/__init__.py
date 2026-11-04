@@ -13,7 +13,6 @@ from __future__ import annotations
 from .coded import decode_coded_stream, is_coded
 from .compressed import (
     SCANNER_TOKENS,
-    SEED_MAPPING,
     PreprocessError,
     decode_compressed,
     is_compressed,
@@ -25,7 +24,6 @@ from .ide_text import MAX_IDE_LINE_LENGTH, render_ide_text
 __all__ = [
     "MAX_IDE_LINE_LENGTH",
     "SCANNER_TOKENS",
-    "SEED_MAPPING",
     "PreprocessError",
     "decode_coded_stream",
     "decode_compressed",

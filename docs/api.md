@@ -30,7 +30,6 @@ you want the parser pipeline and graphics entry points in one import.
 | `parse_source_file` | both | `(path, *, parser=None, transformer=None, debug=None, log_failures=True, retain_parse_tree=False)` | `BasePicture` |
 | `parse_and_validate` | both | same options as `parse_source_text` | `(BasePicture, tuple[Diagnostic, ...])` |
 | `create_parser` | both | `()` | `Lark` |
-| `create_sl_parser` | both | `()` | `Lark` (compatibility alias) |
 | `build_lark_parser` | `api` | `(*, start="start", propagate_positions=True)` | `Lark` |
 | `describe_parse_error` | both | `(exc, source_text, *, source_document=None)` | `ParseErrorDetails` |
 | `SourceTooDeepError` | both | `(limit, *, line=None, column=None, pos_in_stream=None)` | `UnexpectedInput` subclass for an over-deep structure |
@@ -169,8 +168,8 @@ does not encode semantic-version compatibility.
 Within the supported surface:
 
 - Patch releases preserve existing names and behaviour.
-- A breaking change is called out in the changelog and, where practical,
-  deprecated for one release first.
+- A breaking change is called out in the changelog and removed in that release.
+  There is no deprecation window and no compatibility shim.
 - Adding a dataclass field is not breaking.
 - Removing or renaming a field is breaking.
 

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import textwrap
-from dataclasses import MISSING, dataclass, field, fields
+from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Literal
 
@@ -17,7 +17,6 @@ from ._ast_model_support import (
     format_list,
     graph_object_list,
     interact_object_list,
-    library_dependency_map,
     modulecode_list,
     moduledef_list,
     moduletype_def_list,
@@ -450,14 +449,6 @@ class _ModuleBlockViews:
         """The last ``ModuleCode`` block, or ``None`` when the module has none."""
         return self.modulecodes[-1] if self.modulecodes else None
 
-    def __setstate__(self, state: dict[str, Any]) -> None:
-        # Older pickles stored the singular blocks directly. They are derived
-        # views now, so drop the stale keys instead of resurrecting duplicates.
-        state = dict(state)
-        state.pop("moduledef", None)
-        state.pop("modulecode", None)
-        self.__dict__.update(state)
-
 
 @dataclass
 class SingleModule(_ModuleBlockViews):
@@ -545,21 +536,6 @@ class BasePicture(_ModuleBlockViews):
     origin_file: str | None = None
     origin_lib: str | None = None
     graphics_file: str | None = None
-    #: Deprecated consumer transport. The parser never writes these fields;
-    #: graphics data lives on ``SattLineProgram.graphics``. They stay declared
-    #: only so consumers that attach their own views to the AST keep working
-    #: until they move that state into their own graph model.
-    graphics_bindings: list[GraphicsBinding] = field(
-        default_factory=list[GraphicsBinding], metadata={"deprecated": True}
-    )
-    graphics_messages: list[Any] = field(default_factory=list[Any], metadata={"deprecated": True})
-    graphics_composite_records: list[Any] = field(default_factory=list[Any], metadata={"deprecated": True})
-    graphics_composite_occurrences: list[Any] = field(default_factory=list[Any], metadata={"deprecated": True})
-    graphics_picture_display_records: list[Any] = field(default_factory=list[Any], metadata={"deprecated": True})
-    graphics_picture_display_occurrences: list[Any] = field(default_factory=list[Any], metadata={"deprecated": True})
-    library_dependencies: dict[str, list[str]] = field(
-        default_factory=library_dependency_map, metadata={"deprecated": True}
-    )
     trailing_comments: list[CodeComment] = field(default_factory=code_comment_list)
     #: Explicit DateCode_ attribute of the root module definition, when present.
     #: Absent is preserved as ``None``; stamping an import date is a separate
@@ -580,18 +556,6 @@ class BasePicture(_ModuleBlockViews):
         # serializing huge trees.
         state["parse_tree"] = None
         return state
-
-    def __setstate__(self, state: dict[str, Any]) -> None:
-        super().__setstate__(state)
-        for dataclass_field in fields(type(self)):
-            if dataclass_field.name in self.__dict__:
-                continue
-            if dataclass_field.default is not MISSING:
-                self.__dict__[dataclass_field.name] = dataclass_field.default
-                continue
-            default_factory = dataclass_field.default_factory
-            if default_factory is not MISSING:
-                self.__dict__[dataclass_field.name] = default_factory()
 
     def __str__(self) -> str:
         return render_base_picture(self)

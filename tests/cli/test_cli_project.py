@@ -204,3 +204,19 @@ def test_cycles_ignores_a_dag_with_many_converging_paths() -> None:
 
 def test_cycles_reports_a_self_loop() -> None:
     assert _cycles([("a", "a")]) == [["a"]]
+
+
+def test_cycles_preserves_edge_order_instead_of_sorting_members() -> None:
+    assert _cycles([("z", "m"), ("m", "a"), ("a", "z")]) == [["a", "z", "m"]]
+
+
+def test_cycles_keeps_opposite_orderings_with_the_same_members_apart() -> None:
+    edges = [("a", "b"), ("b", "c"), ("c", "a"), ("a", "c"), ("c", "b"), ("b", "a")]
+
+    assert _cycles(edges) == [
+        ["a", "b"],
+        ["a", "b", "c"],
+        ["a", "c"],
+        ["a", "c", "b"],
+        ["b", "c"],
+    ]

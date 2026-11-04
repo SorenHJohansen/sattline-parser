@@ -17,10 +17,10 @@ def _compress(text: str, targets: list[str] | None = None) -> str:
     """
     import re as _re  # noqa: PLC0415
 
-    from sattline_parser.preprocessing import SEED_MAPPING  # noqa: PLC0415
+    from sattline_parser.preprocessing import SCANNER_TOKENS  # noqa: PLC0415
 
     reverse: dict[str, str] = {}
-    for marker, word in SEED_MAPPING.items():
+    for marker, word in SCANNER_TOKENS.items():
         if word and word not in reverse:
             reverse[word] = marker
     if targets is None:
