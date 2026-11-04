@@ -225,15 +225,16 @@ def test_interact_simple_item_extracts_type_from_grammar_tree():
     # must be extracted, never defaulted to "Interact".
     mixin = _GraphicsHarness()
     simple = mixin.interact_simple_item(
+        Meta(),
         [
             "ComBut_",
             InterimCoords(coords=((0.0, 0.0), (1.0, 1.0))),
             [EnableClause(True)],
-        ]
+        ],
     )
     assert simple.type == "ComBut_"
     with pytest.raises(ValueError, match="interact_simple_item expected an interactor type"):
-        mixin.interact_simple_item([InterimCoords(coords=((0.0, 0.0), (1.0, 1.0)))])
+        mixin.interact_simple_item(Meta(), [InterimCoords(coords=((0.0, 0.0), (1.0, 1.0)))])
     with pytest.raises(ValueError, match="interact_type_simple expected an interactor token"):
         mixin.interact_type_simple([])
     assert mixin.interact_type_simple([Token("COMBUT", "ComBut_")]) == "ComBut_"
@@ -241,10 +242,10 @@ def test_interact_simple_item_extracts_type_from_grammar_tree():
 
 def test_interact_scale_selector_maps_relative_and_abs():
     mixin = _GraphicsHarness()
-    assert mixin.interact_scale_selector([Token("RELATIVE_KW", "Relative_")]) == ScaleSelector("relative")
-    assert mixin.interact_scale_selector([Token("ABS_KW", "Abs_")]) == ScaleSelector("abs")
+    assert mixin.interact_scale_selector(Meta(), [Token("RELATIVE_KW", "Relative_")]) == ScaleSelector("relative")
+    assert mixin.interact_scale_selector(Meta(), [Token("ABS_KW", "Abs_")]) == ScaleSelector("abs")
     with pytest.raises(ValueError, match="interact_scale_selector expected"):
-        mixin.interact_scale_selector([Token("NAME", "Other")])
+        mixin.interact_scale_selector(Meta(), [Token("NAME", "Other")])
 
 
 def test_interact_alignment_and_body_rules_return_typed_payloads():
@@ -277,16 +278,16 @@ def test_interact_pick_button_models_literal_and_reference():
     """`IntObjPickButton "=" STRING [VarName]`; VarName is a postfix marker."""
     mixin = _GraphicsHarness()
 
-    literal = mixin.interact_pick_button([Token("INTOBJPICKBUTTON_KW", "IntObjPickButton"), "Pick me"])
+    literal = mixin.interact_pick_button(Meta(), [Token("INTOBJPICKBUTTON_KW", "IntObjPickButton"), "Pick me"])
     assert literal == PickButton("Pick me")
 
     reference = mixin.interact_pick_button(
-        [Token("INTOBJPICKBUTTON_KW", "IntObjPickButton"), "PickVar", Token("VARNAME", "VarName")]
+        Meta(), [Token("INTOBJPICKBUTTON_KW", "IntObjPickButton"), "PickVar", Token("VARNAME", "VarName")]
     )
     assert reference == PickButton("PickVar", is_reference=True)
 
     with pytest.raises(ValueError, match="interact_pick_button expected"):
-        mixin.interact_pick_button([Token("INTOBJPICKBUTTON_KW", "IntObjPickButton")])
+        mixin.interact_pick_button(Meta(), [Token("INTOBJPICKBUTTON_KW", "IntObjPickButton")])
 
 
 def test_interactor_body_accepts_pick_button_and_scale_selector():
@@ -317,8 +318,8 @@ def test_interact_flag_captures_plain_string_name():
     # NAME terminals arrive as plain strings after token coercion; the name
     # must land in "name", not in "tail".
     mixin = _GraphicsHarness()
-    assert mixin.interact_flag(["Int_Value"]) == FlagClause("Int_Value")
-    assert mixin.interact_flag([Token("TEXTOBJECT", "TextObject")]) == FlagClause("TextObject")
+    assert mixin.interact_flag(Meta(), ["Int_Value"]) == FlagClause("Int_Value")
+    assert mixin.interact_flag(Meta(), [Token("TEXTOBJECT", "TextObject")]) == FlagClause("TextObject")
 
 
 def test_common_properties_preserves_layer_enable_and_colour_content():
@@ -353,6 +354,7 @@ def test_combutproc_item_preserves_assignments_flags_enables_layers_and_colours(
     flag = FlagClause("Abs_")
     colour = ColourSpec("outline", assignments=(TailedClause("Colour0", 2),))
     item = mixin.combutproc_item(
+        Meta(),
         [
             InterimCoords(coords=((0.0, 0.0), (1.0, 1.0))),
             mixin.combutproc_tail([3]),
@@ -360,7 +362,7 @@ def test_combutproc_item_preserves_assignments_flags_enables_layers_and_colours(
             mixin.combutproc_tail([enable]),
             mixin.combutproc_tail([flag]),
             mixin.combutproc_tail([colour]),
-        ]
+        ],
     )
     assert item.properties["layers"] == [3]
     assert item.properties["assigns"] == [assign]
@@ -375,10 +377,10 @@ def test_combutproc_item_preserves_assignments_flags_enables_layers_and_colours(
 
 def test_procedure_call_keeps_name_out_of_args():
     mixin = _GraphicsHarness()
-    assert mixin.procedure_call(["OpenValve", 42]) == ProcedureCall("OpenValve", (42,))
+    assert mixin.procedure_call(Meta(), ["OpenValve", 42]) == ProcedureCall("OpenValve", (42,))
     assert mixin.procedure_args([1, Token("COMMA", ","), VarTail("in", "Arg")]) == [1, VarTail("in", "Arg")]
     with pytest.raises(ValueError, match="procedure_call missing name"):
-        mixin.procedure_call([42])
+        mixin.procedure_call(Meta(), [42])
 
 
 def test_tailed_clause_handlers_build_typed_plain_and_tailed_clauses():
@@ -390,43 +392,48 @@ def test_tailed_clause_handlers_build_typed_plain_and_tailed_clauses():
     colour1 = TailedClause(parser_const.GRAMMAR_VALUE_COLOUR1, 3)
 
     assert mixin.format_string_tailed(
-        [Token("FORMATSTRING", parser_const.GRAMMAR_VALUE_FORMAT_STRING), "%d", tail]
+        Meta(), [Token("FORMATSTRING", parser_const.GRAMMAR_VALUE_FORMAT_STRING), "%d", tail]
     ) == TailedClause(parser_const.GRAMMAR_VALUE_FORMAT_STRING, "%d", tail)
     assert mixin.format_string_plain(
-        [Token("FORMATSTRING", parser_const.GRAMMAR_VALUE_FORMAT_STRING), 5]
+        Meta(), [Token("FORMATSTRING", parser_const.GRAMMAR_VALUE_FORMAT_STRING), 5]
     ) == TailedClause(parser_const.GRAMMAR_VALUE_FORMAT_STRING, 5)
     assert mixin.format_string([TailedClause(parser_const.GRAMMAR_VALUE_FORMAT_STRING, 5)]) == TailedClause(
         parser_const.GRAMMAR_VALUE_FORMAT_STRING, 5
     )
-    assert mixin.value_fraction_tailed([Token("VALUEFRACTION", parser_const.GRAMMAR_VALUE_VALUEFRACTION), 2, tail]) == (
-        TailedClause(parser_const.GRAMMAR_VALUE_VALUEFRACTION, 2, tail)
-    )
-    assert mixin.value_fraction_plain([Token("VALUEFRACTION", parser_const.GRAMMAR_VALUE_VALUEFRACTION), 2]) == (
-        TailedClause(parser_const.GRAMMAR_VALUE_VALUEFRACTION, 2)
-    )
+    assert mixin.value_fraction_tailed(
+        Meta(), [Token("VALUEFRACTION", parser_const.GRAMMAR_VALUE_VALUEFRACTION), 2, tail]
+    ) == (TailedClause(parser_const.GRAMMAR_VALUE_VALUEFRACTION, 2, tail))
+    assert mixin.value_fraction_plain(
+        Meta(), [Token("VALUEFRACTION", parser_const.GRAMMAR_VALUE_VALUEFRACTION), 2]
+    ) == (TailedClause(parser_const.GRAMMAR_VALUE_VALUEFRACTION, 2))
     assert mixin.value_fraction([TailedClause(parser_const.GRAMMAR_VALUE_VALUEFRACTION, 2)]) == TailedClause(
         parser_const.GRAMMAR_VALUE_VALUEFRACTION, 2
     )
-    assert mixin.width_tailed([Token("WIDTH_KEY", parser_const.GRAMMAR_VALUE_WIDTH_KEY), 2, tail]) == width
-    assert mixin.width_plain([Token("WIDTH_KEY", parser_const.GRAMMAR_VALUE_WIDTH_KEY), 2]) == TailedClause(
+    assert mixin.width_tailed(Meta(), [Token("WIDTH_KEY", parser_const.GRAMMAR_VALUE_WIDTH_KEY), 2, tail]) == width
+    assert mixin.width_plain(Meta(), [Token("WIDTH_KEY", parser_const.GRAMMAR_VALUE_WIDTH_KEY), 2]) == TailedClause(
         parser_const.GRAMMAR_VALUE_WIDTH_KEY, 2
     )
     assert mixin.width([width]) == width
-    assert mixin.assign_colour_tailed([Token("COLOUR0", parser_const.GRAMMAR_VALUE_COLOUR0), 1, tail]) == colour0
-    assert mixin.assign_colour_plain([Token("COLOUR0", parser_const.GRAMMAR_VALUE_COLOUR0), 1]) == TailedClause(
+    assert (
+        mixin.assign_colour_tailed(Meta(), [Token("COLOUR0", parser_const.GRAMMAR_VALUE_COLOUR0), 1, tail]) == colour0
+    )
+    assert mixin.assign_colour_plain(Meta(), [Token("COLOUR0", parser_const.GRAMMAR_VALUE_COLOUR0), 1]) == TailedClause(
         parser_const.GRAMMAR_VALUE_COLOUR0, 1
     )
     assert mixin.assign_colour([colour0]) == colour0
-    assert mixin.colour_style_tailed([Token("COLOURSTYLE", parser_const.GRAMMAR_VALUE_COLOURSTYLE), 1.5, tail]) == style
-    assert mixin.colour_style_plain([Token("COLOURSTYLE", parser_const.GRAMMAR_VALUE_COLOURSTYLE), 1.5]) == (
+    assert (
+        mixin.colour_style_tailed(Meta(), [Token("COLOURSTYLE", parser_const.GRAMMAR_VALUE_COLOURSTYLE), 1.5, tail])
+        == style
+    )
+    assert mixin.colour_style_plain(Meta(), [Token("COLOURSTYLE", parser_const.GRAMMAR_VALUE_COLOURSTYLE), 1.5]) == (
         TailedClause(parser_const.GRAMMAR_VALUE_COLOURSTYLE, 1.5)
     )
     assert mixin.colour_style([style]) == style
     assert mixin.colour_assignments([colour0, Token("JUNK", ","), colour1]) == (colour0, colour1)
-    assert mixin.outline_colour([width, (colour0, colour1), style]) == ColourSpec(
+    assert mixin.outline_colour(Meta(), [width, (colour0, colour1), style]) == ColourSpec(
         "outline", width=width, assignments=(colour0, colour1), style=style
     )
-    assert mixin.fill_colour([(colour0,)]) == ColourSpec("fill", assignments=(colour0,))
+    assert mixin.fill_colour(Meta(), [(colour0,)]) == ColourSpec("fill", assignments=(colour0,))
     assert mixin.color_properties([ColourSpec("fill")]) == ColourSpec("fill")
 
     with pytest.raises(ValueError, match="tailed clause expected a keyword and a value"):
@@ -528,24 +535,26 @@ def test_graphics_interact_mixin_cover_interact_helpers_and_validation_errors():
     mixin = _GraphicsHarness()
     coords = ((0.0, 0.0), (1.0, 1.0))
     coord_tail = VarTail("in", "CoordTail")
-    proc = mixin.procedure_call([Token("NAME", "ToggleWindow"), "arg1", 2])
+    proc = mixin.procedure_call(Meta(), [Token("NAME", "ToggleWindow"), "arg1", 2])
     assert proc.name == "ToggleWindow"
     # A plain-string name (the real NAME->str coercion) must land in name, not args.
-    assert mixin.procedure_call(["OpenValve", "argA"]) == ProcedureCall("OpenValve", ("argA",))
+    assert mixin.procedure_call(Meta(), ["OpenValve", "argA"]) == ProcedureCall("OpenValve", ("argA",))
     combut = mixin.combutproc_item(
+        Meta(),
         [
             InterimCoords(coords=coords, tails=[coord_tail]),
             proc,
             ProcedureCall("OtherProc"),
-        ]
+        ],
     )
     enable_body = EnableClause(True, VarTail("in", "EnableVar"))
     simple = mixin.interact_simple_item(
+        Meta(),
         [
             "Button_",
             InterimCoords(coords=coords),
             [enable_body],
-        ]
+        ],
     )
 
     assert combut.type == parser_const.GRAMMAR_VALUE_COMBUTPROC
@@ -557,28 +566,31 @@ def test_graphics_interact_mixin_cover_interact_helpers_and_validation_errors():
     assert simple.properties[parser_const.KEY_BODY] == [enable_body]
     assert simple.properties[parser_const.KEY_TAILS] == [VarTail("in", "EnableVar")]
 
-    without_body = mixin.interact_simple_item(["Button_", InterimCoords(coords=coords)])
+    without_body = mixin.interact_simple_item(Meta(), ["Button_", InterimCoords(coords=coords)])
     assert without_body.properties[parser_const.KEY_BODY] is None
 
-    assert mixin.enable([False, VarTail("in", "EnableExpr")]) == EnableClause(False, VarTail("in", "EnableExpr"))
-    assert mixin.enable_combut([False, Compare(VarRef("Flag"), "==", 1)]) == EnableClause(
+    assert mixin.enable(Meta(), [False, VarTail("in", "EnableExpr")]) == EnableClause(
+        False, VarTail("in", "EnableExpr")
+    )
+    assert mixin.enable_combut(Meta(), [False, Compare(VarRef("Flag"), "==", 1)]) == EnableClause(
         False, Compare(VarRef("Flag"), "==", 1)
     )
     assert mixin.enable_expression([Token("JUNK", "="), "Expr"]) == "Expr"
-    assert mixin.module_in_view([True, VarTail("out", "Visible")]) == ModuleInViewClause(
+    assert mixin.module_in_view(Meta(), [True, VarTail("out", "Visible")]) == ModuleInViewClause(
         True, VarTail("out", "Visible")
     )
-    assert mixin.interact_assign_variable_tailed(["Setpoint", 5, VarTail("out", "OutVar")]) == AssignClause(
+    assert mixin.interact_assign_variable_tailed(Meta(), ["Setpoint", 5, VarTail("out", "OutVar")]) == AssignClause(
         "Setpoint", 5, VarTail("out", "OutVar")
     )
-    assert mixin.interact_assign_variable_plain(["Setpoint", 5]) == AssignClause("Setpoint", 5)
+    assert mixin.interact_assign_variable_plain(Meta(), ["Setpoint", 5]) == AssignClause("Setpoint", 5)
     assert mixin.interact_assign_variable([AssignClause("Setpoint", 5)]) == AssignClause("Setpoint", 5)
     assert mixin.interact_flag(
+        Meta(),
         [
             Token(parser_const.KEY_NAME, "Abs_"),
             Token(parser_const.KEY_STRING, "label"),
             VarTail("in", "InVar"),
-        ]
+        ],
     ) == FlagClause("Abs_", "label", VarTail("in", "InVar"))
     assert mixin.interact_value_line([1]) == 1
     assert mixin.layer_info([Token("JUNK", ":"), 4]) == 4
@@ -591,9 +603,9 @@ def test_graphics_interact_mixin_cover_interact_helpers_and_validation_errors():
     with pytest.raises(ValueError, match="interact_assign_variable expected"):
         mixin.interact_assign_variable(["bad"])
     with pytest.raises(ValueError, match="interact assignment expected a name and a value"):
-        mixin.interact_assign_variable_plain([])
+        mixin.interact_assign_variable_plain(Meta(), [])
     with pytest.raises(ValueError, match="interact_flag expected a flag name"):
-        mixin.interact_flag([])
+        mixin.interact_flag(Meta(), [])
     with pytest.raises(ValueError, match="interact_value_line expected a value"):
         mixin.interact_value_line([])
     with pytest.raises(ValueError, match="layer_info expected"):

@@ -22,26 +22,27 @@ from sattline_parser.models.clauses import (
 from sattline_parser.models.tails import Tail
 
 from ._module_shared import InterimCoords, TransformerItem, float_tuple, meta_span, v_args
+from ._tokens_mixin import token_span
 
 
 class ModuleHeaderMixin:
     """Mixin providing module header and argument transformation methods."""
 
-    def IGNOREMAXMODULE(self, _: object) -> ModuleMarker:
+    def IGNOREMAXMODULE(self, tok: Token) -> ModuleMarker:
         """Grammar IGNOREMAXMODULE terminal -> the ignore-max marker argument."""
-        return ModuleMarker(const.GRAMMAR_VALUE_IGNOREMAXMODULE)
+        return ModuleMarker(const.GRAMMAR_VALUE_IGNOREMAXMODULE, token_span(tok))
 
-    def LAYERMODULE(self, _: object) -> ModuleMarker:
+    def LAYERMODULE(self, tok: Token) -> ModuleMarker:
         """Grammar LAYERMODULE terminal -> the layer marker argument."""
-        return ModuleMarker(const.GRAMMAR_VALUE_LAYERMODULE)
+        return ModuleMarker(const.GRAMMAR_VALUE_LAYERMODULE, token_span(tok))
 
-    def SYMBOLMODULE(self, _: object) -> ModuleMarker:
+    def SYMBOLMODULE(self, tok: Token) -> ModuleMarker:
         """Grammar SYMBOLMODULE terminal -> the symbol marker argument."""
-        return ModuleMarker(const.GRAMMAR_VALUE_SYMBOLMODULE)
+        return ModuleMarker(const.GRAMMAR_VALUE_SYMBOLMODULE, token_span(tok))
 
-    def NON_ZOOMABLE(self, _: object) -> ModuleMarker:
+    def NON_ZOOMABLE(self, tok: Token) -> ModuleMarker:
         """Grammar NON_ZOOMABLE terminal -> the non-zoomable marker argument."""
-        return ModuleMarker(const.GRAMMAR_VALUE_NON_ZOOMABLE)
+        return ModuleMarker(const.GRAMMAR_VALUE_NON_ZOOMABLE, token_span(tok))
 
     def argument(self, items: list[TransformerItem]) -> TransformerItem | None:
         """Grammar argument rule -> pass through single non-Token child."""
@@ -50,7 +51,8 @@ class ModuleHeaderMixin:
                 return it
         return None
 
-    def arguments(self, items: list[TransformerItem]) -> ModuleArguments:
+    @v_args(meta=True)
+    def arguments(self, meta: Any, items: list[TransformerItem]) -> ModuleArguments:
         """Grammar arguments -> the typed content of the invocation argument list."""
         layer: int | None = None
         enable: EnableClause | None = None
@@ -82,6 +84,7 @@ class ModuleHeaderMixin:
             zoomable=zoomable,
             markers=tuple(markers),
             assigns=tuple(assigns),
+            span=meta_span(meta),
         )
 
     @v_args(meta=True)

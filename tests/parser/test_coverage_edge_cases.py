@@ -14,6 +14,7 @@ from typing import Any, cast
 import pytest
 from lark import Token, Tree
 from lark.exceptions import UnexpectedInput
+from lark.tree import Meta
 
 import sattline_parser
 from sattline_parser import errors as parser_errors
@@ -137,12 +138,13 @@ def test_module_layout_grid_and_def_tails() -> None:
     tail_a = VarTail("in", "a")
     tail_b = VarTail("out", "b")
     module_def = layout.moduledef(
+        Meta(),
         [
             ClippingClause(((0.0, 0.0), (1.0, 1.0)), (tail_a,)),
             ClippingClause(((2.0, 2.0), (3.0, 3.0)), (tail_b,)),
             ModuleOptions(layer_limit=2.0),
             SeqLayers({"top": 1.0}),
-        ]
+        ],
     )
     assert module_def.properties[const.KEY_TAILS] == [tail_a, tail_b]
     assert module_def.seq_layers == {"top": 1.0}

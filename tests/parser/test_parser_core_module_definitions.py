@@ -133,11 +133,15 @@ def test_modules_mixin_wrapper_rules_and_invocation_errors():
 
     assert mixin.module_body(["a"]).data == parser_const.TREE_TAG_MODULE_BODY
     assert mixin.base_module_body(["b"]).data == parser_const.TREE_TAG_BASE_MODULE_BODY
-    assert mixin.IGNOREMAXMODULE(None) == ModuleMarker(parser_const.GRAMMAR_VALUE_IGNOREMAXMODULE)
-    assert mixin.LAYERMODULE(None) == ModuleMarker(parser_const.GRAMMAR_VALUE_LAYERMODULE)
+    assert mixin.IGNOREMAXMODULE(Token("IGNOREMAXMODULE", "IgnoreMaxModule")) == ModuleMarker(
+        parser_const.GRAMMAR_VALUE_IGNOREMAXMODULE
+    )
+    assert mixin.LAYERMODULE(Token("LAYERMODULE", "LayerModule")) == ModuleMarker(
+        parser_const.GRAMMAR_VALUE_LAYERMODULE
+    )
     assert mixin.argument([Token("COMMA", ","), "value"]) == "value"
     assert mixin.argument([Token("COMMA", ",")]) is None
-    assert mixin.arguments([Token("COMMA", ","), 1, ModuleMarker("SymbolModule")]) == ModuleArguments(
+    assert mixin.arguments(Meta(), [Token("COMMA", ","), 1, ModuleMarker("SymbolModule")]) == ModuleArguments(
         layer=1, markers=(ModuleMarker("SymbolModule"),)
     )
     assert mixin.frame_module([]) is True
@@ -242,16 +246,16 @@ def test_modules_mixin_layout_helpers_cover_moduledef_and_numeric_errors():
 
     assert mixin.origo_coord([1, 2, 3]) == [1, 2, 3]
     assert mixin.size([4, 5]) == [4, 5]
-    assert mixin.clippingbounds([InterimCoords(coords=((0.0, 0.0), (1.0, 1.0)), tails=[tail])]) == ClippingClause(
-        ((0.0, 0.0), (1.0, 1.0)), (tail,)
-    )
+    assert mixin.clippingbounds(
+        Meta(), [InterimCoords(coords=((0.0, 0.0), (1.0, 1.0)), tails=[tail])]
+    ) == ClippingClause(((0.0, 0.0), (1.0, 1.0)), (tail,))
     assert mixin.seq_layers([{"top": 1.0}]) == SeqLayers({"top": 1.0})
     assert mixin.seq_layers([2]) == SeqLayers(2.0)
-    assert mixin.zoomlimits([0.5, 2.0]) == ZoomLimits(0.5, 2.0)
+    assert mixin.zoomlimits(Meta(), [0.5, 2.0]) == ZoomLimits(0.5, 2.0)
     with pytest.raises(ValueError, match="zoomlimits expected two REAL values"):
-        mixin.zoomlimits([0.5])
+        mixin.zoomlimits(Meta(), [0.5])
     with pytest.raises(ValueError, match="clippingbounds expected a payload"):
-        mixin.clippingbounds([])
+        mixin.clippingbounds(Meta(), [])
     with pytest.raises(ValueError, match="seq_layers expected a layer mapping"):
         mixin.seq_layers(["bad"])
     assert mixin.ZOOMABLE(None) == Zoomable()
@@ -260,13 +264,14 @@ def test_modules_mixin_layout_helpers_cover_moduledef_and_numeric_errors():
     assert mixin.moduledef_opts([Grid(0.5), Grid(0.75)]) == ModuleOptions(grid=0.75)
 
     moduledef = mixin.moduledef(
+        Meta(),
         [
             ClippingClause(((0.0, 0.0), (1.0, 1.0)), (tail,)),
             [graph],
             [interact],
             ModuleOptions(zoom_limits=ZoomLimits(0.5, 2.0), zoomable=True, grid=0.75, layer_limit=3.0),
             SeqLayers({"top": 1.0}),
-        ]
+        ],
     )
 
     assert moduledef.clipping_bounds == ((0.0, 0.0), (1.0, 1.0))
@@ -286,13 +291,13 @@ def test_modules_mixin_layout_helpers_cover_moduledef_and_numeric_errors():
     assert mixin.moduledef_option([0.5]) == ModuleOptions(grid=0.5)
     opts = mixin.moduledef_opts([option, TwoLayers(3.0)])
     assert opts == ModuleOptions(zoomable=True, grid=0.75, layer_limit=3.0)
-    options_moduledef = mixin.moduledef([opts])
+    options_moduledef = mixin.moduledef(Meta(), [opts])
     assert options_moduledef.zoomable is True
     assert options_moduledef.grid == 0.75
     assert options_moduledef.seq_layers == 3.0
 
     with pytest.raises(ValueError, match="coord_invar_tail expected"):
-        mixin.coord_invar_tail([Token("JUNK", ",")])
+        mixin.coord_invar_tail(Meta(), [Token("JUNK", ",")])
     with pytest.raises(ValueError, match="grid expected a numeric value"):
         mixin.grid(["bad"])
     with pytest.raises(ValueError, match="grid expected at least one numeric value"):
@@ -304,9 +309,11 @@ def test_modules_mixin_layout_rejects_malformed_payloads():
     pair = mixin.origo_size_pair(["ignored", InterimCoords(coords=(1.0, 2.0)), InterimCoords(coords=(3.0, 4.0))])
     assert pair == InterimCoords(coords=((1.0, 2.0), (3.0, 4.0)))
 
-    assert mixin.coord_invar_tail([Token("OUTVAR_PREFIX", "OutVar_"), "Bound"]) == CoordTail(VarTail("out", "Bound"))
+    assert mixin.coord_invar_tail(Meta(), [Token("OUTVAR_PREFIX", "OutVar_"), "Bound"]) == CoordTail(
+        VarTail("out", "Bound")
+    )
     with pytest.raises(ValueError, match="expected a literal after InVar_/OutVar_"):
-        mixin.coord_invar_tail([Token("INVAR_PREFIX", "InVar_"), object()])
+        mixin.coord_invar_tail(Meta(), [Token("INVAR_PREFIX", "InVar_"), object()])
     with pytest.raises(ValueError, match="coord_clippingbounds expected clip values"):
         mixin.coord_clippingbounds([])
     with pytest.raises(ValueError, match="clip_value_tailed expected a REAL value"):

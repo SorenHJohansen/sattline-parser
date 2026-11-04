@@ -11,7 +11,7 @@ from typing import Any, Literal, TypeGuard, cast
 from lark import Token, Tree
 
 from sattline_parser.grammar import constants as const
-from sattline_parser.models.ast_model import GraphObject, InteractObject
+from sattline_parser.models.ast_model import GraphObject, InteractObject, SourceSpan
 from sattline_parser.models.clauses import (
     Alignment,
     AssignClause,
@@ -141,7 +141,7 @@ class _GraphicsInteractMixin:
             if item.colours:
                 properties[const.KEY_COLOURS] = list(item.colours)
 
-    def _tailed_clause(self, items: list[TransformerItem]) -> TailedClause:
+    def _tailed_clause(self, items: list[TransformerItem], span: SourceSpan | None = None) -> TailedClause:
         """Build the typed ``Keyword = value [tail]`` clause a rule produced."""
         key: str | None = None
         value: SLExpression | None = None
@@ -157,7 +157,7 @@ class _GraphicsInteractMixin:
                 tail = cast(Tail, item)
         if key is None or value is None:
             raise ValueError(f"tailed clause expected a keyword and a value; got: {items!r}")
-        return TailedClause(key=key, value=value, tail=tail)
+        return TailedClause(key=key, value=value, tail=tail, span=span)
 
     @staticmethod
     def _single_clause(items: list[TransformerItem]) -> TailedClause:
@@ -166,61 +166,71 @@ class _GraphicsInteractMixin:
                 return item
         raise ValueError(f"expected a tailed clause; got: {items!r}")
 
-    def format_string_tailed(self, items: list[TransformerItem]) -> TailedClause:
+    @v_args(meta=True)
+    def format_string_tailed(self, meta: Any, items: list[TransformerItem]) -> TailedClause:
         """Grammar format_string_tailed -> the format string clause and its tail."""
-        return self._tailed_clause(items)
+        return self._tailed_clause(items, meta_span(meta))
 
-    def format_string_plain(self, items: list[TransformerItem]) -> TailedClause:
+    @v_args(meta=True)
+    def format_string_plain(self, meta: Any, items: list[TransformerItem]) -> TailedClause:
         """Grammar format_string_plain -> the format string clause without a tail."""
-        return self._tailed_clause(items)
+        return self._tailed_clause(items, meta_span(meta))
 
     def format_string(self, items: list[TransformerItem]) -> TailedClause:
         """Grammar format_string -> pass through the typed clause."""
         return self._single_clause(items)
 
-    def value_fraction_tailed(self, items: list[TransformerItem]) -> TailedClause:
+    @v_args(meta=True)
+    def value_fraction_tailed(self, meta: Any, items: list[TransformerItem]) -> TailedClause:
         """Grammar value_fraction_tailed -> the fraction clause and its tail."""
-        return self._tailed_clause(items)
+        return self._tailed_clause(items, meta_span(meta))
 
-    def value_fraction_plain(self, items: list[TransformerItem]) -> TailedClause:
+    @v_args(meta=True)
+    def value_fraction_plain(self, meta: Any, items: list[TransformerItem]) -> TailedClause:
         """Grammar value_fraction_plain -> the fraction clause without a tail."""
-        return self._tailed_clause(items)
+        return self._tailed_clause(items, meta_span(meta))
 
     def value_fraction(self, items: list[TransformerItem]) -> TailedClause:
         """Grammar value_fraction -> pass through the typed clause."""
         return self._single_clause(items)
 
-    def width_tailed(self, items: list[TransformerItem]) -> TailedClause:
+    @v_args(meta=True)
+    def width_tailed(self, meta: Any, items: list[TransformerItem]) -> TailedClause:
         """Grammar width_tailed -> the width clause and its tail."""
-        return self._tailed_clause(items)
+        return self._tailed_clause(items, meta_span(meta))
 
-    def width_plain(self, items: list[TransformerItem]) -> TailedClause:
+    @v_args(meta=True)
+    def width_plain(self, meta: Any, items: list[TransformerItem]) -> TailedClause:
         """Grammar width_plain -> the width clause without a tail."""
-        return self._tailed_clause(items)
+        return self._tailed_clause(items, meta_span(meta))
 
     def width(self, items: list[TransformerItem]) -> TailedClause:
         """Grammar width -> pass through the typed clause."""
         return self._single_clause(items)
 
-    def assign_colour_tailed(self, items: list[TransformerItem]) -> TailedClause:
+    @v_args(meta=True)
+    def assign_colour_tailed(self, meta: Any, items: list[TransformerItem]) -> TailedClause:
         """Grammar assign_colour_tailed -> the colour assignment and its tail."""
-        return self._tailed_clause(items)
+        return self._tailed_clause(items, meta_span(meta))
 
-    def assign_colour_plain(self, items: list[TransformerItem]) -> TailedClause:
+    @v_args(meta=True)
+    def assign_colour_plain(self, meta: Any, items: list[TransformerItem]) -> TailedClause:
         """Grammar assign_colour_plain -> the colour assignment without a tail."""
-        return self._tailed_clause(items)
+        return self._tailed_clause(items, meta_span(meta))
 
     def assign_colour(self, items: list[TransformerItem]) -> TailedClause:
         """Grammar assign_colour -> pass through the typed clause."""
         return self._single_clause(items)
 
-    def colour_style_tailed(self, items: list[TransformerItem]) -> TailedClause:
+    @v_args(meta=True)
+    def colour_style_tailed(self, meta: Any, items: list[TransformerItem]) -> TailedClause:
         """Grammar colour_style_tailed -> the style clause and its tail."""
-        return self._tailed_clause(items)
+        return self._tailed_clause(items, meta_span(meta))
 
-    def colour_style_plain(self, items: list[TransformerItem]) -> TailedClause:
+    @v_args(meta=True)
+    def colour_style_plain(self, meta: Any, items: list[TransformerItem]) -> TailedClause:
         """Grammar colour_style_plain -> the style clause without a tail."""
-        return self._tailed_clause(items)
+        return self._tailed_clause(items, meta_span(meta))
 
     def colour_style(self, items: list[TransformerItem]) -> TailedClause:
         """Grammar colour_style -> pass through the typed clause."""
@@ -230,7 +240,12 @@ class _GraphicsInteractMixin:
         """Grammar colour_assignments -> every colour assignment in order."""
         return tuple(item for item in items if isinstance(item, TailedClause))
 
-    def _colour_spec(self, kind: Literal["outline", "fill"], items: list[TransformerItem]) -> ColourSpec:
+    def _colour_spec(
+        self,
+        kind: Literal["outline", "fill"],
+        items: list[TransformerItem],
+        span: SourceSpan | None = None,
+    ) -> ColourSpec:
         width: TailedClause | None = None
         assignments: tuple[TailedClause, ...] = ()
         style: TailedClause | None = None
@@ -242,15 +257,17 @@ class _GraphicsInteractMixin:
                     style = item
             elif isinstance(item, tuple):
                 assignments = cast(tuple[TailedClause, ...], item)
-        return ColourSpec(kind=kind, width=width, assignments=assignments, style=style)
+        return ColourSpec(kind=kind, width=width, assignments=assignments, style=style, span=span)
 
-    def outline_colour(self, items: list[TransformerItem]) -> ColourSpec:
+    @v_args(meta=True)
+    def outline_colour(self, meta: Any, items: list[TransformerItem]) -> ColourSpec:
         """Grammar outline_colour -> the typed outline colour block."""
-        return self._colour_spec("outline", items)
+        return self._colour_spec("outline", items, meta_span(meta))
 
-    def fill_colour(self, items: list[TransformerItem]) -> ColourSpec:
+    @v_args(meta=True)
+    def fill_colour(self, meta: Any, items: list[TransformerItem]) -> ColourSpec:
         """Grammar fill_colour -> the typed fill colour block."""
-        return self._colour_spec("fill", items)
+        return self._colour_spec("fill", items, meta_span(meta))
 
     def color_properties(self, items: list[TransformerItem]) -> ColourSpec:
         """Grammar color_properties -> pass through the single colour block."""
@@ -436,7 +453,8 @@ class _GraphicsInteractMixin:
             return item
         raise ValueError("combutproc_tail expected a tail item; got no items")
 
-    def combutproc_item(self, items: list[TransformerItem]) -> InteractObject:
+    @v_args(meta=True)
+    def combutproc_item(self, meta: Any, items: list[TransformerItem]) -> InteractObject:
         """Grammar combutproc_item -> InteractObject (COMBUTPROC with coordinates and procedure)."""
         coords: list[CoordPair | CoordBox] = []
         procedure: ProcedureCall | None = None
@@ -477,13 +495,18 @@ class _GraphicsInteractMixin:
         tails = _tails_of(items)
         if tails:
             properties[const.KEY_TAILS] = tails
-        return InteractObject(type=const.GRAMMAR_VALUE_COMBUTPROC, properties=properties)
+        return InteractObject(
+            type=const.GRAMMAR_VALUE_COMBUTPROC,
+            properties=properties,
+            span=meta_span(meta),
+        )
 
     def procedure_args(self, items: list[TransformerItem]) -> list[Tail]:
         """Grammar procedure_args -> one procedure argument per ``proc_atom``."""
         return [cast(Tail, item) for item in items if not isinstance(item, Token)]
 
-    def procedure_call(self, items: list[TransformerItem]) -> ProcedureCall:
+    @v_args(meta=True)
+    def procedure_call(self, meta: Any, items: list[TransformerItem]) -> ProcedureCall:
         """Grammar procedure_call -> procedure name and its argument list."""
         name: str | None = None
         args: list[Tail] = []
@@ -496,9 +519,9 @@ class _GraphicsInteractMixin:
                 args.append(cast(Tail, it))
         if name is None:
             raise ValueError(f"procedure_call missing name; got: {items!r}")
-        return ProcedureCall(name=name, args=tuple(args))
+        return ProcedureCall(name=name, args=tuple(args), span=meta_span(meta))
 
-    def _enable_clause(self, items: list[TransformerItem]) -> EnableClause:
+    def _enable_clause(self, items: list[TransformerItem], span: SourceSpan | None = None) -> EnableClause:
         enabled = True
         tail: Tail | None = None
         for item in items:
@@ -508,9 +531,10 @@ class _GraphicsInteractMixin:
                 enabled = item
             else:
                 tail = cast(Tail, item)
-        return EnableClause(enabled=enabled, tail=tail)
+        return EnableClause(enabled=enabled, tail=tail, span=span)
 
-    def enable(self, items: list[TransformerItem]) -> EnableClause:
+    @v_args(meta=True)
+    def enable(self, meta: Any, items: list[TransformerItem]) -> EnableClause:
         """Grammar enable -> ENABLE_PREFIX '=' BOOL (invar | enable_expression)?
 
         The tail is optional: `Enable_ = True` is legal on a graph object. When
@@ -518,22 +542,25 @@ class _GraphicsInteractMixin:
         expression, the latter written by the compressor as
         `Enable_ = True : ( NOT EnableVar)`.
         """
-        return self._enable_clause(items)
+        return self._enable_clause(items, meta_span(meta))
 
-    def enable_interact(self, items: list[TransformerItem]) -> EnableClause:
+    @v_args(meta=True)
+    def enable_interact(self, meta: Any, items: list[TransformerItem]) -> EnableClause:
         """Grammar enable_interact -> ENABLE_PREFIX '=' BOOL invar.
 
         Interact objects require the InVar_/OutVar_ tail and reject a
         parenthesised one with AliasSym Expected, which is why this is a
         separate rule from `enable`.
         """
-        return self._enable_clause(items)
+        return self._enable_clause(items, meta_span(meta))
 
-    def enable_combut(self, items: list[TransformerItem]) -> EnableClause:
+    @v_args(meta=True)
+    def enable_combut(self, meta: Any, items: list[TransformerItem]) -> EnableClause:
         """Grammar enable_combut -> ENABLE_PREFIX '=' BOOL enable_expression."""
-        return self._enable_clause(items)
+        return self._enable_clause(items, meta_span(meta))
 
-    def module_in_view(self, items: list[TransformerItem]) -> ModuleInViewClause:
+    @v_args(meta=True)
+    def module_in_view(self, meta: Any, items: list[TransformerItem]) -> ModuleInViewClause:
         """Grammar module_in_view -> MODULE_IN_VIEW_KW '=' BOOL [tail].
 
         The value accepts True/False only and is stored in a field of its own:
@@ -548,7 +575,7 @@ class _GraphicsInteractMixin:
                 in_view = item
             else:
                 tail = cast(Tail, item)
-        return ModuleInViewClause(in_view=in_view, tail=tail)
+        return ModuleInViewClause(in_view=in_view, tail=tail, span=meta_span(meta))
 
     def enable_expression(self, items: list[TransformerItem]) -> Tail:
         """Grammar enable_expression -> expression within enable context."""
@@ -585,7 +612,8 @@ class _GraphicsInteractMixin:
                 body.append(cast(InteractBodyEntry, item))
         return body
 
-    def interact_simple_item(self, items: list[TransformerItem]) -> InteractObject:
+    @v_args(meta=True)
+    def interact_simple_item(self, meta: Any, items: list[TransformerItem]) -> InteractObject:
         """Grammar interact_simple_item -> InteractObject (button, checkbox, textbox, etc.)."""
         itype: str | None = None
         coords: list[CoordPair | CoordBox] = []
@@ -607,9 +635,9 @@ class _GraphicsInteractMixin:
         tails = _tails_of(items)
         if tails:
             properties[const.KEY_TAILS] = tails
-        return InteractObject(type=itype, properties=properties)
+        return InteractObject(type=itype, properties=properties, span=meta_span(meta))
 
-    def _assign_clause(self, items: list[TransformerItem]) -> AssignClause:
+    def _assign_clause(self, items: list[TransformerItem], span: SourceSpan | None = None) -> AssignClause:
         name: str | None = None
         value: SLExpression | None = None
         tail: Tail | None = None
@@ -622,15 +650,17 @@ class _GraphicsInteractMixin:
                 tail = cast(Tail, item)
         if name is None or value is None:
             raise ValueError(f"interact assignment expected a name and a value; got: {items!r}")
-        return AssignClause(name=name, value=value, tail=tail)
+        return AssignClause(name=name, value=value, tail=tail, span=span)
 
-    def interact_assign_variable_tailed(self, items: list[TransformerItem]) -> AssignClause:
+    @v_args(meta=True)
+    def interact_assign_variable_tailed(self, meta: Any, items: list[TransformerItem]) -> AssignClause:
         """Grammar interact_assign_variable_tailed -> variable assignment with tail."""
-        return self._assign_clause(items)
+        return self._assign_clause(items, meta_span(meta))
 
-    def interact_assign_variable_plain(self, items: list[TransformerItem]) -> AssignClause:
+    @v_args(meta=True)
+    def interact_assign_variable_plain(self, meta: Any, items: list[TransformerItem]) -> AssignClause:
         """Grammar interact_assign_variable_plain -> variable assignment without tail."""
-        return self._assign_clause(items)
+        return self._assign_clause(items, meta_span(meta))
 
     def interact_assign_variable(self, items: list[TransformerItem]) -> AssignClause:
         """Grammar interact_assign_variable -> the typed assignment payload."""
@@ -639,7 +669,8 @@ class _GraphicsInteractMixin:
                 return it
         raise ValueError(f"interact_assign_variable expected an assignment payload; got: {items}")
 
-    def interact_flag(self, items: list[TransformerItem]) -> FlagClause:
+    @v_args(meta=True)
+    def interact_flag(self, meta: Any, items: list[TransformerItem]) -> FlagClause:
         """Grammar interact_flag -> flag with name, optional extra, and tail.
 
         The flag name is the leading NAME terminal, which arrives as a ``str``
@@ -657,17 +688,18 @@ class _GraphicsInteractMixin:
                 tail = cast(Tail, it)
         if name is None:
             raise ValueError(f"interact_flag expected a flag name; got: {items!r}")
-        return FlagClause(name=name, extra=extra, tail=tail)
+        return FlagClause(name=name, extra=extra, tail=tail, span=meta_span(meta))
 
-    def interact_scale_selector(self, items: list[TransformerItem]) -> ScaleSelector:
+    @v_args(meta=True)
+    def interact_scale_selector(self, meta: Any, items: list[TransformerItem]) -> ScaleSelector:
         """Grammar interact_scale_selector -> scale mode."""
         for it in items:
             if isinstance(it, Token):
                 folded = str(it).casefold()
                 if folded == const.GRAMMAR_VALUE_RELATIVE.casefold():
-                    return ScaleSelector("relative")
+                    return ScaleSelector("relative", meta_span(meta))
                 if folded == const.GRAMMAR_VALUE_ABS.casefold():
-                    return ScaleSelector("abs")
+                    return ScaleSelector("abs", meta_span(meta))
         raise ValueError(f"interact_scale_selector expected Relative_/Abs_; got: {items!r}")
 
     @v_args(meta=True)
@@ -683,7 +715,8 @@ class _GraphicsInteractMixin:
             return Alignment("right", meta_span(meta))
         raise ValueError(f"alignment expected LeftAligned/RightAligned; got: {token}")
 
-    def interact_pick_button(self, items: list[TransformerItem]) -> PickButton:
+    @v_args(meta=True)
+    def interact_pick_button(self, meta: Any, items: list[TransformerItem]) -> PickButton:
         """Grammar interact_pick_button -> pick-button clause.
 
         `VarName` is a postfix marker, so the string is a reference when it is
@@ -701,7 +734,7 @@ class _GraphicsInteractMixin:
                 text = it
         if text is None:
             raise ValueError(f"interact_pick_button expected a STRING; got: {items!r}")
-        return PickButton(value=text, is_reference=is_reference)
+        return PickButton(value=text, is_reference=is_reference, span=meta_span(meta))
 
     def interact_value_line(self, items: list[TransformerItem]) -> Tail:
         """Grammar interact_value_line -> the single value or bound tail."""

@@ -108,12 +108,12 @@ sattline query M.s --what sequences --json
 `references` includes variable uses in header, graphics, interact, and
 module-layout annotation tails. A bare bound `InVar_`/`OutVar_` name is reported
 with detail `unresolved` because the parser does not evidence how the name
-resolves; it carries no source span. A `LitString` tail is a quoted symbol, not
-a variable path, and is not reported. Text-object `VarName` references and
-`IntObjPickButton` references are reported with their own details; these rows
-are AST introspection, not a graphics-companion binding, and the validator does
-not diagnose them. The `GroupConn=` name is not a variable use and is not
-listed.
+resolves. The row carries the tail's source span. A `LitString` tail is a quoted
+symbol, not a variable path, and is not reported. Text-object `VarName`
+references and `IntObjPickButton` references are reported with their own
+details; these rows are AST introspection, not a graphics-companion binding,
+and the validator does not diagnose them. The `GroupConn=` name is not a
+variable use and is not listed.
 
 ### `rules`
 

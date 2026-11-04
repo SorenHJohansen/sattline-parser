@@ -10,7 +10,7 @@ from typing import Any, Literal, cast
 from lark import Token
 
 from sattline_parser.grammar import constants as const
-from sattline_parser.models.ast_model import CodeItem
+from sattline_parser.models.ast_model import CodeItem, SourceSpan
 from sattline_parser.models.expressions import (
     Assignment,
     BinOp,
@@ -37,7 +37,7 @@ _OUTVAR_TOKEN = "OUTVAR_PREFIX"  # nosec B105 - grammar token literal, not a cre
 type BoundValue = str | bool | int | float | LitStringTail
 
 
-def _bound_tail(items: list[object]) -> VarTail:
+def _bound_tail(items: list[object], span: SourceSpan | None = None) -> VarTail:
     """Build the ``VarTail`` written by an ``invar``/``invar_tail`` rule."""
     direction: Literal["in", "out"] = "in"
     value: BoundValue | None = None
@@ -50,7 +50,7 @@ def _bound_tail(items: list[object]) -> VarTail:
             value = item
     if value is None:
         raise ValueError(f"invar tail expected a value after InVar_/OutVar_; got: {items!r}")
-    return VarTail(direction, value)
+    return VarTail(direction, value, span)
 
 
 def _passthrough(items: list[object], rule: str) -> object:
@@ -82,15 +82,18 @@ class _ExpressionsMixin:
                 return it
         raise ValueError(f"connected_variable expected a non-Token child; got: {items}")
 
-    def invar(self, items: list[Any]) -> VarTail:
+    @v_args(meta=True)
+    def invar(self, meta: Any, items: list[Any]) -> VarTail:
         """Grammar invar -> the bound ``InVar_``/``OutVar_`` tail."""
-        return _bound_tail(items)
+        return _bound_tail(items, meta_span(meta))
 
-    def invar_tail(self, items: list[Any]) -> VarTail:
+    @v_args(meta=True)
+    def invar_tail(self, meta: Any, items: list[Any]) -> VarTail:
         """Grammar invar_tail -> the bound ``InVar_``/``OutVar_`` tail."""
-        return _bound_tail(items)
+        return _bound_tail(items, meta_span(meta))
 
-    def litstring_tail(self, items: list[Any]) -> LitStringTail:
+    @v_args(meta=True)
+    def litstring_tail(self, meta: Any, items: list[Any]) -> LitStringTail:
         """Grammar litstring_tail -> the quoted-symbol tail."""
         keyword = ""
         text: str | None = None
@@ -101,7 +104,7 @@ class _ExpressionsMixin:
                 text = item
         if text is None:
             raise ValueError(f"litstring_tail expected a STRING; got: {items!r}")
-        return LitStringTail(keyword=keyword, text=text)
+        return LitStringTail(keyword=keyword, text=text, span=meta_span(meta))
 
     def plain_value(self, items: list[Any]) -> SLExpression:
         """Grammar plain_value -> the literal without tail detection."""
