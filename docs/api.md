@@ -94,7 +94,7 @@ clause payload, and tail type together with the traversal helpers:
 | `Sequence`, `Equation`, `SFCStep`, `SFCTransition`, and the other `SFC*` nodes | Code and SFC nodes |
 | `Variable`, `DataType`, `ParameterMapping`, `MappingSource` | Declarations |
 | `GraphObject`, `InteractObject`, `GraphicsBinding` | Graphics and interact nodes |
-| `AssignClause`, `EnableClause`, `TailedClause`, `ColourSpec`, `PickButton`, and the other clause payloads | Typed clause payloads |
+| `AssignClause`, `EnableClause`, `TailedClause`, `ColourSpec`, `PickButton`, `Alignment`, `InteractBodyEntry`, and the other clause payloads | Typed clause payloads and the interactor body union |
 | `VarTail`, `LitStringTail`, `Tail` | Bound and computed tails |
 | `walk` | `(node, *, prune=None)` yields every AST node in pre-order |
 | `NodeVisitor` | `visit_<ClassName>` dispatch with `generic_visit` |

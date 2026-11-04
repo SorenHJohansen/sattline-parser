@@ -148,9 +148,10 @@ See [transformer.md](transformer.md) for the mixin map.
 
 `parse_source_text` accepts at most `MAX_SOURCE_DEPTH` (256) structural levels.
 The check uses an iterative traversal, so the check itself cannot overflow.
-It follows dataclass fields, containers, and raw grammar trees, so interactor
-property payloads and comment trees are measured too, not only the nodes that
-`walk` visits. A deeper result raises `SourceTooDeepError`, a clean parse
+It follows dataclass fields and containers, so interactor property payloads and
+comment values are measured too, not only the nodes that `walk` visits. A
+grammar tree left in place by a custom transformer is measured through its
+children as well. A deeper result raises `SourceTooDeepError`, a clean parse
 failure with the same sentence and hint shape as any other invalid input.
 
 The limit exists because several consumers still recurse over the parsed

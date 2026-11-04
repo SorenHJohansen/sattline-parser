@@ -100,6 +100,13 @@ def _largest_accepted_chain() -> int:
     return accepted
 
 
+def test_depth_check_measures_a_grammar_tree_left_in_the_result():
+    tree = Tree("start", [Tree("level", [Tree("leaf", [])])])
+
+    assert parser_api._first_too_deep_structure(tree, 2) is not None
+    assert parser_api._first_too_deep_structure(tree, 10) is None
+
+
 def test_deep_left_associative_chain_is_a_clean_parse_error() -> None:
     with pytest.raises(SourceTooDeepError) as exc_info:
         parser_core_parse_source_text(_program(_chain(5000)), log_failures=False)

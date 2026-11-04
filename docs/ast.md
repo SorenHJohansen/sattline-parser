@@ -236,13 +236,14 @@ kept distinct; their effect is not modelled, so only the spelling is preserved.
 are `TypedDict` maps in `models/properties.py`, so the fixed keys are named even
 though the dataclasses expose them as a mapping.
 
-`InteractProperties.body` is `list[Tree[object]] | None`. Each entry is the raw
-grammar tree, not the clause: an `interact_body` entry has the typed clause in
-its children, and `comment`/`comments` and `alignment` entries stay raw trees
-too. A precise union of clause types would require flattening those trees,
-which changes the public AST shape and is a separate design change.
-`models.properties.interact_body_payloads` reads the typed payloads without
-changing the stored shape; the public walker uses it.
+`InteractProperties.body` is `list[InteractBodyEntry] | None`, in source order.
+`InteractBodyEntry` is the closed union of what a body line can produce:
+`int` for `Layer_`, `Tail` for a literal or a bound/computed tail, `Alignment`
+for `LeftAligned`/`RightAligned`, and the typed clauses (`EnableClause`,
+`AssignClause`, `FlagClause`, `TailedClause`, `ColourSpec`, `PickButton`,
+`ScaleSelector`). Preserved comments are `CodeComment` values. No Lark tree
+reaches a caller, so a consumer reads body entries directly instead of
+unwrapping a grammar node.
 
 ## SFC nodes
 
@@ -381,6 +382,9 @@ Type aliases:
 - `CodeItem = Assignment | FuncCallStmt | IfStmt | CodeComment`
 - `SFCBodyItem = SFCStep | SFCTransition | SFCTransitionSub | SFCAlternative |
   SFCParallel | SFCSubsequence | CodeComment`
+- `InteractBodyEntry = int | Tail | Alignment | AssignClause | ColourSpec |
+  EnableClause | FlagClause | PickButton | ScaleSelector | TailedClause |
+  CodeComment`
 
 `IntLiteral` and `FloatLiteral` are `int` and `float` subclasses that carry a
 `span`. They preserve the literal's source position without boxing the value in
@@ -520,5 +524,6 @@ need machine-readable output.
 | `tests/parser/test_parser_core_sfc.py` | SFC node shapes |
 | `tests/parser/test_parser_core_module_definitions.py` | Layout and graphics fields |
 | `tests/parser/test_models_walk.py` | Node coverage, order, ancestry, pruning, visitor dispatch |
+| `tests/parser/test_models_boundary.py` | The model layer imports no Lark module |
 | `tests/parser/test_ast_namespace.py` | Every node type and model dataclass is on the `sattline_parser.ast` surface |
 | `tests/parser/test_parser_core_deep_structures.py` | Deep-tree walk, clean nesting errors, iterative remapping |

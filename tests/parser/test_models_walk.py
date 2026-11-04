@@ -6,8 +6,6 @@ from __future__ import annotations
 import dataclasses
 from pathlib import Path
 
-from lark import Tree
-
 from sattline_parser import NodeVisitor, parse_source_file, walk
 from sattline_parser.models import ast_model, clauses, expressions, iter_child_nodes, tails
 from sattline_parser.models import ast_model as m
@@ -30,7 +28,7 @@ from sattline_parser.models.expressions import (
     UnaryOp,
     VarRef,
 )
-from sattline_parser.models.properties import GraphProperties, InteractProperties, interact_body_payloads
+from sattline_parser.models.properties import GraphProperties, InteractProperties
 from sattline_parser.models.tails import LitStringTail, VarTail
 from sattline_parser.models.walk import _GRAPH_PROPERTY_ORDER, _INTERACT_PROPERTY_ORDER, _NODE_TYPES
 
@@ -333,17 +331,22 @@ def test_walk_emits_a_node_valued_clause() -> None:
     assert [event.relation for event in walk(clause)] == ["", "value"]
 
 
-def test_interact_body_payloads_unwrap_clauses_and_skip_ui_wrappers() -> None:
-    clause = EnableClause(True, VarTail("in", "X"))
-    unknown = Tree("other", ["x"])
-    body = [
-        Tree("interact_body", [clause]),
-        Tree("comments", []),
-        Tree("alignment", []),
-        unknown,
-    ]
+def test_walk_visits_typed_interact_body_entries() -> None:
+    alignment = clauses.Alignment("right")
+    clause = EnableClause(True, VarRef("BodyEnable"))
+    interact = m.InteractObject(
+        "TextBox_",
+        properties={
+            "body": [alignment, clause],
+            "tails": [clause.tail],
+        },
+    )
 
-    assert list(interact_body_payloads(body)) == [clause, unknown]
+    events = list(walk(interact))
+
+    assert [event.relation for event in events if event.node is alignment] == ["properties.body[0]"]
+    assert [event.relation for event in events if event.node is clause] == ["properties.body[1]"]
+    assert [event.relation for event in events if event.node is clause.tail] == ["tail"]
 
 
 def test_walk_handles_a_transition_without_a_condition() -> None:

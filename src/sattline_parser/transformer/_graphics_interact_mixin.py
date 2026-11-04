@@ -13,6 +13,7 @@ from lark import Token, Tree
 from sattline_parser.grammar import constants as const
 from sattline_parser.models.ast_model import GraphObject, InteractObject
 from sattline_parser.models.clauses import (
+    Alignment,
     AssignClause,
     ColourSpec,
     CommonProperties,
@@ -30,7 +31,7 @@ from sattline_parser.models.expressions import SLExpression
 from sattline_parser.models.properties import GraphProperties, InteractBodyEntry, InteractProperties
 from sattline_parser.models.tails import Tail
 
-from ._comments_mixin import is_comment_tree
+from ._comments_mixin import code_comments_from_run, is_comment_tree
 from ._module_shared import InterimCoords, meta_span, v_args
 
 TransformerItem = object
@@ -563,6 +564,27 @@ class _GraphicsInteractMixin:
                 return str(item)
         raise ValueError(f"interact_type_simple expected an interactor token; got: {items!r}")
 
+    def interact_body(self, items: list[TransformerItem]) -> InteractBodyEntry:
+        """Grammar interact_body -> the one typed payload the line produced."""
+        for item in items:
+            if not isinstance(item, Token):
+                return cast(InteractBodyEntry, item)
+        raise ValueError(f"interact_body expected a non-Token child; got: {items!r}")
+
+    def interact_body_seq(self, items: list[TransformerItem]) -> list[InteractBodyEntry]:
+        """Grammar interact_body_seq -> typed body entries in source order.
+
+        A ``comments`` run becomes one ``CodeComment`` per comment, and every
+        other line is already a typed payload when this rule runs.
+        """
+        body: list[InteractBodyEntry] = []
+        for item in items:
+            if is_comment_tree(item):
+                body.extend(code_comments_from_run(item))
+            else:
+                body.append(cast(InteractBodyEntry, item))
+        return body
+
     def interact_simple_item(self, items: list[TransformerItem]) -> InteractObject:
         """Grammar interact_simple_item -> InteractObject (button, checkbox, textbox, etc.)."""
         itype: str | None = None
@@ -573,8 +595,8 @@ class _GraphicsInteractMixin:
                 itype = item
             elif isinstance(item, InterimCoords):
                 coords.append(_coords_value(item.coords))
-            elif isinstance(item, Tree) and item.data == const.TREE_TAG_INTERACT_BODY_SEQ:
-                body.extend(cast(list[InteractBodyEntry], _tree_children(cast(Tree[object], item))))
+            elif isinstance(item, list):
+                body.extend(cast(list[InteractBodyEntry], item))
         if itype is None:
             types = ", ".join(type(x).__name__ for x in items)
             raise ValueError(f"interact_simple_item expected an interactor type token; got: {types}")
@@ -647,6 +669,19 @@ class _GraphicsInteractMixin:
                 if folded == const.GRAMMAR_VALUE_ABS.casefold():
                     return ScaleSelector("abs")
         raise ValueError(f"interact_scale_selector expected Relative_/Abs_; got: {items!r}")
+
+    @v_args(meta=True)
+    def alignment(self, meta: Any, items: list[TransformerItem]) -> Alignment:
+        """Grammar alignment -> the ``LeftAligned``/``RightAligned`` body marker."""
+        token = next((item for item in items if isinstance(item, Token)), None)
+        if token is None:
+            raise ValueError(f"alignment expected LeftAligned/RightAligned; got: {items!r}")
+        folded = str(token).casefold()
+        if folded == const.GRAMMAR_VALUE_LEFTALIGNED.casefold():
+            return Alignment("left", meta_span(meta))
+        if folded == const.GRAMMAR_VALUE_RIGHTALIGNED.casefold():
+            return Alignment("right", meta_span(meta))
+        raise ValueError(f"alignment expected LeftAligned/RightAligned; got: {token}")
 
     def interact_pick_button(self, items: list[TransformerItem]) -> PickButton:
         """Grammar interact_pick_button -> pick-button clause.

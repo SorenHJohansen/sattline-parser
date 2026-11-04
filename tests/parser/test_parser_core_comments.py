@@ -1,6 +1,28 @@
-# pyright: reportUnknownVariableType=false, reportUnknownMemberType=false, reportUnknownArgumentType=false, reportPrivateUsage=false, reportUnusedImport=false
+# pyright: reportUnknownVariableType=false, reportUnknownMemberType=false, reportUnknownArgumentType=false, reportPrivateUsage=false, reportUnusedImport=false, reportArgumentType=false
 # ruff: noqa: F403, F405
+from sattline_parser.transformer._comments_mixin import build_code_comment, code_comments_from_run
+
 from ._parser_core_test_support import *
+
+
+def test_comment_run_helpers_build_code_comments():
+    inner = [Token("COMMENT_START", "(*"), Token("COMMENT_TEXT", " note "), Token("COMMENT_END", "*)")]
+    comment = Tree("comment", inner)
+
+    assert [c.text for c in code_comments_from_run(Tree("comments", [comment]))] == ["(* note *)"]
+    assert [c.text for c in code_comments_from_run(comment)] == ["(* note *)"]
+    assert code_comments_from_run(["not a tree"]) == []
+    assert code_comments_from_run(Tree("other", [])) == []
+
+    empty = build_code_comment(Tree("comment", []))
+    assert empty.text == ""
+    assert empty.span is None
+
+    positioned = Tree("comment", [Token("COMMENT_TEXT", "x", start_pos=10, line=2, column=3, end_pos=11)])
+    assert build_code_comment(positioned).span == SourceSpan(start=10, end=11, line=2, column=3)
+
+    with pytest.raises(ValueError, match="structural comment tree"):
+        build_code_comment("nope")
 
 
 def test_code_comment_dataclass_exposes_full_text_and_inner_content():
