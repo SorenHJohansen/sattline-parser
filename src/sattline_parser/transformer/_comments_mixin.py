@@ -38,14 +38,19 @@ class CommentsMixin:
         """Return the token stream of a structural ``comment`` tree, in order.
 
         Nested comment trees are unwrapped so the concatenation of token values
-        reconstructs the exact comment source text including delimiters.
+        reconstructs the exact comment source text including delimiters. The
+        traversal uses an explicit stack: comment nesting is structural and is
+        not capped by the lexer, so a recursive helper would overflow on a
+        deeply nested comment.
         """
         pieces: list[Token] = []
-        for child in tree_children(comment_tree):
+        stack: list[object] = list(reversed(tree_children(comment_tree)))
+        while stack:
+            child = stack.pop()
             if isinstance(child, Token):
                 pieces.append(child)
             elif isinstance(child, Tree):
-                pieces.extend(self._comment_pieces(cast(TransformerTree, child)))
+                stack.extend(reversed(tree_children(cast(TransformerTree, child))))
         return pieces
 
     def _build_code_comment(self, items: list[TransformerItem]) -> CodeComment:

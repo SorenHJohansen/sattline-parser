@@ -267,13 +267,15 @@ def _remap_span(target: Token | Meta, doc: SourceDocument) -> bool:
 
 
 def _walk(node: Token | Tree[Token], doc: SourceDocument) -> None:
-    if isinstance(node, Tree):
-        tree_node = node
-        _remap_span(tree_node.meta, doc)
-        for child in tree_node.children:
-            _walk(child, doc)
-    else:
-        _remap_span(node, doc)
+    """Remap every span below *node* with an explicit stack."""
+    stack: list[Token | Tree[Token]] = [node]
+    while stack:
+        current = stack.pop()
+        if isinstance(current, Tree):
+            _remap_span(current.meta, doc)
+            stack.extend(reversed(current.children))
+        else:
+            _remap_span(current, doc)
 
 
 def remap_tree_to_original(tree: Tree[Token], doc: SourceDocument) -> None:

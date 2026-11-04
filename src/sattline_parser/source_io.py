@@ -8,18 +8,20 @@ loads files through it, and the public ``api`` façade re-exports it.
 
 from __future__ import annotations
 
+import dataclasses
 import getpass
 import os
 import sys
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from functools import lru_cache
 from hashlib import sha256
 from pathlib import Path
 from tempfile import gettempdir
-from typing import Protocol, cast
+from typing import NoReturn, Protocol, cast
 
 from lark import Lark, Token, Tree
 from lark import __version__ as lark_version
+from lark.exceptions import VisitError
 
 from sattline_parser.models.ast_model import BasePicture
 from sattline_parser.source_document import remap_parse_error, remap_tree_to_original
@@ -28,6 +30,7 @@ from sattline_parser.validation import Diagnostic, validate_basepicture
 
 from .errors import (
     ParseErrorDetails,
+    SourceTooDeepError,
     _log_parser_failure,  # pyright: ignore[reportPrivateUsage]  # imported for internal use
     describe_parse_error,
 )
@@ -39,7 +42,9 @@ from .preprocessing.coded import decode_coded_stream
 from .preprocessing.compressed import scan_opaque_regions
 
 __all__ = [
+    "MAX_SOURCE_DEPTH",
     "ParseErrorDetails",
+    "SourceTooDeepError",
     "build_lark_parser",
     "create_parser",
     "decode_source_bytes",
@@ -56,6 +61,88 @@ __all__ = [
 
 _CACHE_DIR_MODE = 0o700
 _CACHE_DIR_NAME = "sattline-parser"
+
+#: Maximum number of structural levels accepted from one source.
+#:
+#: ``walk`` is iterative, but validation type inference, the formatter,
+#: dataclass ``repr``/``eq`` and the pickle-based AST cache still recurse.
+#: The check follows every dataclass field, container, and raw grammar tree,
+#: so property payloads such as interactor tails are covered too. A 256-level
+#: structure keeps the recursive consumers inside CPython's default recursion
+#: limit while staying far above any hand-written SattLine expression.
+MAX_SOURCE_DEPTH = 256
+
+
+def _structure_children(value: object) -> Iterator[object]:
+    """Yield the values that a recursive consumer would descend into."""
+    if isinstance(value, Tree):
+        yield from cast(Tree[object], value).children
+    elif isinstance(value, dict):
+        yield from value.values()
+    elif isinstance(value, list | tuple | set | frozenset):
+        yield from value
+    elif dataclasses.is_dataclass(value) and not isinstance(value, type):
+        for structure_field in dataclasses.fields(value):
+            yield getattr(value, structure_field.name)
+
+
+def _first_too_deep_structure(root: object, limit: int) -> object | None:
+    """Return the first value deeper than *limit*, or ``None``.
+
+    The traversal is iterative, so the check itself cannot raise
+    ``RecursionError``. It stops at the first offending value: the exact depth
+    beyond the limit and the rest of the structure do not change the
+    diagnostic.
+    """
+    stack: list[tuple[object, int]] = [(root, 1)]
+    seen: dict[int, int] = {}
+    while stack:
+        current, depth = stack.pop()
+        if depth > limit:
+            return current
+        identity = id(current)
+        if seen.get(identity, 0) >= depth:
+            continue
+        seen[identity] = depth
+        children = [
+            child
+            for child in _structure_children(current)
+            if not isinstance(child, bool | int | float | str | bytes) and child is not None
+        ]
+        for child in reversed(children):
+            stack.append((child, depth + 1))
+    return None
+
+
+def _source_too_deep_error(node: object | None = None) -> SourceTooDeepError:
+    """Build the clean parse failure for an over-deep structure."""
+    line: int | None = None
+    column: int | None = None
+    pos_in_stream: int | None = None
+    if node is not None:
+        span = getattr(node, "span", None)
+        line_value = getattr(span, "line", None)
+        column_value = getattr(span, "column", None)
+        start_value = getattr(span, "start", None)
+        if isinstance(line_value, int):
+            line = line_value
+        if isinstance(column_value, int):
+            column = column_value
+        if isinstance(start_value, int):
+            pos_in_stream = start_value
+    error = SourceTooDeepError(
+        MAX_SOURCE_DEPTH,
+        line=line,
+        column=column,
+        pos_in_stream=pos_in_stream,
+    )
+    if pos_in_stream is not None:
+        # AST spans are already in original coordinates; remapping again would
+        # shift a second time.
+        error._sattline_remapped = True  # type: ignore[attr-defined]
+    return error
+
+
 # ``os.getuid`` is POSIX-only. Resolving it once keeps the platform probe out of
 # the hot path and lets the tests drive both cases on any platform.
 _getuid: Callable[[], int] | None = getattr(os, "getuid", None)
@@ -342,6 +429,60 @@ def load_source_text(
     return _decode_compressed_source(src, debug=debug, source_path=source_path)
 
 
+def _recursion_cause(exc: Exception) -> RecursionError | None:
+    """Return the recursion overflow behind *exc*, including a Lark wrapper."""
+    if isinstance(exc, RecursionError):
+        return exc
+    if isinstance(exc, VisitError) and isinstance(exc.orig_exc, RecursionError):
+        return exc.orig_exc
+    return None
+
+
+def _raise_source_too_deep(
+    stage: str,
+    exc: RecursionError,
+    *,
+    src: str,
+    source_path: Path | None,
+    log_failures: bool,
+) -> NoReturn:
+    """Convert a recursive-stage overflow into the ordinary nesting failure."""
+    deep_error = _source_too_deep_error()
+    if log_failures:
+        _log_parser_failure(stage=stage, exc=deep_error, source_text=src, source_path=source_path)
+    raise deep_error from exc
+
+
+def _reject_too_deep_structure(
+    root: BasePicture,
+    *,
+    src: str,
+    source_path: Path | None,
+    log_failures: bool,
+) -> None:
+    """Raise :class:`SourceTooDeepError` when *root* exceeds the depth limit."""
+    too_deep = _first_too_deep_structure(root, MAX_SOURCE_DEPTH)
+    if too_deep is None:
+        return
+    deep_error = _source_too_deep_error(too_deep)
+    if log_failures:
+        _log_parser_failure(stage="depth", exc=deep_error, source_text=src, source_path=source_path)
+    raise deep_error
+
+
+def _attach_parse_tree(
+    basepic: BasePicture,
+    tree: Tree[Token],
+    debug: Callable[[str], None] | None,
+) -> None:
+    """Attach the retained tree, or report that the picture rejected it."""
+    try:
+        basepic.parse_tree = tree
+    except AttributeError:
+        if debug is not None:
+            debug("BasePicture does not allow dynamic attributes; parse tree not attached")
+
+
 def parse_source_text(
     src: str,
     *,
@@ -365,6 +506,9 @@ def parse_source_text(
       coordinates, so spans always point into ``src`` as given.
     * The tree is handed to an :class:`SLTransformer`, which must return a
       :class:`BasePicture`.
+    * A result whose AST exceeds :data:`MAX_SOURCE_DEPTH` levels is rejected
+      with :class:`SourceTooDeepError` rather than allowed to reach a
+      recursively implemented consumer.
 
     ``parser`` and ``transformer`` default to a shared cached parser and a fresh
     transformer. ``debug`` receives progress messages. ``source_path`` is only
@@ -393,6 +537,10 @@ def parse_source_text(
     try:
         with compact_provenance(provenance):
             tree = parser_runner.parse(source_doc.normalized_text)
+    except RecursionError as exc:
+        # A custom parser or an unusually low interpreter recursion limit can
+        # still overflow. Report it as invalid input, never as a parser crash.
+        _raise_source_too_deep("parse", exc, src=src, source_path=source_path, log_failures=log_failures)
     except Exception as exc:
         remap_parse_error(exc, source_doc)
         if log_failures:
@@ -406,7 +554,10 @@ def parse_source_text(
         raise
 
     # Rewrite every AST-visible position from normalized to original coordinates.
-    remap_tree_to_original(tree, source_doc)
+    try:
+        remap_tree_to_original(tree, source_doc)
+    except RecursionError as exc:
+        _raise_source_too_deep("remap", exc, src=src, source_path=source_path, log_failures=log_failures)
 
     if debug is not None:
         debug("Parse OK, transforming with SLTransformer")
@@ -416,17 +567,18 @@ def parse_source_text(
         if not isinstance(transformed, BasePicture):
             raise RuntimeError("Transform result is not BasePicture; check transformer.start()")
     except Exception as exc:
+        recursion = _recursion_cause(exc)
+        if recursion is not None:
+            _raise_source_too_deep("transform", recursion, src=src, source_path=source_path, log_failures=log_failures)
         if log_failures:
             _log_parser_failure(stage="transform", exc=exc, source_text=src, source_path=source_path)
         raise
 
+    _reject_too_deep_structure(transformed, src=src, source_path=source_path, log_failures=log_failures)
+
     basepic = transformed
     if retain_parse_tree:
-        try:
-            basepic.parse_tree = tree
-        except AttributeError:
-            if debug is not None:
-                debug("BasePicture does not allow dynamic attributes; parse tree not attached")
+        _attach_parse_tree(basepic, tree, debug)
 
     if debug is not None:
         debug(f"Transform result type: {type(basepic).__name__}")

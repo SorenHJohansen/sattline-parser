@@ -86,6 +86,10 @@
   `/release` for the release checklist.
 - `parser-reviewer` is a read-only subagent. It reports findings, it does not
   edit files.
+- Major work gets one `parser-reviewer` pass, not a review loop. Treat a
+  multi-file change, a new public API, or a behavior change as major. Apply the
+  findings, re-run the verification ladder, and stop; request a second review
+  only when the user asks for one.
 - The pull request template is the smallest checklist a change must satisfy.
 - `scripts/check_docs.py` checks relative links and dash punctuation, and
   extracts Mermaid blocks for rendering. The Docs workflow renders every block.
@@ -116,4 +120,4 @@ This repository is public. Describe behavior, not origin.
 
 ## Last Updated
 
-2026-11-03
+2026-11-04

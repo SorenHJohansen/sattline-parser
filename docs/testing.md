@@ -38,6 +38,14 @@ and re-parses every file on each regression run. A new syntax form needs a
 fixture in one of the three directories; a new rule needs an invalid or edge
 case fixture plus a golden expectation.
 
+Deep-structure seeds are part of the corpus: `invalid/DeepExpressionChain.s`
+holds a 5,000-term left-associative sum and must produce `SourceTooDeepError`,
+while `edge_cases/DeepNestedParentheses.s` holds 1,000 nested parentheses and
+`edge_cases/DeeplyNestedComments1000.s` holds 1,000 nested comment pairs, both
+of which must parse. `tests/parser/test_parser_core_deep_structures.py` pins
+them, the iterative walker, the iterative remap, the comment flattening, and
+the `RecursionError` backstop.
+
 ## Running tests
 
 ```bash

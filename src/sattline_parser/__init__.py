@@ -34,6 +34,8 @@ from sattline_parser.validation import Diagnostic, DiagnosticCode, validate_base
 
 from .__version__ import __version__
 from .api import (
+    MAX_SOURCE_DEPTH,
+    SourceTooDeepError,
     create_parser,
     describe_parse_error,
     parse_and_validate,
@@ -94,6 +96,7 @@ def __dir__() -> list[str]:
 
 
 __all__ = [
+    "MAX_SOURCE_DEPTH",
     "Assignment",
     "BasePicture",
     "BinOp",
@@ -111,6 +114,7 @@ __all__ = [
     "SLStmt",
     "SLTransformer",
     "SourceSpan",
+    "SourceTooDeepError",
     "TernaryOp",
     "UnaryOp",
     "VarRef",

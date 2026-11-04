@@ -427,6 +427,19 @@ def test_interact_widgets_fixture_preserves_types_names_and_assignments():
     assert "Variable" in repr(proc_item.properties["assigns"])
 
 
+def test_interact_body_entries_are_raw_grammar_trees():
+    source = _repo_path("tests", "fixtures", "corpus", "valid", "InteractWidgets.s").read_text(encoding="utf-8")
+    bp = parser_core_parse_source_text(source)
+    assert bp.moduledef is not None
+
+    bodies = [item.properties.get(parser_const.KEY_BODY) for item in bp.moduledef.interact_objects]
+    non_empty = [body for body in bodies if body is not None]
+    assert non_empty
+    for body in non_empty:
+        assert all(isinstance(entry, Tree) for entry in body)
+        assert all(entry.data in {"interact_body", "comments", "alignment"} for entry in body)
+
+
 def test_moduledef_options_fixture_preserves_grid_zoom_and_layers():
     source = (
         '"SyntaxVersion"\n'
@@ -464,11 +477,12 @@ def test_graphics_interact_mixin_cover_interact_helpers_and_validation_errors():
             ProcedureCall("OtherProc"),
         ]
     )
+    enable_body = Tree("interact_body", [EnableClause(True, VarTail("in", "EnableVar"))])
     simple = mixin.interact_simple_item(
         [
             "Button_",
             InterimCoords(coords=coords),
-            Tree(parser_const.TREE_TAG_INTERACT_BODY_SEQ, ["body-a", EnableClause(True, VarTail("in", "EnableVar"))]),
+            Tree(parser_const.TREE_TAG_INTERACT_BODY_SEQ, [Tree("interact_body", ["body-a"]), enable_body]),
         ]
     )
 
@@ -478,8 +492,14 @@ def test_graphics_interact_mixin_cover_interact_helpers_and_validation_errors():
     assert combut.properties[parser_const.KEY_TAILS] == [coord_tail]
     assert simple.type == "Button_"
     assert simple.properties[parser_const.KEY_COORDS] == [coords]
-    assert simple.properties[parser_const.KEY_BODY] == ["body-a", EnableClause(True, VarTail("in", "EnableVar"))]
+    assert simple.properties[parser_const.KEY_BODY] == [
+        Tree("interact_body", ["body-a"]),
+        enable_body,
+    ]
     assert simple.properties[parser_const.KEY_TAILS] == [VarTail("in", "EnableVar")]
+
+    without_body = mixin.interact_simple_item(["Button_", InterimCoords(coords=coords)])
+    assert without_body.properties[parser_const.KEY_BODY] is None
 
     assert mixin.enable([False, VarTail("in", "EnableExpr")]) == EnableClause(False, VarTail("in", "EnableExpr"))
     assert mixin.enable_combut([False, Compare(VarRef("Flag"), "==", 1)]) == EnableClause(

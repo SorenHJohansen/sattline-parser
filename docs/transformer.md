@@ -1,15 +1,18 @@
 # Transformer
 
-`SLTransformer` is a Lark `Transformer` that turns the parse tree into the AST
-documented in [ast.md](ast.md). It is assembled from mixins so each file owns
-one responsibility.
+`SLTransformer` is Lark's `Transformer_NonRecursive` that turns the parse tree
+into the AST documented in [ast.md](ast.md). It is assembled from mixins so
+each file owns one responsibility. The non-recursive base reduces the tree with
+an explicit post-order stack, so deeply parenthesized input does not grow the
+Python call stack. Comment token flattening also uses an explicit stack,
+because structural comment nesting is not capped by the lexer.
 
 ## Composition
 
 ```mermaid
 classDiagram
     class SLTransformer
-    class Transformer
+    class Transformer_NonRecursive
     class TokensMixin
     class CommentsMixin
     class ExpressionsMixin
@@ -19,7 +22,7 @@ classDiagram
     class ModuleLayoutMixin
     class GraphicsInteractMixin
 
-    Transformer <|-- SLTransformer
+    Transformer_NonRecursive <|-- SLTransformer
     TokensMixin <|-- SLTransformer
     CommentsMixin <|-- SLTransformer
     ExpressionsMixin <|-- SLTransformer
@@ -43,7 +46,7 @@ class SLTransformer(
     ModuleAssemblyMixin,
     ModuleLayoutMixin,
     GraphicsInteractMixin,
-    Transformer,
+    Transformer_NonRecursive,
 ):
 ```
 
@@ -86,8 +89,10 @@ sequenceDiagram
     X-->>X: BasePicture
 ```
 
-Lark's `Transformer` is bottom-up: children are transformed before their
-parent. Several grammar rules are prefixed with `?`, so Lark inlines them and
+The transformer contract is bottom-up: children are transformed before their
+parent. `Transformer_NonRecursive` preserves that order with an explicit
+post-order stack instead of recursion. Several grammar rules are prefixed with
+`?`, so Lark inlines them and
 the mixin never sees a rule node for them. The mixins are written against the
 actual tree shapes, not against the grammar text alone.
 

@@ -25,7 +25,9 @@ flowchart TB
     N --> O["SLTransformer.transform"]
     O --> P{"result is BasePicture?"}
     P -->|no| Q["RuntimeError"]
-    P -->|yes| R["BasePicture"]
+    P -->|yes| DEPTH{"AST depth over MAX_SOURCE_DEPTH?"}
+    DEPTH -->|yes| DEPTHFAIL["SourceTooDeepError<br/>clean parse failure"]
+    DEPTH -->|no| R["BasePicture"]
     R --> S{"retain_parse_tree?"}
     S -->|yes| T["attach Lark tree"]
     S -->|no| U["return"]
@@ -127,17 +129,43 @@ See [source-provenance.md](source-provenance.md) for the mapping model.
 
 ## Transformation: Lark tree to AST
 
-`SLTransformer` is a Lark `Transformer` assembled from responsibility mixins.
-It consumes the tree after remapping, so every `SourceSpan` it builds already
-points at the original source. `start()` requires exactly one `BasePicture`
-child, attaches the program name found in the header's `program_date_line`,
-and raises `ValueError` with the observed child types if the shape is wrong.
+`SLTransformer` is assembled from responsibility mixins and extends Lark's
+`Transformer_NonRecursive`. It consumes the tree after remapping, so every
+`SourceSpan` it builds already points at the original source. The transformer
+reduces the tree with an explicit post-order stack, so a deeply parenthesized
+parse tree cannot exhaust the Python call stack. `start()` requires exactly one
+`BasePicture` child, attaches the program name found in the header's
+`program_date_line`, and raises `ValueError` with the observed child types if
+the shape is wrong.
 
 `parse_source_text` verifies that the transformer result is a `BasePicture`.
 A transformer that returns anything else is a bug, not invalid input, and
 raises `RuntimeError`.
 
 See [transformer.md](transformer.md) for the mixin map.
+
+## Nesting limit
+
+`parse_source_text` accepts at most `MAX_SOURCE_DEPTH` (256) structural levels.
+The check uses an iterative traversal, so the check itself cannot overflow.
+It follows dataclass fields, containers, and raw grammar trees, so interactor
+property payloads and comment trees are measured too, not only the nodes that
+`walk` visits. A deeper result raises `SourceTooDeepError`, a clean parse
+failure with the same sentence and hint shape as any other invalid input.
+
+The limit exists because several consumers still recurse over the parsed
+structure: validation type inference, `format_expr`, dataclass `repr`/`eq`, and
+the pickle-based AST cache. A 256-level cap keeps all of them inside CPython's
+default recursion limit with margin. The parse tree is separate: the
+non-recursive transformer, the iterative comment flattening, and the iterative
+`remap_tree_to_original` mean a source may be deeply parenthesized or carry
+deeply nested comments even though its AST stays shallow.
+
+`SourceTooDeepError` subclasses Lark's `UnexpectedInput`, so the CLI findings,
+the project loader, the fuzz harness, and the Atheris targets classify it as
+invalid input rather than a parser crash. If a custom parser, custom
+transformer, or unusually low interpreter recursion limit still raises
+`RecursionError`, `parse_source_text` converts it to the same clean error.
 
 ## Entry points
 
@@ -158,6 +186,7 @@ See [transformer.md](transformer.md) for the mixin map.
 | Unknown compressed marker | `PreprocessError` | The text claims a marker the table does not define |
 | Undecodable byte outside a comment | `UnicodeDecodeError` | The file is not cp1252 |
 | Syntax error | Lark `UnexpectedInput` family | The decoded text does not match the grammar |
+| Structure too deep | `SourceTooDeepError` | The parsed structure exceeds the 256-level nesting limit |
 | Transformer defect | `ValueError`, `RuntimeError` | The parse succeeded but the AST could not be built |
 | Unreadable file | `OSError` | The path could not be read |
 
@@ -170,6 +199,8 @@ way by `sattline check` and by the project loader.
 
 - The default parser is cached for the process.
 - Plain text short-circuits both the source map and the tree walk.
+- Parse-tree transformation and position remapping use explicit stacks, so
+  their cost follows the tree size rather than the Python call stack.
 - The Lark cache is opt-in only through the private cache directory. It is
   never written into the source tree.
 - `parse_source_text` reuses a caller-supplied parser and transformer, which is

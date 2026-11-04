@@ -15,14 +15,16 @@ leaves and are not visited as nodes.
 
 The order is deterministic: the declared field order of each node, with list
 elements in source order. It is the same tree every caller sees, so a consumer
-no longer needs to reimplement the recursion.
+no longer needs to reimplement the recursion. The walk uses an explicit stack
+and keeps ancestors as a persistent chain, so a deep tree is walked in linear
+time without growing the Python call stack.
 """
 
 from __future__ import annotations
 
 from collections.abc import Callable, Iterable, Iterator, Sequence
 from dataclasses import dataclass
-from typing import cast
+from typing import cast, overload
 
 from . import ast_model as m
 from .expressions import (
@@ -83,6 +85,89 @@ _NODE_TYPES: tuple[type[object], ...] = (
 )
 
 
+class _AncestorChain:
+    """A persistent root-to-parent chain.
+
+    Extending the chain costs O(1), so a walk does not build one tuple per
+    yielded node. :meth:`to_tuple` expands it only when a caller reads
+    :attr:`WalkEvent.parents`.
+    """
+
+    __slots__ = ("length", "node", "parent")
+
+    def __init__(self, node: object, parent: _AncestorChain | None) -> None:
+        self.node = node
+        self.parent = parent
+        self.length = 1 if parent is None else parent.length + 1
+
+    def to_tuple(self) -> tuple[object, ...]:
+        nodes: list[object] = []
+        current: _AncestorChain | None = self
+        while current is not None:
+            nodes.append(current.node)
+            current = current.parent
+        nodes.reverse()
+        return tuple(nodes)
+
+    @classmethod
+    def from_tuple(cls, parents: tuple[object, ...]) -> _AncestorChain | None:
+        chain: _AncestorChain | None = None
+        for parent in parents:
+            chain = cls(parent, chain)
+        return chain
+
+
+class _Ancestors(Sequence[object]):
+    """A sequence view over a persistent ancestor chain.
+
+    The chain is built in O(1) per step. Iteration, indexing, equality, and
+    repr expand it on demand, so a caller pays O(depth) only when it reads the
+    ancestry.
+    """
+
+    __slots__ = ("_chain",)
+
+    def __init__(self, chain: _AncestorChain | None) -> None:
+        self._chain = chain
+
+    @classmethod
+    def from_tuple(cls, parents: Sequence[object]) -> _Ancestors:
+        return cls(_AncestorChain.from_tuple(tuple(parents)))
+
+    def _as_tuple(self) -> tuple[object, ...]:
+        chain = self._chain
+        return () if chain is None else chain.to_tuple()
+
+    def __len__(self) -> int:
+        chain = self._chain
+        return 0 if chain is None else chain.length
+
+    def __iter__(self) -> Iterator[object]:
+        return iter(self._as_tuple())
+
+    @overload
+    def __getitem__(self, index: int) -> object: ...
+
+    @overload
+    def __getitem__(self, index: slice) -> Sequence[object]: ...
+
+    def __getitem__(self, index: int | slice) -> object | Sequence[object]:
+        return self._as_tuple()[index]
+
+    def __eq__(self, other: object) -> bool:
+        if isinstance(other, _Ancestors):
+            return self._as_tuple() == other._as_tuple()
+        if isinstance(other, tuple | list):
+            return self._as_tuple() == tuple(cast("Sequence[object]", other))
+        return NotImplemented
+
+    def __hash__(self) -> int:
+        return hash(self._as_tuple())
+
+    def __repr__(self) -> str:
+        return repr(self._as_tuple())
+
+
 @dataclass(frozen=True, slots=True)
 class WalkEvent:
     """One node on a ``walk``.
@@ -90,11 +175,17 @@ class WalkEvent:
     ``relation`` names where the node sits inside its parent, for example
     ``"localvariables[2]"`` or ``"branches[0][1]"``. It is the empty string for
     the root. ``parents`` is the ancestor chain, root first and parent last.
+    It behaves like a tuple and expands from a persistent chain on access, so
+    the walk itself stays linear on a deep tree.
     """
 
     node: object
     relation: str
-    parents: tuple[object, ...]
+    parents: Sequence[object] = ()
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.parents, _Ancestors):
+            object.__setattr__(self, "parents", _Ancestors.from_tuple(self.parents))
 
 
 def _listed(prefix: str, values: Iterable[object]) -> Iterator[tuple[str, object]]:
@@ -292,33 +383,35 @@ def _expression_children(node: object) -> Iterator[tuple[str, object]]:
             yield "else_expr", node.else_expr
 
 
-def _walk(
-    node: object,
-    relation: str,
-    parents: tuple[object, ...],
-    prune: Callable[[object], bool] | None,
-) -> Iterator[WalkEvent]:
-    if not isinstance(node, _NODE_TYPES):
-        return
-    yield WalkEvent(node=node, relation=relation, parents=parents)
-    if prune is not None and prune(node):
-        return
-    for child_relation, child in iter_child_nodes(node):
-        yield from _walk(child, child_relation, (*parents, node), prune)
-
-
 def walk(node: object, *, prune: Callable[[object], bool] | None = None) -> Iterator[WalkEvent]:
     """Yield every AST node under ``node`` in pre-order.
 
     ``node`` may be a single model node or a list/tuple of them. ``prune`` is
     consulted after a node is yielded; returning true stops descent into that
-    node's children.
+    node's children. The traversal uses an explicit stack, so a manually built
+    deep AST cannot exhaust the Python call stack.
     """
     if isinstance(node, list | tuple):
-        for index, item in enumerate(cast("Sequence[object]", node)):
-            yield from _walk(item, f"[{index}]", (), prune)
-        return
-    yield from _walk(node, "", (), prune)
+        items = cast("Sequence[object]", node)
+        stack: list[tuple[object, str, _AncestorChain | None]] = [
+            (item, f"[{index}]", None) for index, item in reversed(list(enumerate(items)))
+        ]
+    else:
+        stack = [(node, "", None)]
+
+    while stack:
+        current, relation, ancestors = stack.pop()
+        if not isinstance(current, _NODE_TYPES):
+            continue
+        yield WalkEvent(current, relation, _Ancestors(ancestors))
+        if prune is not None and prune(current):
+            continue
+        children = list(iter_child_nodes(current))
+        if not children:
+            continue
+        child_ancestors = _AncestorChain(current, ancestors)
+        for child_relation, child in reversed(children):
+            stack.append((child, child_relation, child_ancestors))
 
 
 class NodeVisitor:
@@ -326,7 +419,10 @@ class NodeVisitor:
 
     A subclass that overrides a ``visit_*`` method decides whether to descend by
     calling ``self.generic_visit(node)``. The default walk covers every child
-    that ``iter_child_nodes`` reports.
+    that ``iter_child_nodes`` reports. Dispatch is recursive by design, because
+    an override controls its own descent; :func:`walk` is the fully iterative
+    API. Parsed ASTs are bounded by ``source_io.MAX_SOURCE_DEPTH``, so the
+    dispatch stays inside the default recursion limit.
     """
 
     def visit(self, node: object) -> None:

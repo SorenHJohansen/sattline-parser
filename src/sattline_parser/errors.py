@@ -35,6 +35,8 @@ if TYPE_CHECKING:
 #:
 #: ``PreprocessError`` and ``UnicodeError`` are ``ValueError`` subclasses, so the
 #: tuple is effectively ``(LarkError, ValueError, OSError)``.
+#: :class:`SourceTooDeepError` is an ``UnexpectedInput`` subclass and is
+#: therefore covered by the first entry.
 PARSE_FAILURES: tuple[type[Exception], ...] = (
     UnexpectedInput,  # grammar/matcher/transform failures reach the caller as UnexpectedInput
     ValueError,  # preprocess and transformer value errors (PreprocessError included)
@@ -45,11 +47,55 @@ PARSE_FAILURES: tuple[type[Exception], ...] = (
 __all__ = [
     "PARSE_FAILURES",
     "ParseErrorDetails",
+    "SourceTooDeepError",
     "_log_parser_failure",  # imported by source_io as the internal failure logger
     "describe_parse_error",
 ]
 
 log = logging.getLogger("sattline_parser")
+
+
+class SourceTooDeepError(UnexpectedInput):
+    """The parsed structure is nested deeper than the parser supports.
+
+    Subclasses :class:`UnexpectedInput` so every layer that already classifies
+    invalid input (CLI findings, the project loader, the fuzz harness, and the
+    Atheris targets) treats an over-deep source as a parse failure rather than
+    a parser crash. When a position is supplied it is in the original source,
+    matching every other parse failure the public API exposes.
+    """
+
+    def __init__(
+        self,
+        limit: int,
+        *,
+        line: int | None = None,
+        column: int | None = None,
+        pos_in_stream: int | None = None,
+    ) -> None:
+        self.limit = limit
+        if line is not None:
+            self.line = line
+        if column is not None:
+            self.column = column
+        self.pos_in_stream = pos_in_stream  # type: ignore[assignment]  # runtime-only attribute
+        super().__init__(f"the parsed structure is nested too deeply to analyze safely (limit {limit} levels)")
+
+    def __reduce__(self) -> tuple[object, tuple[object, ...]]:
+        """Preserve ``limit`` and the position fields across pickling."""
+        return (
+            _rebuild_source_too_deep,
+            (self.limit, getattr(self, "line", None), getattr(self, "column", None), self.pos_in_stream),
+        )
+
+
+def _rebuild_source_too_deep(
+    limit: int,
+    line: int | None,
+    column: int | None,
+    pos_in_stream: int | None,
+) -> SourceTooDeepError:
+    return SourceTooDeepError(limit, line=line, column=column, pos_in_stream=pos_in_stream)
 
 
 @dataclass(frozen=True, slots=True)
@@ -249,7 +295,15 @@ def describe_parse_error(
             context = _context_at(source_text, mapped).rstrip()
         else:
             context = exc.get_context(source_text, span=40).rstrip()
-        sentence, hint, expected, found = _unexpected_description(exc)
+        if isinstance(exc, SourceTooDeepError):
+            if line is None:
+                context = ""
+            sentence = f"the parsed structure is nested too deeply to analyze safely (limit {exc.limit} levels)"
+            hint = "split the expression into intermediate variables or reduce the nesting"
+            expected = ()
+            found = None
+        else:
+            sentence, hint, expected, found = _unexpected_description(exc)
         parts = [sentence]
         if hint is not None:
             parts.append(f"help: {hint}")

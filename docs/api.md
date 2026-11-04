@@ -33,6 +33,8 @@ you want the parser pipeline and graphics entry points in one import.
 | `create_sl_parser` | both | `()` | `Lark` (compatibility alias) |
 | `build_lark_parser` | `api` | `(*, start="start", propagate_positions=True)` | `Lark` |
 | `describe_parse_error` | both | `(exc, source_text, *, source_document=None)` | `ParseErrorDetails` |
+| `SourceTooDeepError` | both | `(limit, *, line=None, column=None, pos_in_stream=None)` | `UnexpectedInput` subclass for an over-deep structure |
+| `MAX_SOURCE_DEPTH` | both | `256` | Maximum structural depth accepted by `parse_source_text` |
 | `is_compressed` | top-level | `(text)` | `bool` |
 | `preprocess_source` | top-level | `(text)` | `SourceDocument` |
 | `preprocess_sl_text` | top-level | `(text)` | `(decoded_text, marker_mapping)` |
@@ -93,7 +95,7 @@ The top-level package exports:
 | `SLExpression`, `SLStmt` | Type aliases |
 | `walk` | `(node, *, prune=None)` yields every AST node in pre-order |
 | `NodeVisitor` | `visit_<ClassName>` dispatch with `generic_visit` |
-| `WalkEvent` | `(node, relation, parents)` for one visited node |
+| `WalkEvent` | `(node, relation, parents)` for one visited node; `parents` is a sequence view expanded on access and costs O(depth) per read |
 | `iter_child_nodes` | `(node)` yields `(relation, child)` pairs |
 
 The full model, including module, SFC, graphics, and declaration types, lives

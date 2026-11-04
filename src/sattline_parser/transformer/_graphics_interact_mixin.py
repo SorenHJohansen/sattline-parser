@@ -27,7 +27,7 @@ from sattline_parser.models.clauses import (
     TailedClause,
 )
 from sattline_parser.models.expressions import SLExpression
-from sattline_parser.models.properties import GraphProperties, InteractProperties
+from sattline_parser.models.properties import GraphProperties, InteractBodyEntry, InteractProperties
 from sattline_parser.models.tails import Tail
 
 from ._comments_mixin import is_comment_tree
@@ -565,14 +565,14 @@ class _GraphicsInteractMixin:
         """Grammar interact_simple_item -> InteractObject (button, checkbox, textbox, etc.)."""
         itype: str | None = None
         coords: list[CoordPair | CoordBox] = []
-        body: list[object] = []
+        body: list[InteractBodyEntry] = []
         for index, item in enumerate(items):
             if index == 0 and isinstance(item, str):
                 itype = item
             elif isinstance(item, InterimCoords):
                 coords.append(_coords_value(item.coords))
             elif isinstance(item, Tree) and item.data == const.TREE_TAG_INTERACT_BODY_SEQ:
-                body.extend(_tree_children(cast(Tree[object], item)))
+                body.extend(cast(list[InteractBodyEntry], _tree_children(cast(Tree[object], item))))
         if itype is None:
             types = ", ".join(type(x).__name__ for x in items)
             raise ValueError(f"interact_simple_item expected an interactor type token; got: {types}")
