@@ -3,8 +3,12 @@
 The grammar exposes comments through role-specific nodes (``code_comment``,
 ``module_description_comment``, ``module_end_comment``). This mixin converts
 each role node into a :class:`CodeComment` and provides helpers so consumers
-can keep code comments inline in code lists or discard generic comment trees
-in non-code contexts.
+can keep code comments inline in code lists or convert a generic ``comments``
+run in a context that models it, such as an interactor body.
+
+The module-level helpers are also used by mixins that receive a raw
+``comments`` tree and must turn it into ``CodeComment`` values without
+inheriting this mixin.
 """
 
 from __future__ import annotations
@@ -16,6 +20,7 @@ from lark import Token, Tree
 from sattline_parser.models.ast_model import CodeComment, SourceSpan
 
 from ._module_shared import TransformerItem, TransformerTree, tree_children
+from ._tokens_mixin import token_span
 
 #: Tree data names of the generic (discard) comment rules. Role rules transform
 #: to CodeComment; these stay as Trees outside code/description/end contexts.
@@ -31,47 +36,70 @@ def is_comment_tree(value: object) -> bool:
     return isinstance(value, Tree) and cast(TransformerTree, value).data in COMMENT_TREE_NAMES
 
 
+def comment_pieces(comment_tree: TransformerTree) -> list[Token]:
+    """Return the token stream of a structural ``comment`` tree, in order.
+
+    Nested comment trees are unwrapped so the concatenation of token values
+    reconstructs the exact comment source text including delimiters. The
+    traversal uses an explicit stack: comment nesting is structural and is
+    not capped by the lexer, so a recursive helper would overflow on a
+    deeply nested comment.
+    """
+    pieces: list[Token] = []
+    stack: list[object] = list(reversed(tree_children(comment_tree)))
+    while stack:
+        child = stack.pop()
+        if isinstance(child, Token):
+            pieces.append(child)
+        elif isinstance(child, Tree):
+            stack.extend(reversed(tree_children(cast(TransformerTree, child))))
+    return pieces
+
+
+def build_code_comment(comment_tree: object) -> CodeComment:
+    """Build a :class:`CodeComment` from one structural ``comment`` tree."""
+    if not isinstance(comment_tree, Tree):
+        raise ValueError(f"comment rule expected a structural comment tree; got {type(comment_tree).__name__}")
+    pieces = comment_pieces(cast(TransformerTree, comment_tree))
+    text = "".join(str(tok) for tok in pieces)
+    span: SourceSpan | None = None
+    if pieces:
+        first_span = token_span(pieces[0])
+        last_span = token_span(pieces[-1])
+        if first_span is not None and last_span is not None:
+            span = SourceSpan(
+                start=first_span.start,
+                end=last_span.end,
+                line=first_span.line,
+                column=first_span.column,
+            )
+    return CodeComment(text=text, span=span)
+
+
+def code_comments_from_run(value: object) -> list[CodeComment]:
+    """Expand a ``comments`` or ``comment`` tree into ``CodeComment`` values.
+
+    Any other value yields an empty list, so a caller can offer a raw comment
+    tree to this helper without deciding which comment rule produced it.
+    """
+    if not isinstance(value, Tree):
+        return []
+    tree = cast(TransformerTree, value)
+    if tree.data == "comments":
+        return [build_code_comment(child) for child in tree_children(tree)]
+    if tree.data == "comment":
+        return [build_code_comment(tree)]
+    return []
+
+
 class CommentsMixin:
     """Mixin providing role-tagged comment transformation methods."""
-
-    def _comment_pieces(self, comment_tree: TransformerTree) -> list[Token]:
-        """Return the token stream of a structural ``comment`` tree, in order.
-
-        Nested comment trees are unwrapped so the concatenation of token values
-        reconstructs the exact comment source text including delimiters. The
-        traversal uses an explicit stack: comment nesting is structural and is
-        not capped by the lexer, so a recursive helper would overflow on a
-        deeply nested comment.
-        """
-        pieces: list[Token] = []
-        stack: list[object] = list(reversed(tree_children(comment_tree)))
-        while stack:
-            child = stack.pop()
-            if isinstance(child, Token):
-                pieces.append(child)
-            elif isinstance(child, Tree):
-                stack.extend(reversed(tree_children(cast(TransformerTree, child))))
-        return pieces
 
     def _build_code_comment(self, items: list[TransformerItem]) -> CodeComment:
         """Build a CodeComment from a single structural ``comment`` tree."""
         if not items:
             raise ValueError("comment rule expected a structural comment tree; got no items")
-        comment_tree = cast(TransformerTree, items[0])
-        pieces = self._comment_pieces(comment_tree)
-        text = "".join(str(tok) for tok in pieces)
-        span: SourceSpan | None = None
-        if pieces:
-            first_span = cast(SourceSpan | None, self._token_span(pieces[0]))  # type: ignore[attr-defined]
-            last_span = cast(SourceSpan | None, self._token_span(pieces[-1]))  # type: ignore[attr-defined]
-            if first_span is not None and last_span is not None:
-                span = SourceSpan(
-                    start=first_span.start,
-                    end=last_span.end,
-                    line=first_span.line,
-                    column=first_span.column,
-                )
-        return CodeComment(text=text, span=span)
+        return build_code_comment(items[0])
 
     def code_comment(self, items: list[TransformerItem]) -> CodeComment:
         """Grammar code_comment -> CodeComment kept inline in ModuleCode lists."""
@@ -90,4 +118,4 @@ class CommentsMixin:
         return self._build_code_comment(items)
 
 
-__all__ = ["CommentsMixin", "is_comment_tree"]
+__all__ = ["CommentsMixin", "build_code_comment", "code_comments_from_run", "comment_pieces", "is_comment_tree"]

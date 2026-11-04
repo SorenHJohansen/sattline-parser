@@ -61,6 +61,7 @@ from sattline_parser.models.ast_model import (
     Variable,
 )
 from sattline_parser.models.clauses import (
+    Alignment,
     AssignClause,
     ClippingClause,
     ColourSpec,
@@ -168,6 +169,7 @@ def _module_header(name: str = "Module") -> ModuleHeader:
 
 __all__ = [
     "DEFAULT_INIT",
+    "Alignment",
     "Any",
     "AssignClause",
     "Assignment",

@@ -56,6 +56,7 @@ from .models.ast_model import (
     Variable,
 )
 from .models.clauses import (
+    Alignment,
     AssignClause,
     ClippingClause,
     ColourSpec,
@@ -94,6 +95,7 @@ from .models.expressions import (
     UnaryOp,
     VarRef,
 )
+from .models.properties import InteractBodyEntry
 from .models.tails import (
     ClipValue,
     CoordinateClipping,
@@ -111,6 +113,7 @@ from .models.walk import (
 )
 
 __all__ = [
+    "Alignment",
     "AssignClause",
     "Assignment",
     "BasePicture",
@@ -139,6 +142,7 @@ __all__ = [
     "Grid",
     "IfStmt",
     "IntLiteral",
+    "InteractBodyEntry",
     "InteractObject",
     "LitStringTail",
     "MappingSource",

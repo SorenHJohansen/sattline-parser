@@ -18,6 +18,26 @@ from sattline_parser.models.ast_model import FloatLiteral, IntLiteral, SourceSpa
 DEFAULT_INIT = object()
 
 
+def token_span(tok: Token) -> SourceSpan | None:
+    """Return the source span of ``tok``, or ``None`` when it carries no position."""
+    # Token.__slots__ always define these (None when unset), so direct
+    # attribute access is cheaper than getattr and equally safe.
+    line = tok.line
+    column = tok.column
+    start_pos = tok.start_pos
+    end_pos = tok.end_pos
+    if (
+        isinstance(line, int)
+        and isinstance(column, int)
+        and line > 0
+        and column > 0
+        and isinstance(start_pos, int)
+        and isinstance(end_pos, int)
+    ):
+        return SourceSpan(start=start_pos, end=end_pos, line=line, column=column)
+    return None
+
+
 class TokensMixin:
     """Mixin providing token and terminal coercion methods."""
 
@@ -40,22 +60,7 @@ class TokensMixin:
         return inner.replace('""', '"').rstrip("\r\n")
 
     def _token_span(self, tok: Token) -> SourceSpan | None:
-        # Token.__slots__ always define these (None when unset), so direct
-        # attribute access is cheaper than getattr and equally safe.
-        line = tok.line
-        column = tok.column
-        start_pos = tok.start_pos
-        end_pos = tok.end_pos
-        if (
-            isinstance(line, int)
-            and isinstance(column, int)
-            and line > 0
-            and column > 0
-            and isinstance(start_pos, int)
-            and isinstance(end_pos, int)
-        ):
-            return SourceSpan(start=start_pos, end=end_pos, line=line, column=column)
-        return None
+        return token_span(tok)
 
     def SIGNED_INT(self, tok: Token) -> IntLiteral:
         """Grammar SIGNED_INT terminal -> IntLiteral with source span.

@@ -14,6 +14,7 @@ _TYPE_ALIASES = (
     "CodeItem",
     "CoordBox",
     "CoordPair",
+    "InteractBodyEntry",
     "SFCBodyItem",
     "SLExpression",
     "SLStmt",

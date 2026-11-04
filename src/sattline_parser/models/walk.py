@@ -49,6 +49,7 @@ from typing import cast, overload
 
 from . import ast_model as m
 from .clauses import (
+    Alignment,
     AssignClause,
     ColourSpec,
     EnableClause,
@@ -71,7 +72,6 @@ from .expressions import (
     UnaryOp,
     VarRef,
 )
-from .properties import InteractBodyEntry, interact_body_payloads
 from .tails import LitStringTail, VarTail
 
 __all__ = ["NodeVisitor", "WalkEvent", "iter_child_nodes", "walk"]
@@ -103,6 +103,7 @@ _NODE_TYPES: tuple[type[object], ...] = (
     m.Sequence,
     m.SingleModule,
     m.Variable,
+    Alignment,
     AssignClause,
     Assignment,
     BinOp,
@@ -329,13 +330,6 @@ def _property_children(node: m.GraphObject | m.InteractObject, order: tuple[str,
             continue
         if key == "tails":
             yield from _unowned_tails("properties.tails", value, owned)
-            continue
-        if key == "body" and isinstance(node, m.InteractObject):
-            for index, entry in enumerate(cast("list[InteractBodyEntry]", value)):
-                for payload in interact_body_payloads([entry]):
-                    _collect_tail_ids(payload, owned)
-                    if isinstance(payload, _NODE_TYPES):
-                        yield f"properties.body[{index}]", payload
             continue
         _collect_tail_ids(value, owned)
         yield from _nodes(f"properties.{key}", value)

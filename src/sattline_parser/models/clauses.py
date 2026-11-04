@@ -10,12 +10,16 @@ argument list accepted.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
 
 from .expressions import SLExpression
 from .tails import Tail
 
+if TYPE_CHECKING:
+    from .ast_model import SourceSpan
+
 __all__ = [
+    "Alignment",
     "AssignClause",
     "ClippingClause",
     "ColourSpec",
@@ -41,6 +45,14 @@ __all__ = [
 
 type CoordPair = tuple[float, float]
 type CoordBox = tuple[CoordPair, CoordPair]
+
+
+@dataclass(frozen=True)
+class Alignment:
+    """A ``LeftAligned`` or ``RightAligned`` interactor body line."""
+
+    value: Literal["left", "right"]
+    span: SourceSpan | None = None
 
 
 @dataclass(frozen=True)

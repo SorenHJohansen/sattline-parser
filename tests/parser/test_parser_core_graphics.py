@@ -228,7 +228,7 @@ def test_interact_simple_item_extracts_type_from_grammar_tree():
         [
             "ComBut_",
             InterimCoords(coords=((0.0, 0.0), (1.0, 1.0))),
-            Tree(parser_const.TREE_TAG_INTERACT_BODY_SEQ, ["body"]),
+            [EnableClause(True)],
         ]
     )
     assert simple.type == "ComBut_"
@@ -245,6 +245,32 @@ def test_interact_scale_selector_maps_relative_and_abs():
     assert mixin.interact_scale_selector([Token("ABS_KW", "Abs_")]) == ScaleSelector("abs")
     with pytest.raises(ValueError, match="interact_scale_selector expected"):
         mixin.interact_scale_selector([Token("NAME", "Other")])
+
+
+def test_interact_alignment_and_body_rules_return_typed_payloads():
+    mixin = _GraphicsHarness()
+
+    assert mixin.alignment(Meta(), [Token("LEFTALIGNED", "LeftAligned")]) == Alignment("left")
+    assert mixin.alignment(Meta(), [Token("RIGHTALIGNED", "RightAligned")]) == Alignment("right")
+    with pytest.raises(ValueError, match="alignment expected"):
+        mixin.alignment(Meta(), [Token("NAME", "Middle")])
+    with pytest.raises(ValueError, match="alignment expected"):
+        mixin.alignment(Meta(), [])
+
+    clause = EnableClause(True, None)
+    assert mixin.interact_body([clause]) is clause
+    with pytest.raises(ValueError, match="interact_body expected"):
+        mixin.interact_body([])
+
+    comment = Tree(
+        "comments",
+        [Tree("comment", [Token("COMMENT_START", "(*"), Token("COMMENT_TEXT", " note "), Token("COMMENT_END", "*)")])],
+    )
+    body = mixin.interact_body_seq([clause, comment])
+
+    assert body[0] is clause
+    assert isinstance(body[1], CodeComment)
+    assert body[1].text == "(* note *)"
 
 
 def test_interact_pick_button_models_literal_and_reference():
@@ -412,12 +438,9 @@ def test_tailed_clause_handlers_build_typed_plain_and_tailed_clauses():
 
 
 def _body_payloads(interactor: object) -> list[object]:
-    """Flatten one interactor's body items (each is wrapped in an ``interact_body`` tree)."""
-    payloads: list[object] = []
+    """Return one interactor's typed body entries."""
     properties = getattr(interactor, "properties", {})
-    for item in cast("dict[str, Any]", properties).get("body") or ():
-        payloads.extend(getattr(item, "children", [item]))
-    return payloads
+    return list(cast("dict[str, Any]", properties).get("body") or ())
 
 
 def test_interact_widgets_fixture_preserves_types_names_and_assignments():
@@ -441,7 +464,33 @@ def test_interact_widgets_fixture_preserves_types_names_and_assignments():
     assert "Variable" in repr(proc_item.properties["assigns"])
 
 
-def test_interact_body_entries_are_raw_grammar_trees():
+def test_interact_body_is_typed_and_keeps_alignment_and_comments():
+    code = (
+        '"SyntaxVersion"\n'
+        '"OriginalFileDate"\n'
+        '"ProgramDate"\n'
+        "BasePicture Invocation (0.0,0.0,0.0,1.0,1.0) : MODULEDEFINITION DateCode_ 1\n"
+        "ModuleDef\n"
+        "ClippingBounds = ( -1.0 , -1.0 ) ( 1.0 , 1.0 )\n"
+        "InteractObjects :\n"
+        "    TextBox_ ( 0.0 , 0.0 ) ( 1.0 , 1.0 )\n"
+        "        (* body comment *)\n"
+        "        RightAligned\n"
+        '        IntObjPickButton = "PickVar" VarName\n'
+        "ENDDEF (*BasePicture*);\n"
+    )
+    bp = parser_core_parse_source_text(code)
+    assert bp.moduledef is not None
+
+    body = bp.moduledef.interact_objects[0].properties.get(parser_const.KEY_BODY)
+    assert body is not None
+    assert any(isinstance(entry, Alignment) and entry.value == "right" for entry in body)
+    assert any(isinstance(entry, CodeComment) and "body comment" in entry.text for entry in body)
+    assert any(isinstance(entry, PickButton) and entry.value == "PickVar" for entry in body)
+    assert not any(isinstance(entry, Tree) for entry in body)
+
+
+def test_interact_body_entries_are_typed_payloads():
     source = _repo_path("tests", "fixtures", "corpus", "valid", "InteractWidgets.s").read_text(encoding="utf-8")
     bp = parser_core_parse_source_text(source)
     assert bp.moduledef is not None
@@ -450,8 +499,7 @@ def test_interact_body_entries_are_raw_grammar_trees():
     non_empty = [body for body in bodies if body is not None]
     assert non_empty
     for body in non_empty:
-        assert all(isinstance(entry, Tree) for entry in body)
-        assert all(entry.data in {"interact_body", "comments", "alignment"} for entry in body)
+        assert all(not isinstance(entry, Tree) for entry in body)
 
 
 def test_moduledef_options_fixture_preserves_grid_zoom_and_layers():
@@ -491,12 +539,12 @@ def test_graphics_interact_mixin_cover_interact_helpers_and_validation_errors():
             ProcedureCall("OtherProc"),
         ]
     )
-    enable_body = Tree("interact_body", [EnableClause(True, VarTail("in", "EnableVar"))])
+    enable_body = EnableClause(True, VarTail("in", "EnableVar"))
     simple = mixin.interact_simple_item(
         [
             "Button_",
             InterimCoords(coords=coords),
-            Tree(parser_const.TREE_TAG_INTERACT_BODY_SEQ, [Tree("interact_body", ["body-a"]), enable_body]),
+            [enable_body],
         ]
     )
 
@@ -506,10 +554,7 @@ def test_graphics_interact_mixin_cover_interact_helpers_and_validation_errors():
     assert combut.properties[parser_const.KEY_TAILS] == [coord_tail]
     assert simple.type == "Button_"
     assert simple.properties[parser_const.KEY_COORDS] == [coords]
-    assert simple.properties[parser_const.KEY_BODY] == [
-        Tree("interact_body", ["body-a"]),
-        enable_body,
-    ]
+    assert simple.properties[parser_const.KEY_BODY] == [enable_body]
     assert simple.properties[parser_const.KEY_TAILS] == [VarTail("in", "EnableVar")]
 
     without_body = mixin.interact_simple_item(["Button_", InterimCoords(coords=coords)])

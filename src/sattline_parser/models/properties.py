@@ -3,24 +3,30 @@
 The parser writes a small, fixed set of keys; these ``TypedDict`` definitions
 name them so a reader no longer has to guess whether ``properties["coords"]`` is
 one pair or a list of them.
+
+``InteractProperties.body`` is a typed union. Each entry is a clause payload, a
+tail, a literal (the ``layer_info`` value), an ``Alignment``, or a
+``CodeComment``. No grammar tree reaches a caller.
 """
 
 from __future__ import annotations
 
-from collections.abc import Iterator
 from typing import TypedDict
 
-from lark import Tree
-
 from .clauses import (
+    Alignment,
     AssignClause,
     ColourSpec,
     CoordBox,
     CoordPair,
     EnableClause,
     FlagClause,
+    PickButton,
     ProcedureCall,
+    ScaleSelector,
+    TailedClause,
 )
+from .expressions import CodeComment
 from .tails import Tail
 
 __all__ = [
@@ -29,40 +35,29 @@ __all__ = [
     "InteractProperties",
     "ModuleDefProperties",
     "graph_properties",
-    "interact_body_payloads",
     "interact_properties",
     "module_def_properties",
 ]
 
-#: One entry of :attr:`InteractProperties.body`.
+#: One entry of :attr:`InteractProperties.body`, in source order.
 #:
-#: Each entry is the raw grammar tree, not the clause itself. For an
-#: ``interact_body`` tree the typed clause is one of its children (a
-#: ``ColourSpec``, ``EnableClause``, ``AssignClause``, ``FlagClause``,
-#: ``ScaleSelector``, ``PickButton``, ``TailedClause``, ``Tail``, or ``int``).
-#: ``comment``/``comments`` and ``alignment`` entries stay raw trees as well. A
-#: precise clause union would require flattening these trees, which changes the
-#: public AST shape and belongs in a separate design change. Use
-#: :func:`interact_body_payloads` to read the typed payloads without changing
-#: the stored shape.
-type InteractBodyEntry = Tree[object]
-
-
-def interact_body_payloads(body: list[InteractBodyEntry] | None) -> Iterator[object]:
-    """Yield the typed payload of each ``interact_body`` entry.
-
-    ``comment``/``comments`` and ``alignment`` wrappers carry no modelled
-    clause and are skipped. The raw tree shape of ``body`` stays unchanged for
-    existing consumers; the walker uses this view to reach the typed payloads.
-    """
-    for entry in body or ():
-        data = getattr(entry, "data", None)
-        if data == "interact_body":
-            yield from entry.children
-        elif data in {"comment", "comments", "alignment"}:
-            continue
-        else:
-            yield entry
+#: ``int`` is the ``layer_info`` payload. ``Tail`` covers a literal, a bound
+#: ``VarTail``/``LitStringTail``, or a computed expression. ``Alignment`` is the
+#: ``LeftAligned``/``RightAligned`` marker, and ``CodeComment`` is a preserved
+#: comment. The union is closed: a raw Lark tree is never a body entry.
+type InteractBodyEntry = (
+    int
+    | Tail
+    | Alignment
+    | AssignClause
+    | ColourSpec
+    | EnableClause
+    | FlagClause
+    | PickButton
+    | ScaleSelector
+    | TailedClause
+    | CodeComment
+)
 
 
 class GraphProperties(TypedDict, total=False):

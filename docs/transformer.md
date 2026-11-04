@@ -141,7 +141,7 @@ built:
 | `comment_stmt` | A code comment followed by `;` |
 | `module_typedescription` | `ModuleHeader.description_comments` or `ModuleTypeDef.description_comments` |
 | `module_end_comment` | `trailing_comments` or the matching end field |
-| `comments` | The structural field for that context, when one exists |
+| `comments` | The structural field for that context, when one exists; an interactor body turns each comment into a `CodeComment` |
 
 A legal comment with no AST home stays in the parse tree only. It is never
 attached to the nearest field just to avoid losing it.

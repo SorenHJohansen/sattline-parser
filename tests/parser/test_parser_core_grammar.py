@@ -161,7 +161,7 @@ def test_parser_core_preserves_interact_outvar_tails_for_output_bindings():
     interact = bp.moduledef.interact_objects[0]
     body = interact.properties[const.KEY_BODY]
 
-    assign = cast(Any, body)[0].children[0]
+    assign = cast(Any, body)[0]
     assert isinstance(assign, AssignClause)
     assert assign.name == "Value_Changed"
     assert assign.tail == VarTail("out", "Changed")

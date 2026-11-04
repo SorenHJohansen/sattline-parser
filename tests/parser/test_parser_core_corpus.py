@@ -77,14 +77,7 @@ def test_fixture_graph_object_shapes_keep_their_types():
 
 
 def _interact_entries(interactor: Any) -> list[Any]:
-    body = cast(list[Any], interactor.properties.get("body", []))
-    entries: list[Any] = []
-    for node in body:
-        assert isinstance(node, Tree)
-        assert node.data == "interact_body"
-        assert len(node.children) == 1
-        entries.append(node.children[0])
-    return entries
+    return list(cast(list[Any], interactor.properties.get("body", [])))
 
 
 def test_fixture_interact_enable_tails_keep_assignments_and_enables():
