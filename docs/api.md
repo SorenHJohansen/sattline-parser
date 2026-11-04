@@ -52,9 +52,8 @@ power-user helpers for tooling that needs an intermediate stage.
 | Name | Signature summary | Returns |
 | --- | --- | --- |
 | `validate_basepicture` | `(bp, *, external_datatypes=(), external_moduletype_defs=(), allow_unresolved_external_datatypes=False)` | `tuple[Diagnostic, ...]` |
-| `Diagnostic` | dataclass `(code, message, severity=ERROR, span=None, tentative=False)` | value |
+| `Diagnostic` | dataclass `(code, message, span=None, tentative=False)` | value |
 | `DiagnosticCode` | `StrEnum` of stable `SL-V###` ids | value |
-| `DiagnosticSeverity` | `StrEnum` `ERROR`, `WARNING` | value |
 
 `validate_basepicture` is re-exported by both `sattline_parser` and
 `sattline_parser.api`. The `Diagnostic` type and codes are re-exported by
@@ -63,7 +62,7 @@ power-user helpers for tooling that needs an intermediate stage.
 ### Rule registry
 
 `validation/rules.py` gives every `DiagnosticCode` one `Rule` with an id, enum
-name, default severity, scope, status, summary, and optional details. The
+name, scope, status, summary, and optional details. The
 registry is exported from `sattline_parser.validation`:
 
 | Name | Signature summary | Returns |

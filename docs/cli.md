@@ -63,7 +63,7 @@ Agents branch on exit codes, not on prose. A traceback is printed only under
 
 ```bash
 sattline check SR/*.s --jsonl
-sattline check program.s --severity error --fail-on any
+sattline check program.s --rule CONSECUTIVE_SEQUENCE_STEPS --fail-on error
 sattline check - --stdin-name editor-buffer.s
 ```
 
@@ -140,7 +140,7 @@ sattline project programs/ libs/ --targets MyProgram --json
 sattline project programs/ libs/ --graph
 sattline project programs/ libs/ --of MyProgram --reverse --depth 2
 sattline project programs/ libs/ --cycles
-sattline project programs/ libs/ --validate full --fail-on any
+sattline project programs/ libs/ --validate full --fail-on error
 ```
 
 A root is a library directory: the loader indexes artifacts directly inside it.
@@ -236,7 +236,7 @@ diagnostic, becomes one `Finding`:
 
 | Field | Meaning |
 | --- | --- |
-| `severity` | `error` or `warning` |
+| `severity` | `error` for parse, decode, project, and validation findings; `warning` for graphics scan messages |
 | `message` | A sentence about the source |
 | `rule` | Machine-only id: `PARSE_ERROR`, `DECODE_ERROR`, `PROJECT_LOAD_ERROR`, `GRAPHICS_SCAN`, a `DiagnosticCode` enum name such as `UNDEFINED_VARIABLE` (`SL-V019` is its id), or a corpus read error |
 | `file` | Display path |
@@ -254,10 +254,9 @@ diffs.
 | --- | --- | --- |
 | `--stdin-name PATH` | source commands | Required when reading `-`, so findings are attributable |
 | `--paths given\|absolute` | source commands | How to render paths |
-| `--severity all\|error\|warning` | `check` | Filter |
 | `--rule RULE` | `check` | Filter by rule id or enum name, repeatable; synthetic ids such as `PARSE_ERROR` are accepted |
 | `--max-findings N` | `check` | Limit printed findings; the exit code still reflects all of them |
-| `--fail-on none\|error\|any` | `check`, `project`, `corpus` | Which findings make the exit code `1` (`never` and `warning` are accepted aliases) |
+| `--fail-on none\|error` | `check`, `project`, `corpus` | Which findings make the exit code `1` (`never` is accepted as an alias) |
 | `--depth N` | `parse --tree`, `project --of` | Bound output or traversal |
 
 ## JSON schemas

@@ -8,11 +8,6 @@ from enum import StrEnum
 from sattline_parser.models.ast_model import SourceSpan
 
 
-class DiagnosticSeverity(StrEnum):
-    ERROR = "error"
-    WARNING = "warning"
-
-
 class DiagnosticCode(StrEnum):
     DUPLICATE_DATATYPE_NAME = "SL-V001"
     DUPLICATE_MODULETYPE_NAME = "SL-V002"
@@ -90,6 +85,5 @@ class Diagnostic:
 
     code: DiagnosticCode
     message: str
-    severity: DiagnosticSeverity = DiagnosticSeverity.ERROR
     span: SourceSpan | None = None
     tentative: bool = False

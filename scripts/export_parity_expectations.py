@@ -40,7 +40,6 @@ def _diagnostics_parser(path: Path) -> list[dict[str, object]]:
         records.append(
             {
                 "code": diagnostic.code.value,
-                "severity": diagnostic.severity.value,
                 "line": None if span is None else span.line,
                 "column": None if span is None else span.column,
                 "length": None if span is None else max(span.end - span.start, 0),

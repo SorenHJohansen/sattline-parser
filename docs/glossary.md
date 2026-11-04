@@ -73,9 +73,9 @@
 
 | Term | Meaning |
 | --- | --- |
-| Diagnostic | One validation finding: code, message, severity, span, tentative. |
+| Diagnostic | One validation finding: code, message, span, tentative. It is always an error. |
 | Rule code | A stable `SL-V###` identifier. |
-| Severity | `error` or `warning`. |
+| Severity | A CLI finding field: `error` for validation and parse findings, `warning` for graphics scan messages. |
 | Tentative | A finding that depends on a part of the closure that failed to load. Set by the loader, never by the validator. |
 | Scope | A chain of variable declarations: module parameters and locals, then enclosing modules. |
 | Type graph | A case-insensitive map from record datatype to its fields. |
@@ -107,6 +107,6 @@
 | Finding | The one reportable-problem shape the CLI emits. |
 | Rule | The machine-only finding identifier. It is never printed as prose. |
 | Schema | A versioned JSON document id, `sattline.v1.<command>`. |
-| `--fail-on` | Which findings turn the exit code into `1`: `none`, `error`, or `any`. |
+| `--fail-on` | Which findings turn the exit code into `1`: `none` or `error`. |
 | `--jsonl` | One JSON object per line, then a summary object. |
 | Exit code | `0` clean, `1` findings, `2` usage/input, `3` internal. |

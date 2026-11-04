@@ -141,13 +141,22 @@ def test_corpus_summary_and_exit_codes(tmp_path, capsys) -> None:
     assert payload["schema"] == "sattline.v1.corpus"
     assert payload["files"] == 2
     assert {Path(row["file"]).name for row in payload["results"]} == {"Clean.s", "Steps.s"}
+    assert all("warnings" not in row for row in payload["results"])
+
+
+def test_corpus_rejects_removed_fail_on_values(tmp_path, capsys) -> None:
+    write_source(tmp_path, "Clean.s", VALID_SOURCE)
+
+    for value in ("warning", "any"):
+        assert main(["corpus", str(tmp_path), "--fail-on", value]) == ExitCode.USAGE
+        assert "expected one of" in capsys.readouterr().err
 
 
 def test_corpus_reports_unreadable_files(tmp_path, capsys) -> None:
     (tmp_path / "Bad.s").write_bytes(b"\x81")
     write_source(tmp_path, "Clean.s", VALID_SOURCE)
 
-    assert main(["corpus", str(tmp_path), "--fail-on", "any"]) == ExitCode.FINDINGS
+    assert main(["corpus", str(tmp_path), "--fail-on", "error"]) == ExitCode.FINDINGS
     assert "READ_ERROR: 1" in capsys.readouterr().out
 
 

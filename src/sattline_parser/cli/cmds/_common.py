@@ -65,10 +65,10 @@ def positive_int(value: str) -> int:
 
 #: Canonical values for ``--fail-on``, shared by every command that reports
 #: findings so one spelling does not mean different things per subcommand.
-FAIL_ON_CHOICES: tuple[str, ...] = ("none", "error", "any")
+FAIL_ON_CHOICES: tuple[str, ...] = ("none", "error")
 
 #: Spellings earlier releases accepted, mapped onto the canonical value.
-_FAIL_ON_ALIASES: dict[str, str] = {"never": "none", "warning": "any"}
+_FAIL_ON_ALIASES: dict[str, str] = {"never": "none"}
 
 
 def fail_on_value(value: str) -> str:
@@ -88,19 +88,14 @@ def add_fail_on(parser: argparse.ArgumentParser) -> None:
         choices=FAIL_ON_CHOICES,
         default="error",
         metavar="WHEN",
-        help=(
-            "which findings make the exit code 1: none, error, or any "
-            "(default: error; 'never' and 'warning' are accepted as aliases)"
-        ),
+        help=("which findings make the exit code 1: none or error (default: error; 'never' is accepted as an alias)"),
     )
 
 
-def fails_on(errors: int, warnings: int, fail_on: str) -> bool:
-    """Whether a run with *errors* and *warnings* findings fails under *fail_on*."""
+def fails_on(errors: int, fail_on: str) -> bool:
+    """Whether a run with *errors* findings fails under *fail_on*."""
     if fail_on == "none":
         return False
-    if fail_on == "any":
-        return errors > 0 or warnings > 0
     return errors > 0
 
 
@@ -129,12 +124,6 @@ def add_output_flags(parser: argparse.ArgumentParser) -> None:
 
 
 def add_finding_filters(parser: argparse.ArgumentParser) -> None:
-    parser.add_argument(
-        "--severity",
-        choices=("all", "error", "warning"),
-        default="all",
-        help="only report findings of this severity (default: all)",
-    )
     parser.add_argument(
         "--rule",
         action="append",
@@ -176,10 +165,8 @@ def resolve_rule_filters(values: Sequence[str]) -> tuple[str, ...]:
 
 
 def selected_findings(findings: Sequence[Finding], args: argparse.Namespace) -> list[Finding]:
-    """Apply ``--severity`` / ``--rule`` filters."""
+    """Apply the ``--rule`` filter."""
     selected = list(findings)
-    if args.severity != "all":
-        selected = [finding for finding in selected if finding.severity == args.severity]
     if args.rule:
         wanted = set(resolve_rule_filters(args.rule))
         selected = [finding for finding in selected if finding.rule in wanted]
@@ -192,11 +179,15 @@ def emit_findings(
     args: argparse.Namespace,
     schema: str,
     extra: Mapping[str, object] | None = None,
+    include_warnings: bool = False,
 ) -> None:
     """Write findings as text, one JSON document, or JSON lines."""
     limited = _limited(findings, args)
     if args.json:
-        payload: dict[str, object] = {"schema": f"{SCHEMA_PREFIX}.{schema}", **finding_fields(findings, args=args)}
+        payload: dict[str, object] = {
+            "schema": f"{SCHEMA_PREFIX}.{schema}",
+            **finding_fields(findings, args=args, include_warnings=include_warnings),
+        }
         payload.update(extra or {})
         print(dumps(payload))
         return
@@ -204,7 +195,14 @@ def emit_findings(
         for finding in limited:
             print(dumps(finding.to_json(), compact=True))
         print(
-            dumps({"schema": f"{SCHEMA_PREFIX}.{schema}", "summary": True, "counts": _counts(findings)}, compact=True)
+            dumps(
+                {
+                    "schema": f"{SCHEMA_PREFIX}.{schema}",
+                    "summary": True,
+                    "counts": _counts(findings, include_warnings=include_warnings),
+                },
+                compact=True,
+            )
         )
         return
     for finding in limited:
@@ -219,12 +217,14 @@ def emit_payload(
     print(dumps(document, compact=compact or bool(getattr(args, "jsonl", False))))
 
 
-def finding_fields(findings: Sequence[Finding], *, args: argparse.Namespace) -> dict[str, object]:
+def finding_fields(
+    findings: Sequence[Finding], *, args: argparse.Namespace, include_warnings: bool = False
+) -> dict[str, object]:
     """The JSON fields that report *findings* inside a larger document."""
     limited = _limited(findings, args)
     return {
         "ok": not any(finding.is_error for finding in findings),
-        "counts": _counts(findings),
+        "counts": _counts(findings, include_warnings=include_warnings),
         "findings": [finding.to_json() for finding in limited],
     }
 
@@ -238,11 +238,12 @@ def _limited(findings: Sequence[Finding], args: argparse.Namespace) -> list[Find
     return list(findings[:limit])
 
 
-def _counts(findings: Sequence[Finding]) -> dict[str, int]:
-    return {
-        "error": sum(1 for finding in findings if finding.severity == "error"),
-        "warning": sum(1 for finding in findings if finding.severity == "warning"),
-    }
+def _counts(findings: Sequence[Finding], *, include_warnings: bool = False) -> dict[str, int]:
+    """Count findings, adding the warning bucket when the caller can emit one."""
+    counts = {"error": sum(1 for finding in findings if finding.severity == "error")}
+    if include_warnings:
+        counts["warning"] = sum(1 for finding in findings if finding.severity == "warning")
+    return counts
 
 
 def _print_finding_text(finding: Finding) -> None:

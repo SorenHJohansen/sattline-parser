@@ -29,14 +29,12 @@ class CorpusRow:
 
     file: str
     errors: int
-    warnings: int
     rules: tuple[tuple[str, int], ...]
 
     def to_json(self) -> dict[str, object]:
         return {
             "file": self.file,
             "errors": self.errors,
-            "warnings": self.warnings,
             "rules": dict(self.rules),
         }
 
@@ -66,14 +64,13 @@ def _analyse_all(paths: Sequence[Path], *, jobs: int) -> list[CorpusRow]:
         try:
             source = read_source_path(path)
         except CliError:
-            return CorpusRow(file=str(path), errors=1, warnings=0, rules=((READ_RULE, 1),))
+            return CorpusRow(file=str(path), errors=1, rules=((READ_RULE, 1),))
         analysis: Analysis = analyse(source.name, source.text, absolute=False)
         rules = Counter(finding.rule for finding in analysis.findings)
         errors = sum(1 for finding in analysis.findings if finding.is_error)
         return CorpusRow(
             file=str(path),
             errors=errors,
-            warnings=len(analysis.findings) - errors,
             rules=tuple(sorted(rules.items())),
         )
 
@@ -87,7 +84,7 @@ def _emit(rows: Sequence[CorpusRow], *, args: argparse.Namespace) -> None:
     histogram = _histogram(rows)
     summary = {
         "files": len(rows),
-        "clean": sum(1 for row in rows if not row.errors and not row.warnings),
+        "clean": sum(1 for row in rows if not row.errors),
         "failing": sum(1 for row in rows if row.errors),
         "rules": dict(histogram),
     }
@@ -104,8 +101,8 @@ def _emit(rows: Sequence[CorpusRow], *, args: argparse.Namespace) -> None:
         print(f"  {rule}: {count}")
     if not args.summary:
         for row in rows:
-            if row.errors or row.warnings:
-                print(f"  {row.file}: {row.errors} error(s), {row.warnings} warning(s)")
+            if row.errors:
+                print(f"  {row.file}: {row.errors} error(s)")
 
 
 def _histogram(rows: Iterable[CorpusRow]) -> Counter[str]:
@@ -117,9 +114,5 @@ def _histogram(rows: Iterable[CorpusRow]) -> Counter[str]:
 
 
 def _exit_code(rows: Sequence[CorpusRow], *, fail_on: str) -> ExitCode:
-    fails = fails_on(
-        sum(row.errors for row in rows),
-        sum(row.warnings for row in rows),
-        fail_on,
-    )
+    fails = fails_on(sum(row.errors for row in rows), fail_on)
     return ExitCode.FINDINGS if fails else ExitCode.OK
