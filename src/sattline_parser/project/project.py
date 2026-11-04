@@ -12,7 +12,7 @@ from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 from types import MappingProxyType
 
-from ._cycles import dependency_cycles
+from ._cycles import dependency_cycles, merge_cycles
 from .loader import ProjectLoader
 from .models import DependencyGraph, LoadDiagnostic, LoadMode, LoadValidation, SattLineProgram
 
@@ -119,17 +119,16 @@ class SattLineProject:
         return self._diagnostics
 
     def cycles(self) -> tuple[tuple[str, ...], ...]:
-        """Dependency cycle paths recorded during the load, in discovery order.
+        """Every dependency cycle in the project, canonical and sorted.
 
-        Each path starts at the dependency that closed the loop and ends at the
-        same name, for example ``("alpha", "beta", "alpha")``. The loader also
-        records a ``dependency-cycle`` load diagnostic; this view is the data
-        form consumers can render or compare. A project built directly from
-        programs rather than loaded computes the paths from its edges.
+        Each path starts at its smallest node name and ends at the same name,
+        for example ``("alpha", "beta", "alpha")``. The view merges cycles
+        recorded during the load with cycles computed from the graph edges, so a
+        skipped program that still produced a load diagnostic stays visible.
+        The loader also records a ``dependency-cycle`` load diagnostic; this
+        view is the data form consumers can render or compare.
         """
-        if self._cycles:
-            return self._cycles
-        return dependency_cycles(self.graph().edges)
+        return merge_cycles(self._cycles, dependency_cycles(self.graph().edges))
 
     def libraries(self) -> tuple[str, ...]:
         """Library names that resolved at least one loaded program, sorted."""

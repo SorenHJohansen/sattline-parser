@@ -12,7 +12,7 @@ the focused test passes, then the wider gates pass.
 | `tests/cli/` | Every subcommand, exit codes, JSON output, refusal rules |
 | `tests/builtins/` | Catalogue freshness and signature shape |
 | `tests/test_packaging.py` | Installed-package smoke tests outside the parser tree |
-| `benchmarks/` | pytest-benchmark parse and traversal timings, outside the coverage suite |
+| `benchmarks/` | pytest-benchmark parse, validation, and traversal timings, outside the coverage suite |
 | `tests/fixtures/corpus/` | Every fixture is a `.s` source, grouped by expected behaviour |
 | `tests/fixtures/validation/expectations.json` | Golden expectations for validation findings |
 | `tests/conftest.py` | Shared pytest configuration |
@@ -55,7 +55,7 @@ pytest tests/parser -q                      # parser only
 pytest tests/parser/test_parser_core_grammar.py -q
 pytest -q -m "not slow"                     # skip slow tests
 python scripts/check_branch_coverage.py     # full suite plus both coverage gates
-pytest benchmarks --no-cov -q               # parse and traversal benchmarks
+pytest benchmarks --no-cov -q               # parse, validation, and traversal benchmarks
 pytest benchmarks --no-cov -q --benchmark-json=benchmark.json
 ```
 

@@ -16,7 +16,6 @@ from sattline_parser.project import (
     SattLineProject,
     code_ext_candidates,
 )
-from sattline_parser.project._cycles import dependency_cycles
 
 from .._errors import CliError
 from .._exit import ExitCode
@@ -84,10 +83,9 @@ def run(args: argparse.Namespace) -> int:
         emit_findings([finding], args=args, schema="project", extra={"programs": []})
         return int(ExitCode.FINDINGS)
     programs = project.programs()
-    graph = project.graph()
     load_diagnostics = project.diagnostics()
     validation_rows = _validation_rows(programs)
-    cycles = _cycles(graph.edges)
+    cycles = [list(cycle[:-1]) for cycle in project.cycles()]
     edges = _edges(project, args)
     if args.cycles:
         _emit_cycles(cycles, args=args)
@@ -207,11 +205,6 @@ def _tree(edges: Sequence[Edge], start: str, *, reverse: bool, depth: int | None
             break
         frontier = following
     return walked
-
-
-def _cycles(edges: Sequence[tuple[str, str]]) -> list[list[str]]:
-    """Elementary dependency cycles as ordered open paths, each reported once."""
-    return [list(cycle[:-1]) for cycle in dependency_cycles(edges)]
 
 
 def _program_row(program: SattLineProgram) -> dict[str, object]:

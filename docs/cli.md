@@ -147,8 +147,8 @@ A root is a library directory: the loader indexes artifacts directly inside it.
 When `--targets` is omitted, every source directly under each root is a target.
 `--lenient` is the CLI spelling of `strict=False`. `--no-cache` bypasses the
 parser caches; `--cache-dir` points them at a private directory. `--cycles`
-reports every elementary cycle once as an ordered path; cycles with the same
-members in a different order are distinct.
+reports every cycle in the project view once as an ordered path; cycles with the
+same members in a different order are distinct.
 
 ### `graphics`
 

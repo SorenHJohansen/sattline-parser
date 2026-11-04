@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 
 from sattline_parser.api import parse_source_text
-from sattline_parser.project import LoadMode, LoadValidation, SattLineProject
+from sattline_parser.project import LoadDiagnosticKind, LoadMode, LoadValidation, SattLineProject
 from sattline_parser.project._cycles import cycle_key, dependency_cycles
 from sattline_parser.project.loader import ProjectLoader
 from sattline_parser.project.models import SattLineProgram
@@ -364,6 +364,42 @@ def test_loader_canonicalises_the_cycle_entry_point(tmp_path: Path) -> None:
     assert project.cycles() == (("a", "b", "c", "a"),)
 
 
+def test_project_cycles_include_cycles_the_loader_did_not_walk(tmp_path: Path) -> None:
+    root = tmp_path / "libs"
+    root.mkdir()
+    _write(root, "A.s", _source("A"))
+    _write(root, "B.s", _source("B"))
+    _write(root, "C.s", _source("C"))
+    _write(root, "A.l", "B\nC\n")
+    _write(root, "B.l", "A\n")
+    _write(root, "C.l", "B\n")
+
+    project = _load(root, "A")
+
+    assert project.cycles() == (("a", "b", "a"), ("a", "c", "b", "a"))
+
+
+def test_loader_records_one_diagnostic_per_cycle_across_skipped_targets(tmp_path: Path) -> None:
+    root = tmp_path / "libs"
+    root.mkdir()
+    _write(root, "A.s", "not SattLine\n")
+    _write(root, "B.s", "not SattLine\n")
+    _write(root, "A.l", "B\n")
+    _write(root, "B.l", "A\n")
+
+    project = SattLineProject.load(
+        [root],
+        mode=LoadMode.DRAFT,
+        targets=("A", "B"),
+        strict=False,
+        validate=LoadValidation.NONE,
+    )
+
+    diagnostics = [d for d in project.diagnostics() if d.kind is LoadDiagnosticKind.DEPENDENCY_CYCLE]
+    assert len(diagnostics) == 1
+    assert project.cycles() == (("a", "b", "a"),)
+
+
 def test_cycle_key_keeps_direction_and_folds_rotation() -> None:
     assert cycle_key(("a", "b", "c", "a")) == cycle_key(("b", "c", "a", "b")) == ("a", "b", "c")
     assert cycle_key(("a", "b", "c", "a")) != cycle_key(("a", "c", "b", "a"))
@@ -422,7 +458,7 @@ def test_registry_post_order_assertion_catches_a_consumer_first(tmp_path: Path) 
         loader._assert_registry_post_order()
 
 
-def test_cycles_fall_back_to_edges_for_directly_built_projects() -> None:
+def test_cycles_are_computed_for_directly_built_projects() -> None:
     code = parse_source_text(_source("X"))
     a = SattLineProgram(name="A", code=code, dependencies=("B",))
     b = SattLineProgram(name="B", code=code, dependencies=("A",))
@@ -430,7 +466,7 @@ def test_cycles_fall_back_to_edges_for_directly_built_projects() -> None:
     assert project.cycles() == (("a", "b", "a"),)
 
 
-def test_cycles_fall_back_reports_no_cycle_for_a_dag() -> None:
+def test_cycles_report_no_cycle_for_a_dag() -> None:
     code = parse_source_text(_source("X"))
     a = SattLineProgram(name="A", code=code, dependencies=("B",))
     b = SattLineProgram(name="B", code=code)

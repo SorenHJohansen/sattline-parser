@@ -122,7 +122,14 @@ A cycle is identified by its directed node sequence, not by its member set.
 `alpha -> beta -> gamma -> alpha` and `alpha -> gamma -> beta -> alpha` are
 different cycles and are both reported. Rotations of the same sequence describe
 the same cycle, so every path is rotated to start at its smallest node name and
-recorded once. The CLI reports the same canonical paths in edge order.
+recorded once.
+
+`SattLineProject.cycles()` merges the paths recorded during the load with the
+cycles computed from the graph edges. The merge keeps a cycle visible even when
+a skipped program produced the load diagnostic. The CLI renders that same view.
+Enumeration is linear on a DAG because the search is confined to strongly
+connected components. It is exponential in the worst case for a dense component
+because every elementary cycle is reported.
 
 ## Sidecars
 

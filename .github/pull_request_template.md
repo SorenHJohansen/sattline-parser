@@ -14,9 +14,9 @@ Describe what changed and why.
 ## Verification
 
 - [ ] Focused test for the changed subsystem
-- [ ] `ruff check src tests scripts`
-- [ ] `ruff format --check src tests scripts`
-- [ ] `pyright src tests`
+- [ ] `ruff check src tests scripts benchmarks`
+- [ ] `ruff format --check src tests scripts benchmarks`
+- [ ] `pyright src tests benchmarks`
 - [ ] `bandit -q -r src -x tests -c pyproject.toml`
 - [ ] `python scripts/check_branch_coverage.py`
 - [ ] `python scripts/check_docs.py` when Markdown changed
