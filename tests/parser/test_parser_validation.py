@@ -897,7 +897,7 @@ def test_moduletype_and_nested_module_walks():
 
 
 def _transfer(
-    target: str, source: str | None, *, global_: bool = False, source_type: str = "value"
+    target: str, source: str | None, *, global_: bool = False, source_type: MappingSource = MappingSource.VALUE
 ) -> ParameterMapping:
     return ParameterMapping(
         target=VarRef(target),

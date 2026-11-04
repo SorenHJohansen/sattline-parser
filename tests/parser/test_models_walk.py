@@ -206,7 +206,7 @@ def test_walk_orders_header_and_module_type_fields_by_declaration() -> None:
 def test_walk_reports_a_mapping_target_without_a_source() -> None:
     mapping = m.ParameterMapping(
         target=VarRef("Target"),
-        source_type="integer",
+        source_type=m.MappingSource.VALUE,
         is_duration=False,
         is_source_global=False,
     )

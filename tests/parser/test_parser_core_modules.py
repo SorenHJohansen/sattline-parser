@@ -138,7 +138,7 @@ def test_modules_mixin_invocation_new_module_collects_decls_and_frame_marker(fra
     child = ModuleTypeInstance(header=_module_header("Nested"), moduletype_name="NestedType")
     mapping = ParameterMapping(
         target=VarRef("Target"),
-        source_type=parser_const.KEY_VALUE,
+        source_type=MappingSource.VALUE,
         is_duration=False,
         is_source_global=False,
         source_literal=1,
@@ -268,7 +268,7 @@ def test_modules_mixin_variable_group_and_mapping_helpers_preserve_modifiers_and
     assert parsed_name == VarRef("Pump.State", state="old", span=SourceSpan(start=90, end=100, line=9, column=3))
     assert mapping.target == VarRef("Pump.State", state="old", span=SourceSpan(start=90, end=100, line=9, column=3))
     assert mapping.source == VarRef("SourceVar")
-    assert mapping.source_type == parser_const.TREE_TAG_VARIABLE_NAME
+    assert mapping.source_type is MappingSource.VARIABLE
     assert mapping.is_duration is True
     assert mapping.is_source_global is True
     assert len(variables) == 1

@@ -12,6 +12,7 @@ from sattline_parser.models.ast_model import (
     CodeComment,
     DataType,
     FrameModule,
+    MappingSource,
     ModuleCode,
     ModuleDef,
     ModuleHeader,
@@ -393,19 +394,19 @@ class ModuleAssemblyMixin:
 
         source_literal: Any | None = None
         source_var: VarRef | None = None
-        source_type: str = const.KEY_VALUE
+        source_type: MappingSource = MappingSource.VALUE
 
         if idx < len(items):
             source = items[idx]
             if isinstance(source, VarRef):
                 source_var = source
-                source_type = const.TREE_TAG_VARIABLE_NAME
+                source_type = MappingSource.VARIABLE
             elif isinstance(source, int | float | str | bool):
                 source_literal = source
-                source_type = const.KEY_VALUE
+                source_type = MappingSource.VALUE
             elif isinstance(source, dict) and const.GRAMMAR_VALUE_TIME_VALUE in source:
                 source_literal = cast(dict[str, object], source)
-                source_type = const.KEY_VALUE
+                source_type = MappingSource.VALUE
             else:
                 raise ValueError(f"moduletype_par_transfer unexpected source: {source!r}")
 
