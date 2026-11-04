@@ -28,7 +28,6 @@ from sattline_parser.validation.rules import RETIRED_CODES
 from sattline_parser.validation.symbols import SFC_RUNTIME_CONSTANTS, build_scope, resolve_var
 from sattline_parser.validation.typing import (
     TypeFamily,
-    assignment_is_compatible,
     datatype_family,
     family_of,
     infer_expr_type,
@@ -1175,18 +1174,6 @@ def test_ternary_with_unknown_branch_type_is_unproven():
     """A branch whose type cannot be proved makes the whole ternary unknown."""
     ternary = TernaryOp(branches=((True, VarRef("Count")),), else_expr=VarRef("Rec"))
     assert infer_expr_type(ternary, build_scope(None, [_var("Count", "integer"), _var("Rec", "Rec")]), {}) is None
-
-
-def test_assignment_between_custom_types_is_left_permissive():
-    """Record identity is not part of this rule, so same-name records pass."""
-    assert assignment_is_compatible("Rec", "Rec") is True
-    assert assignment_is_compatible("Rec", "integer") is True
-    assert assignment_is_compatible("integer", "Rec") is True
-    assert assignment_is_compatible("boolean", "integer") is False
-    assert assignment_is_compatible("integer", "boolean") is False
-    assert assignment_is_compatible("duration", "time") is True
-    assert assignment_is_compatible("time", "duration") is True
-    assert assignment_is_compatible("integer", "real") is True
 
 
 def test_attribute_combination_rejects_opsave_followed_by_state_or_const():

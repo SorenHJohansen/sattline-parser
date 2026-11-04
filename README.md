@@ -324,9 +324,9 @@ its JSON schemas. Submodule paths and names not listed there are internal and
 may change between releases.
 
 Within that surface, patch releases preserve existing names and behaviour. A
-breaking change is called out in the changelog and, where practical, deprecated
-for one release first. Adding a dataclass field is not considered breaking;
-removing or renaming one is.
+breaking change is called out in the changelog and removed in that release.
+There is no deprecation window and no compatibility shim. Adding a dataclass
+field is not considered breaking; removing or renaming one is.
 
 ## Development
 
@@ -334,9 +334,10 @@ removing or renaming one is.
 python -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"
 pytest -q                                   # full configured suite
-ruff check src tests scripts
-ruff format --check src tests scripts
-pyright src tests
+pytest benchmarks --no-cov -q               # parse benchmarks
+ruff check src tests scripts benchmarks
+ruff format --check src tests scripts benchmarks
+pyright src tests benchmarks
 bandit -q -r src -x tests -c pyproject.toml
 pip-audit
 python scripts/check_branch_coverage.py     # line >= 100%, branch >= 93%

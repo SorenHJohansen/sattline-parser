@@ -106,8 +106,8 @@ classDiagram
 Legacy coded files repeat one `ModuleDef ... [ModuleCode ...] ENDDEF` block per
 layer. A single `moduledef` field would silently drop all but the last block.
 The AST therefore keeps every block in source order in `moduledefs` and
-`modulecodes`, while `moduledef` and `modulecode` expose the last block for
-backwards compatibility. Nothing is lost.
+`modulecodes`, while `moduledef` and `modulecode` expose the last block as a
+convenience view. Nothing is lost.
 
 ## Declarations
 
@@ -412,26 +412,15 @@ list.
 
 ## Serialization and pickling
 
-`BasePicture` defines `__getstate__` and `__setstate__`:
-
-- `parse_tree` is stripped when pickled. It is tooling state, not persistent AST
-  state, and a retained tree can be large.
-- Missing dataclass fields are filled from their defaults when unpickling an
-  older payload, so a cache written by a previous release can still be read
-  when the field set only grew.
+`BasePicture` defines `__getstate__`: `parse_tree` is stripped when pickled. It
+is tooling state, not persistent AST state, and a retained tree can be large.
 
 `parse_tree` is attached only when `retain_parse_tree=True` is passed to a parse
 entry point. Code must not rely on it surviving a pickle round trip.
 
-## Deprecated fields on `BasePicture`
-
-`graphics_bindings`, `graphics_messages`, `graphics_composite_records`,
-`graphics_composite_occurrences`, `graphics_picture_display_records`,
-`graphics_picture_display_occurrences`, and `library_dependencies` are declared
-with `metadata={"deprecated": True}`. The parser never writes them. Graphics
-data lives on `SattLineProgram.graphics`. The fields exist only so a consumer
-that attached its own views to the AST keeps working until it moves that state
-into its own graph model.
+The file AST cache is versioned. When the model shape changes,
+`FILE_AST_CACHE_VERSION` is bumped and older entries are discarded rather than
+decoded into the current model.
 
 ## Traversal
 
@@ -471,9 +460,8 @@ payloads attached to graphics, interact, and module-definition nodes. It
 descends into `GraphObject.properties`, `InteractObject.properties`, and
 `ModuleDef.properties`. `ModuleHeader.invocation_arguments` holds marker names
 only and is not walked; header argument tails live in `invoke_coord_tails`.
-`parse_tree`, `BasePicture.graphics_*`, and `library_dependencies` are not
-walked. Literal values are leaves and are not emitted as nodes. `prune` may stop
-descent into a node after it has been yielded.
+`parse_tree` is not walked. Literal values are leaves and are not emitted as
+nodes. `prune` may stop descent into a node after it has been yielded.
 
 Property payloads are visited in a fixed order:
 

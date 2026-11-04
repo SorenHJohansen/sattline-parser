@@ -3,7 +3,7 @@
 from sattline_parser.preprocessing import is_compressed
 from sattline_parser.preprocessing.compressed import (
     _MARKER_RE,
-    SEED_MAPPING,
+    SCANNER_TOKENS,
     _align_replacement,
     _decode_markers,
     _decode_with_map,
@@ -73,9 +73,9 @@ def test_decode_stages_compose_identically_to_decode_with_map():
         '"string with #71 and #8? inside" (* comment with #84 *)'
     )
 
-    registry, decoded, char_map = _decode_markers(text, dict(SEED_MAPPING))
+    registry, decoded, char_map = _decode_markers(text, dict(SCANNER_TOKENS))
     restored, restored_map = registry.restore(decoded, char_map)
-    full_decoded, full_map = _decode_with_map(text, dict(SEED_MAPPING))
+    full_decoded, full_map = _decode_with_map(text, dict(SCANNER_TOKENS))
 
     assert restored == full_decoded
     assert tuple(restored_map) == tuple(full_map)
@@ -84,14 +84,14 @@ def test_decode_stages_compose_identically_to_decode_with_map():
 def test_decode_markers_stage_protects_strings_from_unknown_markers():
     text = '#71 Demo ENDDEF "text #99 unknown"'
 
-    registry, decoded, char_map = _decode_markers(text, dict(SEED_MAPPING))
+    registry, decoded, char_map = _decode_markers(text, dict(SCANNER_TOKENS))
     restored, _restored_map = registry.restore(decoded, char_map)
 
     assert '"text #99 unknown"' in restored
 
 
-def test_seed_mapping_expands_marker_70_to_composite_object():
-    assert SEED_MAPPING["#70"] == "CompositeObject"
+def test_scanner_tokens_expands_marker_70_to_composite_object():
+    assert SCANNER_TOKENS["#70"] == "CompositeObject"
 
 
 # ---------------------------------------------------------------------------

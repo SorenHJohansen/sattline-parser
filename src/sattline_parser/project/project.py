@@ -12,6 +12,7 @@ from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 from types import MappingProxyType
 
+from ._cycles import dependency_cycles
 from .loader import ProjectLoader
 from .models import DependencyGraph, LoadDiagnostic, LoadMode, LoadValidation, SattLineProgram
 
@@ -128,7 +129,7 @@ class SattLineProject:
         """
         if self._cycles:
             return self._cycles
-        return _dependency_cycles(self.graph().edges)
+        return dependency_cycles(self.graph().edges)
 
     def libraries(self) -> tuple[str, ...]:
         """Library names that resolved at least one loaded program, sorted."""
@@ -159,34 +160,6 @@ class SattLineProject:
             for dependency in program.dependencies
         )
         return DependencyGraph(nodes=tuple(sorted(self._programs)), edges=edges)
-
-
-def _dependency_cycles(edges: tuple[tuple[str, str], ...]) -> tuple[tuple[str, ...], ...]:
-    """Cycle paths computed from dependency edges (fallback for direct construction)."""
-    adjacency: dict[str, list[str]] = {}
-    for dependent, dependency in edges:
-        adjacency.setdefault(dependent, []).append(dependency)
-
-    found: list[tuple[str, ...]] = []
-    seen: set[frozenset[str]] = set()
-    explored: set[str] = set()
-
-    def walk(node: str, trail: tuple[str, ...], on_trail: frozenset[str]) -> None:
-        for neighbour in adjacency.get(node, ()):
-            if neighbour in on_trail:
-                cycle = (*trail[trail.index(neighbour) :], neighbour)
-                key = frozenset(cycle)
-                if key not in seen:
-                    seen.add(key)
-                    found.append(cycle)
-            elif neighbour not in explored:
-                walk(neighbour, (*trail, neighbour), on_trail | {neighbour})
-        explored.add(node)
-
-    for start in adjacency:
-        if start not in explored:
-            walk(start, (start,), frozenset({start}))
-    return tuple(found)
 
 
 __all__ = ["SattLineProject"]

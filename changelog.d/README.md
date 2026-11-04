@@ -7,13 +7,12 @@ edit the same changelog lines.
 ## Naming
 
 `<slug>.<type>.md`, where `slug` is lowercase words joined by hyphens and
-`type` is one of:
+`type` is one of the supported Keep a Changelog headings:
 
 | Type | Heading |
 | --- | --- |
 | `added` | Added |
 | `changed` | Changed |
-| `deprecated` | Deprecated |
 | `removed` | Removed |
 | `fixed` | Fixed |
 | `security` | Security |

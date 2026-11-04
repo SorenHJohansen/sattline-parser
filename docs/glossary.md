@@ -80,7 +80,7 @@
 | Scope | A chain of variable declarations: module parameters and locals, then enclosing modules. |
 | Type graph | A case-insensitive map from record datatype to its fields. |
 | Builtin record | A record datatype whose fields come from `builtins/records.py`. |
-| Retired code | A diagnostic code kept for compatibility but no longer emitted, because the rule was disproved. |
+| Retired code | A diagnostic id no longer emitted because the rule was disproved. The id stays reserved so it cannot be reused. |
 | `INVOKED` | Validation scope: targets in full, dependencies only for the module types a target invokes. |
 | `FULL` | Validation scope: every loaded program. |
 | `NONE` | Validation scope: parse only. |

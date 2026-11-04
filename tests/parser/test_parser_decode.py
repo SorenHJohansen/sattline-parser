@@ -11,7 +11,6 @@ from sattline_parser.api import parse_source_text as parser_core_parse_source_te
 from sattline_parser.preprocessing.compressed import (
     _MARKER_RE,  # pyright: ignore[reportPrivateUsage]
     SCANNER_TOKENS,
-    SEED_MAPPING,
     PreprocessError,
     decode_compressed,
     is_compressed,
@@ -36,7 +35,6 @@ def test_scanner_token_table_is_the_scanner_enum() -> None:
         ordinal = row["id"] - 8
         assert row["code"] == "#" + chr(48 + ordinal // 16) + chr(48 + ordinal % 16)
     assert {row["code"] for row in rows} == set(SCANNER_TOKENS)
-    assert SEED_MAPPING is SCANNER_TOKENS
 
 
 def test_scanner_token_table_pins_words_the_old_seed_table_got_wrong() -> None:

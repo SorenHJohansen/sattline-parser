@@ -82,10 +82,6 @@ def moduletype_def_list() -> list[ModuleTypeDef]:
     return []
 
 
-def library_dependency_map() -> dict[str, list[str]]:
-    return {}
-
-
 def render_module_code(module_code: ModuleCode) -> str:
     seq_lines: list[str] = []
     if module_code.sequences:

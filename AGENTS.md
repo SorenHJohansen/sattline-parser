@@ -49,6 +49,7 @@
 | `src/sattline_parser/validation/` | Validator rules, diagnostics, type graph, builtin call checks |
 | `src/sattline_parser/source_document.py` | Source provenance: original/normalized text + source map, span remapping |
 | `tests/` | Full suite: `tests/parser/`, `tests/project/`, `tests/cli/`, `tests/builtins/`, packaging tests |
+| `benchmarks/` | pytest-benchmark timings for parse, validation, and traversal |
 | `tests/fixtures/corpus/` | Corpus fixtures (`.s` sources only) for regression and fuzz seeding |
 | `tests/fixtures/validation/` | Golden validation manifest and documented behavior differences |
 
@@ -65,6 +66,12 @@
   no longer matches the import graph is a defect.
 - Keep the responsibility boundary explicit: this package is language
   infrastructure, not analysis. A new analysis feature belongs in a consumer.
+- No deprecation windows and no compatibility shims. A superseded field, alias,
+  or name is removed in the same breaking release that replaces it. Do not add
+  `metadata={"deprecated": ...}`, an alias kept for old callers, or a fallback
+  reader for an earlier cache shape.
+- Cache formats are versioned. Bump the cache version and discard older entries;
+  never decode an older payload into the current model.
 
 ## Documentation Rules
 

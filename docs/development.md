@@ -150,8 +150,8 @@ other agents.
   JSON schemas.
 - Submodule paths not listed there are internal and may change.
 - A patch release preserves existing names and behaviour.
-- A breaking change is called out in the changelog and, where practical,
-  deprecated for one release first.
+- A breaking change is called out in the changelog and removed in that release.
+  There is no deprecation window and no compatibility shim.
 - Adding a dataclass field is not breaking. Removing or renaming one is.
 
 ## Changelog
@@ -181,9 +181,9 @@ standard library, then an existing dependency, then a new one.
 - [ ] The focused test passes.
 - [ ] `pytest -q` passes.
 - [ ] `python scripts/check_branch_coverage.py` passes.
-- [ ] `ruff check src tests scripts` passes.
-- [ ] `ruff format --check src tests scripts` passes.
-- [ ] `pyright src tests` passes.
+- [ ] `ruff check src tests scripts benchmarks` passes.
+- [ ] `ruff format --check src tests scripts benchmarks` passes.
+- [ ] `pyright src tests benchmarks` passes.
 - [ ] `bandit -q -r src -x tests -c pyproject.toml` passes.
 - [ ] `python scripts/check_docs.py` passes when Markdown changed.
 - [ ] New syntax or rules have fixtures.

@@ -98,8 +98,17 @@ from sattline_parser.preprocessing import preprocess_sl_text, preprocess_source
 from sattline_parser.source_document import SourceDocument
 from sattline_parser.transformer._expressions_mixin import _ExpressionsMixin
 from sattline_parser.transformer._graphics_interact_mixin import _GraphicsInteractMixin
-from sattline_parser.transformer._module_shared import CodeBlockPayload, CoordTail, GroupConnInfo, InterimCoords
-from sattline_parser.transformer._modules_mixin import _ModulesMixin, flatten_items, meta_span
+from sattline_parser.transformer._module_assembly_mixin import ModuleAssemblyMixin
+from sattline_parser.transformer._module_header_mixin import ModuleHeaderMixin
+from sattline_parser.transformer._module_layout_mixin import ModuleLayoutMixin
+from sattline_parser.transformer._module_shared import (
+    CodeBlockPayload,
+    CoordTail,
+    GroupConnInfo,
+    InterimCoords,
+    flatten_items,
+    meta_span,
+)
 from sattline_parser.transformer._sfc_mixin import SFCMixin
 from sattline_parser.transformer._tokens_mixin import DEFAULT_INIT, TokensMixin
 from sattline_parser.transformer.sl_transformer import (
@@ -132,7 +141,7 @@ def _repo_path(*parts: str) -> Path:
 _is_tree = _sl_is_tree
 
 
-class _ModulesHarness(_ModulesMixin):
+class _ModulesHarness(ModuleHeaderMixin, ModuleAssemblyMixin, ModuleLayoutMixin):
     """Direct harness for the composed module mixins."""
 
 
@@ -192,10 +201,13 @@ __all__ = [
     "LiteralString",
     "Meta",
     "ModuleArguments",
+    "ModuleAssemblyMixin",
     "ModuleCode",
     "ModuleDef",
     "ModuleHeader",
+    "ModuleHeaderMixin",
     "ModuleInViewClause",
+    "ModuleLayoutMixin",
     "ModuleMarker",
     "ModuleOptions",
     "ModuleTypeDef",
@@ -244,7 +256,6 @@ __all__ = [
     "_GraphicsHarness",
     "_GraphicsInteractMixin",
     "_ModulesHarness",
-    "_ModulesMixin",
     "_SFCHarness",
     "_TokensHarness",
     "_extract_program_name_from_header_lines",

@@ -88,8 +88,8 @@ def test_envelope_rejects_wrong_signature_length() -> None:
 def test_typed_tail_nodes_survive_a_pickle_round_trip() -> None:
     """The AST cache pickles the model; the new frozen tail/clause nodes must round-trip.
 
-    ``FILE_AST_CACHE_VERSION`` was bumped to 2 when the tail shape changed, so an
-    old envelope is never read as if it held the typed nodes.
+    ``FILE_AST_CACHE_VERSION`` is bumped whenever the model shape changes, so an
+    old envelope is never read as if it held the current nodes.
     """
     corner = VarTail("in", "Corner")
     module_def = ModuleDef(
@@ -131,7 +131,7 @@ def test_typed_tail_nodes_survive_a_pickle_round_trip() -> None:
 
     assert restored == picture
     assert restored.header.invoke_coord_tails == [VarTail("out", LitStringTail("LitString", "Symbol"))]
-    assert FILE_AST_CACHE_VERSION == 2
+    assert FILE_AST_CACHE_VERSION == 3
 
 
 def test_envelope_round_trip() -> None:

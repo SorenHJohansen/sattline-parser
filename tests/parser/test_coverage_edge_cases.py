@@ -24,8 +24,6 @@ from sattline_parser.models.ast_model import (
     BasePicture,
     CodeComment,
     CodeItem,
-    ModuleCode,
-    ModuleDef,
     ModuleHeader,
     ParameterMapping,
     Sequence,
@@ -317,21 +315,6 @@ def test_base_picture_pickle_roundtrip() -> None:
     basepic.parse_tree = Tree("start2", [])
     restored = pickle.loads(pickle.dumps(basepic))
     assert restored.parse_tree is None
-
-
-def test_base_picture_setstate_backfills_fields() -> None:
-    restored = BasePicture.__new__(BasePicture)
-    restored.__setstate__(
-        {
-            "_custom": 1,
-            "moduledef": ModuleDef(),
-            "modulecode": ModuleCode(),
-        }
-    )
-    assert restored.name == "BasePicture"
-    assert restored.parse_tree is None
-    assert restored.moduledef is None
-    assert restored.modulecode is None
     assert "moduledef" not in restored.__dict__
     assert "modulecode" not in restored.__dict__
 
@@ -703,11 +686,11 @@ def test_opaque_registry_restore_keeps_a_literal_nul() -> None:
 
 def test_compressed_golden_file_decodes() -> None:
     """The compressed golden file decodes all markers without error."""
-    from sattline_parser.preprocessing.compressed import SEED_MAPPING, decode_compressed  # noqa: PLC0415
+    from sattline_parser.preprocessing.compressed import SCANNER_TOKENS, decode_compressed  # noqa: PLC0415
 
     golden = _repo_path("tests", "fixtures", "CompressedFullGrammar.s")
     text = golden.read_text(encoding="latin-1")
-    decoded = decode_compressed(text, SEED_MAPPING)
+    decoded = decode_compressed(text, SCANNER_TOKENS)
     assert "TestCompress" in decoded
     assert "SUBSEQSTEP" in decoded
     assert "SUBSEQUENCE" in decoded

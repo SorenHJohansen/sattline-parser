@@ -415,7 +415,6 @@ def test_iter_child_nodes_skips_non_nodes() -> None:
     relations = {relation for relation, _child in iter_child_nodes(picture)}
 
     assert "parse_tree" not in relations
-    assert "graphics_bindings" not in relations
 
 
 class _Collector(NodeVisitor):

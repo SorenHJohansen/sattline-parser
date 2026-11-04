@@ -445,24 +445,10 @@ def infer_expr_type(
     records: dict[str, DataType],
     type_graph: TypeGraph | None = None,
 ) -> str | None:
-    """Compatibility wrapper: the inferred datatype as a string, or ``None``."""
+    """The inferred datatype as a string, or ``None``."""
     graph = type_graph if type_graph is not None else TypeGraph.from_datatypes(records.values())
     inferred = infer_expression_datatype(expr, scope, graph)
     return None if inferred is None else format_datatype(inferred)
-
-
-def assignment_is_compatible(source_type: str, target_type: str) -> bool:
-    """Whether ``target = source`` is legal under the family-level rule.
-
-    Kept as the coarse predicate used by the first-generation validator.
-    New rules use :func:`assignment_type_matches`, which also handles records,
-    AnyType, and time literals.
-    """
-    source_family = datatype_family(source_type)
-    target_family = datatype_family(target_type)
-    if source_family is None or target_family is None:
-        return True
-    return source_family is target_family
 
 
 def operand_types(
@@ -545,7 +531,6 @@ def suggest_datatype_name(name: str, known_datatypes: AbcSequence[str]) -> str |
 
 __all__ = [
     "TypeFamily",
-    "assignment_is_compatible",
     "assignment_type_matches",
     "assignment_types",
     "builtin_type_matches",
