@@ -14,8 +14,9 @@ so no import cycle exists at any point.
 
 from __future__ import annotations
 
-from .errors import ParseErrorDetails, describe_parse_error
+from .errors import ParseErrorDetails, SourceTooDeepError, describe_parse_error
 from .source_io import (
+    MAX_SOURCE_DEPTH,
     build_lark_parser,
     create_parser,
     decode_source_bytes,
@@ -30,7 +31,9 @@ from .source_io import (
 from .validation import validate_basepicture
 
 __all__ = [
+    "MAX_SOURCE_DEPTH",
     "ParseErrorDetails",
+    "SourceTooDeepError",
     "build_lark_parser",
     "create_parser",
     "decode_source_bytes",

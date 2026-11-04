@@ -17,7 +17,10 @@ import subprocess
 import sys
 from pathlib import Path
 
+from lark.exceptions import UnexpectedInput
+
 from sattline_parser import (
+    SourceTooDeepError,
     __version__,
     create_parser,
     describe_parse_error,
@@ -82,6 +85,7 @@ def test_public_api_surface_is_available() -> None:
     assert callable(parse_source_file)
     assert callable(describe_parse_error)
     assert callable(preprocess_source)
+    assert issubclass(SourceTooDeepError, UnexpectedInput)
     assert isinstance(parse_source_text(_SMALL_PROGRAM), BasePicture)
 
 

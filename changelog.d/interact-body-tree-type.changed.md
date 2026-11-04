@@ -1,0 +1,1 @@
+- **`InteractProperties.body`.** Typed as `list[Tree[object]] | None`. Each entry is the raw grammar tree, with the typed clause in `children[0]` for an `interact_body` entry. A precise clause union would require flattening the trees and changing the public AST shape.

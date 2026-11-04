@@ -97,6 +97,7 @@ _PARSE_REJECTED_FIXTURES = [
     # in coded mode, so the sequence-control slot rejects the unit.
     "CodedRawKeyword",
     "CoordInVarTail",
+    "DeepExpressionChain",
     "ModuleDefNoTrailingEnddef",
     "EncodingStress",
     "FreestandingCommentInModuleCode",

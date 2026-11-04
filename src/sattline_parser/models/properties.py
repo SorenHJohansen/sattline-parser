@@ -9,6 +9,8 @@ from __future__ import annotations
 
 from typing import TypedDict
 
+from lark import Tree
+
 from .clauses import (
     AssignClause,
     ColourSpec,
@@ -22,12 +24,24 @@ from .tails import Tail
 
 __all__ = [
     "GraphProperties",
+    "InteractBodyEntry",
     "InteractProperties",
     "ModuleDefProperties",
     "graph_properties",
     "interact_properties",
     "module_def_properties",
 ]
+
+#: One entry of :attr:`InteractProperties.body`.
+#:
+#: Each entry is the raw grammar tree, not the clause itself. For an
+#: ``interact_body`` tree the typed clause is ``entry.children[0]`` (a
+#: ``ColourSpec``, ``EnableClause``, ``AssignClause``, ``FlagClause``,
+#: ``ScaleSelector``, ``PickButton``, ``TailedClause``, ``Tail``, or ``int``).
+#: ``comments`` and ``alignment`` entries stay raw trees as well. A precise
+#: clause union would require flattening these trees, which changes the public
+#: AST shape and belongs in a separate design change.
+type InteractBodyEntry = Tree[object]
 
 
 class GraphProperties(TypedDict, total=False):
@@ -59,7 +73,7 @@ class InteractProperties(TypedDict, total=False):
     #: ``KEY_TAILS``
     tails: list[Tail]
     #: ``KEY_BODY``
-    body: list[object] | None
+    body: list[InteractBodyEntry] | None
     #: ``KEY_PROCEDURE``
     procedure: ProcedureCall
     #: ``KEY_LAYERS``

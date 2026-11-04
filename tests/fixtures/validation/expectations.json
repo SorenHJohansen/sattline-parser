@@ -5,7 +5,9 @@
     "edge_cases/CaseInsensitiveIdentifiers.s": [],
     "edge_cases/CommentInsideEquation.s": [],
     "edge_cases/ConstStringSetGetPos.s": [],
+    "edge_cases/DeepNestedParentheses.s": [],
     "edge_cases/DeeplyNestedComments.s": [],
+    "edge_cases/DeeplyNestedComments1000.s": [],
     "edge_cases/DurationInParameterMapping.s": [],
     "edge_cases/DurationVariousFormats.s": [],
     "edge_cases/ElsifExpression.s": [],
@@ -138,6 +140,11 @@
       }
     ],
     "invalid/DatatypeShadowsBuiltinName.s": [],
+    "invalid/DeepExpressionChain.s": [
+      {
+        "parse_error": true
+      }
+    ],
     "invalid/DuplicateDatatypeName.s": [],
     "invalid/DuplicateModuletypeName.s": [],
     "invalid/DuplicateRecordFieldName.s": [],

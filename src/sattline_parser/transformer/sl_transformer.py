@@ -7,7 +7,8 @@ from __future__ import annotations
 
 from typing import Any, TypeGuard, cast
 
-from lark import Transformer, Tree
+from lark import Tree
+from lark.visitors import Transformer_NonRecursive
 
 from sattline_parser.models.ast_model import BasePicture
 
@@ -82,9 +83,13 @@ class SLTransformer(
     ModuleAssemblyMixin,
     ModuleLayoutMixin,
     GraphicsInteractMixin,
-    Transformer[Any, Any],
+    Transformer_NonRecursive[Any, Any],
 ):
     """Lark transformer building SattLine AST from parsed grammar.
+
+    The base is Lark's non-recursive transformer, so a deeply parenthesized
+    parse tree is reduced with an explicit post-order stack. The mixin methods
+    and their bottom-up call order are unchanged.
 
     Mixins provide grouped method implementations by responsibility:
     - TokensMixin: token coercion and literal conversion

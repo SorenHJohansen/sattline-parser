@@ -211,6 +211,18 @@ classDiagram
 `Equation.kind` is `"equationblock"` or `"equations"`. The two keywords are
 kept distinct; their effect is not modelled, so only the spelling is preserved.
 
+## Typed property maps
+
+`GraphObject.properties`, `InteractObject.properties`, and `ModuleDef.properties`
+are `TypedDict` maps in `models/properties.py`, so the fixed keys are named even
+though the dataclasses expose them as a mapping.
+
+`InteractProperties.body` is `list[Tree[object]] | None`. Each entry is the raw
+grammar tree, not the clause: an `interact_body` entry has the typed clause in
+`children[0]`, and `comments` and `alignment` entries stay raw trees too. A
+precise union of clause types would require flattening those trees, which
+changes the public AST shape and is a separate design change.
+
 ## SFC nodes
 
 ```mermaid
@@ -444,6 +456,16 @@ statements, expressions, headers, and comments. It does not descend into
 leaves and are not emitted as nodes. `prune` may stop descent into a node after
 it has been yielded.
 
+`walk` uses an explicit stack and keeps ancestors as a persistent chain.
+`WalkEvent.parents` expands its sequence view only when read, so a deep tree is
+walked in linear time and does not grow the Python call stack. Reading
+`parents` costs O(depth); the walk itself stays linear. The field still behaves
+like a tuple for indexing, iteration, equality, and `len`. `NodeVisitor` dispatch
+stays recursive by design, because an override controls its own descent.
+Parsed structures are capped at `MAX_SOURCE_DEPTH` (256) levels, including
+property payloads such as interactor tails, which keeps that dispatch and the
+recursive formatter and cache inside the default recursion limit.
+
 `walk` replaces the recursive helpers that consumers would otherwise copy. The
 CLI query command is built on `NodeVisitor`; the validator uses `walk` to
 collect variable references. Rule-specific validation walks stay in
@@ -465,3 +487,4 @@ need machine-readable output.
 | `tests/parser/test_parser_core_sfc.py` | SFC node shapes |
 | `tests/parser/test_parser_core_module_definitions.py` | Layout and graphics fields |
 | `tests/parser/test_models_walk.py` | Node coverage, order, ancestry, pruning, visitor dispatch |
+| `tests/parser/test_parser_core_deep_structures.py` | Deep-tree walk, clean nesting errors, iterative remapping |
