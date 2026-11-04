@@ -7,9 +7,14 @@ import json
 
 from sattline_parser.cli import main
 from sattline_parser.cli._exit import ExitCode
-from sattline_parser.cli.cmds.project import _cycles
+from sattline_parser.project._cycles import dependency_cycles
 
 from ._cli_support import VALID_SOURCE, write_source
+
+
+def _cycles(edges: list[tuple[str, str]]) -> list[list[str]]:
+    return [list(cycle[:-1]) for cycle in dependency_cycles(edges)]
+
 
 _LIB_SOURCE = VALID_SOURCE.replace("name: Sample", "name: {name}")
 

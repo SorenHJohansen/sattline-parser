@@ -84,11 +84,11 @@ Use `.venv/bin/python` when the virtual environment exists. Otherwise use
 .venv/bin/python -m pytest tests/parser/test_parser_core_grammar.py -q
 
 # 2. Lint and format
-.venv/bin/python -m ruff check src tests scripts
-.venv/bin/python -m ruff format --check src tests scripts
+.venv/bin/python -m ruff check src tests scripts benchmarks
+.venv/bin/python -m ruff format --check src tests scripts benchmarks
 
 # 3. Types
-.venv/bin/pyright src tests
+.venv/bin/pyright src tests benchmarks
 
 # 4. Security
 .venv/bin/python -m bandit -q -r src -x tests -c pyproject.toml
@@ -96,7 +96,10 @@ Use `.venv/bin/python` when the virtual environment exists. Otherwise use
 # 5. Full suite plus both coverage gates
 .venv/bin/python scripts/check_branch_coverage.py
 
-# 6. Documentation checks when Markdown changed
+# 6. Benchmarks
+.venv/bin/python -m pytest benchmarks --no-cov -q
+
+# 7. Documentation checks when Markdown changed
 .venv/bin/python scripts/check_docs.py
 ```
 

@@ -32,6 +32,16 @@ def canonical_cycle(cycle: Sequence[str]) -> tuple[str, ...]:
     return (*key, key[0]) if key else ()
 
 
+def merge_cycles(*groups: Sequence[Sequence[str]]) -> tuple[tuple[str, ...], ...]:
+    """Merge cycle groups into one canonical, sorted view."""
+    found: dict[tuple[str, ...], tuple[str, ...]] = {}
+    for group in groups:
+        for cycle in group:
+            key = cycle_key(cycle)
+            found.setdefault(key, canonical_cycle(cycle))
+    return tuple(found[key] for key in sorted(found))
+
+
 def dependency_cycles(edges: Sequence[tuple[str, str]]) -> tuple[tuple[str, ...], ...]:
     """Every elementary dependency cycle, once, as a canonical closed path.
 
