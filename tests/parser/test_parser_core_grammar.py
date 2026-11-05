@@ -81,6 +81,24 @@ ENDDEF (*BasePicture*);
     assert child.header.invocation_arguments == ("LayerModule",)
 
 
+def test_parser_core_keeps_invocation_assignment_arguments():
+    """`Param1 = 5` is a header argument, not a tail to fold into the coordinates."""
+    code = """
+"SyntaxVersion"
+"OriginalFileDate"
+"ProgramDate"
+BasePicture Invocation (0.0,0.0,0.0,1.0,1.0 Param1 = 5) : MODULEDEFINITION DateCode_ 1
+ModuleDef
+ClippingBounds = ( -1.0 , -1.0 ) ( 1.0 , 1.0 )
+ENDDEF (*BasePicture*);
+"""
+
+    bp = parser_core_parse_source_text(code)
+
+    assert bp.header.arguments.assigns == (AssignClause("Param1", 5),)
+    assert bp.header.invoke_coord_tails == []
+
+
 def test_parser_core_accepts_outline_colour_assignment_invar_tail():
     code = """
 "SyntaxVersion"
@@ -380,7 +398,7 @@ ENDDEF (*BasePicture*);
 
     assert bp.header.invoke_coord_tails == [VarTail("in", "PosX")]
     assert bp.moduledef is not None
-    assert bp.moduledef.properties[const.KEY_TAILS] == [VarTail("in", "PanelResize")]
+    assert bp.moduledef.clipping_tails == (VarTail("in", "PanelResize"),)
 
 
 def test_parser_core_keeps_numeric_coordinate_tails_out_of_the_coordinate_value():
@@ -399,7 +417,7 @@ ENDDEF (*BasePicture*);
 
     assert bp.moduledef is not None
     assert bp.moduledef.clipping_bounds == ((-1.0, -1.0), (1.0, 1.0))
-    assert bp.moduledef.clipping_tails == [2.5]
+    assert bp.moduledef.clipping_tails == (2.5,)
 
 
 def test_parser_core_flattens_nested_clipping_bounds_tails():
@@ -445,7 +463,9 @@ ENDDEF (*BasePicture*);
     assert len(bp.submodules) == 1
     child = bp.submodules[0]
     assert isinstance(child, ModuleTypeInstance)
-    assert child.header.invoke_coord_tails == [VarTail("out", "Allow.RecpSupParameters")]
+    assert child.header.invoke_coord_tails == []
+    assert child.header.arguments.module_in_view is not None
+    assert child.header.arguments.module_in_view.tail == VarTail("out", "Allow.RecpSupParameters")
 
 
 def test_parser_core_parses_nested_submodule_fixture_through_split_module_mixins():

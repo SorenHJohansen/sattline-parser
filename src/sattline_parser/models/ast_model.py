@@ -30,6 +30,7 @@ from ._ast_model_support import (
     submodule_list,
     variable_list,
 )
+from .clauses import ClippingClause, ModuleArguments
 from .expressions import (
     Assignment,
     BinOp,
@@ -49,10 +50,8 @@ from .expressions import (
 from .properties import (
     GraphProperties,
     InteractProperties,
-    ModuleDefProperties,
     graph_properties,
     interact_properties,
-    module_def_properties,
 )
 from .tails import Tail, tail_list
 
@@ -319,20 +318,27 @@ class GraphicsBinding:
 
 @dataclass
 class ModuleDef:
-    clipping_bounds: tuple[tuple[float, float], tuple[float, float]] | None = None
-    #: Coordinate tails attached to the ``ClippingBounds`` corners, in source
-    #: order. Retained so validation can type-check corner tail expressions;
-    #: :attr:`clipping_bounds` keeps only the resolved float values.
-    clipping_tails: list[Tail] | None = None
+    #: The ``ClippingBounds`` clause, when the source wrote one. It carries
+    #: both the resolved corners and the tails attached to them.
+    clipping: ClippingClause | None = None
     zoom_limits: tuple[float, float] | None = None
     seq_layers: float | dict[str, float] | None = None
     grid: float = 0.2
     zoomable: bool = False
     graph_objects: list[GraphObject] = field(default_factory=graph_object_list)
     interact_objects: list[InteractObject] = field(default_factory=interact_object_list)
-    properties: ModuleDefProperties = field(default_factory=module_def_properties)
     #: Source span of the ``ModuleDef`` block, when positions are propagated.
     span: SourceSpan | None = field(default=None, compare=False, metadata={"layout": True})
+
+    @property
+    def clipping_bounds(self) -> tuple[tuple[float, float], tuple[float, float]] | None:
+        """The resolved corner values, or ``None`` when the source omitted them."""
+        return self.clipping.bounds if self.clipping is not None else None
+
+    @property
+    def clipping_tails(self) -> tuple[Tail, ...] | None:
+        """The tails attached to the clipping corners, in source order."""
+        return self.clipping.tails if self.clipping is not None else None
 
     def __str__(self) -> str:
         lines = [
@@ -402,19 +408,54 @@ class ModuleHeader:
     name: str
     invoke_coord: tuple[float, float, float, float, float]
     declaration_span: SourceSpan | None = None
-    invocation_arguments: tuple[str, ...] = ()
-    layer_info: int | None = None
-    enable: bool | None = None
-    #: ``Module_In_View = True|False`` invocation-header property. Distinct from
-    #: :attr:`enable`; both may appear.
-    module_in_view: bool | None = None
-    zoom_limits: tuple[float, float] | None = None
-    zoomable: bool = False
-    enable_tail: Tail | None = None
+    #: The typed invocation argument list. It is the single source of truth for
+    #: the marker, layer, enable, ``Module_In_View``, zoom, and assignment
+    #: arguments; the singular fields below are read-only views over it.
+    arguments: ModuleArguments = field(default_factory=ModuleArguments)
+    #: Only the tails attached to the five ``invoke_coord`` values, in order.
     invoke_coord_tails: list[Tail] = field(default_factory=tail_list)
     groupconn: VarRef | None = None
     groupconn_global: bool = False
     description_comments: list[CodeComment] = field(default_factory=code_comment_list)
+
+    @property
+    def invocation_arguments(self) -> tuple[str, ...]:
+        """The kinds of the marker arguments, in source order."""
+        return tuple(marker.kind for marker in self.arguments.markers)
+
+    @property
+    def layer_info(self) -> int | None:
+        """The ``Layer_ = <int>`` argument, when the source wrote one."""
+        return self.arguments.layer
+
+    @property
+    def enable(self) -> bool | None:
+        """The ``Enable_`` value, when the source wrote one."""
+        enable = self.arguments.enable
+        return enable.enabled if enable is not None else None
+
+    @property
+    def enable_tail(self) -> Tail | None:
+        """The optional tail of the ``Enable_`` argument."""
+        enable = self.arguments.enable
+        return enable.tail if enable is not None else None
+
+    @property
+    def module_in_view(self) -> bool | None:
+        """The ``Module_In_View`` value, distinct from ``Enable_``."""
+        clause = self.arguments.module_in_view
+        return clause.in_view if clause is not None else None
+
+    @property
+    def zoom_limits(self) -> tuple[float, float] | None:
+        """The ``ZoomLimits`` pair, when the source wrote one."""
+        limits = self.arguments.zoom_limits
+        return (limits.minimum, limits.maximum) if limits is not None else None
+
+    @property
+    def zoomable(self) -> bool:
+        """True when the ``Zoomable`` marker argument is present."""
+        return self.arguments.zoomable
 
 
 class _ModuleBlockViews:

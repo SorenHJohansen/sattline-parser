@@ -7,11 +7,11 @@ field that holds it. ``NodeVisitor`` is the subclassing form: override a
 The walk is structural. It visits model nodes (declarations, module and code
 containers, SFC nodes, statements, expressions, and the typed clause and tail
 payloads attached to graphics, interact, and module-definition nodes). It
-descends into ``GraphObject.properties``, ``InteractObject.properties``, and
-``ModuleDef.properties`` in the documented property order below. It does not
-descend into ``ModuleHeader.invocation_arguments`` (marker names only) or
-``parse_tree``. Literal values (``bool``, ``int``, ``float``, ``str``) are
-leaves and are not visited as nodes.
+descends into ``GraphObject.properties`` and ``InteractObject.properties`` in
+the documented property order below, and into ``ModuleHeader.arguments`` and
+``ModuleDef.clipping`` as ordinary nodes. It does not descend into ``parse_tree``.
+Literal values (``bool``, ``int``, ``float``, ``str``) are leaves and are not
+visited as nodes.
 
 Property order:
 
@@ -21,16 +21,14 @@ Property order:
 * ``InteractObject``: ``procedure``, ``assigns``, ``enables``, ``flags``,
   ``colours``, ``body``, ``tails``, then the non-node keys (``coords``,
   ``layers``).
-* ``ModuleDef``: ``clipping_tails``, ``properties["tails"]``,
-  ``graph_objects``, ``interact_objects``.
 
 The flat ``properties["tails"]`` list is a derived view: a tail owned by a
 clause is emitted through that clause, and only the unowned (coordinate) tails
-are emitted from the flat list. The same rule applies to ``ModuleDef``, where
-``clipping_tails`` owns the entries also present in ``properties["tails"]``.
-Every tail node therefore appears once. The order is load-bearing: ``tails`` is
-visited last among the node-bearing keys, so the clauses have already recorded
-their tails before the flat list is filtered.
+are emitted from the flat list. Every tail node therefore appears once. The
+order is load-bearing: ``tails`` is visited last among the node-bearing keys, so
+the clauses have already recorded their tails before the flat list is filtered.
+``ModuleDef.clipping`` owns the clipping tails, so they are emitted through the
+``ClippingClause`` and never duplicated.
 
 The order is deterministic: the declared field order of each node, with list
 elements in source order, except for the property maps, which use the order
@@ -51,13 +49,18 @@ from . import ast_model as m
 from .clauses import (
     Alignment,
     AssignClause,
+    ClippingClause,
     ColourSpec,
     EnableClause,
     FlagClause,
+    ModuleArguments,
+    ModuleInViewClause,
+    ModuleMarker,
     PickButton,
     ProcedureCall,
     ScaleSelector,
     TailedClause,
+    ZoomLimits,
 )
 from .expressions import (
     Assignment,
@@ -108,6 +111,7 @@ _NODE_TYPES: tuple[type[object], ...] = (
     Assignment,
     BinOp,
     BoolOp,
+    ClippingClause,
     ColourSpec,
     Compare,
     EnableClause,
@@ -116,6 +120,9 @@ _NODE_TYPES: tuple[type[object], ...] = (
     FuncCallStmt,
     IfStmt,
     LitStringTail,
+    ModuleArguments,
+    ModuleInViewClause,
+    ModuleMarker,
     NotOp,
     PickButton,
     ProcedureCall,
@@ -125,6 +132,7 @@ _NODE_TYPES: tuple[type[object], ...] = (
     UnaryOp,
     VarRef,
     VarTail,
+    ZoomLimits,
 )
 
 
@@ -417,8 +425,7 @@ def _container_children(node: object) -> Iterator[tuple[str, object]]:
         return
 
     if isinstance(node, m.ModuleHeader):
-        if node.enable_tail is not None:
-            yield from _nodes("enable_tail", node.enable_tail)
+        yield "arguments", node.arguments
         yield from _nodes("invoke_coord_tails", node.invoke_coord_tails)
         if node.groupconn is not None:
             yield "groupconn", node.groupconn
@@ -439,10 +446,8 @@ def _declaration_children(node: object) -> Iterator[tuple[str, object]]:
         return
 
     if isinstance(node, m.ModuleDef):
-        clipping_tails = node.clipping_tails or ()
-        yield from _nodes("clipping_tails", clipping_tails)
-        owned = {id(tail) for tail in clipping_tails}
-        yield from _unowned_tails("properties.tails", node.properties.get("tails"), owned)
+        if node.clipping is not None:
+            yield "clipping", node.clipping
         yield from _listed("graph_objects", node.graph_objects)
         yield from _listed("interact_objects", node.interact_objects)
 
@@ -538,6 +543,11 @@ def _clause_children(node: object) -> Iterator[tuple[str, object]]:
             yield "tail", node.tail
         return
 
+    if isinstance(node, ModuleInViewClause):
+        if node.tail is not None and isinstance(node.tail, _NODE_TYPES):
+            yield "tail", node.tail
+        return
+
     if isinstance(node, AssignClause | TailedClause):
         if isinstance(node.value, _NODE_TYPES):
             yield "value", node.value
@@ -560,6 +570,21 @@ def _clause_children(node: object) -> Iterator[tuple[str, object]]:
 
     if isinstance(node, ProcedureCall):
         yield from _nodes("args", node.args)
+        return
+
+    if isinstance(node, ClippingClause):
+        yield from _nodes("tails", node.tails)
+        return
+
+    if isinstance(node, ModuleArguments):
+        if node.enable is not None:
+            yield "enable", node.enable
+        if node.module_in_view is not None:
+            yield "module_in_view", node.module_in_view
+        if node.zoom_limits is not None:
+            yield "zoom_limits", node.zoom_limits
+        yield from _listed("markers", node.markers)
+        yield from _listed("assigns", node.assigns)
         return
 
     if isinstance(node, VarTail) and isinstance(node.value, LitStringTail):

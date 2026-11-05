@@ -427,7 +427,9 @@ def test_module_in_view_is_a_distinct_invocation_property() -> None:
     header = parse_source_text(source).header
     assert header.module_in_view is True
     assert header.enable is False
-    assert header.invoke_coord_tails == [VarTail("out", "Visible")]
+    assert header.invoke_coord_tails == []
+    assert header.arguments.module_in_view is not None
+    assert header.arguments.module_in_view.tail == VarTail("out", "Visible")
 
 
 def test_module_in_view_rejects_on_off() -> None:

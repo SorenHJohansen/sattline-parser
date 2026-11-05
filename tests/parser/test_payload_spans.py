@@ -7,13 +7,18 @@ from sattline_parser.models.ast_model import InteractObject, SourceSpan
 from sattline_parser.models.clauses import (
     Alignment,
     AssignClause,
+    ClippingClause,
     ColourSpec,
     EnableClause,
     FlagClause,
+    ModuleArguments,
+    ModuleInViewClause,
+    ModuleMarker,
     PickButton,
     ProcedureCall,
     ScaleSelector,
     TailedClause,
+    ZoomLimits,
 )
 from sattline_parser.models.tails import LitStringTail, VarTail
 
@@ -21,7 +26,7 @@ _CODE = """
 "SyntaxVersion"
 "OriginalFileDate"
 "ProgramDate"
-BasePicture Invocation (0.0 : InVar_ "PosX",0.0,0.0,1.0,1.0) : MODULEDEFINITION DateCode_ 1
+BasePicture Invocation (0.0 : InVar_ "PosX",0.0,0.0,1.0,1.0 Module_In_View = True : OutVar_ "Visible" IgnoreMaxModule ZoomLimits = 0.5 2.0) : MODULEDEFINITION DateCode_ 1
 LOCALVARIABLES
     PosX: integer := 0;
     PanelResize: integer := 0;
@@ -59,6 +64,11 @@ def test_every_modelled_payload_carries_a_source_span() -> None:
     module_def = picture.moduledef
     assert module_def is not None
     assert module_def.span is not None
+    assert module_def.clipping is not None
+    assert module_def.clipping.span is not None
+    assert picture.header.arguments.span is not None
+    assert picture.header.arguments.module_in_view is not None
+    assert picture.header.arguments.module_in_view.tail == VarTail("out", "Visible")
 
     assert picture.header.invoke_coord_tails
     assert all(isinstance(tail, VarTail) and tail.span is not None for tail in picture.header.invoke_coord_tails)
@@ -68,15 +78,20 @@ def test_every_modelled_payload_carries_a_source_span() -> None:
     checked: tuple[type[object], ...] = (
         InteractObject,
         Alignment,
+        ClippingClause,
         EnableClause,
         AssignClause,
         FlagClause,
         TailedClause,
         ColourSpec,
+        ModuleArguments,
+        ModuleInViewClause,
+        ModuleMarker,
         PickButton,
         ScaleSelector,
         ProcedureCall,
         LitStringTail,
+        ZoomLimits,
     )
     for node_type in checked:
         nodes = _nodes(picture, node_type)

@@ -1,0 +1,1 @@
+- **AST cache format.** `FILE_AST_CACHE_VERSION` is now 6. `ParameterMapping.source_type` serialises as a `MappingSource` value, the clause and tail payloads carry spans, and the header and clipping payloads were reshaped, so an older cache entry is discarded instead of being decoded into the current model.

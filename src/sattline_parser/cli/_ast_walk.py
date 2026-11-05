@@ -130,9 +130,8 @@ class _QueryVisitor(NodeVisitor):
         self.generic_visit(module_def)
 
     def visit_ModuleHeader(self, header: m.ModuleHeader) -> None:
-        """Visit header tails; ``groupconn`` names a scan group, not a variable."""
-        if header.enable_tail is not None:
-            self.visit(header.enable_tail)
+        """Visit header arguments and coordinate tails; ``groupconn`` is not a variable use."""
+        self.visit(header.arguments)
         for tail in header.invoke_coord_tails:
             self.visit(tail)
 

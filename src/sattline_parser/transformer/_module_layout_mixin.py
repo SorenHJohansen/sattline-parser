@@ -8,7 +8,6 @@ from typing import Any, Literal, cast
 
 from lark import Token
 
-from sattline_parser.grammar import constants as const
 from sattline_parser.models.ast_model import GraphObject, InteractObject, ModuleDef
 from sattline_parser.models.clauses import (
     ClippingClause,
@@ -233,21 +232,12 @@ class ModuleLayoutMixin:
 
     @staticmethod
     def _apply_clipping_bounds(module_def: ModuleDef, clause: ClippingClause) -> None:
-        """Record the resolved ClippingBounds corners and their corner tails.
+        """Record the ``ClippingBounds`` clause on the module definition.
 
-        Tails go to both :attr:`ModuleDef.clipping_tails`, which validation reads to
-        type-check corner expressions, and to the shared ``tails`` property, which
-        the graphics/interact consumers already expect.
+        The clause keeps both the resolved corners and the tails attached to
+        them, so no parallel ``tails`` view is written.
         """
-        module_def.clipping_bounds = clause.bounds
-        if not clause.tails:
-            return
-        module_def.clipping_tails = list(clause.tails)
-        property_tails = module_def.properties.get(const.KEY_TAILS)
-        if property_tails is not None:
-            property_tails.extend(clause.tails)
-        else:
-            module_def.properties[const.KEY_TAILS] = list(clause.tails)
+        module_def.clipping = clause
 
     @staticmethod
     def _apply_module_options(module_def: ModuleDef, options: ModuleOptions) -> None:

@@ -22,8 +22,10 @@ from sattline_parser.models import ast_model as m
 from sattline_parser.models.ast_model import SourceSpan
 from sattline_parser.models.clauses import (
     AssignClause,
+    ClippingClause,
     EnableClause,
     FlagClause,
+    ModuleInViewClause,
     ProcedureCall,
     TailedClause,
 )
@@ -48,8 +50,9 @@ def _tail_context(event: WalkEvent) -> str | None:
 
     The walker's relation strings are part of its contract. A clause tail is
     reached through ``tail``, a procedure argument through ``args[i]``, a
-    header coordinate tail through ``invoke_coord_tails[i]``, and a property
-    tail through ``properties.<key>`` or ``properties.<key>[i]``.
+    header coordinate tail through ``invoke_coord_tails[i]``, a clipping tail
+    through ``tails[i]``, and a property tail through ``properties.<key>`` or
+    ``properties.<key>[i]``.
     """
     if not event.parents:
         return None
@@ -57,18 +60,10 @@ def _tail_context(event: WalkEvent) -> str | None:
     relation = event.relation
 
     if isinstance(parent, m.ModuleHeader):
-        if relation == "enable_tail":
-            return _ENABLE
-        if relation.startswith("invoke_coord_tails"):
-            # Module_In_View and assignment tails are folded into this field,
-            # so only the undefined-variable walk is safe here.
-            return "header"
-        return None
-
-    if isinstance(parent, m.ModuleDef):
-        if relation.startswith("clipping_tails") or relation.startswith("properties.tails"):
-            return _COORDINATE
-        return None
+        # Only the five invocation coordinates live here now. Enable_,
+        # Module_In_View, and assignment tails are children of their clauses
+        # under ``arguments``, so each gets its own rule below.
+        return _COORDINATE if relation.startswith("invoke_coord_tails") else None
 
     if isinstance(parent, m.GraphObject):
         if relation == "properties.enable_tail":
@@ -89,11 +84,17 @@ def _tail_context(event: WalkEvent) -> str | None:
     if isinstance(parent, EnableClause):
         return _ENABLE if relation == "tail" else None
 
+    if isinstance(parent, ModuleInViewClause):
+        return "annotation" if relation == "tail" else None
+
     if isinstance(parent, TailedClause | AssignClause | FlagClause):
         return "annotation" if relation == "tail" else None
 
     if isinstance(parent, ProcedureCall):
         return "annotation" if relation.startswith("args") else None
+
+    if isinstance(parent, ClippingClause):
+        return _COORDINATE if relation.startswith("tails") else None
 
     return None
 

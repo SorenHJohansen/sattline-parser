@@ -98,11 +98,12 @@ must be boolean (`SL-V030`). A `ModuleDef` coordinate tail must be real
 parser does not evidence how the name resolves. The query command reports those
 names as unresolved uses instead.
 
-`ModuleHeader.invoke_coord_tails` folds coordinate tails, `Module_In_View`
-tails, and invocation-assignment tails into one field. Only the undefined-name
-walk applies there: the field cannot distinguish a coordinate position from a
-boolean condition, so `SL-V032` and the `Module_In_View` boolean rule are not
-applied to header tails. Splitting the header field is a separate change.
+`ModuleHeader.invoke_coord_tails` holds only the tails attached to the five
+invocation coordinates, so `SL-V032` applies to them like any other coordinate
+tail. `Enable_`, `Module_In_View`, and assignment tails are children of their
+own clauses under `ModuleHeader.arguments`; the `Enable_` boolean rule and the
+ordinary expression walk apply through the clause that owns them.
+`ModuleDef.clipping` owns the clipping tails, so each is checked once.
 
 These rules keep the `code` rule scope because annotation tails are code
 expressions. The rule-group table names `annotations.py` as the file that emits

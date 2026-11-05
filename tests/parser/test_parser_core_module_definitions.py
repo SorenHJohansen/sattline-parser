@@ -275,7 +275,7 @@ def test_modules_mixin_layout_helpers_cover_moduledef_and_numeric_errors():
     )
 
     assert moduledef.clipping_bounds == ((0.0, 0.0), (1.0, 1.0))
-    assert moduledef.properties[parser_const.KEY_TAILS] == [tail]
+    assert moduledef.clipping_tails == (tail,)
     assert moduledef.graph_objects == [graph]
     assert moduledef.interact_objects == [interact]
     assert moduledef.zoom_limits == (0.5, 2.0)

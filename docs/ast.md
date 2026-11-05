@@ -32,15 +32,10 @@ classDiagram
         name: str
         invoke_coord: tuple
         declaration_span: SourceSpan | None
-        invocation_arguments: tuple[str, ...]
-        layer_info: int | None
-        enable: bool | None
-        enable_tail: Tail | None
-        module_in_view: bool | None
-        zoom_limits: tuple[float, float] | None
-        zoomable: bool
+        arguments: ModuleArguments
         invoke_coord_tails: list[Tail]
         groupconn: VarRef | None
+        groupconn_global: bool
         description_comments: list[CodeComment]
     }
 
@@ -100,6 +95,13 @@ classDiagram
 ```
 
 `Module` is the alias for `SingleModule | FrameModule | ModuleTypeInstance`.
+
+`ModuleHeader.arguments` is the canonical invocation argument list: layer,
+`Enable_`, `Module_In_View`, zoom limits and the `Zoomable` marker, marker
+arguments, and `Name = value` assignments. The singular names `layer_info`,
+`enable`, `enable_tail`, `module_in_view`, `zoom_limits`, `zoomable`, and
+`invocation_arguments` are read-only views over that field. `invoke_coord_tails`
+holds only the tails attached to the five invocation coordinates.
 
 ### Why `moduledefs` and `modulecodes` are lists
 
@@ -175,15 +177,13 @@ variable or dotted field reference, `VALUE` for a literal or a
 ```mermaid
 classDiagram
     class ModuleDef {
-        clipping_bounds: tuple | None
-        clipping_tails: list | None
+        clipping: ClippingClause | None
         zoom_limits: tuple | None
         seq_layers: float | dict | None
         grid: float
         zoomable: bool
         graph_objects: list[GraphObject]
         interact_objects: list[InteractObject]
-        properties: dict
         span: SourceSpan | None
     }
 
@@ -232,11 +232,16 @@ classDiagram
 `Equation.kind` is `"equationblock"` or `"equations"`. The two keywords are
 kept distinct; their effect is not modelled, so only the spelling is preserved.
 
+`ModuleDef.clipping` holds the whole `ClippingBounds` clause, so the resolved
+corners and the tails attached to them live in one payload. `clipping_bounds`
+and `clipping_tails` are read-only views over it. The block has no separate
+property map.
+
 ## Typed property maps
 
-`GraphObject.properties`, `InteractObject.properties`, and `ModuleDef.properties`
-are `TypedDict` maps in `models/properties.py`, so the fixed keys are named even
-though the dataclasses expose them as a mapping.
+`GraphObject.properties` and `InteractObject.properties` are `TypedDict` maps in
+`models/properties.py`, so the fixed keys are named even though the dataclasses
+expose them as a mapping.
 
 `InteractProperties.body` is `list[InteractBodyEntry] | None`, in source order.
 `InteractBodyEntry` is the closed union of what a body line can produce:
@@ -478,9 +483,8 @@ override decides whether to descend by calling `self.generic_visit(node)`.
 The walk covers module containers, declarations, module code, SFC nodes,
 statements, expressions, headers, comments, and the typed clause and tail
 payloads attached to graphics, interact, and module-definition nodes. It
-descends into `GraphObject.properties`, `InteractObject.properties`, and
-`ModuleDef.properties`. `ModuleHeader.invocation_arguments` holds marker names
-only and is not walked; header argument tails live in `invoke_coord_tails`.
+descends into `GraphObject.properties` and `InteractObject.properties`, and into
+`ModuleHeader.arguments` and `ModuleDef.clipping` as ordinary nodes.
 `parse_tree` is not walked. Literal values are leaves and are not emitted as
 nodes. `prune` may stop descent into a node after it has been yielded.
 
@@ -490,7 +494,11 @@ Property payloads are visited in a fixed order:
 | --- | --- |
 | `GraphObject` | `colours`, `enable_tail`, `tails` |
 | `InteractObject` | `procedure`, `assigns`, `enables`, `flags`, `colours`, `body`, `tails` |
-| `ModuleDef` | `clipping_tails`, `properties["tails"]`, `graph_objects`, `interact_objects` |
+
+`ModuleHeader.arguments` is walked as a node, so a consumer reaches `enable`,
+`module_in_view`, `zoom_limits`, `markers`, and `assigns` through it.
+`ModuleDef.clipping` owns the clipping tails, so they are emitted through the
+`ClippingClause` and never duplicated.
 
 The non-node keys (`coords`, `segment_point`, `polygon_type`, `layer`,
 `text_vars`, `enable`, and `layers`) stay in the order tuple so a new property
@@ -498,9 +506,8 @@ forces a walker decision, but they produce no nodes.
 
 The flat `properties["tails"]` list is a derived view. A tail owned by a clause
 is emitted through that clause, and only the unowned (coordinate) tails are
-emitted from the flat list. `ModuleDef.clipping_tails` owns the entries also
-present in its `properties["tails"]`. Every tail node therefore appears once,
-and a query or validation pass does not need to deduplicate shared payloads.
+emitted from the flat list. Every tail node therefore appears once, and a query
+or validation pass does not need to deduplicate shared payloads.
 
 `walk` uses an explicit stack and keeps ancestors as a persistent chain.
 `WalkEvent.parents` expands its sequence view only when read, so a deep tree is
