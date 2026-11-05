@@ -26,7 +26,7 @@ from .clauses import (
     ScaleSelector,
     TailedClause,
 )
-from .expressions import CodeComment
+from .expressions import CodeComment, VarRef
 from .tails import Tail
 
 __all__ = [
@@ -74,7 +74,7 @@ class GraphProperties(TypedDict, total=False):
     #: ``KEY_COLOURS``
     colours: list[ColourSpec]
     #: ``KEY_TEXT_VARS``
-    text_vars: list[str]
+    text_vars: list[VarRef]
     #: ``KEY_ENABLE``
     enable: bool
     #: ``KEY_ENABLE_TAIL``

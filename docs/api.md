@@ -96,10 +96,11 @@ clause payload, and tail type together with the traversal helpers:
 | `GraphObject`, `InteractObject`, `GraphicsBinding` | Graphics and interact nodes |
 | `AssignClause`, `EnableClause`, `TailedClause`, `ColourSpec`, `PickButton`, `Alignment`, `InteractBodyEntry`, and the other clause payloads | Typed clause payloads and the interactor body union |
 | `VarTail`, `LitStringTail`, `Tail` | Bound and computed tails |
-| `walk` | `(node, *, prune=None)` yields every AST node in pre-order |
-| `NodeVisitor` | `visit_<ClassName>` dispatch with `generic_visit` |
-| `WalkEvent` | `(node, relation, parents)` for one visited node; `parents` is a sequence view expanded on access and costs O(depth) per read |
+| `walk` | `(node, *, prune=None, emit_leave=False)` yields every AST node in pre-order |
+| `NodeVisitor` | `visit_<ClassName>` and `leave_<ClassName>` dispatch with `generic_visit` |
+| `WalkEvent` | `(node, relation, parents, field, indices, phase)` for one visit; `parents` is a sequence view expanded on access and costs O(depth) per read |
 | `iter_child_nodes` | `(node)` yields `(relation, child)` pairs |
+| `iter_literal_leaves` | `(node)` yields `LiteralLeaf(relation, field, indices, value)` for the literal values a node holds |
 
 The top-level package keeps the root, span, expression, statement, and walker
 names for short scripts, and exports `SLTransformer`. The full model, including

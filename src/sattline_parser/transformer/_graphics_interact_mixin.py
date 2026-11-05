@@ -27,12 +27,12 @@ from sattline_parser.models.clauses import (
     ScaleSelector,
     TailedClause,
 )
-from sattline_parser.models.expressions import SLExpression
+from sattline_parser.models.expressions import SLExpression, VarRef
 from sattline_parser.models.properties import GraphProperties, InteractBodyEntry, InteractProperties
 from sattline_parser.models.tails import Tail
 
 from ._comments_mixin import code_comments_from_run, is_comment_tree
-from ._module_shared import InterimCoords, meta_span, v_args
+from ._module_shared import InterimCoords, TextContent, meta_span, v_args
 
 TransformerItem = object
 TransformerTree = Tree[object]
@@ -92,12 +92,6 @@ def _box_coords(items: list[TransformerItem]) -> CoordBox | None:
         if isinstance(item, InterimCoords) and _is_coord_box(item.coords):
             return item.coords
     return None
-
-
-def _text_of(node: object) -> str:
-    if isinstance(node, str):
-        return node
-    raise ValueError(f"_extract_text_from_node expected a str or a 'text_content' node; got {type(node).__name__}")
 
 
 class _GraphicsInteractMixin:
@@ -287,8 +281,8 @@ class _GraphicsInteractMixin:
         self._apply_common_properties(go.properties, items)
         return go
 
-    def _text_vars(self, items: list[TransformerItem]) -> list[str]:
-        text_vars: list[str] = []
+    def _text_vars(self, items: list[TransformerItem]) -> list[VarRef]:
+        text_vars: list[VarRef] = []
         for index, item in enumerate(items):
             if not (isinstance(item, Token) and item.type == const.TOKEN_VARNAME):
                 continue
@@ -298,9 +292,12 @@ class _GraphicsInteractMixin:
                 if is_comment_tree(candidate):
                     previous -= 1
                     continue
-                text = _text_of(candidate)
-                if text:
-                    text_vars.append(text)
+                if not isinstance(candidate, TextContent):
+                    raise ValueError(
+                        f"_text_vars expected a TextContent before VarName; got {type(candidate).__name__}"
+                    )
+                if candidate.text:
+                    text_vars.append(VarRef(candidate.text, span=candidate.span))
                     break
                 previous -= 1
         return text_vars
@@ -320,11 +317,12 @@ class _GraphicsInteractMixin:
             go.properties[const.KEY_TEXT_VARS] = text_vars
         return go
 
-    def text_content(self, items: list[TransformerItem]) -> str:
-        """Grammar text_content -> string (unwrap TEXT content)."""
+    @v_args(meta=True)
+    def text_content(self, meta: Any, items: list[TransformerItem]) -> TextContent:
+        """Grammar text_content -> the text and the span of its STRING token."""
         for it in items:
             if isinstance(it, str):
-                return it
+                return TextContent(it, meta_span(meta))
         types = ", ".join(type(x).__name__ for x in items)
         raise ValueError(f"text_content expected a str; got: {types}")
 
@@ -723,18 +721,19 @@ class _GraphicsInteractMixin:
         present and a literal otherwise.
         """
         text: str | None = None
-        is_reference = False
+        has_reference = False
         for it in items:
             # Lark tokens subclass ``str``, so the token check must come first.
             if isinstance(it, Token):
                 if it.type == const.TOKEN_VARNAME:
-                    is_reference = True
+                    has_reference = True
                 continue
             if isinstance(it, str) and text is None:
                 text = it
         if text is None:
             raise ValueError(f"interact_pick_button expected a STRING; got: {items!r}")
-        return PickButton(value=text, is_reference=is_reference, span=meta_span(meta))
+        reference = VarRef(text) if has_reference else None
+        return PickButton(value=text, reference=reference, span=meta_span(meta))
 
     def interact_value_line(self, items: list[TransformerItem]) -> Tail:
         """Grammar interact_value_line -> the single value or bound tail."""

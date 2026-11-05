@@ -257,7 +257,8 @@ a `span` (`SourceSpan | None`) recording the source range of the rule that
 produced it. A span is layout metadata: it does not participate in equality, so
 two structurally identical payloads from different files compare equal. Read
 `.span` when you need the provenance. A bound tail exposes the written name
-through `VarTail.bound_name`.
+through `VarTail.bound_name`. A `PickButton` keeps the written `value` and, when
+the `VarName` marker is present, a `reference` `VarRef`.
 
 ## SFC nodes
 
@@ -450,9 +451,10 @@ decoded into the current model.
 
 Import the model through `sattline_parser.ast`. `models/walk.py` is the public
 traversal. `walk(node)` yields a `WalkEvent` for every AST node in pre-order.
-Each event carries the node, the relation that holds it in its parent (for
-example `localvariables[2]` or `branches[0][1]`), and the ancestor chain, root
-first.
+Each event carries the node, the display relation that holds it in its parent
+(for example `localvariables[2]` or `branches[0][1]`), the model field and
+subscript indices behind that relation, the phase, and the ancestor chain (root
+first).
 
 ```python
 from sattline_parser import parse_source_file
@@ -460,7 +462,7 @@ from sattline_parser.ast import NodeVisitor, VarRef, walk
 
 for event in walk(basepicture):
     if isinstance(event.node, VarRef):
-        print(event.relation, event.node.name)
+        print(event.relation, event.field, event.indices, event.node.name)
 
 
 class DeclarationCounter(NodeVisitor):
@@ -475,6 +477,21 @@ class DeclarationCounter(NodeVisitor):
         self.calls += 1
         self.generic_visit(call)
 ```
+
+`WalkEvent.phase` is `"enter"` for the pre-order event. With
+`walk(..., emit_leave=True)`, each node also gets a `phase="leave"` event after
+its subtree, so a consumer can maintain a scope stack without recursion. A
+pruned node still gets its leave event. `NodeVisitor.visit` calls the matching
+`leave_<ClassName>` hook after the enter method returns, which gives the
+subclassing form the same scope-stack symmetry.
+
+Every field of every node class is declared in `_FIELD_SPECS` as a child
+(`node`), a node-or-literal (`value`), a typed property map (`properties`), or a
+`leaf`. The field-coverage test compares the declaration with
+`dataclasses.fields`, so a new field cannot be left unclassified. Literal
+values are leaves and are not emitted as `WalkEvent`s; `iter_literal_leaves(node)`
+reads the literal values a node holds directly, and `LiteralLeaf` carries the
+relation, field, indices, and value.
 
 `NodeVisitor` dispatches to `visit_<ClassName>` and falls back to
 `generic_visit`, which visits every child that `iter_child_nodes` reports. An
@@ -492,7 +509,7 @@ Property payloads are visited in a fixed order:
 
 | Container | Node-bearing keys, in walk order |
 | --- | --- |
-| `GraphObject` | `colours`, `enable_tail`, `tails` |
+| `GraphObject` | `colours`, `enable_tail`, `tails`, `text_vars` |
 | `InteractObject` | `procedure`, `assigns`, `enables`, `flags`, `colours`, `body`, `tails` |
 
 `ModuleHeader.arguments` is walked as a node, so a consumer reaches `enable`,
@@ -500,9 +517,14 @@ Property payloads are visited in a fixed order:
 `ModuleDef.clipping` owns the clipping tails, so they are emitted through the
 `ClippingClause` and never duplicated.
 
-The non-node keys (`coords`, `segment_point`, `polygon_type`, `layer`,
-`text_vars`, `enable`, and `layers`) stay in the order tuple so a new property
-forces a walker decision, but they produce no nodes.
+`GraphObject.properties["text_vars"]` holds `VarRef` values, and a
+`PickButton.reference` is a `VarRef` child. `walk` therefore yields every
+text-object and pick-button reference as a `VarRef`, and a consumer can collect
+all references with one `isinstance` filter.
+
+The non-node keys (`coords`, `segment_point`, `polygon_type`, `layer`, `enable`,
+and `layers`) stay in the order tuple so a new property forces a walker
+decision, but they produce no nodes.
 
 The flat `properties["tails"]` list is a derived view. A tail owned by a clause
 is emitted through that clause, and only the unowned (coordinate) tails are
@@ -539,7 +561,7 @@ need machine-readable output.
 | `tests/parser/test_parser_core_modules.py` | Module nesting and assembly |
 | `tests/parser/test_parser_core_sfc.py` | SFC node shapes |
 | `tests/parser/test_parser_core_module_definitions.py` | Layout and graphics fields |
-| `tests/parser/test_models_walk.py` | Node coverage, order, ancestry, pruning, visitor dispatch |
+| `tests/parser/test_models_walk.py` | Field coverage, node order, field and indices, ancestry, pruning, leave events, literal leaves, visitor dispatch |
 | `tests/parser/test_models_boundary.py` | The model layer imports no Lark module |
 | `tests/parser/test_ast_namespace.py` | Every node type and model dataclass is on the `sattline_parser.ast` surface |
 | `tests/parser/test_parser_core_deep_structures.py` | Deep-tree walk, clean nesting errors, iterative remapping |

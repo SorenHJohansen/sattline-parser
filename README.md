@@ -246,8 +246,10 @@ visitor.visit(basepicture)
 print(visitor.names)
 ```
 
-`walk` is pre-order and reports the field that holds each node plus its ancestor
-chain. `NodeVisitor` dispatches on the class name. See
+`walk` is pre-order and reports the field, indices, and ancestor chain of each
+node. `walk(..., emit_leave=True)` adds matching leave events for scope stacks,
+and `iter_literal_leaves` reads the literal values a node holds. `NodeVisitor`
+dispatches on the class name and supports `leave_<ClassName>` hooks. See
 [docs/ast.md](docs/ast.md) for the covered fields and the parts of the model it
 deliberately does not descend into.
 

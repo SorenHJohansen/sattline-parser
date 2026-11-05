@@ -48,53 +48,50 @@ _COORDINATE = "coordinate"
 def _tail_context(event: WalkEvent) -> str | None:
     """Name the rule context for a tail, or return ``None`` for a non-tail child.
 
-    The walker's relation strings are part of its contract. A clause tail is
-    reached through ``tail``, a procedure argument through ``args[i]``, a
-    header coordinate tail through ``invoke_coord_tails[i]``, a clipping tail
-    through ``tails[i]``, and a property tail through ``properties.<key>`` or
-    ``properties.<key>[i]``.
+    ``WalkEvent.field`` names the model field or property key that holds the
+    value: a clause tail is ``tail``, a procedure argument ``args``, a header
+    coordinate tail ``invoke_coord_tails``, a clipping tail ``tails``, and a
+    property tail the property key (``enable_tail`` or ``tails``).
     """
     if not event.parents:
         return None
     parent = event.parents[-1]
-    relation = event.relation
+    field = event.field
 
     if isinstance(parent, m.ModuleHeader):
         # Only the five invocation coordinates live here now. Enable_,
         # Module_In_View, and assignment tails are children of their clauses
         # under ``arguments``, so each gets its own rule below.
-        return _COORDINATE if relation.startswith("invoke_coord_tails") else None
+        return _COORDINATE if field == "invoke_coord_tails" else None
 
     if isinstance(parent, m.GraphObject):
-        if relation == "properties.enable_tail":
+        if field == "enable_tail":
             return _ENABLE
-        if relation.startswith("properties.tails"):
+        if field == "tails":
             # The flat list mixes coordinate tails with attribute tails that
             # are not modelled as clauses, so no position rule applies here.
             return "annotation"
         return None
 
     if isinstance(parent, m.InteractObject):
-        if relation.startswith("properties.tails"):
-            return "annotation"
-        if relation.startswith("properties.body"):
+        if field in {"tails", "body"}:
             return "annotation"
         return None
 
     if isinstance(parent, EnableClause):
-        return _ENABLE if relation == "tail" else None
+        return _ENABLE if field == "tail" else None
 
     if isinstance(parent, ModuleInViewClause):
-        return "annotation" if relation == "tail" else None
+        return "annotation" if field == "tail" else None
 
     if isinstance(parent, TailedClause | AssignClause | FlagClause):
-        return "annotation" if relation == "tail" else None
+        return "annotation" if field == "tail" else None
 
     if isinstance(parent, ProcedureCall):
-        return "annotation" if relation.startswith("args") else None
+        return "annotation" if field == "args" else None
 
     if isinstance(parent, ClippingClause):
-        return _COORDINATE if relation.startswith("tails") else None
+        return _COORDINATE if field == "tails" else None
 
     return None
 

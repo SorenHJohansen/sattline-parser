@@ -25,7 +25,7 @@ def test_graphics_interact_mixin_builds_graph_objects_and_lists():
 
     text_object = mixin.text_object(
         [
-            "Caption",
+            TextContent("Caption"),
             Token(parser_const.TOKEN_VARNAME, "TextVar"),
             InterimCoords(coords=coords, tails=[coord_tail, payload_tail]),
         ]
@@ -34,21 +34,21 @@ def test_graphics_interact_mixin_builds_graph_objects_and_lists():
     assert text_object.type == parser_const.GRAMMAR_VALUE_TEXTOBJECT
     assert text_object.properties[parser_const.KEY_COORDS] == coords
     assert text_object.properties[parser_const.KEY_TAILS] == [coord_tail, payload_tail]
-    assert text_object.properties["text_vars"] == ["Caption"]
+    assert text_object.properties["text_vars"] == [VarRef("Caption")]
 
     skipped_empty_text = mixin.text_object(
         [
-            "Caption",
-            "",
+            TextContent("Caption"),
+            TextContent(""),
             Token(parser_const.TOKEN_VARNAME, "FallbackTextVar"),
             InterimCoords(coords=coords),
         ]
     )
 
-    assert skipped_empty_text.properties["text_vars"] == ["Caption"]
-    assert mixin.text_content(["Visible text"]) == "Visible text"
+    assert skipped_empty_text.properties["text_vars"] == [VarRef("Caption")]
+    assert mixin.text_content(Meta(), ["Visible text"]) == TextContent("Visible text")
 
-    with pytest.raises(ValueError, match="_extract_text_from_node expected"):
+    with pytest.raises(ValueError, match="expected a TextContent"):
         mixin.text_object([0, Token(parser_const.TOKEN_VARNAME, "Broken")])
 
     for method_name, expected_type, keeps_coords in (
@@ -86,7 +86,7 @@ def test_graphics_interact_mixin_builds_graph_objects_and_lists():
     with pytest.raises(ValueError, match="graph_object expected a GraphObject"):
         mixin.graph_object(Meta(), ["bad"])
     with pytest.raises(ValueError, match="text_content expected a str"):
-        mixin.text_content([1, 2])
+        mixin.text_content(Meta(), [1, 2])
 
 
 def test_graph_objects_propagates_section_level_layer_to_objects():
@@ -284,7 +284,7 @@ def test_interact_pick_button_models_literal_and_reference():
     reference = mixin.interact_pick_button(
         Meta(), [Token("INTOBJPICKBUTTON_KW", "IntObjPickButton"), "PickVar", Token("VARNAME", "VarName")]
     )
-    assert reference == PickButton("PickVar", is_reference=True)
+    assert reference == PickButton("PickVar", reference=VarRef("PickVar"))
 
     with pytest.raises(ValueError, match="interact_pick_button expected"):
         mixin.interact_pick_button(Meta(), [Token("INTOBJPICKBUTTON_KW", "IntObjPickButton")])
@@ -310,7 +310,7 @@ def test_interactor_body_accepts_pick_button_and_scale_selector():
     assert bp.moduledef is not None
     payloads = _body_payloads(bp.moduledef.interact_objects[0])
     assert PickButton("Pick me") in payloads
-    assert PickButton("PickVar", is_reference=True) in payloads
+    assert PickButton("PickVar", reference=VarRef("PickVar")) in payloads
     assert ScaleSelector("relative") in payloads
 
 

@@ -1,23 +1,33 @@
 """Public traversal of the SattLine AST.
 
-``walk`` yields every AST node in pre-order, together with its ancestry and the
-field that holds it. ``NodeVisitor`` is the subclassing form: override a
-``visit_<ClassName>`` method and call ``generic_visit`` to descend.
+``walk`` yields every AST node in pre-order, together with its ancestry, the
+model field that holds it, and its subscript path. ``NodeVisitor`` is the
+subclassing form: override a ``visit_<ClassName>`` method to decide how to
+descend, and a ``leave_<ClassName>`` method to run after the subtree.
 
-The walk is structural. It visits model nodes (declarations, module and code
-containers, SFC nodes, statements, expressions, and the typed clause and tail
-payloads attached to graphics, interact, and module-definition nodes). It
-descends into ``GraphObject.properties`` and ``InteractObject.properties`` in
-the documented property order below, and into ``ModuleHeader.arguments`` and
-``ModuleDef.clipping`` as ordinary nodes. It does not descend into ``parse_tree``.
-Literal values (``bool``, ``int``, ``float``, ``str``) are leaves and are not
-visited as nodes.
+The walk is structural and driven by ``_FIELD_SPECS``. Every field of every node
+class is declared as one of:
+
+* ``node``: a node or a nested sequence of nodes;
+* ``value``: a node or a literal value (``SLExpression``/``Tail`` fields);
+* ``properties``: a typed property map with a fixed visit order;
+* ``leaf``: no child nodes.
+
+The field-coverage test asserts that the declaration matches
+``dataclasses.fields`` exactly, so a new field forces a walker decision.
+
+The walk descends into ``GraphObject.properties`` and
+``InteractObject.properties`` in the documented order, and into
+``ModuleHeader.arguments`` and ``ModuleDef.clipping`` as ordinary nodes. It
+does not descend into ``parse_tree``. Literal values are leaves and are not
+emitted as nodes; use :func:`iter_literal_leaves` to read the literal values a
+node holds directly.
 
 Property order:
 
-* ``GraphObject``: ``colours``, ``enable_tail``, ``tails``, then the non-node
-  keys (``coords``, ``segment_point``, ``polygon_type``, ``layer``,
-  ``text_vars``, ``enable``).
+* ``GraphObject``: ``colours``, ``enable_tail``, ``tails``, ``text_vars``,
+  then the non-node keys (``coords``, ``segment_point``, ``polygon_type``,
+  ``layer``, ``enable``).
 * ``InteractObject``: ``procedure``, ``assigns``, ``enables``, ``flags``,
   ``colours``, ``body``, ``tails``, then the non-node keys (``coords``,
   ``layers``).
@@ -27,23 +37,20 @@ clause is emitted through that clause, and only the unowned (coordinate) tails
 are emitted from the flat list. Every tail node therefore appears once. The
 order is load-bearing: ``tails`` is visited last among the node-bearing keys, so
 the clauses have already recorded their tails before the flat list is filtered.
-``ModuleDef.clipping`` owns the clipping tails, so they are emitted through the
-``ClippingClause`` and never duplicated.
 
 The order is deterministic: the declared field order of each node, with list
 elements in source order, except for the property maps, which use the order
-above. It is the same tree every caller sees, so a consumer no longer needs to
-reimplement the recursion. The walk uses an explicit stack and keeps ancestors
-as a persistent chain, so a deep tree is walked in linear time without growing
-the Python call stack.
+above. The walk uses an explicit stack and keeps ancestors as a persistent
+chain, so a deep tree is walked in linear time without growing the Python call
+stack.
 """
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterable, Iterator, Sequence
+from collections.abc import Callable, Iterator, Sequence
 from dataclasses import dataclass, is_dataclass
 from dataclasses import fields as dataclass_fields
-from typing import cast, overload
+from typing import Literal, cast, overload
 
 from . import ast_model as m
 from .clauses import (
@@ -77,7 +84,7 @@ from .expressions import (
 )
 from .tails import LitStringTail, VarTail
 
-__all__ = ["NodeVisitor", "WalkEvent", "iter_child_nodes", "walk"]
+__all__ = ["LiteralLeaf", "NodeVisitor", "WalkEvent", "iter_child_nodes", "iter_literal_leaves", "walk"]
 
 #: Model classes that count as AST nodes. Literals and leaves such as
 #: ``SourceSpan`` and ``Simple_DataType`` are deliberately absent.
@@ -133,6 +140,250 @@ _NODE_TYPES: tuple[type[object], ...] = (
     VarRef,
     VarTail,
     ZoomLimits,
+)
+
+type _FieldKind = Literal["leaf", "node", "value", "properties"]
+type _FieldSpecs = dict[type[object], dict[str, _FieldKind]]
+
+#: How the walker treats every field of every node class. ``node`` and
+#: ``properties`` yield child nodes, ``value`` yields a child node or a literal,
+#: and ``leaf`` yields nothing. The coverage test compares this table with the
+#: dataclass fields, so a new field cannot be left unclassified.
+_FIELD_SPECS: _FieldSpecs = {
+    m.BasePicture: {
+        "header": "node",
+        "name": "leaf",
+        "program_name": "leaf",
+        "position": "leaf",
+        "datatype_defs": "node",
+        "moduletype_defs": "node",
+        "moduleparameters": "node",
+        "localvariables": "node",
+        "submodules": "node",
+        "moduledefs": "node",
+        "modulecodes": "node",
+        "origin_file": "leaf",
+        "origin_lib": "leaf",
+        "graphics_file": "leaf",
+        "trailing_comments": "node",
+        "datecode": "leaf",
+        "parse_tree": "leaf",
+    },
+    m.CodeComment: {"text": "leaf", "span": "leaf"},
+    m.DataType: {
+        "name": "leaf",
+        "description": "leaf",
+        "datecode": "leaf",
+        "var_list": "node",
+        "origin_file": "leaf",
+        "origin_lib": "leaf",
+        "declaration_span": "leaf",
+        "trailing_comments": "node",
+    },
+    m.Equation: {
+        "kind": "leaf",
+        "name": "leaf",
+        "position": "leaf",
+        "size": "leaf",
+        "code": "node",
+        "layer_info": "leaf",
+    },
+    m.FrameModule: {
+        "header": "node",
+        "datecode": "leaf",
+        "moduleparameters": "node",
+        "localvariables": "node",
+        "submodules": "node",
+        "moduledefs": "node",
+        "modulecodes": "node",
+        "trailing_comments": "node",
+    },
+    m.GraphObject: {"type": "leaf", "properties": "properties", "span": "leaf"},
+    m.InteractObject: {"type": "leaf", "properties": "properties", "span": "leaf"},
+    m.ModuleCode: {"sequences": "node", "equations": "node"},
+    m.ModuleDef: {
+        "clipping": "node",
+        "zoom_limits": "leaf",
+        "seq_layers": "leaf",
+        "grid": "leaf",
+        "zoomable": "leaf",
+        "graph_objects": "node",
+        "interact_objects": "node",
+        "span": "leaf",
+    },
+    m.ModuleHeader: {
+        "name": "leaf",
+        "invoke_coord": "leaf",
+        "declaration_span": "leaf",
+        "arguments": "node",
+        "invoke_coord_tails": "value",
+        "groupconn": "node",
+        "groupconn_global": "leaf",
+        "description_comments": "node",
+    },
+    m.ModuleTypeDef: {
+        "name": "leaf",
+        "datecode": "leaf",
+        "is_private": "leaf",
+        "moduleparameters": "node",
+        "localvariables": "node",
+        "submodules": "node",
+        "moduledefs": "node",
+        "modulecodes": "node",
+        "parametermappings": "node",
+        "groupconn": "node",
+        "groupconn_global": "leaf",
+        "origin_file": "leaf",
+        "origin_lib": "leaf",
+        "declaration_span": "leaf",
+        "description_comments": "node",
+        "trailing_comments": "node",
+    },
+    m.ModuleTypeInstance: {
+        "header": "node",
+        "moduletype_name": "leaf",
+        "parametermappings": "node",
+    },
+    m.ParameterMapping: {
+        "target": "node",
+        "source_type": "leaf",
+        "is_duration": "leaf",
+        "is_source_global": "leaf",
+        "source": "node",
+        "source_literal": "value",
+        "span": "leaf",
+    },
+    m.SFCCodeBlocks: {"enter": "node", "active": "node", "exit": "node"},
+    m.SFCAlternative: {"branches": "node", "span": "leaf"},
+    m.SFCFork: {"targets": "leaf", "has_break": "leaf"},
+    m.SFCParallel: {"branches": "node", "span": "leaf"},
+    m.SFCStep: {
+        "kind": "leaf",
+        "name": "leaf",
+        "code": "node",
+        "fork": "node",
+        "span": "leaf",
+    },
+    m.SFCSubsequence: {"name": "leaf", "body": "node", "kind": "leaf", "span": "leaf"},
+    m.SFCTransition: {"name": "leaf", "condition": "value", "fork": "node", "span": "leaf"},
+    m.SFCTransitionSub: {"name": "leaf", "body": "node", "span": "leaf"},
+    m.Sequence: {
+        "name": "leaf",
+        "type": "leaf",
+        "position": "leaf",
+        "size": "leaf",
+        "seqcontrol": "leaf",
+        "seqtimer": "leaf",
+        "code": "node",
+    },
+    m.SingleModule: {
+        "header": "node",
+        "datecode": "leaf",
+        "moduleparameters": "node",
+        "localvariables": "node",
+        "submodules": "node",
+        "moduledefs": "node",
+        "modulecodes": "node",
+        "parametermappings": "node",
+        "trailing_comments": "node",
+    },
+    m.Variable: {
+        "name": "leaf",
+        "datatype": "leaf",
+        "global_var": "leaf",
+        "const": "leaf",
+        "state": "leaf",
+        "opsave": "leaf",
+        "secure": "leaf",
+        "init_value": "value",
+        "has_explicit_default": "leaf",
+        "description": "leaf",
+        "declaration_span": "leaf",
+        "init_is_duration": "leaf",
+        "attribute_order": "leaf",
+    },
+    Alignment: {"value": "leaf", "span": "leaf"},
+    AssignClause: {"name": "leaf", "value": "value", "tail": "value", "span": "leaf"},
+    Assignment: {"target": "node", "value": "value", "span": "leaf"},
+    BinOp: {"left": "value", "op": "leaf", "right": "value", "span": "leaf"},
+    BoolOp: {"op": "leaf", "operands": "value", "span": "leaf"},
+    ClippingClause: {"bounds": "leaf", "tails": "value", "span": "leaf"},
+    ColourSpec: {
+        "kind": "leaf",
+        "width": "node",
+        "assignments": "node",
+        "style": "node",
+        "span": "leaf",
+    },
+    Compare: {"left": "value", "op": "leaf", "right": "value", "span": "leaf"},
+    EnableClause: {"enabled": "leaf", "tail": "value", "span": "leaf"},
+    FlagClause: {"name": "leaf", "extra": "leaf", "tail": "value", "span": "leaf"},
+    FuncCall: {"name": "leaf", "args": "value", "span": "leaf"},
+    FuncCallStmt: {"call": "node", "span": "leaf"},
+    IfStmt: {"branches": "node", "else_block": "node", "span": "leaf"},
+    LitStringTail: {"keyword": "leaf", "text": "leaf", "span": "leaf"},
+    ModuleArguments: {
+        "layer": "leaf",
+        "enable": "node",
+        "module_in_view": "node",
+        "zoom_limits": "node",
+        "zoomable": "leaf",
+        "markers": "node",
+        "assigns": "node",
+        "span": "leaf",
+    },
+    ModuleInViewClause: {"in_view": "leaf", "tail": "value", "span": "leaf"},
+    ModuleMarker: {"kind": "leaf", "span": "leaf"},
+    NotOp: {"operand": "value", "span": "leaf"},
+    PickButton: {"value": "leaf", "reference": "node", "span": "leaf"},
+    ProcedureCall: {"name": "leaf", "args": "value", "span": "leaf"},
+    ScaleSelector: {"mode": "leaf", "span": "leaf"},
+    TailedClause: {"key": "leaf", "value": "value", "tail": "value", "span": "leaf"},
+    TernaryOp: {"branches": "node", "else_expr": "value", "span": "leaf"},
+    UnaryOp: {"op": "leaf", "operand": "value", "span": "leaf"},
+    VarRef: {"name": "leaf", "state": "leaf", "span": "leaf"},
+    VarTail: {"direction": "leaf", "value": "value", "span": "leaf"},
+    ZoomLimits: {"minimum": "leaf", "maximum": "leaf", "span": "leaf"},
+}
+
+#: Node-bearing keys of ``GraphProperties`` in the order the walker visits them.
+#: The non-node keys stay in the tuple so a property added to the TypedDict
+#: forces a decision here; a test compares the tuple with the annotation keys.
+_GRAPH_PROPERTY_ORDER: tuple[str, ...] = (
+    "colours",
+    "enable_tail",
+    "tails",
+    "coords",
+    "segment_point",
+    "polygon_type",
+    "layer",
+    "text_vars",
+    "enable",
+)
+
+#: Node-bearing keys of ``InteractProperties`` in walk order.
+_INTERACT_PROPERTY_ORDER: tuple[str, ...] = (
+    "procedure",
+    "assigns",
+    "enables",
+    "flags",
+    "colours",
+    "body",
+    "tails",
+    "coords",
+    "layers",
+)
+
+#: Expression node classes that can stand as a tail or a clause value.
+_EXPRESSION_NODE_TYPES: tuple[type[object], ...] = (
+    VarRef,
+    BoolOp,
+    NotOp,
+    Compare,
+    BinOp,
+    UnaryOp,
+    FuncCall,
+    TernaryOp,
 )
 
 
@@ -221,79 +472,55 @@ class _Ancestors(Sequence[object]):
 
 @dataclass(frozen=True, slots=True)
 class WalkEvent:
-    """One node on a ``walk``.
+    """One event on a :func:`walk`.
 
-    ``relation`` names where the node sits inside its parent, for example
-    ``"localvariables[2]"`` or ``"branches[0][1]"``. It is the empty string for
-    the root. ``parents`` is the ancestor chain, root first and parent last.
-    It behaves like a tuple and expands from a persistent chain on access, so
-    the walk itself stays linear on a deep tree.
+    ``relation`` is the display path relative to the parent, for example
+    ``"localvariables[2]"`` or ``"branches[0][1]"``. ``field`` is the model
+    field that holds the node, or the property key for a property-map child.
+    ``indices`` is the subscript path inside that field. ``phase`` is
+    ``"enter"`` before the subtree and ``"leave"`` after it, when the walk is
+    asked to emit leave events.
+
+    ``parents`` is the ancestor chain, root first and parent last. It behaves
+    like a tuple and expands from a persistent chain on access, so the walk
+    itself stays linear on a deep tree.
     """
 
     node: object
     relation: str
     parents: Sequence[object] = ()
+    field: str | None = None
+    indices: tuple[int, ...] = ()
+    phase: Literal["enter", "leave"] = "enter"
 
     def __post_init__(self) -> None:
         if not isinstance(self.parents, _Ancestors):
             object.__setattr__(self, "parents", _Ancestors.from_tuple(self.parents))
 
 
-def _listed(prefix: str, values: Iterable[object]) -> Iterator[tuple[str, object]]:
-    """Yield ``prefix[i]`` for each item of a list or tuple, in order."""
-    for index, value in enumerate(values):
-        yield f"{prefix}[{index}]", value
+@dataclass(frozen=True, slots=True)
+class LiteralLeaf:
+    """One literal value directly under a node.
+
+    ``relation``, ``field``, and ``indices`` describe where the value sits, in
+    the same shape as :class:`WalkEvent`. ``value`` is a boolean, number, or
+    string; ``None`` and containers are not literal leaves.
+    """
+
+    relation: str
+    field: str | None
+    indices: tuple[int, ...]
+    value: bool | int | float | str
 
 
-#: Node-bearing keys of ``GraphProperties`` in the order the walker visits them.
-#: The non-node keys stay in the tuple so a property added to the TypedDict
-#: forces a decision here; a test compares the tuple with the annotation keys.
-_GRAPH_PROPERTY_ORDER: tuple[str, ...] = (
-    "colours",
-    "enable_tail",
-    "tails",
-    "coords",
-    "segment_point",
-    "polygon_type",
-    "layer",
-    "text_vars",
-    "enable",
-)
+@dataclass(frozen=True, slots=True)
+class _Child:
+    """One node child, with the metadata the walk exposes on its event."""
 
-#: Node-bearing keys of ``InteractProperties`` in walk order.
-_INTERACT_PROPERTY_ORDER: tuple[str, ...] = (
-    "procedure",
-    "assigns",
-    "enables",
-    "flags",
-    "colours",
-    "body",
-    "tails",
-    "coords",
-    "layers",
-)
-
-#: Expression node classes that can stand as a tail or a clause value.
-_EXPRESSION_NODE_TYPES: tuple[type[object], ...] = (
-    VarRef,
-    BoolOp,
-    NotOp,
-    Compare,
-    BinOp,
-    UnaryOp,
-    FuncCall,
-    TernaryOp,
-)
-
-
-def _nodes(prefix: str, value: object) -> Iterator[tuple[str, object]]:
-    """Yield ``value`` or each node item of a list/tuple, labelled by ``prefix``."""
-    if isinstance(value, list | tuple):
-        for index, item in enumerate(cast("Sequence[object]", value)):
-            if isinstance(item, _NODE_TYPES):
-                yield f"{prefix}[{index}]", item
-    elif isinstance(value, _NODE_TYPES):
-        yield prefix, value
+    relation: str
+    field: str | None
+    indices: tuple[int, ...]
+    node: object
 
 
 def _is_tail_value(value: object) -> bool:
@@ -318,319 +545,167 @@ def _collect_tail_ids(value: object, into: set[int]) -> None:
             _collect_tail_ids(getattr(value, field.name), into)
 
 
-def _unowned_tails(prefix: str, values: object, owned: set[int]) -> Iterator[tuple[str, object]]:
+def _descend(field: str, value: object, relation: str, indices: tuple[int, ...]) -> Iterator[_Child]:
+    """Yield ``value`` and its nested sequence items that are nodes."""
+    if isinstance(value, _NODE_TYPES):
+        yield _Child(relation, field, indices, value)
+        return
+    if isinstance(value, list | tuple):
+        for index, item in enumerate(cast("Sequence[object]", value)):
+            yield from _descend(field, item, f"{relation}[{index}]", (*indices, index))
+
+
+def _literal_leaves(field: str, value: object, relation: str, indices: tuple[int, ...]) -> Iterator[LiteralLeaf]:
+    """Yield the literal values reachable through one ``value`` field."""
+    if isinstance(value, _NODE_TYPES):
+        return
+    if isinstance(value, bool | int | float | str):
+        yield LiteralLeaf(relation, field, indices, value)
+        return
+    if isinstance(value, list | tuple):
+        for index, item in enumerate(cast("Sequence[object]", value)):
+            yield from _literal_leaves(field, item, f"{relation}[{index}]", (*indices, index))
+
+
+def _unowned_tail_entries(values: object, owned: set[int]) -> Iterator[_Child]:
     """Yield the flat tail entries whose owner did not already emit them."""
     if not isinstance(values, list | tuple):
         return
     for index, value in enumerate(cast("Sequence[object]", values)):
         if id(value) in owned or not isinstance(value, _NODE_TYPES):
             continue
-        yield f"{prefix}[{index}]", value
+        yield _Child(f"properties.tails[{index}]", "tails", (index,), value)
 
 
-def _property_children(node: m.GraphObject | m.InteractObject, order: tuple[str, ...]) -> Iterator[tuple[str, object]]:
+def _property_entries(node: m.GraphObject | m.InteractObject) -> Iterator[_Child]:
     """Yield the node-valued properties of a graphics or interact object."""
     properties = node.properties
+    order = _GRAPH_PROPERTY_ORDER if isinstance(node, m.GraphObject) else _INTERACT_PROPERTY_ORDER
     owned: set[int] = set()
     for key in order:
         value = properties.get(key)
         if value is None:
             continue
         if key == "tails":
-            yield from _unowned_tails("properties.tails", value, owned)
+            yield from _unowned_tail_entries(value, owned)
             continue
         _collect_tail_ids(value, owned)
-        yield from _nodes(f"properties.{key}", value)
+        if isinstance(value, _NODE_TYPES):
+            yield _Child(f"properties.{key}", key, (), value)
+            continue
+        if isinstance(value, list | tuple):
+            for index, item in enumerate(cast("Sequence[object]", value)):
+                if isinstance(item, _NODE_TYPES):
+                    yield _Child(f"properties.{key}[{index}]", key, (index,), item)
+
+
+def _iter_child_entries(node: object) -> Iterator[_Child]:
+    """Yield the node children of ``node``, with field and index metadata."""
+    if isinstance(node, list | tuple):
+        for index, item in enumerate(cast("Sequence[object]", node)):
+            if isinstance(item, _NODE_TYPES):
+                yield _Child(f"[{index}]", None, (index,), item)
+        return
+
+    specs = _FIELD_SPECS.get(type(node))
+    if specs is None:
+        return
+    for name, kind in specs.items():
+        if kind == "leaf":
+            continue
+        value = getattr(node, name)
+        if kind == "properties":
+            yield from _property_entries(cast("m.GraphObject | m.InteractObject", node))
+            continue
+        yield from _descend(name, value, name, ())
 
 
 def iter_child_nodes(node: object) -> Iterator[tuple[str, object]]:
     """Yield ``(relation, child)`` pairs for the AST children of ``node``.
 
     A list or tuple is treated as a sequence of nodes and labelled by index.
-    Non-node values are skipped, so callers may pass a field directly.
+    Non-node values are filtered here, so callers may pass a field directly.
+    """
+    for child in _iter_child_entries(node):
+        if isinstance(child.node, _NODE_TYPES):
+            yield child.relation, child.node
+
+
+def iter_literal_leaves(node: object) -> Iterator[LiteralLeaf]:
+    """Yield the literal values directly under ``node``.
+
+    Only fields declared as ``value`` can hold a literal. Use :func:`walk` to
+    reach the nodes, and this helper to read the literal values a node holds
+    without boxing them.
     """
     if isinstance(node, list | tuple):
-        for index, child in enumerate(cast("Sequence[object]", node)):
-            if isinstance(child, _NODE_TYPES):
-                yield f"[{index}]", child
-        return
-    yield from _container_children(node)
-    yield from _graphics_children(node)
-    yield from _declaration_children(node)
-    yield from _code_children(node)
-    yield from _expression_children(node)
-    yield from _clause_children(node)
-
-
-def _graphics_children(node: object) -> Iterator[tuple[str, object]]:
-    """Children of graphics and interact objects: their typed property payloads."""
-    if isinstance(node, m.GraphObject):
-        yield from _property_children(node, _GRAPH_PROPERTY_ORDER)
-        return
-    if isinstance(node, m.InteractObject):
-        yield from _property_children(node, _INTERACT_PROPERTY_ORDER)
-
-
-def _container_children(node: object) -> Iterator[tuple[str, object]]:
-    """Children of the picture and module containers."""
-    if isinstance(node, m.BasePicture):
-        yield "header", node.header
-        yield from _listed("datatype_defs", node.datatype_defs)
-        yield from _listed("moduletype_defs", node.moduletype_defs)
-        yield from _listed("moduleparameters", node.moduleparameters)
-        yield from _listed("localvariables", node.localvariables)
-        yield from _listed("submodules", node.submodules)
-        yield from _listed("moduledefs", node.moduledefs)
-        yield from _listed("modulecodes", node.modulecodes)
-        yield from _listed("trailing_comments", node.trailing_comments)
+        for item in cast("Sequence[object]", node):
+            if isinstance(item, _NODE_TYPES):
+                yield from iter_literal_leaves(item)
         return
 
-    if isinstance(node, m.ModuleTypeDef):
-        yield from _listed("moduleparameters", node.moduleparameters)
-        yield from _listed("localvariables", node.localvariables)
-        yield from _listed("submodules", node.submodules)
-        yield from _listed("moduledefs", node.moduledefs)
-        yield from _listed("modulecodes", node.modulecodes)
-        yield from _listed("parametermappings", node.parametermappings)
-        if node.groupconn is not None:
-            yield "groupconn", node.groupconn
-        yield from _listed("description_comments", node.description_comments)
-        yield from _listed("trailing_comments", node.trailing_comments)
+    specs = _FIELD_SPECS.get(type(node))
+    if specs is None:
         return
-
-    if isinstance(node, m.SingleModule):
-        yield "header", node.header
-        yield from _listed("moduleparameters", node.moduleparameters)
-        yield from _listed("localvariables", node.localvariables)
-        yield from _listed("submodules", node.submodules)
-        yield from _listed("moduledefs", node.moduledefs)
-        yield from _listed("modulecodes", node.modulecodes)
-        yield from _listed("parametermappings", node.parametermappings)
-        yield from _listed("trailing_comments", node.trailing_comments)
-        return
-
-    if isinstance(node, m.FrameModule):
-        yield "header", node.header
-        yield from _listed("moduleparameters", node.moduleparameters)
-        yield from _listed("localvariables", node.localvariables)
-        yield from _listed("submodules", node.submodules)
-        yield from _listed("moduledefs", node.moduledefs)
-        yield from _listed("modulecodes", node.modulecodes)
-        yield from _listed("trailing_comments", node.trailing_comments)
-        return
-
-    if isinstance(node, m.ModuleTypeInstance):
-        yield "header", node.header
-        yield from _listed("parametermappings", node.parametermappings)
-        return
-
-    if isinstance(node, m.ModuleHeader):
-        yield "arguments", node.arguments
-        yield from _nodes("invoke_coord_tails", node.invoke_coord_tails)
-        if node.groupconn is not None:
-            yield "groupconn", node.groupconn
-        yield from _listed("description_comments", node.description_comments)
+    for name, kind in specs.items():
+        if kind != "value":
+            continue
+        yield from _literal_leaves(name, getattr(node, name), name, ())
 
 
-def _declaration_children(node: object) -> Iterator[tuple[str, object]]:
-    """Children of declarations and module layout blocks."""
-    if isinstance(node, m.DataType):
-        yield from _listed("var_list", node.var_list)
-        yield from _listed("trailing_comments", node.trailing_comments)
-        return
-
-    if isinstance(node, m.ParameterMapping):
-        yield "target", node.target
-        if node.source is not None:
-            yield "source", node.source
-        return
-
-    if isinstance(node, m.ModuleDef):
-        if node.clipping is not None:
-            yield "clipping", node.clipping
-        yield from _listed("graph_objects", node.graph_objects)
-        yield from _listed("interact_objects", node.interact_objects)
-
-
-def _code_children(node: object) -> Iterator[tuple[str, object]]:
-    """Children of module code, equations, and SFC structure."""
-    if isinstance(node, m.ModuleCode):
-        yield from _listed("sequences", node.sequences or ())
-        yield from _listed("equations", node.equations or ())
-        return
-
-    if isinstance(node, m.Sequence | m.Equation):
-        yield from _listed("code", node.code)
-        return
-
-    if isinstance(node, m.SFCCodeBlocks):
-        yield from _listed("enter", node.enter)
-        yield from _listed("active", node.active)
-        yield from _listed("exit", node.exit)
-        return
-
-    if isinstance(node, m.SFCStep):
-        yield "code", node.code
-        if node.fork is not None:
-            yield "fork", node.fork
-        return
-
-    if isinstance(node, m.SFCTransition):
-        if node.condition is not None:
-            yield "condition", node.condition
-        if node.fork is not None:
-            yield "fork", node.fork
-        return
-
-    if isinstance(node, m.SFCTransitionSub | m.SFCSubsequence):
-        yield from _listed("body", node.body)
-        return
-
-    if isinstance(node, m.SFCAlternative | m.SFCParallel):
-        for branch_index, branch in enumerate(node.branches):
-            for item_index, item in enumerate(branch):
-                yield f"branches[{branch_index}][{item_index}]", item
-
-
-def _expression_children(node: object) -> Iterator[tuple[str, object]]:
-    """Children of statements and expressions."""
-    if isinstance(node, Assignment):
-        yield "target", node.target
-        yield "value", node.value
-        return
-
-    if isinstance(node, FuncCallStmt):
-        yield "call", node.call
-        return
-
-    if isinstance(node, IfStmt):
-        for branch_index, (condition, body) in enumerate(node.branches):
-            yield f"branches[{branch_index}][0]", condition
-            for item_index, item in enumerate(body):
-                yield f"branches[{branch_index}][1][{item_index}]", item
-        yield from _listed("else_block", node.else_block or ())
-        return
-
-    if isinstance(node, BoolOp):
-        yield from _listed("operands", node.operands)
-        return
-
-    if isinstance(node, NotOp | UnaryOp):
-        yield "operand", node.operand
-        return
-
-    if isinstance(node, Compare | BinOp):
-        yield "left", node.left
-        yield "right", node.right
-        return
-
-    if isinstance(node, FuncCall):
-        yield from _listed("args", node.args)
-        return
-
-    if isinstance(node, TernaryOp):
-        for branch_index, (condition, value) in enumerate(node.branches):
-            yield f"branches[{branch_index}][0]", condition
-            yield f"branches[{branch_index}][1]", value
-        if node.else_expr is not None:
-            yield "else_expr", node.else_expr
-
-
-def _clause_children(node: object) -> Iterator[tuple[str, object]]:
-    """Children of the typed clause and tail payloads."""
-    if isinstance(node, EnableClause):
-        if node.tail is not None and isinstance(node.tail, _NODE_TYPES):
-            yield "tail", node.tail
-        return
-
-    if isinstance(node, ModuleInViewClause):
-        if node.tail is not None and isinstance(node.tail, _NODE_TYPES):
-            yield "tail", node.tail
-        return
-
-    if isinstance(node, AssignClause | TailedClause):
-        if isinstance(node.value, _NODE_TYPES):
-            yield "value", node.value
-        if node.tail is not None and isinstance(node.tail, _NODE_TYPES):
-            yield "tail", node.tail
-        return
-
-    if isinstance(node, FlagClause):
-        if node.tail is not None and isinstance(node.tail, _NODE_TYPES):
-            yield "tail", node.tail
-        return
-
-    if isinstance(node, ColourSpec):
-        if node.width is not None:
-            yield "width", node.width
-        yield from _listed("assignments", node.assignments)
-        if node.style is not None:
-            yield "style", node.style
-        return
-
-    if isinstance(node, ProcedureCall):
-        yield from _nodes("args", node.args)
-        return
-
-    if isinstance(node, ClippingClause):
-        yield from _nodes("tails", node.tails)
-        return
-
-    if isinstance(node, ModuleArguments):
-        if node.enable is not None:
-            yield "enable", node.enable
-        if node.module_in_view is not None:
-            yield "module_in_view", node.module_in_view
-        if node.zoom_limits is not None:
-            yield "zoom_limits", node.zoom_limits
-        yield from _listed("markers", node.markers)
-        yield from _listed("assigns", node.assigns)
-        return
-
-    if isinstance(node, VarTail) and isinstance(node.value, LitStringTail):
-        yield "value", node.value
-
-
-def walk(node: object, *, prune: Callable[[object], bool] | None = None) -> Iterator[WalkEvent]:
+def walk(
+    node: object,
+    *,
+    prune: Callable[[object], bool] | None = None,
+    emit_leave: bool = False,
+) -> Iterator[WalkEvent]:
     """Yield every AST node under ``node`` in pre-order.
 
     ``node`` may be a single model node or a list/tuple of them. ``prune`` is
     consulted after a node is yielded; returning true stops descent into that
-    node's children. The traversal uses an explicit stack, so a manually built
-    deep AST cannot exhaust the Python call stack.
+    node's children. With ``emit_leave``, each enter event is followed by a
+    matching ``phase="leave"`` event after the subtree (or immediately, when
+    the node is pruned). The traversal uses an explicit stack, so a manually
+    built deep AST cannot exhaust the Python call stack.
     """
+    initial: list[_Child] = []
     if isinstance(node, list | tuple):
-        items = cast("Sequence[object]", node)
-        stack: list[tuple[object, str, _AncestorChain | None]] = [
-            (item, f"[{index}]", None) for index, item in reversed(list(enumerate(items)))
-        ]
+        for index, item in enumerate(cast("Sequence[object]", node)):
+            initial.append(_Child(f"[{index}]", None, (index,), item))
     else:
-        stack = [(node, "", None)]
+        initial.append(_Child("", None, (), node))
 
+    stack: list[tuple[_Child, _AncestorChain | None, bool]] = [(child, None, False) for child in reversed(initial)]
     while stack:
-        current, relation, ancestors = stack.pop()
-        if not isinstance(current, _NODE_TYPES):
+        child, ancestors, is_leave = stack.pop()
+        if is_leave:
+            yield WalkEvent(child.node, child.relation, _Ancestors(ancestors), child.field, child.indices, "leave")
             continue
-        yield WalkEvent(current, relation, _Ancestors(ancestors))
-        if prune is not None and prune(current):
+        if not isinstance(child.node, _NODE_TYPES):
             continue
-        children = list(iter_child_nodes(current))
-        if not children:
+        yield WalkEvent(child.node, child.relation, _Ancestors(ancestors), child.field, child.indices, "enter")
+        child_ancestors = _AncestorChain(child.node, ancestors)
+        if emit_leave:
+            stack.append((child, ancestors, True))
+        if prune is not None and prune(child.node):
             continue
-        child_ancestors = _AncestorChain(current, ancestors)
-        for child_relation, child in reversed(children):
-            stack.append((child, child_relation, child_ancestors))
+        entries = list(_iter_child_entries(child.node))
+        for entry in reversed(entries):
+            stack.append((entry, child_ancestors, False))
 
 
 class NodeVisitor:
-    """Dispatch to ``visit_<ClassName>`` methods, falling back to the walker.
+    """Dispatch to ``visit_<ClassName>`` and ``leave_<ClassName>`` methods.
 
-    A subclass that overrides a ``visit_*`` method decides whether to descend by
-    calling ``self.generic_visit(node)``. The default walk covers every child
-    that ``iter_child_nodes`` reports. Dispatch is recursive by design, because
-    an override controls its own descent; :func:`walk` is the fully iterative
-    API. Parsed ASTs are bounded by ``source_io.MAX_SOURCE_DEPTH``, so the
-    dispatch stays inside the default recursion limit.
+    A subclass that overrides a ``visit_*`` method decides whether to descend
+    by calling ``self.generic_visit(node)``. After the enter method returns,
+    ``leave(node)`` dispatches to ``leave_<ClassName>`` when one exists, so a
+    subclass can maintain a scope stack without writing its own recursion.
+
+    Dispatch is recursive by design, because an override controls its own
+    descent; :func:`walk` is the fully iterative API. Parsed ASTs are bounded by
+    ``source_io.MAX_SOURCE_DEPTH``, so the dispatch stays inside the default
+    recursion limit.
     """
 
     def visit(self, node: object) -> None:
@@ -639,6 +714,13 @@ class NodeVisitor:
         if method is None:
             self.generic_visit(node)
         else:
+            method(node)
+        self.leave(node)
+
+    def leave(self, node: object) -> None:
+        """Run the ``leave_<ClassName>`` hook for ``node``, when defined."""
+        method: Callable[[object], None] | None = getattr(self, f"leave_{type(node).__name__}", None)
+        if method is not None:
             method(node)
 
     def generic_visit(self, node: object) -> None:

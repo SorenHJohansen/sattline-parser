@@ -11,7 +11,6 @@ from dataclasses import dataclass
 
 from sattline_parser.models import NodeVisitor
 from sattline_parser.models import ast_model as m
-from sattline_parser.models.clauses import PickButton
 from sattline_parser.models.expressions import Assignment, FuncCall, FuncCallStmt, IfStmt, VarRef
 from sattline_parser.models.tails import LitStringTail, VarTail
 
@@ -225,23 +224,6 @@ class _QueryVisitor(NodeVisitor):
         if name is not None:
             self.rows.append(
                 QueryRow.at("references", name, span=tail.span, detail="unresolved", module=self._module_path())
-            )
-
-    def visit_LitStringTail(self, _tail: LitStringTail) -> None:
-        """The owning ``VarTail`` already reported the name."""
-
-    def visit_GraphObject(self, graph_object: m.GraphObject) -> None:
-        """Report text-object variable names, then walk the property payloads."""
-        for name in graph_object.properties.get("text_vars") or ():
-            self.rows.append(QueryRow(kind="references", name=name, detail="text variable", module=self._module_path()))
-        self.generic_visit(graph_object)
-
-    def visit_PickButton(self, button: PickButton) -> None:
-        if button.is_reference:
-            self.rows.append(
-                QueryRow(
-                    kind="references", name=button.value, detail="pick-button reference", module=self._module_path()
-                )
             )
 
     def visit_FuncCall(self, call: FuncCall) -> None:

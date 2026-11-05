@@ -1,0 +1,1 @@
+- **References are modelled as `VarRef`.** `GraphProperties["text_vars"]` is a `list[VarRef]`, and `PickButton.is_reference` is replaced by `PickButton.reference: VarRef | None`. `walk` now yields every text-object and pick-button reference as a `VarRef`, so `sattline query --what references` reports them as ordinary references instead of labelled special cases.
