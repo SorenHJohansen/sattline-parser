@@ -9,6 +9,182 @@ policy are documented in the README.
 
 ## [Unreleased]
 
+## [2026.11.4] - 2026-11-05
+
+### Added
+
+- **AI workspace tooling.** A repo-local `sattline-parser` skill, `/verify`,
+  `/release`, and `/review` commands, a read-only `parser-reviewer` subagent,
+  and a pull request template. The skill carries the map, invariants, recipes,
+  and verification ladder so `AGENTS.md` can stay short.
+
+- **Annotation-tail traversal.** The public walker now descends into
+  `GraphObject.properties`, `InteractObject.properties`, and
+  `ModuleDef.clipping`, and emits the typed clause and tail payloads
+  (`EnableClause`, `ColourSpec`, `TailedClause`, `AssignClause`, `FlagClause`,
+  `ProcedureCall`, `PickButton`, `ScaleSelector`, `VarTail`, `LitStringTail`).
+  Property keys are visited in a documented order, and a tail shared with the
+  flat `properties["tails"]` view is emitted once through its owning clause.
+- **Annotation-tail validation.** Expression tails in headers, graphics,
+  interact objects, and module layout are checked for undefined variables
+  (`SL-V019`). An `Enable_` expression tail must be boolean (`SL-V030`), and
+  `ModuleDef` coordinate tails keep `SL-V032`. Bound `InVar_`/`OutVar_` names
+  stay undiagnosed.
+- **Annotation-tail references.** `sattline query --what references` reports
+  variable uses in header and object annotation tails. Bound tails appear with
+  detail `unresolved`; text-object `VarName` and `IntObjPickButton` references
+  are reported too.
+
+- **`sattline_parser.ast`.** The whole AST model is now a supported import surface. Every node, clause payload, tail, `SourceSpan`, and the walker (`walk`, `iter_child_nodes`, `NodeVisitor`, `WalkEvent`) is re-exported from one module, so a consumer no longer imports from the `models` submodules. The class names remain importable from `models.ast_model` and `models.expressions`, but `sattline_parser.ast` is the documented path.
+- **`MappingSource`.** `ParameterMapping.source_type` is a `MappingSource` value, `VARIABLE` or `VALUE`, instead of a bare string that reused tree-tag and property-key constants.
+
+- **Public AST traversal.** `sattline_parser` now exports `walk`, `NodeVisitor`, `WalkEvent`, and `iter_child_nodes`, so a consumer can traverse the model in a supported way instead of importing `cli._ast_walk` or copying the recursion. The walk is pre-order, reports each node's relation and ancestor chain, and documents which attached fields it does not descend into. `sattline query` and the validator's variable-reference collection are rebuilt on it.
+- **Validation rule registry.** Every `DiagnosticCode` now has one `Rule` in `validation/rules.py` with an id, enum name, scope, status, summary, and optional details. Retired and reserved codes are recorded rather than inferred, the rules table in `docs/validation.md` is generated from the registry, and `sattline rules` lists it. `check --rule` accepts an `SL-V###` id or an enum name and rejects an unknown or inactive rule instead of returning an empty report.
+
+- **Docs CI.** `scripts/check_docs.py` checks relative links and dash
+  punctuation and extracts Mermaid blocks. `.github/workflows/docs.yml` renders
+  every diagram with `@mermaid-js/mermaid-cli` 11.17.1.
+
+- **`docs/`.** A complete internals documentation set covering the layer model,
+  parse pipeline, grammar and lexer, source provenance, AST, transformer,
+  validation, project loading, graphics companions, CLI, builtins, testing, and
+  development workflow. Each subsystem has a Mermaid diagram of how it fits
+  together, and `docs/README.md` states the language-infrastructure boundary.
+
+- **Layout metadata.** Every `SourceSpan` field, plus the geometry fields `BasePicture.position`, `Sequence.position`/`size`, `Equation.position`/`size`, `ModuleHeader.invoke_coord`, and `ClippingClause.bounds`, carries `metadata={"layout": True}` and is excluded from equality. A test classifies every `SourceSpan` field and pins the geometry set, so a consumer can drop the marked presentation fields when comparing two revisions.
+
+- **Payload source spans.** `VarTail`, `LitStringTail`, `InteractObject`, `ModuleDef`, and the stored clause payloads (`EnableClause`, `ModuleInViewClause`, `AssignClause`, `FlagClause`, `TailedClause`, `ColourSpec`, `ClippingClause`, `PickButton`, `ScaleSelector`, `ProcedureCall`, `ModuleMarker`, `ZoomLimits`, `ModuleArguments`, `Alignment`) carry a `span`. `VarTail.bound_name` returns the written name for a string or `LitString` value and `None` for a numeric or boolean value. Spans are layout metadata and are excluded from equality.
+
+- **`sattline_parser.types`.** Scalar type families, literal inference, datatype normalization, dotted-name splitting, and record field resolution are now a supported import surface, so a consumer no longer reaches into `validation.typing`. Expression typing that needs a validation scope stays internal.
+- **`sattline_parser.formatting`.** The formatting helpers (`format_expr`, `format_list`, `format_optional`, `format_seq_nodes`) are documented as a public surface instead of a private import path.
+
+- **Parse benchmarks.** `benchmarks/` uses pytest-benchmark for parse,
+  validation, and walk timings, and CI uploads the JSON results.
+
+- **Python 3.14.** Classifiers and the CI matrix cover 3.14 in addition to 3.12
+  and 3.13.
+
+### Changed
+
+- **`AGENTS.md`** now records the documentation index, the language-infrastructure
+  boundary, and a rule that `docs/` must be updated with the behavior it
+  describes.
+
+- **Façade layering.** `sattline_parser.api` no longer imports
+  `sattline_parser.project`. The graphics entry points
+  (`parse_graphics_file`, `parse_graphics_text`,
+  `resolve_graphics_companion_path`) moved from `api.__all__` to
+  `sattline_parser.__all__`, so the documented surface keeps every name while
+  `api` now depends only on `source_io`, `errors` and `validation`.
+
+- **AST cache format.** `FILE_AST_CACHE_VERSION` is now 9. The model no longer carries `parse_tree`, `ModuleCode.equations` is now `equationblocks`, and the earlier phases reshaped `source_type`, the payload spans, the reference leaves, the header arguments, and the clipping clause, so an older cache entry is discarded instead of being decoded into the current model.
+
+- **AST surface documentation.** `docs/ast.md` points at `sattline_parser.ast` as the traversal door, spells out the two-case reference collector (`VarRef` plus bound `VarTail`), and labels `GraphicsBinding` as a project graphics value rather than a walker node. `GraphicsBinding` is also exported by `sattline_parser.project`.
+- **CLI dogfooding.** The parser's own CLI imports the model and walker from `sattline_parser.ast`, so the public door is exercised by the `sattline` command.
+
+- **AST walker.** `walk` now uses an explicit stack and a persistent ancestor chain. A manually built deep AST no longer exhausts the Python call stack, and `WalkEvent.parents` expands its sequence view only when read, so the walk itself is linear. Each `parents` read costs O(depth), and the field still behaves like a tuple for indexing, iteration, equality, and `len`. `NodeVisitor` dispatch remains recursive and is bounded by the parsed-structure depth limit.
+
+- **`On`/`Off` are boolean literals.** `On` and `Off` are now equivalent to `True` and `False` everywhere `BOOL` is accepted, including the invocation-header and graphics property readers. The separate `ON_KW` and `OFF_KW` terminals are removed. Declarations named `On` or `Off` now fail at parse time; `SL-V034` remains a validator backstop for constructed ASTs.
+
+- **`ModuleCode.equationblocks`.** The list of `Equation` nodes is renamed from `equations` to `equationblocks`, and the `sattline parse` summary count key is renamed to match. `Equation.kind` still records the written keyword as `"equationblock"` or `"equations"`.
+- **Unit documentation.** The README, docs index, project document, and glossary now state that a SattLine program or library is one unit made of three files: the code body, the dependency sidecar, and the graphics companion. The `sattline diff` examples compare the official `.x` code body with the draft `.s` code body of that one unit.
+
+- **Grammar constants.** Every constant is `Final` and exported through `__all__`, the keyword and boolean regexes are derived from the spelling constants, and the unused constants, the unused `New`/`Old` terminals, and the dead `variable_name` branches are removed. Guard tests check `__all__`, `Final` coverage, duplicate literal values, orphan constants, and that the grammar resolves.
+
+- **Grammar templating.** `sattline.lark` placeholders are substituted by name
+  instead of through `str.format`, so a literal brace such as a regex
+  quantifier (`{2,3}`) is written as it reads and no longer has to be doubled.
+  An unknown placeholder now fails with an explicit error instead of reaching
+  Lark.
+
+- **Graph-object enable tail.** `GraphObject.properties` keeps the `Enable_`
+  tail in the new `enable_tail` key alongside the resolved `enable` boolean.
+
+- **Invocation arguments are a stored payload.** `ModuleHeader.arguments` is a `ModuleArguments` value holding the layer, `Enable_`, `Module_In_View`, zoom limits, marker arguments, and `Name = value` assignments. A header assignment such as `Param1 = 5` is now retained instead of being reduced to its tail. `invoke_coord_tails` holds only the tails attached to the five invocation coordinates, and the old singular header names are read-only views over `arguments`.
+
+- **Typed interactor bodies.** `InteractProperties.body` is now a closed union of typed payloads (`AssignClause`, `EnableClause`, `FlagClause`, `TailedClause`, `ColourSpec`, `PickButton`, `ScaleSelector`, `Alignment`, `Tail`, `int`, and `CodeComment`) instead of raw Lark trees. A `LeftAligned`/`RightAligned` line is an `Alignment`, a comment inside a body is a `CodeComment`, and `interact_body_payloads` is gone. The model layer no longer imports Lark.
+
+- **`ModuleDef.clipping`.** The resolved `ClippingBounds` corners and the tails attached to them are one `ClippingClause` on `ModuleDef.clipping`. `clipping_bounds` and `clipping_tails` are read-only views over it, and `ModuleDef.properties` and `ModuleDefProperties` are removed.
+
+- **Release policy.** Superseded names, fields, and aliases are removed in the
+  same breaking release. There is no deprecation window, and the changelog no
+  longer has a Deprecated section type.
+
+- **`opencode.json`** now pins the Pyright LSP to Python files, formats Python
+  with the project Ruff, blocks direct edits to generated files, and asks before
+  push, merge, tag, and publish actions.
+
+- **`parse_source_text` documentation.** The main entry point now documents the preprocess, parse, remap and transform stages, and failure logging.
+
+- **`parser-reviewer` shell helpers.** The read-only review agent now allows `echo`, `head`, and `git branch --show-current` inside multi-segment inspection commands, so a snapshot one-liner no longer fails on a harmless echo segment. Every other shell command stays denied.
+
+- **README scope section.** The public README now states the package's
+  responsibilities and its non-responsibilities up front, and links to `docs/`.
+
+- **References are modelled as `VarRef`.** `GraphProperties["text_vars"]` is a `list[VarRef]`, and `PickButton.is_reference` is replaced by `PickButton.reference: VarRef | None`. `walk` now yields every text-object and pick-button reference as a `VarRef`, so `sattline query --what references` reports them as ordinary references instead of labelled special cases.
+
+- **Deep source nesting.** `parse_source_text` now rejects a structure deeper than `MAX_SOURCE_DEPTH` (256 levels, exported as a public constant) with `SourceTooDeepError`, a clean parse failure instead of a `RecursionError` escaping from the transformer, validator, formatter, or dataclass `repr`. The check follows dataclass fields, containers, and raw grammar trees, so interactor property payloads are covered too. The parse tree is transformed and remapped without recursion, comment token flattening is iterative, and `RecursionError` from a parser, transformer, or Lark `VisitError` wrapper is converted to the same clean error. `SourceTooDeepError` subclasses Lark's `UnexpectedInput`, so the CLI, project loader, fuzz harness, and Atheris targets classify it as invalid input.
+
+- **Typed tail and clause nodes.** Coordinate, header, and property tails are
+  modelled as frozen dataclasses instead of bare strings, dicts, and Lark
+  trees: `VarTail(direction, value)` for `InVar_`/`OutVar_` bindings,
+  `LitStringTail` for quoted symbols, and typed clause payloads such as
+  `EnableClause`, `AssignClause`, `TailedClause`, `ColourSpec`,
+  `ProcedureCall`, and `ModuleArguments`. `ModuleHeader.enable_tail`,
+  `ModuleHeader.invoke_coord_tails`, and `ModuleDef.clipping_tails` now hold
+  these nodes, and the graph and interact property maps are `TypedDict`
+  definitions. Consumers that compared tails to strings or read `properties`
+  as an untyped dict need updating.
+
+- **Walker contract.** `WalkEvent` now carries `field`, `indices`, and `phase`. `walk(..., emit_leave=True)` emits a matching leave event after each subtree, and `NodeVisitor` dispatches `leave_<ClassName>` after each enter method. Every dataclass field is declared in `_FIELD_SPECS` as a child, a node-or-literal, a property map, or a leaf, and a test compares the declaration with `dataclasses.fields`. Literal values have an explicit reader, `iter_literal_leaves` / `LiteralLeaf`, instead of an `include_literals` walk option.
+
+### Removed
+
+- **AST compatibility fields.** `BasePicture.graphics_bindings`,
+  `graphics_messages`, `graphics_composite_records`,
+  `graphics_composite_occurrences`, `graphics_picture_display_records`,
+  `graphics_picture_display_occurrences`, and `library_dependencies` are
+  removed. Graphics data lives on `SattLineProgram.graphics`.
+
+- **Compatibility shims.** `SEED_MAPPING`, the `_ModulesMixin` wrapper,
+  `assignment_is_compatible`, and the unpickling fallbacks for older AST
+  payloads are removed. `SCANNER_TOKENS` is the only token table name.
+
+- **`create_sl_parser`.** The compatibility alias is gone from `source_io`,
+  `api` and the package root; `create_parser` is the entry point.
+
+- **`errors._unexpected_input_summary`.** Unused outside the tests. Call
+  `describe_parse_error` for a rendered sentence, or the internal
+  `_unexpected_description` for its parts.
+
+- **The retained parse tree is gone.** `BasePicture.parse_tree`, `BasePicture.__getstate__`, and the `retain_parse_tree` parameter of `parse_source_text`, `parse_and_validate`, and `parse_source_file` are removed. The parser returns the model only; use `create_parser().parse(...)` when you need the raw Lark tree.
+
+- **Validation rule severity.** Validation diagnostics are always errors, so `DiagnosticSeverity`, `Diagnostic.severity`, `Rule.severity`, the registry severity column, the `severity:` line in `sattline rules`, and the `severity` field in `sattline rules --json` and in `sattline project --json` validation rows are removed. `check --severity`, the `warning` alias for `--fail-on`, `--fail-on any`, and the warning buckets in `check`, `project`, and `corpus` output are removed with them. Graphics scan messages keep their `error` and `warning` severity.
+
+- **Singular module block fields.** `SingleModule`, `FrameModule`,
+  `ModuleTypeDef` and `BasePicture` no longer store `moduledef` and
+  `modulecode`. The names remain as read-only properties returning the last
+  entry of `moduledefs` / `modulecodes`, so reading them still works and the two
+  views cannot disagree. Construction through the singular keyword arguments,
+  assignment to the properties, and the corresponding `moduledef` /
+  `modulecode` keys in `sattline parse --tree` output are removed; use the
+  block lists instead.
+
+### Fixed
+
+- **Dependency cycle identity.** Cycles are deduplicated by directed node
+  sequence, so `a -> b -> c -> a` and `a -> c -> b -> a` both appear. Rotations
+  of the same cycle still collapse, and the project view and CLI report the real
+  edge order.
+
+- **Multi-block identifier checks and counts.** Declaration identifier
+  validation and the `parse` / `diff` structural counts now cover every
+  `ModuleDef` and `ModuleCode` block instead of only the last one.
+
+- **Numeric coordinate tails.** A literal tail such as
+  `ClippingBounds = ( -1.0 : 2.5 , -1.0 ) ( 1.0 , 1.0 )` is recorded as a tail
+  instead of being read as the next coordinate value.
+
 ## [2026.11.3] - 2026-11-02
 
 ### Added
