@@ -47,6 +47,7 @@ from sattline_parser.transformer._module_shared import (  # used below
     CodeBlockPayload,
     GroupConnInfo,
     InterimCoords,
+    TextContent,
     float_tuple,
     groupconn_value,
 )
@@ -215,12 +216,12 @@ def test_text_object_skips_comment_trees_when_linking_text_vars() -> None:
     mixin = _GraphicsHarness()
     go = mixin.text_object(
         [
-            "Caption",
+            TextContent("Caption"),
             Tree("comment", [Token("COMMENT", "(* c *)")]),
             Token(const.TOKEN_VARNAME, "TextVar"),
         ]
     )
-    assert go.properties["text_vars"] == ["Caption"]
+    assert go.properties["text_vars"] == [VarRef("Caption")]
 
 
 def test_sfc_flatten_code_body_extends_nested_lists() -> None:

@@ -108,6 +108,7 @@ from sattline_parser.transformer._module_shared import (
     CoordTail,
     GroupConnInfo,
     InterimCoords,
+    TextContent,
     flatten_items,
     meta_span,
 )
@@ -241,6 +242,7 @@ __all__ = [
     "SourceSpan",
     "TailedClause",
     "TernaryOp",
+    "TextContent",
     "Token",
     "TokensMixin",
     "Tree",

@@ -30,7 +30,14 @@ from sattline_parser.models.expressions import (
 )
 from sattline_parser.models.properties import GraphProperties, InteractProperties
 from sattline_parser.models.tails import LitStringTail, VarTail
-from sattline_parser.models.walk import _GRAPH_PROPERTY_ORDER, _INTERACT_PROPERTY_ORDER, _NODE_TYPES, _unowned_tails
+from sattline_parser.models.walk import (
+    _FIELD_SPECS,
+    _GRAPH_PROPERTY_ORDER,
+    _INTERACT_PROPERTY_ORDER,
+    _NODE_TYPES,
+    _unowned_tail_entries,
+    iter_literal_leaves,
+)
 
 _CORPUS = Path(__file__).resolve().parents[1] / "fixtures" / "corpus" / "valid"
 
@@ -296,7 +303,137 @@ def test_walk_visits_module_def_clipping_tails_once() -> None:
 
 
 def test_unowned_tails_ignores_a_non_sequence_value() -> None:
-    assert list(_unowned_tails("properties.tails", None, set())) == []
+    assert list(_unowned_tail_entries(None, set())) == []
+
+
+def test_field_specs_cover_every_dataclass_field() -> None:
+    for node_type in _NODE_TYPES:
+        spec = _FIELD_SPECS[node_type]
+        assert set(spec) == {field.name for field in dataclasses.fields(node_type)}, node_type.__name__
+        assert set(spec.values()) <= {"leaf", "node", "value", "properties"}
+        for kind in spec.values():
+            assert kind != "properties" or node_type in {m.GraphObject, m.InteractObject}
+
+
+def test_walk_event_field_is_a_declared_child() -> None:
+    pictures = (_picture(), parse_source_file(_CORPUS / "BuiltinCalls.s"))
+    for picture in pictures:
+        for event in walk(picture):
+            if not event.parents:
+                continue
+            assert event.field is not None
+            parent = event.parents[-1]
+            spec = _FIELD_SPECS[type(parent)]
+            properties = getattr(parent, "properties", {})
+            if event.field in properties:
+                assert spec["properties"] == "properties", (type(parent).__name__, event.field)
+            else:
+                assert spec[event.field] in {"node", "value"}, (type(parent).__name__, event.field)
+
+
+def test_walk_reports_field_and_indices() -> None:
+    events = list(walk(_picture()))
+
+    local = next(event for event in events if event.relation == "localvariables[0]")
+    assert local.field == "localvariables"
+    assert local.indices == (0,)
+
+    branch = next(event for event in events if event.relation.startswith("branches[0][1]["))
+    assert branch.field == "branches"
+    assert branch.indices == (0, 1, 0)
+
+    body = next(event for event in events if event.relation.startswith("properties.body["))
+    assert body.field == "body"
+    assert body.indices == (0,)
+
+
+def test_walk_emits_matching_leave_events() -> None:
+    picture = _picture()
+    enters = list(walk(picture))
+    both = list(walk(picture, emit_leave=True))
+    enter_events = [event for event in both if event.phase == "enter"]
+    leave_events = [event for event in both if event.phase == "leave"]
+
+    assert enter_events == enters
+    assert len(leave_events) == len(enter_events)
+    assert {id(event.node) for event in (enter_events[0], leave_events[-1])} == {id(picture)}
+
+
+def test_leave_events_wrap_the_subtree() -> None:
+    header = m.ModuleHeader(
+        name="Header",
+        invoke_coord=(0.0, 0.0, 0.0, 1.0, 1.0),
+        invoke_coord_tails=[VarRef("Coord")],
+    )
+
+    phases = [(event.phase, event.relation) for event in walk(header, emit_leave=True)]
+
+    assert phases == [
+        ("enter", ""),
+        ("enter", "arguments"),
+        ("leave", "arguments"),
+        ("enter", "invoke_coord_tails[0]"),
+        ("leave", "invoke_coord_tails[0]"),
+        ("leave", ""),
+    ]
+
+
+def test_pruned_node_still_gets_a_leave_event() -> None:
+    events = list(walk(_picture(), prune=lambda node: isinstance(node, m.Sequence), emit_leave=True))
+
+    sequence = next(event for event in events if isinstance(event.node, m.Sequence))
+    leave = next(event for event in events if event.phase == "leave" and event.node is sequence.node)
+
+    assert sequence.phase == "enter"
+    assert leave.field == sequence.field
+    assert leave.indices == sequence.indices
+    assert not any(isinstance(event.node, m.SFCStep) for event in events)
+
+
+def test_iter_literal_leaves_reads_value_fields() -> None:
+    clause = TailedClause("Width_", 2.5, VarTail("in", "Name"))
+    comparison = Compare(VarRef("A"), "<", 3)
+    variable = m.Variable(name="V", datatype="integer", init_value=7)
+
+    assert [(leaf.field, leaf.indices, leaf.value) for leaf in iter_literal_leaves(clause)] == [("value", (), 2.5)]
+    assert [(leaf.field, leaf.value) for leaf in iter_literal_leaves(comparison)] == [("right", 3)]
+    assert [(leaf.field, leaf.value) for leaf in iter_literal_leaves(variable)] == [("init_value", 7)]
+    assert [(leaf.relation, leaf.value) for leaf in iter_literal_leaves(VarTail("in", "Name"))] == [("value", "Name")]
+    assert list(iter_literal_leaves([clause])) == list(iter_literal_leaves(clause))
+    assert list(iter_literal_leaves(VarTail("out", LitStringTail("LitString", "Sym")))) == []
+    assert list(iter_literal_leaves(m.SourceSpan(0, 1, 1, 1))) == []
+    call = FuncCall("Max", (VarRef("A"), 2, 3))
+    assert [(leaf.field, leaf.indices, leaf.value) for leaf in iter_literal_leaves(call)] == [
+        ("args", (1,), 2),
+        ("args", (2,), 3),
+    ]
+
+
+class _ScopeCollector(NodeVisitor):
+    def __init__(self) -> None:
+        self.entered: list[str] = []
+        self.left: list[str] = []
+
+    def visit_SingleModule(self, module: m.SingleModule) -> None:
+        self.entered.append(module.header.name)
+        self.generic_visit(module)
+
+    def leave_SingleModule(self, module: m.SingleModule) -> None:
+        self.left.append(module.header.name)
+
+
+def test_node_visitor_runs_leave_hooks_in_reverse_order() -> None:
+    child = m.SingleModule(header=m.ModuleHeader(name="Child", invoke_coord=(0.0, 0.0, 0.0, 1.0, 1.0)))
+    parent = m.SingleModule(
+        header=m.ModuleHeader(name="Parent", invoke_coord=(0.0, 0.0, 0.0, 1.0, 1.0)),
+        submodules=[child],
+    )
+
+    collector = _ScopeCollector()
+    collector.visit(parent)
+
+    assert collector.entered == ["Parent", "Child"]
+    assert collector.left == ["Child", "Parent"]
 
 
 def test_walk_emits_bound_tail_nodes() -> None:
@@ -329,19 +466,31 @@ def test_walk_property_order_keeps_tails_after_clause_owners() -> None:
 
 def test_iter_child_nodes_filters_non_node_property_values() -> None:
     tail = VarRef("Tail")
+    caption = VarRef("Caption")
     graph_object = m.GraphObject(
         "RectangleObject",
         properties={
             "coords": ((0.0, 0.0), (1.0, 1.0)),
             "polygon_type": ["Polyline"],
-            "text_vars": ["Caption"],
+            "text_vars": [caption],
             "tails": [tail],
         },
     )
 
     children = list(iter_child_nodes(graph_object))
 
-    assert children == [("properties.tails[0]", tail)]
+    assert children == [("properties.tails[0]", tail), ("properties.text_vars[0]", caption)]
+
+
+def test_walk_emits_text_variable_and_pick_button_references() -> None:
+    caption = VarRef("Caption")
+    pick = VarRef("PickVar")
+    graph_object = m.GraphObject("TextObject", properties={"text_vars": [caption]})
+    button = clauses.PickButton("PickVar", reference=pick)
+    interact = m.InteractObject("TextBox_", properties={"body": [button]})
+
+    assert [event.relation for event in walk(graph_object) if event.node is caption] == ["properties.text_vars[0]"]
+    assert [event.relation for event in walk(interact) if event.node is pick] == ["reference"]
 
 
 def test_walk_clause_without_a_tail_has_no_children() -> None:

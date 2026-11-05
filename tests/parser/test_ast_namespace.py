@@ -45,7 +45,7 @@ def test_type_aliases_are_exported() -> None:
 
 
 def test_walker_surface_is_exported() -> None:
-    for name in ("walk", "iter_child_nodes", "NodeVisitor", "WalkEvent"):
+    for name in ("walk", "iter_child_nodes", "iter_literal_leaves", "NodeVisitor", "WalkEvent", "LiteralLeaf"):
         assert name in sl_ast.__all__, name
 
 

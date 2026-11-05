@@ -269,8 +269,8 @@ def test_references_include_annotation_tails(tmp_path, capsys) -> None:
     out = capsys.readouterr().out
     assert "references HeaderCoord" in out
     assert "references HeaderFlag" in out
-    assert "references Count (text variable)" in out
-    assert "references PickVar (pick-button reference)" in out
+    assert "references Count" in out
+    assert "references PickVar" in out
     assert "references ToggleBit (unresolved)" in out
     # A LitString tail is a quoted symbol, not a variable path.
     assert "QuotedAssign" not in out

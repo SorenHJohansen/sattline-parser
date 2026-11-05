@@ -12,7 +12,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Literal
 
-from .expressions import SLExpression
+from .expressions import SLExpression, VarRef
 from .tails import Tail
 
 if TYPE_CHECKING:
@@ -158,10 +158,14 @@ class ScaleSelector:
 
 @dataclass(frozen=True)
 class PickButton:
-    """``IntObjPickButton = "..."`` with its optional ``VarName`` marker."""
+    """``IntObjPickButton = "..."`` with its optional ``VarName`` marker.
+
+    ``value`` is the written string. ``reference`` is the variable it names when
+    the ``VarName`` postfix is present, and ``None`` for literal text.
+    """
 
     value: str
-    is_reference: bool = False
+    reference: VarRef | None = None
     span: SourceSpan | None = field(default=None, compare=False, metadata={"layout": True})
 
 

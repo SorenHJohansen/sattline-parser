@@ -71,6 +71,19 @@ class CodeBlockPayload:
     items: tuple[CodeItem, ...]
 
 
+@dataclass(frozen=True)
+class TextContent:
+    """One ``text_content`` payload and the source span of its STRING token.
+
+    The text is not stored on the graph object; it only spells the following
+    ``VarName`` reference. Keeping the span here lets that reference carry a
+    real position.
+    """
+
+    text: str
+    span: SourceSpan | None = None
+
+
 def v_args(*args: Any, **kwargs: Any) -> VArgsDecorator:
     return _V_ARGS_FACTORY(*args, **kwargs)
 

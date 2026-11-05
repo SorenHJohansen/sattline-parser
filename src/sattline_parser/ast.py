@@ -106,9 +106,11 @@ from .models.tails import (
     tail_list,
 )
 from .models.walk import (
+    LiteralLeaf,
     NodeVisitor,
     WalkEvent,
     iter_child_nodes,
+    iter_literal_leaves,
     walk,
 )
 
@@ -145,6 +147,7 @@ __all__ = [
     "InteractBodyEntry",
     "InteractObject",
     "LitStringTail",
+    "LiteralLeaf",
     "MappingSource",
     "ModuleArguments",
     "ModuleCode",
@@ -190,6 +193,7 @@ __all__ = [
     "Zoomable",
     "is_expression_tail",
     "iter_child_nodes",
+    "iter_literal_leaves",
     "tail_list",
     "walk",
 ]
