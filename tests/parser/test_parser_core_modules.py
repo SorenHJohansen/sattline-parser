@@ -240,7 +240,7 @@ def test_modules_mixin_variable_group_and_mapping_helpers_preserve_modifiers_and
             Token(parser_const.KEY_NAME, "Pump"),
             Token(parser_const.KEY_DOT, "."),
             Token(parser_const.KEY_NAME, "State"),
-            Token(parser_const.TOKEN_OLD, ":OLD"),
+            Token("STATE_SUFFIX", ":OLD"),
         ],
     )
     mapping = mixin.moduletype_par_transfer(
@@ -286,13 +286,6 @@ def test_modules_mixin_variable_group_and_mapping_helpers_preserve_modifiers_and
     assert params_tree.data == parser_const.GRAMMAR_VALUE_MODULEPARAMETERS
     assert locals_tree.data == parser_const.GRAMMAR_VALUE_LOCALVARIABLES
     assert scan_group == GroupConnInfo(parsed_name, True)
-
-    string_state_name = mixin.variable_name(
-        SimpleNamespace(line=10, column=5, start_pos=50, end_pos=60),
-        ["Pump", ".", "State", "new"],
-    )
-
-    assert string_state_name == VarRef("Pump.State", state="new", span=SourceSpan(start=50, end=60, line=10, column=5))
 
     suffix_state_name = mixin.variable_name(
         SimpleNamespace(line=11, column=3, start_pos=70, end_pos=80),

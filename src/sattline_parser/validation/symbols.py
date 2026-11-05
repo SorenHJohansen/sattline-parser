@@ -14,25 +14,6 @@ from sattline_parser.models.ast_model import DataType, Variable
 from sattline_parser.models.expressions import VarRef
 from sattline_parser.names import fold_identifier
 
-#: Names that mean an SFC *runtime* thing rather than a user-chosen identifier.
-#: ``On`` and ``Off`` are readable wherever a boolean is expected, which is why
-#: reads are exempt from the undefined-variable rule, but they may never be
-#: *declared*. The invalid corpus fixtures ``ReservedNameVarOn.s`` and
-#: ``ReservedNameVarOff.s`` pin that a LOCALVARIABLES declaration of either
-#: name is rejected as a reserved name.
-#:
-#: ``GroupData`` is deliberately NOT in this set. It is a reserved *datatype*
-#: used by a module definition's ``GroupConn=`` tail, and it is intentionally
-#: accepted as a type name (see ``declarations._VALID_UNRESOLVED_DATATYPES``).
-SFC_RUNTIME_CONSTANTS = frozenset({"on", "off"})
-
-_FOLDED_RUNTIME_CONSTANTS = frozenset(fold_identifier(name) for name in SFC_RUNTIME_CONSTANTS)
-
-
-def is_sfc_runtime_constant(name: str) -> bool:
-    """True for the reserved ``On``/``Off`` runtime literals (any byte case)."""
-    return fold_identifier(name) in _FOLDED_RUNTIME_CONSTANTS
-
 
 @dataclass
 class Scope:

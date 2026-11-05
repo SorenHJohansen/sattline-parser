@@ -11,6 +11,11 @@ It answers "what is in this source, and how is it structured?". It does not
 answer "is this program good?", "what does this program do?", or "which
 variables are never used?".
 
+A SattLine program or library is one unit made of three files: the code body,
+the dependency sidecar, and the graphics companion. Draft is `.s`, `.l`, `.g`;
+official is `.x`, `.z`, `.y`. See
+[project.md](project.md#artifact-formats) for how each role is resolved.
+
 | Responsibility | Owned by | Entry point |
 | --- | --- | --- |
 | Grammar and tokenization | `grammar/` | `create_parser`, `SLTransformer` |

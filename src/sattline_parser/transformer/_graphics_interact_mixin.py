@@ -732,7 +732,7 @@ class _GraphicsInteractMixin:
                 text = it
         if text is None:
             raise ValueError(f"interact_pick_button expected a STRING; got: {items!r}")
-        reference = VarRef(text) if has_reference else None
+        reference = VarRef(text, span=meta_span(meta)) if has_reference else None
         return PickButton(value=text, reference=reference, span=meta_span(meta))
 
     def interact_value_line(self, items: list[TransformerItem]) -> Tail:

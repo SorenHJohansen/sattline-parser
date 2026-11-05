@@ -125,7 +125,7 @@ built:
 | `SIGNED_INT` | `IntLiteral` (an `int` subclass with a span) |
 | `REAL` | `FloatLiteral` (a `float` subclass with a span) |
 | `STRING` | `str` with doubled quotes unescaped |
-| `BOOL`, `ON_KW`, `OFF_KW` | `bool` |
+| `BOOL` (`True`, `False`, `On`, `Off`) | `bool` |
 | `STATE_SUFFIX` | `"old"`, `"new"`, or `None` on a `VarRef` |
 
 `meta_span(meta)` converts a Lark `Meta` into a `SourceSpan`. It runs after
@@ -143,8 +143,9 @@ built:
 | `module_end_comment` | `trailing_comments` or the matching end field |
 | `comments` | The structural field for that context, when one exists; an interactor body turns each comment into a `CodeComment` |
 
-A legal comment with no AST home stays in the parse tree only. It is never
-attached to the nearest field just to avoid losing it.
+A legal comment with no AST home is not attached to the AST; the returned
+`BasePicture` does not retain it. It is never attached to the nearest field just
+to avoid losing it.
 
 ## Expressions
 

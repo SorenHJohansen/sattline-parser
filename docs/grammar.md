@@ -155,15 +155,17 @@ The accepted body shapes are documented in
 `validation/sequences.py` and enforced after parsing, so comments may appear
 anywhere. See [validation.md](validation.md).
 
-### Equations
+### Equation blocks
+
+The `equationblock` rule accepts the `EQUATIONBLOCK` and `EQUATIONS` keywords:
 
 ```
 equationblock: (EQUATIONBLOCK | EQUATIONS) NAME? codeblock_coord? objsizedef?
                layer_info? ":" (code_comment | statement)*
 ```
 
-Both keywords are accepted and kept distinct in the AST (`kind`). The name,
-coordinates, size, and layer are optional; only the statement list is
+Both keywords are accepted and kept distinct in the AST (`Equation.kind`). The
+name, coordinates, size, and layer are optional; only the statement list is
 required.
 
 ### Module definition and graphics objects
@@ -174,7 +176,8 @@ required.
 `REAL` and `REAL_NOTAIL` (and the matching `SIGNED_INT`, `BOOL`, and `STRING`
 variants) exists because a value followed by `:` at the end of a line is a
 tail, not a plain value. The `NOTAIL` terminals use a negative lookahead and
-have priority 1.
+have priority 1. `BOOL` accepts `True`, `False`, `On`, and `Off`; `On` and
+`Off` have the same meaning as `True` and `False`.
 
 ## Tokenization
 
@@ -212,22 +215,25 @@ Comments are not stripped. The grammar gives them roles:
 
 | Rule | Role |
 | --- | --- |
-| `code_comment` | A comment inside a `ModuleCode`, equation, or SFC body |
+| `code_comment` | A comment inside a `ModuleCode`, equation block, or SFC body |
 | `comment_stmt` | A comment followed by `;` in statement position |
 | `module_typedescription` | A description comment in a module header or definition |
 | `module_end_comment` | The comment after `ENDDEF` |
 | `comments` | A generic comment run in a structural position |
 
 The transformer turns the role-tagged nodes into `CodeComment` values on the
-matching AST field. A comment that is syntactically legal but has no AST home
-stays in the parse tree and is not silently attached somewhere else.
+matching AST field. A comment that is syntactically legal but has no AST home is
+not attached and is not retained by the returned AST; it is never silently
+attached somewhere else. In particular, a `comments` run in a `ComButProc_` body
+or inside a colour assignment has no AST field; only `interact_body` comments
+become `CodeComment` values.
 
 ### Identifiers and name folding
 
 The `NAME` terminal:
 
 - does not match any keyword (`IF`, `THEN`, `ELSE`, `ELSIF`, `ENDIF`, `AND`,
-  `OR`, `NOT`, `True`, `False`, `SUBSEQSTEP`);
+  `OR`, `NOT`, `True`, `False`, `On`, `Off`, `SUBSEQSTEP`);
 - accepts a quoted identifier `'...'` of 1 to 20 characters;
 - accepts letters, marks, digits, `_`, `'`, and every printable CP1252 byte;
 - is limited to 20 characters.

@@ -18,10 +18,9 @@ The field-coverage test asserts that the declaration matches
 
 The walk descends into ``GraphObject.properties`` and
 ``InteractObject.properties`` in the documented order, and into
-``ModuleHeader.arguments`` and ``ModuleDef.clipping`` as ordinary nodes. It
-does not descend into ``parse_tree``. Literal values are leaves and are not
-emitted as nodes; use :func:`iter_literal_leaves` to read the literal values a
-node holds directly.
+``ModuleHeader.arguments`` and ``ModuleDef.clipping`` as ordinary nodes.
+Literal values are leaves and are not emitted as nodes; use
+:func:`iter_literal_leaves` to read the literal values a node holds directly.
 
 Property order:
 
@@ -167,7 +166,6 @@ _FIELD_SPECS: _FieldSpecs = {
         "graphics_file": "leaf",
         "trailing_comments": "node",
         "datecode": "leaf",
-        "parse_tree": "leaf",
     },
     m.CodeComment: {"text": "leaf", "span": "leaf"},
     m.DataType: {
@@ -200,7 +198,7 @@ _FIELD_SPECS: _FieldSpecs = {
     },
     m.GraphObject: {"type": "leaf", "properties": "properties", "span": "leaf"},
     m.InteractObject: {"type": "leaf", "properties": "properties", "span": "leaf"},
-    m.ModuleCode: {"sequences": "node", "equations": "node"},
+    m.ModuleCode: {"sequences": "node", "equationblocks": "node"},
     m.ModuleDef: {
         "clipping": "node",
         "zoom_limits": "leaf",
@@ -320,7 +318,7 @@ _FIELD_SPECS: _FieldSpecs = {
     FlagClause: {"name": "leaf", "extra": "leaf", "tail": "value", "span": "leaf"},
     FuncCall: {"name": "leaf", "args": "value", "span": "leaf"},
     FuncCallStmt: {"call": "node", "span": "leaf"},
-    IfStmt: {"branches": "node", "else_block": "node", "span": "leaf"},
+    IfStmt: {"branches": "value", "else_block": "node", "span": "leaf"},
     LitStringTail: {"keyword": "leaf", "text": "leaf", "span": "leaf"},
     ModuleArguments: {
         "layer": "leaf",
@@ -339,7 +337,7 @@ _FIELD_SPECS: _FieldSpecs = {
     ProcedureCall: {"name": "leaf", "args": "value", "span": "leaf"},
     ScaleSelector: {"mode": "leaf", "span": "leaf"},
     TailedClause: {"key": "leaf", "value": "value", "tail": "value", "span": "leaf"},
-    TernaryOp: {"branches": "node", "else_expr": "value", "span": "leaf"},
+    TernaryOp: {"branches": "value", "else_expr": "value", "span": "leaf"},
     UnaryOp: {"op": "leaf", "operand": "value", "span": "leaf"},
     VarRef: {"name": "leaf", "state": "leaf", "span": "leaf"},
     VarTail: {"direction": "leaf", "value": "value", "span": "leaf"},

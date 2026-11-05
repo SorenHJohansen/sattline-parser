@@ -53,7 +53,6 @@ from sattline_parser.validation.diagnostics import Diagnostic, DiagnosticCode
 from sattline_parser.validation.sequences import check_sequence_positions
 from sattline_parser.validation.symbols import (
     Scope,
-    is_sfc_runtime_constant,
     resolve_var,
 )
 from sattline_parser.validation.type_graph import TypeGraph
@@ -153,7 +152,7 @@ def walk_module_code(
     for sequence in sequences:
         _check_fork_targets(sequence.code, step_names, transition_names, name_counts, errors)
         walk_sequence_body(sequence.code, scope, records, type_graph, sfc_names, errors)
-    for equation in mc.equations or ():
+    for equation in mc.equationblocks or ():
         walk_equation_block(equation, scope, records, type_graph, sfc_names, errors)
 
 
@@ -222,7 +221,7 @@ def check_step_auto_variables(mc: ModuleCode, scope: Scope, errors: list[Diagnos
         return
     steps, step_features, sequences_by_key, sequence_features = _collect_sequence_features(sequences)
     refs: list[VarRef] = []
-    for equation in mc.equations or ():
+    for equation in mc.equationblocks or ():
         refs.extend(_iter_var_refs(equation.code))
     for sequence in sequences:
         refs.extend(_iter_sfc_var_refs(sequence.code))
@@ -312,7 +311,6 @@ def walk_expression(
         if (
             resolved is None
             and _ref_needs_undefined_diagnostic(expr, scope)
-            and not is_sfc_runtime_constant(expr.name)
             and not _is_sfc_runtime_accessor(expr, sfc_names)
         ):
             errors.append(

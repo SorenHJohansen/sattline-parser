@@ -124,7 +124,7 @@ ENDDEF (*BasePicture*);
 
     assert bp.modulecode is not None
 
-    equation = bp.modulecode.equations[0] if bp.modulecode.equations else None
+    equation = bp.modulecode.equationblocks[0] if bp.modulecode.equationblocks else None
     assert equation is not None
     comment_items = [x for x in equation.code if isinstance(x, CodeComment)]
     assert [c.text for c in comment_items] == ["(* top comment *)", "(* inline equation comment *)"]
@@ -167,8 +167,8 @@ ENDDEF (*BasePicture*);
     bp = parser_core_parse_source_text(code)
 
     assert bp.modulecode is not None
-    assert bp.modulecode.equations is not None
-    equation = bp.modulecode.equations[0]
+    assert bp.modulecode.equationblocks is not None
+    equation = bp.modulecode.equationblocks[0]
     comment_items = [x for x in equation.code if isinstance(x, CodeComment)]
     assert [c.text for c in comment_items] == ["(* outer (* nested *) comment *)"]
     assert comment_items[0].content == " outer (* nested *) comment "
@@ -193,8 +193,8 @@ ENDDEF (*BasePicture*);
     bp = parser_core_parse_source_text(code)
 
     assert bp.modulecode is not None
-    assert bp.modulecode.equations is not None
-    equation = bp.modulecode.equations[0]
+    assert bp.modulecode.equationblocks is not None
+    equation = bp.modulecode.equationblocks[0]
     comment_items = [x for x in equation.code if isinstance(x, CodeComment)]
     assert [c.text for c in comment_items] == ["(* comment as statement *)"]
 
@@ -222,8 +222,8 @@ def test_comments_are_legal_between_statements_and_preserved_as_code_comment():
     )
     bp = parser_core_parse_source_text(code)
     assert bp.modulecode is not None
-    assert bp.modulecode.equations is not None
-    equation = bp.modulecode.equations[0]
+    assert bp.modulecode.equationblocks is not None
+    equation = bp.modulecode.equationblocks[0]
     assert isinstance(equation.code[0], Assignment)
     assert isinstance(equation.code[1], CodeComment)
     assert equation.code[1].text == "(* comment between statements *)"

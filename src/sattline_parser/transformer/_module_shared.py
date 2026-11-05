@@ -38,12 +38,10 @@ class CoordTail:
 class InterimCoords:
     """Coordinate payload passed between layout/graphics transformer rules.
 
-    Replaces the previous ``{KEY_COORDS: ..., KEY_TAILS: ...}`` /
-    ``{TREE_TAG_INVOKE_COORD: ..., KEY_TAILS: ...}`` dict protocol: a rule that
-    produces coordinates (:func:`coordinates`, :func:`origo_size_pair`,
-    :func:`invoke_coord`) returns an ``InterimCoords`` that downstream rules
-    unpack. ``coords`` is a coordinate pair ``(x, y)``, a coordinate box
-    ``((x, y), (w, h))``, or a five-value invocation coordinate.
+    A rule that produces coordinates (:func:`coordinates`,
+    :func:`origo_size_pair`, :func:`invoke_coord`) returns an ``InterimCoords``
+    that downstream rules unpack. ``coords`` is a coordinate pair ``(x, y)``, a
+    coordinate box ``((x, y), (w, h))``, or a five-value invocation coordinate.
     """
 
     coords: CoordPair | CoordBox | tuple[float, float, float, float, float]

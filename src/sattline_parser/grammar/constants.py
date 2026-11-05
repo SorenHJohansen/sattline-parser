@@ -1,79 +1,73 @@
-"""Grammar and AST key constants used across the parser/transformer."""
+"""Grammar and AST vocabulary for the SattLine parser.
+
+The file holds three kinds of facts:
+
+* ``GRAMMAR_VALUE_*`` spellings. The grammar template inserts them as quoted
+  literals, and the transformer compares token types with them.
+* ``GRAMMAR_REGEX_*`` fragments. The grammar template inserts them as regex
+  bodies. Keyword and boolean fragments are built from the ``GRAMMAR_VALUE_*``
+  spellings above, so a spelling is declared once.
+* Model vocabulary: tree tags used between transformer stages, property-map
+  keys, and token type names.
+
+Every public constant is ``Final`` and exported through ``__all__``. A spelling
+keeps the casing the language uses; the resolved grammar applies
+case-insensitive matching to every keyword terminal (see
+``grammar/keywords.py``).
+"""
 
 from typing import Final
 
-DEFAULT_INIT = object()
+#: Documented SattLine numeric limits.
+INT_MIN: Final = -2147483648
+INT_MAX: Final = 2147483647
+REAL_MAX: Final = 1.7014117e38
 
-# Documented SattLine numeric limits
-INT_MIN = -2147483648
-INT_MAX = 2147483647
-REAL_MAX = 1.7014117e38
+# ---------------------------------------------------------------------------
+# Boolean spellings
+# ---------------------------------------------------------------------------
 
-MODULE_TYPE_SINGLE_MODULE = "SingleModule"
-MODULE_TYPE_FRAME_MODULE = "FrameModule"
-MODULE_TYPE_MOD_TYPE_INSTANCE = "ModuleType"
+#: The two boolean meanings and the spellings that produce them. ``On`` and
+#: ``Off`` are equivalent to ``True`` and ``False``. These tuples are the single
+#: source for the boolean regexes, the transformer decode, and the identifier
+#: exclusion list.
+BOOL_TRUE_SPELLINGS: Final = ("True", "On")
+BOOL_FALSE_SPELLINGS: Final = ("False", "Off")
+BOOL_SPELLINGS: Final = (*BOOL_TRUE_SPELLINGS, *BOOL_FALSE_SPELLINGS)
 
-TREE_TAG_DATATYPE_LIST = "datatype_list"
-TREE_TAG_MODULETYPE_LIST = "moduletype_list"
-TREE_TAG_VAR_LIST = "var_list"
-TREE_TAG_ENABLE_EXPRESSION = "enable_expression"
-TREE_TAG_INVOCATION_TAIL = "invocation_tail"
-TREE_TAG_INVOKE_COORD = "invoke_coord"
-TREE_TAG_ARGUMENTS = "arguments"
-TREE_TAG_LAYERINFO = "layerinfo"
-TREE_TAG_ENABLE = "enable"
-TREE_TAG_MODULE_IN_VIEW = "module_in_view"
-TREE_TAG_MODULETYPE_PAR_LIST = "moduletype_par_list"
-TREE_TAG_MODULETYPE_PAR_TRANSFER = "moduletype_par_transfer"
-TREE_TAG_VARIABLE_NAME = "variable_name"
-TREE_TAG_BASE_MODULE_BODY = "base_module_body"
-TREE_TAG_MODULE_BODY = "module_body"
-TREE_TAG_MODULEDEF_BLOCK = "moduledef_block"
-TREE_TAG_MODULETYPE_DEFINITION = "moduletype_definition"
-TREE_TAG_SUBMODULES = "submodules"
-TREE_TAG_COORDINATES = "coordinates"
-TREE_TAG_TEXT_CONTENT = "text_content"
-TREE_TAG_SYMBOLMODULE = "SymbolModule"
-TREE_TAG_NON_ZOOMABLE = "Non_Zoomable"
+# ---------------------------------------------------------------------------
+# Tree tags handed between transformer stages
+# ---------------------------------------------------------------------------
+
+TREE_TAG_DATATYPE_LIST: Final = "datatype_list"
+TREE_TAG_MODULETYPE_LIST: Final = "moduletype_list"
+TREE_TAG_VAR_LIST: Final = "var_list"
+TREE_TAG_MODULETYPE_PAR_LIST: Final = "moduletype_par_list"
+TREE_TAG_MODULEDEF_BLOCK: Final = "moduledef_block"
+TREE_TAG_BASE_MODULE_BODY: Final = "base_module_body"
+TREE_TAG_MODULE_BODY: Final = "module_body"
+TREE_TAG_SUBMODULES: Final = "submodules"
+TREE_TAG_MODULETYPE_DEFINITION: Final = "moduletype_definition"
+
+# ---------------------------------------------------------------------------
+# Property-map and token keys
+# ---------------------------------------------------------------------------
 
 KEY_NAME: Final = "name"
-#: Interactor body keys for the two clauses below.
-KEY_SCALE_MODE: Final = "scale_mode"
-KEY_PICK_BUTTON: Final = "pick_button"
+KEY_DOT: Final = "DOT"
+KEY_STRING: Final = "STRING"
+KEY_SIGNED_INT: Final = "SIGNED_INT"
+KEY_SL_DATECODE: Final = "SL_DATECODE"
+KEY_PLUS: Final = "PLUS"
+KEY_MINUS: Final = "MINUS"
+KEY_SEQUENCE_BODY: Final = "sequence_body"
+KEY_SEQ_CONTROL_OPS: Final = "seq_control_opt"
+
+#: Keys written into the typed property maps (see ``models/properties.py``).
 KEY_COORDS: Final = "coords"
 KEY_SEGMENT_POINT: Final = "segment_point"
 KEY_POLYGON_TYPE: Final = "polygon_type"
-KEY_TYPE: Final = "type"
-KEY_VALUE: Final = "value"
-KEY_DESCRIPTION: Final = "description"
-KEY_SEQ_LAYERS: Final = "seq_layers"
-KEY_PROCEDURE_CALL: Final = "procedure_call"
-KEY_PROCEDURE: Final = "procedure"
-KEY_COMPARE: Final = "compare"
-KEY_ADD: Final = "add"
-KEY_TAIL: Final = "tail"
-KEY_MUL: Final = "mul"
-KEY_PLUS: Final = "PLUS"
-KEY_MINUS: Final = "MINUS"
 KEY_TAILS: Final = "tails"
-KEY_ARGS: Final = "args"
-KEY_BODY: Final = "body"
-KEY_INTERACT: Final = "Interact"
-KEY_ASSIGN: Final = "assign"
-KEY_EXTRA: Final = "extra"
-KEY_DOT: Final = "DOT"
-KEY_FLAG: Final = "flag"
-KEY_SIGNED_INT: Final = "SIGNED_INT"
-KEY_STRING: Final = "STRING"
-KEY_SL_DATECODE: Final = "SL_DATECODE"
-KEY_STATEMENT: Final = "Statement"
-KEY_TERNARY: Final = "Ternary"
-KEY_FUNCTION_CALL: Final = "FunctionCall"
-KEY_SEQUENCE_BODY: Final = "sequence_body"
-KEY_SEQ_CONTROL_OPS: Final = "seq_control_opt"
-KEY_ENABLE_EXPRESSION: Final = "enable_expression"
-KEY_VAR_NAME: Final = "var_name"
-#: Keys written into the typed property maps (see ``models.properties``).
 KEY_LAYER: Final = "layer"
 KEY_COLOURS: Final = "colours"
 KEY_TEXT_VARS: Final = "text_vars"
@@ -83,192 +77,184 @@ KEY_LAYERS: Final = "layers"
 KEY_ASSIGNS: Final = "assigns"
 KEY_ENABLES: Final = "enables"
 KEY_FLAGS: Final = "flags"
+KEY_BODY: Final = "body"
+KEY_PROCEDURE: Final = "procedure"
 
+# ---------------------------------------------------------------------------
+# Grammar keyword spellings
+# ---------------------------------------------------------------------------
 
-GRAMMAR_VALUE_ASSIGN_INIT_VALUE = ":="
-GRAMMAR_VALUE_CLIPPINGBOUNDS = "ClippingBounds"
-GRAMMAR_VALUE_MODULEDEF = "ModuleDef"
-GRAMMAR_VALUE_MODULECODE = "ModuleCode"
-GRAMMAR_VALUE_SUBMODULES = "SUBMODULES"
+# Module structure
+GRAMMAR_VALUE_ASSIGN_INIT_VALUE: Final = ":="
+GRAMMAR_VALUE_CLIPPINGBOUNDS: Final = "ClippingBounds"
+GRAMMAR_VALUE_MODULEDEF: Final = "ModuleDef"
+GRAMMAR_VALUE_MODULECODE: Final = "ModuleCode"
+GRAMMAR_VALUE_SUBMODULES: Final = "SUBMODULES"
+GRAMMAR_VALUE_TYPEDEFINITIONS: Final = "TYPEDEFINITIONS"
+GRAMMAR_VALUE_RECORD_KW: Final = "RECORD"
+GRAMMAR_VALUE_ENDDEF_KW: Final = "ENDDEF"
+GRAMMAR_VALUE_MODULEDEFINITION: Final = "MODULEDEFINITION"
+GRAMMAR_VALUE_INVOCATION: Final = "Invocation"
+GRAMMAR_VALUE_FRAME_MODULE: Final = "Frame_Module"
+GRAMMAR_VALUE_MODULEPARAMETERS: Final = "MODULEPARAMETERS"
+GRAMMAR_VALUE_LOCALVARIABLES: Final = "LOCALVARIABLES"
+GRAMMAR_VALUE_GRAPHOBJECTS: Final = "GraphObjects"
+GRAMMAR_VALUE_INTERACTOBJECTS: Final = "InteractObjects"
+GRAMMAR_VALUE_DATECODE_PREFIX: Final = "DateCode_"
+GRAMMAR_VALUE_GROUPCONN: Final = "GroupConn"
+GRAMMAR_VALUE_MODULE_IN_VIEW: Final = "Module_In_View"
 
-GRAMMAR_VALUE_IF = "IF"
-GRAMMAR_VALUE_THEN = "THEN"
-GRAMMAR_VALUE_ELSE = "ELSE"
-GRAMMAR_VALUE_ELSIF = "ELSIF"
-GRAMMAR_VALUE_ENDIF = "ENDIF"
+# Control flow and operators
+GRAMMAR_VALUE_IF: Final = "IF"
+GRAMMAR_VALUE_THEN: Final = "THEN"
+GRAMMAR_VALUE_ELSE: Final = "ELSE"
+GRAMMAR_VALUE_ELSIF: Final = "ELSIF"
+GRAMMAR_VALUE_ENDIF: Final = "ENDIF"
+GRAMMAR_VALUE_OR: Final = "OR"
+GRAMMAR_VALUE_AND: Final = "AND"
+GRAMMAR_VALUE_NOT: Final = "NOT"
+GRAMMAR_VALUE_LT: Final = "<"
+GRAMMAR_VALUE_GT: Final = ">"
+GRAMMAR_VALUE_EQ: Final = "=="
+GRAMMAR_VALUE_NE: Final = "<>"
+GRAMMAR_VALUE_LE: Final = "<="
+GRAMMAR_VALUE_GE: Final = ">="
+GRAMMAR_VALUE_PLUS: Final = "+"
+GRAMMAR_VALUE_MINUS: Final = "-"
+GRAMMAR_VALUE_MULTIPLY: Final = "*"
+GRAMMAR_VALUE_DIVIDE: Final = "/"
 
-GRAMMAR_VALUE_OR = "OR"
-GRAMMAR_VALUE_AND = "AND"
-GRAMMAR_VALUE_NOT = "NOT"
+# Sequences and equations
+GRAMMAR_VALUE_SEQCONTROL: Final = "SeqControl"
+GRAMMAR_VALUE_SEQTIMER: Final = "SeqTimer"
+GRAMMAR_VALUE_COORD_KW: Final = "COORD"
+GRAMMAR_VALUE_OBJSIZE: Final = "OBJSIZE"
+GRAMMAR_VALUE_SEQINITSTEP: Final = "SEQINITSTEP"
+GRAMMAR_VALUE_SEQSTEP: Final = "SEQSTEP"
+GRAMMAR_VALUE_SEQTRANSITION: Final = "SEQTRANSITION"
+GRAMMAR_VALUE_WAIT_FOR: Final = "WAIT_FOR"
+GRAMMAR_VALUE_ENTERCODE: Final = "ENTERCODE"
+GRAMMAR_VALUE_ACTIVECODE: Final = "ACTIVECODE"
+GRAMMAR_VALUE_EXITCODE: Final = "EXITCODE"
+GRAMMAR_VALUE_EQUATIONBLOCK: Final = "EQUATIONBLOCK"
+GRAMMAR_VALUE_EQUATIONS: Final = "EQUATIONS"
+GRAMMAR_VALUE_ENDSEQUENCE: Final = "ENDSEQUENCE"
+GRAMMAR_VALUE_ALTERNATIVESEQ: Final = "ALTERNATIVESEQ"
+GRAMMAR_VALUE_ALTERNATIVEBRANCH: Final = "ALTERNATIVEBRANCH"
+GRAMMAR_VALUE_ENDALTERNATIVE: Final = "ENDALTERNATIVE"
+GRAMMAR_VALUE_PARALLELBRANCH: Final = "PARALLELBRANCH"
+GRAMMAR_VALUE_PARALLELSEQ: Final = "PARALLELSEQ"
+GRAMMAR_VALUE_ENDPARALLEL: Final = "ENDPARALLEL"
+GRAMMAR_VALUE_SEQBREAK: Final = "SEQBREAK"
+GRAMMAR_VALUE_SEQFORK: Final = "SEQFORK"
+GRAMMAR_VALUE_SUBSEQTRANSITION: Final = "SUBSEQTRANSITION"
+GRAMMAR_VALUE_ENDSUBSEQTRANSITION: Final = "ENDSUBSEQTRANSITION"
+GRAMMAR_VALUE_SUBSEQSTEP: Final = "SUBSEQSTEP"
+GRAMMAR_VALUE_ENDSUBSEQSTEP: Final = "ENDSUBSEQSTEP"
+GRAMMAR_VALUE_SUBSEQUENCE: Final = "SUBSEQUENCE"
+GRAMMAR_VALUE_ENDSUBSEQUENCE: Final = "ENDSUBSEQUENCE"
+GRAMMAR_VALUE_SEQUENCE: Final = "SEQUENCE"
+GRAMMAR_VALUE_OPENSEQUENCE: Final = "OPENSEQUENCE"
+GRAMMAR_VALUE_ENDOPENSEQUENCE: Final = "ENDOPENSEQUENCE"
 
-GRAMMAR_VALUE_LT = "<"
-GRAMMAR_VALUE_GT = ">"
-GRAMMAR_VALUE_EQ = "=="
-GRAMMAR_VALUE_NE = "<>"
-GRAMMAR_VALUE_LE = "<="
-GRAMMAR_VALUE_GE = ">="
+# Layout and zoom
+GRAMMAR_VALUE_TWO_LAYERS: Final = "Two_Layers_"
+GRAMMAR_VALUE_LAYERLIMIT: Final = "LayerLimit_"
+GRAMMAR_VALUE_LAYER_PREFIX: Final = "Layer_"
+GRAMMAR_VALUE_ZOOMLIMITS: Final = "ZoomLimits"
+GRAMMAR_VALUE_ZOOMABLE: Final = "Zoomable"
+GRAMMAR_VALUE_GRID: Final = "Grid"
+GRAMMAR_VALUE_IGNOREMAXMODULE: Final = "IgnoreMaxModule"
+GRAMMAR_VALUE_LAYERMODULE: Final = "LayerModule"
 
-GRAMMAR_VALUE_PLUS = "+"
-GRAMMAR_VALUE_MINUS = "-"
-GRAMMAR_VALUE_MULTIPLY = "*"
-GRAMMAR_VALUE_DIVIDE = "/"
+# Alignment, graphics objects, and their properties
+GRAMMAR_VALUE_LEFTALIGNED: Final = "LeftAligned"
+GRAMMAR_VALUE_RIGHTALIGNED: Final = "RightAligned"
+GRAMMAR_VALUE_TEXTOBJECT: Final = "TextObject"
+GRAMMAR_VALUE_RECTANGLEOBJECT: Final = "RectangleObject"
+GRAMMAR_VALUE_LINEOBJECT: Final = "LineObject"
+GRAMMAR_VALUE_OVALOBJECT: Final = "OvalObject"
+GRAMMAR_VALUE_POLYGONOBJECT: Final = "PolygonObject"
+GRAMMAR_VALUE_SPLINE: Final = "Spline"
+GRAMMAR_VALUE_POLYLINE: Final = "Polyline"
+GRAMMAR_VALUE_CONNECTION: Final = "Connection"
+GRAMMAR_VALUE_SEGMENTOBJECT: Final = "SegmentObject"
+GRAMMAR_VALUE_COMPOSITEOBJECT: Final = "CompositeObject"
+GRAMMAR_VALUE_CONNECTIONNODE: Final = "ConnectionNode"
+GRAMMAR_VALUE_ENABLE_PREFIX: Final = "Enable_"
+GRAMMAR_VALUE_VARNAME: Final = "VarName"
+GRAMMAR_VALUE_RELATIVE: Final = "Relative_"
+GRAMMAR_VALUE_ABS: Final = "Abs_"
+GRAMMAR_VALUE_INTOBJPICKBUTTON: Final = "IntObjPickButton"
+GRAMMAR_VALUE_VALUEFRACTION: Final = "ValueFraction"
+GRAMMAR_VALUE_COLOUR0: Final = "Colour0"
+GRAMMAR_VALUE_COLOUR1: Final = "Colour1"
+GRAMMAR_VALUE_OUTLINECOLOUR: Final = "OutlineColour"
+GRAMMAR_VALUE_FILLCOLOUR: Final = "FillColour"
+GRAMMAR_VALUE_WIDTH_KEY: Final = "Width_"
+GRAMMAR_VALUE_COLOURSTYLE: Final = "ColourStyle"
 
-GRAMMAR_REGEX_SIGNED_INT = r"/[+-]?\d+/"
-GRAMMAR_REGEX_SIGNED_INT_NOTAIL = r"/[+-]?\d+(?![\d.])(?!(?:[ \t\r\n]*:))/"
-GRAMMAR_REGEX_REAL = r"/[+-]?(?:\d+\.\d+(?:[eE][+-]?\d+)?|\d+[eE][+-]?\d+)/"
-GRAMMAR_REGEX_REAL_NOTAIL = r"/[+-]?(?:\d+\.\d+(?:[eE][+-]?\d+)?|\d+[eE][+-]?\d+)(?![ \t\r\n]*:)/"
-GRAMMAR_VALUE_BOOL_TRUE = "True"
-GRAMMAR_VALUE_BOOL_FALSE = "False"
-#: Boolean literal spellings accepted wherever a value is read. They are keyword
-#: terminals, so they only act as literals where the grammar expects a value;
-#: elsewhere they stay ordinary names.
-GRAMMAR_VALUE_BOOL_ON = "On"
-GRAMMAR_VALUE_BOOL_OFF = "Off"
-GRAMMAR_REGEX_STRING = r"/\"([^\n\"]|\"\")*\"/"
-GRAMMAR_REGEX_STRING_NOTAIL = r"/\"([^\n\"]|\"\")*\"(?![ \t\r\n]*:)/"
-GRAMMAR_REGEX_NOT = r"/NOT\b/"
-GRAMMAR_REGEX_AND = r"/AND\b/"
-GRAMMAR_REGEX_OR = r"/OR\b/"
-GRAMMAR_REGEX_IF = r"/IF\b/"
-GRAMMAR_REGEX_THEN = r"/THEN\b/"
-GRAMMAR_REGEX_ELSE = r"/ELSE\b/"
-GRAMMAR_REGEX_ELSIF = r"/ELSIF\b/"
-GRAMMAR_REGEX_ENDIF = r"/ENDIF\b/"
+# Interactors and tails
+GRAMMAR_VALUE_INVAR_PREFIX: Final = "InVar_"
+GRAMMAR_VALUE_OUTVAR_PREFIX: Final = "OutVar_"
+GRAMMAR_VALUE_LITSTRING: Final = "LitString"
+GRAMMAR_VALUE_FORMAT_STRING: Final = "Format_String_"
+GRAMMAR_VALUE_COMBUT: Final = "ComBut_"
+GRAMMAR_VALUE_OPTBUT: Final = "OptBut_"
+GRAMMAR_VALUE_PROCEDUREINTERACT: Final = "ProcedureInteract"
+GRAMMAR_VALUE_COMBUTPROC: Final = "ComButProc_"
+GRAMMAR_VALUE_NEWWINDOW: Final = "NewWindow"
+GRAMMAR_VALUE_CHECKBOX: Final = "CheckBox_"
+GRAMMAR_VALUE_TEXTBOX: Final = "TextBox_"
+GRAMMAR_VALUE_MENUINTERACT: Final = "MenuInteract"
+GRAMMAR_VALUE_SIMPLEINTERACT: Final = "SimpleInteract"
+GRAMMAR_VALUE_SYMBOLMODULE: Final = "SymbolModule"
+GRAMMAR_VALUE_NON_ZOOMABLE: Final = "Non_Zoomable"
+GRAMMAR_VALUE_PRIVATE: Final = "PRIVATE_"
 
-GRAMMAR_VALUE_BASEPICTURE = "BasePicture"
-GRAMMAR_VALUE_TYPEDEFINITIONS = "TYPEDEFINITIONS"
-GRAMMAR_VALUE_RECORD_KW = "RECORD"
-GRAMMAR_VALUE_ENDDEF_KW = "ENDDEF"
-GRAMMAR_VALUE_MODULEDEFINITION = "MODULEDEFINITION"
-GRAMMAR_VALUE_INVOCATION = "Invocation"
-GRAMMAR_VALUE_FRAME_MODULE = "Frame_Module"
-GRAMMAR_VALUE_MODULEPARAMETERS = "MODULEPARAMETERS"
-GRAMMAR_VALUE_LOCALVARIABLES = "LOCALVARIABLES"
-GRAMMAR_VALUE_GRAPHOBJECTS = "GraphObjects"
-GRAMMAR_VALUE_INTERACTOBJECTS = "InteractObjects"
-GRAMMAR_VALUE_DATECODE_PREFIX = "DateCode_"
-GRAMMAR_VALUE_GROUPCONN = "GroupConn"
+# Declarations and states
+GRAMMAR_VALUE_GLOBAL_KW: Final = "GLOBAL"
+GRAMMAR_VALUE_CONST_KW: Final = "Const"
+GRAMMAR_VALUE_STATE_KW: Final = "State"
+GRAMMAR_VALUE_OPSAVE_KW: Final = "OpSave"
+GRAMMAR_VALUE_SECURE_KW: Final = "Secure"
+GRAMMAR_VALUE_DURATION_VALUE: Final = "Duration_Value"
+GRAMMAR_VALUE_TIME_VALUE: Final = "Time_Value"
+GRAMMAR_VALUE_DEFAULT: Final = "Default"
+GRAMMAR_VALUE_NEW: Final = "New"
+GRAMMAR_VALUE_OLD: Final = "Old"
 
-GRAMMAR_VALUE_SEQCONTROL = "SeqControl"
-GRAMMAR_VALUE_SEQTIMER = "SeqTimer"
-GRAMMAR_VALUE_COORD_KW = "COORD"
-GRAMMAR_VALUE_OBJSIZE = "OBJSIZE"
-GRAMMAR_VALUE_SEQINITSTEP = "SEQINITSTEP"
-GRAMMAR_VALUE_SEQSTEP = "SEQSTEP"
-GRAMMAR_VALUE_SEQTRANSITION = "SEQTRANSITION"
-GRAMMAR_VALUE_WAIT_FOR = "WAIT_FOR"
-GRAMMAR_VALUE_ENTERCODE = "ENTERCODE"
-GRAMMAR_VALUE_ACTIVECODE = "ACTIVECODE"
-GRAMMAR_VALUE_EXITCODE = "EXITCODE"
-GRAMMAR_VALUE_EQUATIONBLOCK = "EQUATIONBLOCK"
-GRAMMAR_VALUE_EQUATIONS = "EQUATIONS"
-GRAMMAR_VALUE_ENDSEQUENCE = "ENDSEQUENCE"
-GRAMMAR_VALUE_ALTERNATIVESEQ = "ALTERNATIVESEQ"
-GRAMMAR_VALUE_ALTERNATIVEBRANCH = "ALTERNATIVEBRANCH"
-GRAMMAR_VALUE_ENDALTERNATIVE = "ENDALTERNATIVE"
-GRAMMAR_VALUE_PARALLELBRANCH = "PARALLELBRANCH"
-GRAMMAR_VALUE_PARALLELSEQ = "PARALLELSEQ"
-GRAMMAR_VALUE_ENDPARALLEL = "ENDPARALLEL"
-GRAMMAR_VALUE_SEQBREAK = "SEQBREAK"
-GRAMMAR_VALUE_SEQFORK = "SEQFORK"
-GRAMMAR_VALUE_SUBSEQTRANSITION = "SUBSEQTRANSITION"
-GRAMMAR_VALUE_ENDSUBSEQTRANSITION = "ENDSUBSEQTRANSITION"
-GRAMMAR_VALUE_SUBSEQSTEP = "SUBSEQSTEP"
-GRAMMAR_VALUE_ENDSUBSEQSTEP = "ENDSUBSEQSTEP"
-GRAMMAR_VALUE_SUBSEQUENCE = "SUBSEQUENCE"
-GRAMMAR_VALUE_ENDSUBSEQUENCE = "ENDSUBSEQUENCE"
-GRAMMAR_VALUE_SEQUENCE = "SEQUENCE"
-GRAMMAR_VALUE_OPENSEQUENCE = "OPENSEQUENCE"
-GRAMMAR_VALUE_ENDOPENSEQUENCE = "ENDOPENSEQUENCE"
+# ---------------------------------------------------------------------------
+# Grammar regex fragments
+# ---------------------------------------------------------------------------
 
-GRAMMAR_VALUE_TWO_LAYERS = "Two_Layers_"
-GRAMMAR_VALUE_LAYERLIMIT = "LayerLimit_"
-GRAMMAR_VALUE_LAYER_PREFIX = "Layer_"
-GRAMMAR_VALUE_ZOOMLIMITS = "ZoomLimits"
-GRAMMAR_VALUE_ZOOMABLE = "Zoomable"
-GRAMMAR_VALUE_GRID = "Grid"
-GRAMMAR_VALUE_IGNOREMAXMODULE = "IgnoreMaxModule"
-GRAMMAR_VALUE_LAYERMODULE = "LayerModule"
+#: The numeric and string literals. They do not spell a keyword, so they are
+#: written directly.
+GRAMMAR_REGEX_SIGNED_INT: Final = r"/[+-]?\d+/"
+GRAMMAR_REGEX_SIGNED_INT_NOTAIL: Final = r"/[+-]?\d+(?![\d.])(?!(?:[ \t\r\n]*:))/"
+GRAMMAR_REGEX_REAL: Final = r"/[+-]?(?:\d+\.\d+(?:[eE][+-]?\d+)?|\d+[eE][+-]?\d+)/"
+GRAMMAR_REGEX_REAL_NOTAIL: Final = r"/[+-]?(?:\d+\.\d+(?:[eE][+-]?\d+)?|\d+[eE][+-]?\d+)(?![ \t\r\n]*:)/"
+GRAMMAR_REGEX_STRING: Final = r"/\"([^\n\"]|\"\")*\"/"
+GRAMMAR_REGEX_STRING_NOTAIL: Final = r"/\"([^\n\"]|\"\")*\"(?![ \t\r\n]*:)/"
+GRAMMAR_REGEX_STRING_CRLF: Final = r"/\"([^\"\n]|\"\")*\n/"
+GRAMMAR_REGEX_COMMENT_TEXT: Final = r"/(?:[^(*]|\((?!\*)|\*(?!\)))+/"
+GRAMMAR_REGEX_SL_DATECODE: Final = r"/\d+/"
 
-GRAMMAR_VALUE_LEFTALIGNED = "LeftAligned"
-GRAMMAR_VALUE_RIGHTALIGNED = "RightAligned"
+#: Keyword fragments built from the spelling constants above.
+GRAMMAR_REGEX_IF: Final = rf"/{GRAMMAR_VALUE_IF}\b/"
+GRAMMAR_REGEX_THEN: Final = rf"/{GRAMMAR_VALUE_THEN}\b/"
+GRAMMAR_REGEX_ELSE: Final = rf"/{GRAMMAR_VALUE_ELSE}\b/"
+GRAMMAR_REGEX_ELSIF: Final = rf"/{GRAMMAR_VALUE_ELSIF}\b/"
+GRAMMAR_REGEX_ENDIF: Final = rf"/{GRAMMAR_VALUE_ENDIF}\b/"
+GRAMMAR_REGEX_AND: Final = rf"/{GRAMMAR_VALUE_AND}\b/"
+GRAMMAR_REGEX_OR: Final = rf"/{GRAMMAR_VALUE_OR}\b/"
+GRAMMAR_REGEX_NOT: Final = rf"/{GRAMMAR_VALUE_NOT}\b/"
+GRAMMAR_REGEX_ENABLE_PREFIX: Final = rf"/{GRAMMAR_VALUE_ENABLE_PREFIX}\b/"
+GRAMMAR_REGEX_STATE_SUFFIX: Final = rf"/:\s*(?:{GRAMMAR_VALUE_NEW}|{GRAMMAR_VALUE_OLD})\b/"
 
-GRAMMAR_VALUE_TEXTOBJECT = "TextObject"
-GRAMMAR_VALUE_RECTANGLEOBJECT = "RectangleObject"
-GRAMMAR_VALUE_LINEOBJECT = "LineObject"
-GRAMMAR_VALUE_OVALOBJECT = "OvalObject"
-GRAMMAR_VALUE_POLYGONOBJECT = "PolygonObject"
-GRAMMAR_VALUE_SPLINE = "Spline"
-GRAMMAR_VALUE_POLYLINE = "Polyline"
-GRAMMAR_VALUE_CONNECTION = "Connection"
-GRAMMAR_VALUE_SEGMENTOBJECT = "SegmentObject"
-GRAMMAR_VALUE_COMPOSITEOBJECT = "CompositeObject"
-GRAMMAR_VALUE_CONNECTIONNODE = "ConnectionNode"
-GRAMMAR_VALUE_ENABLE_PREFIX = "Enable_"
-GRAMMAR_VALUE_MODULE_IN_VIEW = "Module_In_View"
-GRAMMAR_REGEX_ENABLE_PREFIX = r"/Enable_\b/"
-GRAMMAR_VALUE_VARNAME = "VarName"
-#: Bare one-of interactor selectors (ComBut_, TextBox_): they take no value and
-#: set a single object field to 1 (Relative_) or 0 (Abs_).
-GRAMMAR_VALUE_RELATIVE = "Relative_"
-GRAMMAR_VALUE_ABS = "Abs_"
-#: Shared interactor property clause: `IntObjPickButton "=" STRING`
-#: with an optional postfix `VarName` that turns the string into a reference.
-GRAMMAR_VALUE_INTOBJPICKBUTTON = "IntObjPickButton"
-GRAMMAR_VALUE_VALUEFRACTION = "ValueFraction"
-GRAMMAR_VALUE_COLOUR0 = "Colour0"
-GRAMMAR_VALUE_COLOUR1 = "Colour1"
-
-GRAMMAR_VALUE_OUTLINECOLOUR = "OutlineColour"
-GRAMMAR_VALUE_FILLCOLOUR = "FillColour"
-GRAMMAR_VALUE_WIDTH_KEY = "Width_"
-GRAMMAR_VALUE_COLOUR = "Colour"
-GRAMMAR_VALUE_COLOURSTYLE = "ColourStyle"
-
-GRAMMAR_VALUE_INVAR_PREFIX = "InVar_"
-
-GRAMMAR_VALUE_COMBUT = "ComBut_"
-GRAMMAR_VALUE_OPTBUT = "OptBut_"
-GRAMMAR_VALUE_PROCEDUREINTERACT = "ProcedureInteract"
-GRAMMAR_VALUE_COMBUTPROC = "ComButProc_"
-GRAMMAR_VALUE_NEWWINDOW = "NewWindow"
-GRAMMAR_VALUE_OUTVAR_PREFIX = "OutVar_"
-GRAMMAR_VALUE_CHECKBOX = "CheckBox_"
-GRAMMAR_VALUE_TEXTBOX = "TextBox_"
-GRAMMAR_VALUE_MENUINTERACT = "MenuInteract"
-GRAMMAR_VALUE_SIMPLEINTERACT = "SimpleInteract"
-GRAMMAR_VALUE_SYMBOLMODULE = "SymbolModule"
-GRAMMAR_VALUE_NON_ZOOMABLE = "Non_Zoomable"
-GRAMMAR_VALUE_PRIVATE = "PRIVATE_"
-GRAMMAR_VALUE_LITSTRING = "LitString"
-GRAMMAR_VALUE_FORMAT_STRING = "Format_String_"
-
-GRAMMAR_VALUE_GLOBAL_KW = "GLOBAL"
-GRAMMAR_VALUE_CONST_KW = "Const"
-GRAMMAR_VALUE_STATE_KW = "State"
-GRAMMAR_VALUE_OPSAVE_KW = "OpSave"
-GRAMMAR_VALUE_SECURE_KW = "Secure"
-GRAMMAR_VALUE_DURATION_VALUE = "Duration_Value"
-GRAMMAR_VALUE_TIME_VALUE = "Time_Value"
-GRAMMAR_VALUE_DEFAULT = "Default"
-GRAMMAR_VALUE_NEW = "New"
-GRAMMAR_VALUE_OLD = "Old"
-
-TOKEN_NEW = "NEW"  # nosec B105 - grammar token literal, not a credential
-TOKEN_OLD = "OLD"  # nosec B105 - grammar token literal, not a credential
-TOKEN_VARNAME = "VARNAME"  # nosec B105 - grammar token literal, not a credential
-
-TOKEN_COMMENT_START = "COMMENT_START"  # nosec B105 - grammar token literal
-TOKEN_COMMENT_END = "COMMENT_END"  # nosec B105 - grammar token literal
-TOKEN_COMMENT_TEXT = "COMMENT_TEXT"  # nosec B105 - grammar token literal
-TOKEN_NAME = "NAME"  # nosec B105 - grammar token literal
-
-COMMENT_TERMINALS = frozenset({TOKEN_COMMENT_START, TOKEN_COMMENT_END, TOKEN_COMMENT_TEXT})
-
-GRAMMAR_REGEX_COMMENT_TEXT = r"/(?:[^(*]|\((?!\*)|\*(?!\)))+/"
-GRAMMAR_REGEX_SL_DATECODE = r"/\d+/"
-GRAMMAR_REGEX_BOOL = r"/True\b|False\b/"
-GRAMMAR_REGEX_BOOL_NOTAIL = r"/(?:True|False)\b(?![ \t\r\n]*:)/"
+#: Boolean fragments built from the boolean spelling tables.
+GRAMMAR_REGEX_BOOL: Final = "/" + "|".join(f"{spelling}\\b" for spelling in BOOL_SPELLINGS) + "/"
+GRAMMAR_REGEX_BOOL_NOTAIL: Final = "/(?:" + "|".join(BOOL_SPELLINGS) + r")\b(?![ \t\r\n]*:)/"
 
 
 #: Identifiers are matched case-insensitively so that the keyword exclusion list
@@ -290,17 +276,44 @@ def _cp1252_name_characters() -> str:
     return "".join(characters)
 
 
-_NAME_CHAR = r"\p{L}\p{Nl}\p{M}\p{Nd}_'" + _cp1252_name_characters() + r"\uFFFD"
+_NAME_CHAR: Final = r"\p{L}\p{Nl}\p{M}\p{Nd}_'" + _cp1252_name_characters() + r"\uFFFD"
+_NAME_EXCLUDED_KEYWORDS: Final = (
+    GRAMMAR_VALUE_IF,
+    GRAMMAR_VALUE_THEN,
+    GRAMMAR_VALUE_ELSE,
+    GRAMMAR_VALUE_ELSIF,
+    GRAMMAR_VALUE_ENDIF,
+    GRAMMAR_VALUE_AND,
+    GRAMMAR_VALUE_OR,
+    GRAMMAR_VALUE_NOT,
+    *BOOL_TRUE_SPELLINGS,
+    *BOOL_FALSE_SPELLINGS,
+    GRAMMAR_VALUE_SUBSEQSTEP,
+)
+_NAME_EXCLUDED: Final = "|".join(_NAME_EXCLUDED_KEYWORDS)
 
-GRAMMAR_REGEX_NAME = (
+GRAMMAR_REGEX_NAME: Final = (
     r"/(?i:'[^']{1,20}'|"
     r"(?!"
-    r"(?:IF|THEN|ELSE|ELSIF|ENDIF|AND|OR|NOT|True|False|SUBSEQSTEP)"
+    rf"(?:{_NAME_EXCLUDED})"
     rf"(?![{_NAME_CHAR}])"
     r")"
     rf"[{_NAME_CHAR}][{_NAME_CHAR}]{{0,19}}"
     rf"(?![{_NAME_CHAR}]))/"
 )
-GRAMMAR_REGEX_STRING_CRLF = r"/\"([^\"\n]|\"\")*\n/"
 
-__all__ = [name for name in dir() if not name.startswith("_")]  # pyright: ignore[reportUnsupportedDunderAll]
+# ---------------------------------------------------------------------------
+# Token type names
+# ---------------------------------------------------------------------------
+
+TOKEN_VARNAME: Final = "VARNAME"
+TOKEN_COMMENT_START: Final = "COMMENT_START"  # nosec B105 - token type name
+TOKEN_COMMENT_END: Final = "COMMENT_END"  # nosec B105 - token type name
+TOKEN_COMMENT_TEXT: Final = "COMMENT_TEXT"  # nosec B105 - token type name
+TOKEN_NAME: Final = "NAME"
+
+COMMENT_TERMINALS: Final = frozenset({TOKEN_COMMENT_START, TOKEN_COMMENT_END, TOKEN_COMMENT_TEXT})
+
+__all__ = sorted(  # pyright: ignore[reportUnsupportedDunderAll]
+    name for name in globals() if name.isupper() and not name.startswith("_")
+)

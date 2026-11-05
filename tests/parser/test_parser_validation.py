@@ -24,7 +24,7 @@ from sattline_parser.validation.diagnostics import (
     DiagnosticCode,
 )
 from sattline_parser.validation.rules import RETIRED_CODES
-from sattline_parser.validation.symbols import SFC_RUNTIME_CONSTANTS, build_scope, resolve_var
+from sattline_parser.validation.symbols import build_scope, resolve_var
 from sattline_parser.validation.typing import (
     TypeFamily,
     datatype_family,
@@ -41,8 +41,6 @@ from ._parser_core_test_support import *
 _INVALID_VALIDATION_FIXTURES: dict[str, str] = {
     "OpSaveAndStateCombined": "SL-V031",
     "CoordinateInvarTail": "SL-V032",
-    "ReservedNameVarOff": "SL-V034",
-    "ReservedNameVarOn": "SL-V034",
     "SequenceParallel": "SL-V033",
     "SubSequenceDefinition": "SL-V033",
     "TerminalSeqStep": "SL-V033",
@@ -106,6 +104,8 @@ _PARSE_REJECTED_FIXTURES = [
     "ModuleCodeWithoutModuleDef",
     "NotSattLine",
     "OversizedInput",
+    "ReservedNameVarOff",
+    "ReservedNameVarOn",
     "UnterminatedComment",
 ]
 
@@ -335,7 +335,7 @@ def test_qualification_resolves_record_fields():
 def test_write_to_const_variable_flagged():
     bp = _base_picture()
     bp.localvariables = [_var("MaxLimit", "integer", const=True)]
-    bp.modulecodes = [ModuleCode(equations=[_equation(Assignment(VarRef("MaxLimit"), 1))])]
+    bp.modulecodes = [ModuleCode(equationblocks=[_equation(Assignment(VarRef("MaxLimit"), 1))])]
     codes = {d.code.value for d in validate_basepicture(bp)}
     assert "SL-V007" in codes
 
@@ -345,7 +345,7 @@ def test_undefined_variable_references_flagged():
     bp.localvariables = [_var("Input", "integer"), _var("Mystery", "integer")]
     bp.modulecodes = [
         ModuleCode(
-            equations=[
+            equationblocks=[
                 _equation(
                     Assignment(VarRef("Input"), 0),
                     Assignment(VarRef("Sub.Out"), 1, span=None),
@@ -370,7 +370,7 @@ def test_old_new_on_non_state_variable_and_field_flagged():
     bp.localvariables = [_var("Counter", "integer"), _var("CMD", "CmdType")]
     bp.modulecodes = [
         ModuleCode(
-            equations=[
+            equationblocks=[
                 _equation(
                     IfStmt(
                         branches=(
@@ -398,7 +398,7 @@ def test_old_new_on_state_symbols_not_flagged():
     bp.localvariables = [_var("Counter", "integer", state=True), _var("CMD", "CmdType")]
     bp.modulecodes = [
         ModuleCode(
-            equations=[
+            equationblocks=[
                 _equation(
                     BoolOp("AND", (VarRef("Counter", state="old"), VarRef("CMD.Flag", state="new"))),
                 )
@@ -517,7 +517,7 @@ def test_string_literal_call_argument_flagged_for_any_call():
     bp = _base_picture()
     bp.localvariables = [_var("Input", "string", init_value="")]
     unknown = FuncCall(name="UserProc", args=("text",))
-    bp.modulecodes = [ModuleCode(equations=[_equation(FuncCallStmt(unknown))])]
+    bp.modulecodes = [ModuleCode(equationblocks=[_equation(FuncCallStmt(unknown))])]
     codes = {d.code.value for d in validate_basepicture(bp)}
     assert "SL-V015" in codes
 
@@ -529,7 +529,7 @@ def test_builtin_arity_and_out_arg_checks():
     copy_call = FuncCallStmt(FuncCall(name="CopyTime", args=(VarRef("A"), BoolOp("OR", (VarRef("A"), VarRef("B"))))))
     ok_call = FuncCallStmt(FuncCall(name="EqualStrings", args=(VarRef("A"), VarRef("B"), True)))
     unknown = FuncCallStmt(FuncCall(name="UserProc", args=(1, 2, 3, 4)))
-    bp.modulecodes = [ModuleCode(equations=[_equation(fn_call, copy_call, ok_call, unknown)])]
+    bp.modulecodes = [ModuleCode(equationblocks=[_equation(fn_call, copy_call, ok_call, unknown)])]
     codes = {d.code.value for d in validate_basepicture(bp)}
     assert "SL-V013" in codes
     assert "SL-V014" in codes
@@ -544,7 +544,7 @@ def test_builtin_optional_trailing_arguments_are_accepted():
         _var("Async", "integer", init_value=0),
     ]
     call = FuncCallStmt(FuncCall(name="writeline", args=(VarRef("File1"), VarRef("Text"), VarRef("Async"))))
-    bp.modulecodes = [ModuleCode(equations=[_equation(call)])]
+    bp.modulecodes = [ModuleCode(equationblocks=[_equation(call)])]
     assert validate_basepicture(bp, allow_unresolved_external_datatypes=True) == ()
 
 
@@ -552,7 +552,7 @@ def test_builtin_missing_required_argument_is_still_flagged():
     bp = _base_picture()
     bp.localvariables = [_var("File1", "textfile")]
     call = FuncCallStmt(FuncCall(name="writeline", args=(VarRef("File1"),)))
-    bp.modulecodes = [ModuleCode(equations=[_equation(call)])]
+    bp.modulecodes = [ModuleCode(equationblocks=[_equation(call)])]
     codes = {d.code.value for d in validate_basepicture(bp)}
     assert "SL-V013" in codes
 
@@ -564,7 +564,7 @@ def test_builtin_record_field_access_resolves_without_undefined_finding():
         _var("Sink", "integer", init_value=0),
     ]
     assignment = Assignment(VarRef("Sink"), VarRef("AsyncOperation1.Status"), span=None)
-    bp.modulecodes = [ModuleCode(equations=[_equation(assignment)])]
+    bp.modulecodes = [ModuleCode(equationblocks=[_equation(assignment)])]
     codes = {d.code.value for d in validate_basepicture(bp)}
     assert "SL-V019" not in codes
 
@@ -578,7 +578,7 @@ def test_unresolved_field_on_opaque_or_builtin_record_stays_silent():
     ]
     first = Assignment(VarRef("Sink"), VarRef("Group.Executing"), span=None)
     second = Assignment(VarRef("Sink"), VarRef("File.Name"), span=None)
-    bp.modulecodes = [ModuleCode(equations=[_equation(first, second)])]
+    bp.modulecodes = [ModuleCode(equationblocks=[_equation(first, second)])]
     codes = {d.code.value for d in validate_basepicture(bp)}
     assert "SL-V019" not in codes
 
@@ -592,7 +592,7 @@ def test_temporal_component_accessors_are_not_undefined():
     ]
     first = Assignment(VarRef("Sink"), VarRef("Stamp.Time"), span=None)
     second = Assignment(VarRef("Sink"), VarRef("Elapsed.Milliseconds"), span=None)
-    bp.modulecodes = [ModuleCode(equations=[_equation(first, second)])]
+    bp.modulecodes = [ModuleCode(equationblocks=[_equation(first, second)])]
     codes = {d.code.value for d in validate_basepicture(bp)}
     assert "SL-V019" not in codes
 
@@ -625,7 +625,7 @@ def test_expression_walk_covers_all_node_kinds():
         _var("Out", "integer", init_value=0),
     ]
     bp.modulecodes = [
-        ModuleCode(equations=[_equation(fn, Assignment(VarRef("Out", span=None), expression_nodes, span=None))])
+        ModuleCode(equationblocks=[_equation(fn, Assignment(VarRef("Out", span=None), expression_nodes, span=None))])
     ]
     diagnostics = validate_basepicture(bp)
     assert "SL-V013" not in {d.code.value for d in diagnostics}
@@ -839,7 +839,9 @@ def test_sfc_branch_start_checks_skip_leading_comments():
 def test_builtin_out_arg_beyond_call_args_not_flagged():
     bp = _base_picture()
     bp.localvariables = [_var("A", "time")]
-    bp.modulecodes = [ModuleCode(equations=[_equation(FuncCallStmt(FuncCall(name="CopyTime", args=(VarRef("A"),))))])]
+    bp.modulecodes = [
+        ModuleCode(equationblocks=[_equation(FuncCallStmt(FuncCall(name="CopyTime", args=(VarRef("A"),))))])
+    ]
     codes = {d.code.value for d in validate_basepicture(bp)}
     assert codes == {"SL-V013"}
 
@@ -854,7 +856,7 @@ def test_unknown_datatype_name_flagged_and_groupdata_exempt():
 
 def test_modulecode_without_sequences_or_equations_is_clean():
     bp = _base_picture()
-    bp.modulecodes = [ModuleCode(sequences=None, equations=None)]
+    bp.modulecodes = [ModuleCode(sequences=None, equationblocks=None)]
     assert validate_basepicture(bp) == ()
     empty = _base_picture()
     assert validate_basepicture(empty) == ()
@@ -863,8 +865,8 @@ def test_modulecode_without_sequences_or_equations_is_clean():
 def test_identifier_checks_cover_every_modulecode_block():
     bp = _base_picture()
     bp.modulecodes = [
-        ModuleCode(equations=[_equation(name="First")]),
-        ModuleCode(equations=[_equation(name="X" * 21)]),
+        ModuleCode(equationblocks=[_equation(name="First")]),
+        ModuleCode(equationblocks=[_equation(name="X" * 21)]),
     ]
     codes = [diagnostic.code for diagnostic in validate_basepicture(bp)]
     assert codes.count(DiagnosticCode.IDENTIFIER_TOO_LONG) == 1
@@ -874,19 +876,19 @@ def test_moduletype_and_nested_module_walks():
     child_type = SingleModule(
         header=_module_header("Child"),
         localvariables=[_var("Local", "integer")],
-        modulecodes=[ModuleCode(equations=[_equation(Assignment(VarRef("Local"), 1))])],
+        modulecodes=[ModuleCode(equationblocks=[_equation(Assignment(VarRef("Local"), 1))])],
     )
     moduletype = ModuleTypeDef(
         name="T",
         moduleparameters=[_var("P", "integer")],
         localvariables=[_var("L", "integer")],
         submodules=[ModuleTypeInstance(header=_module_header("Inst"), moduletype_name="T")],
-        modulecodes=[ModuleCode(equations=[_equation(Assignment(VarRef("P"), 0))])],
+        modulecodes=[ModuleCode(equationblocks=[_equation(Assignment(VarRef("P"), 0))])],
     )
     frame = FrameModule(
         header=_module_header("Frame"),
         submodules=[child_type],
-        modulecodes=[ModuleCode(equations=[_equation(Assignment(VarRef("P", span=None), 0, span=None))])],
+        modulecodes=[ModuleCode(equationblocks=[_equation(Assignment(VarRef("P", span=None), 0, span=None))])],
     )
     bp = _base_picture()
     bp.localvariables = [_var("P", "integer")]
@@ -912,7 +914,7 @@ def test_param_transfer_type_mismatch_flagged():
     moduletype = ModuleTypeDef(
         name="ChildType",
         moduleparameters=[_var("EnableFlag", "boolean")],
-        modulecodes=[ModuleCode(equations=[_equation(Assignment(VarRef("EnableFlag"), False))])],
+        modulecodes=[ModuleCode(equationblocks=[_equation(Assignment(VarRef("EnableFlag"), False))])],
     )
     bp = _base_picture()
     bp.localvariables = [_var("CounterValue", "integer")]
@@ -1023,7 +1025,7 @@ def _typed_bp(variables: list[Variable], *items: object, datatypes: list[DataTyp
     bp.localvariables = variables
     if datatypes is not None:
         bp.datatype_defs = datatypes
-    bp.modulecodes = [ModuleCode(equations=[_equation(*items)])]
+    bp.modulecodes = [ModuleCode(equationblocks=[_equation(*items)])]
     return bp
 
 
@@ -1522,16 +1524,12 @@ def test_trailing_enddef_requires_a_semicolon():
         parser_core_parse_source_text(good + "ENDDEF\n")
 
 
-def test_reserved_runtime_names_cannot_be_declared():
-    """``On`` and ``Off`` are readable but never declarable.
+def test_on_off_are_treated_exactly_like_true_false():
+    """`On`/`Off` are boolean literals and reserved words, like `True`/`False`.
 
-    The real parser rejects a declaration such as ``On: boolean := False;``.
-    Reads stay exempt from the undefined-variable rule, so the same names must
-    still be usable in expressions; only the declaration is illegal.
+    A declaration is a parse error, and a constructed AST reports the same
+    reserved-identifier rule (SL-V039) that `True`/`False` report.
     """
-    reserved = SFC_RUNTIME_CONSTANTS
-    assert reserved == {"on", "off"}, "reserved set changed - update the fixtures and this expectation"
-
     header = (
         '"Syntax version 2.23, date: 2026-08-19-12:00:00.000 N"\n'
         '"Original file date: ---"\n'
@@ -1546,28 +1544,39 @@ def test_reserved_runtime_names_cannot_be_declared():
         "\nENDDEF (*BasePicture*);\n"
     )
 
-    def codes(decls: str, typedefs: str = "") -> list[str]:
-        # TYPEDEFINITIONS precedes LOCALVARIABLES in a SattLine module body.
-        src = header + picture + typedefs + "LOCALVARIABLES\n" + decls + tail
-        return [d.code.value for d in parse_and_validate(src)[1]]
+    # Declaring either name is a parse error at the declaration position.
+    for declarations in (
+        "   On: boolean := False;\n   Flag: boolean := False;\n",
+        "   Off: boolean := False;\n   Flag: boolean := False;\n",
+    ):
+        with pytest.raises(UnexpectedInput):
+            parse_and_validate(header + picture + "LOCALVARIABLES\n" + declarations + tail)
 
-    # declaring either reserved name is rejected
-    assert "SL-V034" in codes("   On: boolean := False;\n   Flag: boolean := False;\n")
-    assert "SL-V034" in codes("   Off: boolean := False;\n   Flag: boolean := False;\n")
-    # a record field counts as a variable declaration
-    assert "SL-V034" in codes(
-        "   Flag: boolean := False;\n",
-        typedefs="TYPEDEFINITIONS\n   Rec = RECORD DateCode_ 2\n      On: boolean;\n   ENDDEF\n",
+    # A record field and a datatype name are declaration positions too.
+    for typedefs in (
+        "TYPEDEFINITIONS\n   Rec = RECORD DateCode_ 2\n      On: boolean;\n   ENDDEF\n",
+        "TYPEDEFINITIONS\n   Off = RECORD DateCode_ 2\n      F: boolean;\n   ENDDEF\n",
+    ):
+        with pytest.raises(UnexpectedInput):
+            parse_and_validate(header + picture + typedefs + "LOCALVARIABLES\n   Flag: boolean := False;\n" + tail)
+
+    # Constructed ASTs use the same reserved-identifier rule as True/False.
+    for name in ("On", "Off", "True", "False"):
+        bp = _base_picture()
+        bp.localvariables = [_var(name, "boolean")]
+        assert [d.code.value for d in validate_basepicture(bp) if d.code is DiagnosticCode.RESERVED_KEYWORD_NAME] == [
+            "SL-V039"
+        ], name
+
+    # GroupData stays legal: it is a reserved *type*, not a boolean spelling.
+    _, diagnostics = parse_and_validate(
+        header + picture + "LOCALVARIABLES\n   GroupData: boolean := False;\n   Flag: boolean := False;\n" + tail
     )
-    # ...and so does a datatype name
-    assert "SL-V034" in codes(
-        "   Flag: boolean := False;\n",
-        typedefs="TYPEDEFINITIONS\n   Off = RECORD DateCode_ 2\n      F: boolean;\n   ENDDEF\n",
-    )
-    # GroupData stays legal: it is a reserved *type*, not a runtime constant
-    assert "SL-V034" not in codes("   GroupData: boolean := False;\n   Flag: boolean := False;\n")
-    # reading a reserved name is still fine - SL-V019 must not fire
-    assert "SL-V019" not in codes("   Flag: boolean := False;\n")
+    assert "SL-V039" not in [d.code.value for d in diagnostics]
+
+    # Reading a reserved spelling is fine: `On` is a boolean literal now.
+    _, diagnostics = parse_and_validate(header + picture + "LOCALVARIABLES\n   Flag: boolean := False;\n" + tail)
+    assert "SL-V019" not in [d.code.value for d in diagnostics]
 
 
 def test_system_datatype_declarations_resolve_to_declared_fields():

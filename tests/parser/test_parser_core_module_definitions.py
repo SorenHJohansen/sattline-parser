@@ -110,7 +110,7 @@ def test_parse_source_text_preserves_all_moduledef_blocks_in_source_order():
     assert len(bp.moduledefs) == 1
     assert len(bp.modulecodes) == 1
     assert bp.moduledefs[0].clipping_bounds == ((-1.0, -1.0), (1.0, 1.0))
-    assert [eq.name for mc in bp.modulecodes for eq in (mc.equations or [])] == ["First"]
+    assert [eq.name for mc in bp.modulecodes for eq in (mc.equationblocks or [])] == ["First"]
     assert bp.moduledef is bp.moduledefs[-1]
     assert bp.modulecode is bp.modulecodes[-1]
 
@@ -219,7 +219,7 @@ def test_modules_mixin_transfer_and_variable_helpers_cover_fallback_branches():
         [VarRef("Target"), 42],
     )
     assert int_literal_transfer.source_literal == 42
-    assert int_literal_transfer.source_type == parser_const.KEY_VALUE
+    assert int_literal_transfer.source_type == MappingSource.VALUE
 
     assert mixin.variable_group([]) == []
     literal_init_variables = mixin.variable_group(

@@ -18,7 +18,14 @@ from sattline_parser.__version__ import __version__
 from sattline_parser.api import parse_source_file
 from sattline_parser.grammar import constants as const
 from sattline_parser.grammar.resolved import grammar_fingerprint
-from sattline_parser.models.ast_model import BasePicture, GraphObject, InteractObject, ModuleDef, ModuleHeader
+from sattline_parser.models.ast_model import (
+    BasePicture,
+    GraphObject,
+    InteractObject,
+    ModuleDef,
+    ModuleHeader,
+    SourceSpan,
+)
 from sattline_parser.models.clauses import (
     AssignClause,
     ClippingClause,
@@ -99,6 +106,7 @@ def test_typed_tail_nodes_survive_a_pickle_round_trip() -> None:
     old envelope is never read as if it held the current nodes.
     """
     corner = VarTail("in", "Corner")
+    span = SourceSpan(start=3, end=9, line=1, column=4)
     module_def = ModuleDef(
         clipping=ClippingClause(((-1.0, -1.0), (1.0, 1.0)), (corner,)),
         graph_objects=[
@@ -113,14 +121,17 @@ def test_typed_tail_nodes_survive_a_pickle_round_trip() -> None:
                     ],
                     const.KEY_COORDS: ((-1.0, 1.0), (1.0, -1.0)),
                 },
+                span=span,
             )
         ],
         interact_objects=[
             InteractObject(
                 type=const.GRAMMAR_VALUE_COMBUT,
                 properties={const.KEY_ASSIGNS: [AssignClause("Variable", 0, VarTail("out", "AssignTail"))]},
+                span=span,
             )
         ],
+        span=span,
     )
     picture = BasePicture(
         header=ModuleHeader(
@@ -129,6 +140,7 @@ def test_typed_tail_nodes_survive_a_pickle_round_trip() -> None:
             arguments=ModuleArguments(enable=EnableClause(True, VarTail("in", "EnableVar"))),
             invoke_coord_tails=[VarTail("out", LitStringTail("LitString", "Symbol"))],
         ),
+        position=(1.0, 2.0, 3.0, 4.0, 5.0),
         moduledefs=[module_def],
     )
 
@@ -136,7 +148,14 @@ def test_typed_tail_nodes_survive_a_pickle_round_trip() -> None:
 
     assert restored == picture
     assert restored.header.invoke_coord_tails == [VarTail("out", LitStringTail("LitString", "Symbol"))]
-    assert FILE_AST_CACHE_VERSION == 7
+    assert restored.header.invoke_coord == (0.0, 0.0, 0.0, 1.0, 1.0)
+    assert restored.position == (1.0, 2.0, 3.0, 4.0, 5.0)
+    assert restored.moduledefs[0].clipping_bounds == ((-1.0, -1.0), (1.0, 1.0))
+    assert restored.moduledefs[0].clipping_tails == (corner,)
+    assert restored.moduledefs[0].span == span
+    assert restored.moduledefs[0].graph_objects[0].span == span
+    assert restored.moduledefs[0].interact_objects[0].span == span
+    assert FILE_AST_CACHE_VERSION == 9
 
 
 def test_envelope_round_trip() -> None:

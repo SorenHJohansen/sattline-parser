@@ -233,6 +233,11 @@ def test_graph_and_interact_objects(tmp_path, capsys) -> None:
     assert main(["query", str(source), "--what", "interact-objects"]) == ExitCode.OK
     assert "interact-objects ComBut_ [Child]" in capsys.readouterr().out
 
+    assert main(["query", str(source), "--what", "interact-objects", "--json"]) == ExitCode.OK
+    payload = json.loads(capsys.readouterr().out)
+    row = next(row for row in payload["rows"] if row["kind"] == "interact-objects")
+    assert row["line"] is not None
+
 
 _ANNOTATION_TAIL_SOURCE = (
     '"Syntax version 2.23, date: 2026-11-04-00:00:00.000 N"\n'

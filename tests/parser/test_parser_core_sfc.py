@@ -137,7 +137,7 @@ def test_sfc_mixin_builds_modulecode_sequences_and_equations():
         code=[Assignment(VarRef("Y"), IntLiteral(2))],
     )
     assert modulecode.sequences == [sequence, nested_sequence]
-    assert modulecode.equations == [equation, nested_equation]
+    assert modulecode.equationblocks == [equation, nested_equation]
 
 
 def test_sfc_mixin_normalizes_enter_active_exit_code_blocks():
@@ -231,7 +231,7 @@ def test_equationblock_records_which_keyword_was_written():
         )
 
         assert bp.modulecode is not None
-        assert bp.modulecode.equations[0].kind == expected
+        assert bp.modulecode.equationblocks[0].kind == expected
 
 
 def test_parse_source_text_accepts_unnamed_ordinary_step():
@@ -291,8 +291,8 @@ def test_sequence_and_equation_layer_info_is_accepted_but_not_modeled():
     assert bp.modulecode is not None
     assert bp.modulecode.sequences is not None
     assert [type(node).__name__ for node in bp.modulecode.sequences[0].code] == ["SFCStep", "SFCTransition"]
-    assert bp.modulecode.equations is not None
-    equation = bp.modulecode.equations[0]
+    assert bp.modulecode.equationblocks is not None
+    equation = bp.modulecode.equationblocks[0]
     assert equation.name == "Calc"
     assert len(equation.code) == 1
     assert isinstance(equation.code[0], Assignment)
@@ -334,7 +334,7 @@ def test_sfc_mixin_rejects_malformed_shapes_and_missing_required_fields():
     with pytest.raises(ValueError, match="Size can't be None"):
         mixin.sequence([Token(parser_const.GRAMMAR_VALUE_SEQUENCE, parser_const.GRAMMAR_VALUE_SEQUENCE), "Seq", (1, 2)])
     with pytest.raises(ValueError, match="equationblock unexpected code item"):
-        mixin.equationblock([(1, 2), (3, 4), Tree(parser_const.KEY_STATEMENT, ["stmt"])])
+        mixin.equationblock([(1, 2), (3, 4), Tree("Statement", ["stmt"])])
     # name, position and size are optional in the reader
     unnamed = mixin.equationblock([(1, 2), (3, 4)])
     assert unnamed.name is None

@@ -470,19 +470,6 @@ def _reject_too_deep_structure(
     raise deep_error
 
 
-def _attach_parse_tree(
-    basepic: BasePicture,
-    tree: Tree[Token],
-    debug: Callable[[str], None] | None,
-) -> None:
-    """Attach the retained tree, or report that the picture rejected it."""
-    try:
-        basepic.parse_tree = tree
-    except AttributeError:
-        if debug is not None:
-            debug("BasePicture does not allow dynamic attributes; parse tree not attached")
-
-
 def parse_source_text(
     src: str,
     *,
@@ -491,7 +478,6 @@ def parse_source_text(
     debug: Callable[[str], None] | None = None,
     source_path: Path | None = None,
     log_failures: bool = True,
-    retain_parse_tree: bool = False,
 ) -> BasePicture:
     """Parse SattLine source text and transform it into a :class:`BasePicture`.
 
@@ -514,9 +500,6 @@ def parse_source_text(
     transformer. ``debug`` receives progress messages. ``source_path`` is only
     used to label logged failures, and ``log_failures`` (default on) logs each
     stage failure with its source location before the exception propagates.
-    Set ``retain_parse_tree`` to attach the raw tree to the result as
-    ``parse_tree``; if the picture rejects the attribute, the tree is dropped
-    instead of failing the parse.
 
     This is a pure parse and transform entry point. Use
     :func:`parse_and_validate` to also run strict single-source validation.
@@ -576,14 +559,10 @@ def parse_source_text(
 
     _reject_too_deep_structure(transformed, src=src, source_path=source_path, log_failures=log_failures)
 
-    basepic = transformed
-    if retain_parse_tree:
-        _attach_parse_tree(basepic, tree, debug)
-
     if debug is not None:
-        debug(f"Transform result type: {type(basepic).__name__}")
+        debug(f"Transform result type: {type(transformed).__name__}")
 
-    return basepic
+    return transformed
 
 
 def parse_and_validate(
@@ -594,7 +573,6 @@ def parse_and_validate(
     debug: Callable[[str], None] | None = None,
     source_path: Path | None = None,
     log_failures: bool = True,
-    retain_parse_tree: bool = False,
 ) -> tuple[BasePicture, tuple[Diagnostic, ...]]:
     """Parse a SattLine source and run strict single-source validation.
 
@@ -610,7 +588,6 @@ def parse_and_validate(
         debug=debug,
         source_path=source_path,
         log_failures=log_failures,
-        retain_parse_tree=retain_parse_tree,
     )
     return basepic, validate_basepicture(basepic)
 
@@ -622,7 +599,6 @@ def parse_source_file(
     transformer: SLTransformer | None = None,
     debug: Callable[[str], None] | None = None,
     log_failures: bool = True,
-    retain_parse_tree: bool = False,
 ) -> BasePicture:
     source_path = Path(code_path)
     if debug is not None:
@@ -638,5 +614,4 @@ def parse_source_file(
         debug=debug,
         source_path=source_path,
         log_failures=log_failures,
-        retain_parse_tree=retain_parse_tree,
     )

@@ -43,7 +43,7 @@ from sattline_parser.models.expressions import (
     VarRef,
 )
 from sattline_parser.names import fold_identifier
-from sattline_parser.validation.symbols import Scope, is_sfc_runtime_constant, resolve_var
+from sattline_parser.validation.symbols import Scope, resolve_var
 from sattline_parser.validation.type_graph import TypeGraph
 
 
@@ -411,10 +411,7 @@ def infer_expression_datatype(
     if isinstance(expr, str):
         return Simple_DataType.STRING
     if isinstance(expr, VarRef):
-        resolved = resolve_ref_datatype(expr, scope, type_graph)
-        if resolved is None and is_sfc_runtime_constant(expr.name):
-            return Simple_DataType.BOOLEAN
-        return resolved
+        return resolve_ref_datatype(expr, scope, type_graph)
     if isinstance(expr, Compare | BoolOp | NotOp):
         return Simple_DataType.BOOLEAN
     if isinstance(expr, BinOp):

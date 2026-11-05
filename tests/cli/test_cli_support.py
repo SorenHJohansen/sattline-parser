@@ -37,7 +37,6 @@ class _Node:
     name: str
     child: object = None
     items: tuple[object, ...] = ()
-    parse_tree: object = "tooling state"
 
 
 def test_to_jsonable_handles_scalars_enums_paths_and_spans() -> None:
@@ -92,7 +91,7 @@ def test_summarise_counts_every_block() -> None:
         ],
         modulecodes=[
             ModuleCode(sequences=[Sequence(name="Seq", type="SEQUENCE", position=(0.0, 0.0), size=(1.0, 1.0))]),
-            ModuleCode(equations=[Equation(), Equation()]),
+            ModuleCode(equationblocks=[Equation(), Equation()]),
         ],
     )
 
@@ -103,7 +102,7 @@ def test_summarise_counts_every_block() -> None:
         "submodules": 0,
         "local_variables": 0,
         "sequences": 1,
-        "equations": 2,
+        "equationblocks": 2,
         "graph_objects": 1,
         "interact_objects": 1,
     }

@@ -363,7 +363,6 @@ class ProjectLoader:
             moduledefs=[],
             modulecodes=[],
             localvariables=[],
-            parse_tree=None,
         )
 
     def _program_diagnostics(

@@ -313,18 +313,12 @@
     ],
     "invalid/ReservedNameVarOff.s": [
       {
-        "code": "SL-V034",
-        "column": 4,
-        "length": 3,
-        "line": 18
+        "parse_error": true
       }
     ],
     "invalid/ReservedNameVarOn.s": [
       {
-        "code": "SL-V034",
-        "column": 4,
-        "length": 2,
-        "line": 18
+        "parse_error": true
       }
     ],
     "invalid/SFCAlternativeBranchStartsWithStep.s": [

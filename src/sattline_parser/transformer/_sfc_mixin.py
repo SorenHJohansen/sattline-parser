@@ -123,7 +123,7 @@ class SFCMixin:
         if sequences:
             module_code.sequences = sequences
         if equations:
-            module_code.equations = equations
+            module_code.equationblocks = equations
 
         return module_code
 

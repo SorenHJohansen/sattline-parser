@@ -196,7 +196,7 @@ class Variable:
     init_value: InitValue | None = None
     has_explicit_default: bool = False
     description: str | None = None
-    declaration_span: SourceSpan | None = None
+    declaration_span: SourceSpan | None = field(default=None, compare=False, metadata={"layout": True})
     init_is_duration: bool = False
     # Declaration modifiers in SOURCE ORDER, lowercased. The order matters:
     # `State OpSave` loads, while `OpSave State` and `OpSave Const` are invalid
@@ -236,7 +236,7 @@ class DataType:
     var_list: list[Variable] = field(default_factory=variable_list)
     origin_file: str | None = None
     origin_lib: str | None = None
-    declaration_span: SourceSpan | None = None
+    declaration_span: SourceSpan | None = field(default=None, compare=False, metadata={"layout": True})
     trailing_comments: list[CodeComment] = field(default_factory=code_comment_list)
 
     def __str__(self) -> str:
@@ -272,7 +272,7 @@ class ParameterMapping:
     is_source_global: bool
     source: VarRef | None = None
     source_literal: InitValue | None = None
-    span: SourceSpan | None = None
+    span: SourceSpan | None = field(default=None, compare=False, metadata={"layout": True})
 
     def __str__(self) -> str:
         tgt = self.target.name
@@ -297,7 +297,7 @@ class GraphObject:
     properties: GraphProperties = field(default_factory=graph_properties)
     #: Source span of the object (its ``graph_object`` rule), when positions are
     #: propagated. Graphics correlation uses it to point at the marker.
-    span: SourceSpan | None = None
+    span: SourceSpan | None = field(default=None, compare=False, metadata={"layout": True})
 
 
 @dataclass
@@ -313,7 +313,7 @@ class GraphicsBinding:
     kind: str
     raw_text: str
     value: Any | None = None
-    span: SourceSpan | None = None
+    span: SourceSpan | None = field(default=None, compare=False, metadata={"layout": True})
 
 
 @dataclass
@@ -357,8 +357,8 @@ class ModuleDef:
 class Sequence:
     name: str | None
     type: str
-    position: tuple[float, float]
-    size: tuple[float, float]
+    position: tuple[float, float] = field(compare=False, metadata={"layout": True})
+    size: tuple[float, float] = field(compare=False, metadata={"layout": True})
     seqcontrol: bool = False
     seqtimer: bool = False
     code: list[SFCBodyItem] = field(default_factory=sfc_body_list)
@@ -385,8 +385,8 @@ class Equation:
 
     kind: Literal["equationblock", "equations"] = "equationblock"
     name: str | None = None
-    position: tuple[float, float] | None = None
-    size: tuple[float, float] | None = None
+    position: tuple[float, float] | None = field(default=None, compare=False, metadata={"layout": True})
+    size: tuple[float, float] | None = field(default=None, compare=False, metadata={"layout": True})
     code: list[CodeItem] = field(default_factory=code_item_list)
     layer_info: int | None = None
 
@@ -397,7 +397,7 @@ class Equation:
 @dataclass
 class ModuleCode:
     sequences: list[Sequence] | None = None
-    equations: list[Equation] | None = None
+    equationblocks: list[Equation] | None = None
 
     def __str__(self) -> str:
         return render_module_code(self)
@@ -406,8 +406,8 @@ class ModuleCode:
 @dataclass
 class ModuleHeader:
     name: str
-    invoke_coord: tuple[float, float, float, float, float]
-    declaration_span: SourceSpan | None = None
+    invoke_coord: tuple[float, float, float, float, float] = field(compare=False, metadata={"layout": True})
+    declaration_span: SourceSpan | None = field(default=None, compare=False, metadata={"layout": True})
     #: The typed invocation argument list. It is the single source of truth for
     #: the marker, layer, enable, ``Module_In_View``, zoom, and assignment
     #: arguments; the singular fields below are read-only views over it.
@@ -545,7 +545,7 @@ class ModuleTypeDef(_ModuleBlockViews):
     groupconn_global: bool = False
     origin_file: str | None = None
     origin_lib: str | None = None
-    declaration_span: SourceSpan | None = None
+    declaration_span: SourceSpan | None = field(default=None, compare=False, metadata={"layout": True})
     description_comments: list[CodeComment] = field(default_factory=code_comment_list)
     trailing_comments: list[CodeComment] = field(default_factory=code_comment_list)
 
@@ -558,7 +558,9 @@ class BasePicture(_ModuleBlockViews):
     header: ModuleHeader
     name: str = "BasePicture"
     program_name: str | None = None
-    position: tuple[float, float, float, float, float] | None = None
+    position: tuple[float, float, float, float, float] | None = field(
+        default=None, compare=False, metadata={"layout": True}
+    )
     datatype_defs: list[DataType] = field(default_factory=datatype_def_list)
     moduletype_defs: list[ModuleTypeDef] = field(default_factory=moduletype_def_list)
     moduleparameters: list[Variable] = field(default_factory=variable_list)
@@ -574,21 +576,6 @@ class BasePicture(_ModuleBlockViews):
     #: Absent is preserved as ``None``; stamping an import date is a separate
     #: operation and must never be faked during parsing.
     datecode: int | None = None
-    #: The original Lark parse tree, attached by ``parse_source_text`` /
-    #: ``parse_source_file`` only when ``retain_parse_tree=True`` is passed, as a
-    #: debugging/tooling convenience. It is deliberately *not* part of the
-    #: persistent semantic AST: pickling strips it (see ``__getstate__``) so
-    #: cached/serialized payloads stay small and self-contained. Code should not
-    #: rely on ``parse_tree`` surviving a pickle round-trip.
-    parse_tree: Any | None = None
-
-    def __getstate__(self) -> dict[str, Any]:
-        state = self.__dict__.copy()
-        # The Lark tree is parse-result/tooling state, not persistent AST state;
-        # dropping it keeps pickled payloads small and avoids accidentally
-        # serializing huge trees.
-        state["parse_tree"] = None
-        return state
 
     def __str__(self) -> str:
         return render_base_picture(self)
@@ -609,7 +596,7 @@ class SFCStep:
     #: ``SEQFORK`` suffix attached to this step, if any.
     fork: SFCFork | None = None
     #: Source span of the element, so position diagnostics can point at it.
-    span: SourceSpan | None = None
+    span: SourceSpan | None = field(default=None, compare=False, metadata={"layout": True})
 
 
 @dataclass
@@ -621,19 +608,19 @@ class SFCTransition:
     condition: SLExpression | None
     #: ``SEQFORK`` suffix attached to this transition, if any.
     fork: SFCFork | None = None
-    span: SourceSpan | None = None
+    span: SourceSpan | None = field(default=None, compare=False, metadata={"layout": True})
 
 
 @dataclass
 class SFCAlternative:
     branches: list[list[SFCBodyItem]]  # each branch is a list of SFC nodes
-    span: SourceSpan | None = None
+    span: SourceSpan | None = field(default=None, compare=False, metadata={"layout": True})
 
 
 @dataclass
 class SFCParallel:
     branches: list[list[SFCBodyItem]]
-    span: SourceSpan | None = None
+    span: SourceSpan | None = field(default=None, compare=False, metadata={"layout": True})
 
 
 @dataclass
@@ -645,14 +632,14 @@ class SFCSubsequence:
     #: ``'substep'`` for ``SUBSEQSTEP`` (step position S). The two share a model
     #: shape but occupy different positions in a sequence body.
     kind: str = "sequence"
-    span: SourceSpan | None = None
+    span: SourceSpan | None = field(default=None, compare=False, metadata={"layout": True})
 
 
 @dataclass
 class SFCTransitionSub:
     name: str | None
     body: list[SFCBodyItem]
-    span: SourceSpan | None = None
+    span: SourceSpan | None = field(default=None, compare=False, metadata={"layout": True})
 
 
 @dataclass

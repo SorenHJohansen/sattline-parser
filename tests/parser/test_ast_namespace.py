@@ -6,7 +6,7 @@ from __future__ import annotations
 import dataclasses
 
 import sattline_parser.ast as sl_ast
-from sattline_parser.models import ast_model, clauses, expressions, tails
+from sattline_parser.models import ast_model, clauses, expressions, properties, tails
 from sattline_parser.models.walk import _NODE_TYPES
 
 #: Type aliases are not classes, so the dataclass sweep cannot see them.
@@ -54,6 +54,13 @@ def test_shared_scalar_types_are_exported() -> None:
     assert sl_ast.MappingSource is ast_model.MappingSource
     assert sl_ast.MappingSource.VARIABLE.value == "variable_name"
     assert sl_ast.MappingSource.VALUE.value == "value"
+
+
+def test_property_map_types_are_exported() -> None:
+    assert sl_ast.GraphProperties is properties.GraphProperties
+    assert sl_ast.InteractProperties is properties.InteractProperties
+    for name in ("GraphProperties", "InteractProperties", "InteractBodyEntry"):
+        assert name in sl_ast.__all__, name
 
 
 def test_code_comment_has_one_canonical_class() -> None:

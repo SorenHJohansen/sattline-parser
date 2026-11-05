@@ -1,0 +1,1 @@
+- **AST cache format.** `FILE_AST_CACHE_VERSION` is now 9. The model no longer carries `parse_tree`, `ModuleCode.equations` is now `equationblocks`, and the earlier phases reshaped `source_type`, the payload spans, the reference leaves, the header arguments, and the clipping clause, so an older cache entry is discarded instead of being decoded into the current model.

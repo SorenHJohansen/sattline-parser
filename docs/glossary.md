@@ -9,11 +9,12 @@
 | Module | A nested executable unit. `SingleModule` has a body; `FrameModule` is a pure container; `ModuleTypeInstance` references a named type. |
 | Module type | A reusable module definition (`ModuleTypeDef`) that instances reference. It may be declared in this file or in a dependency. |
 | ModuleDef | The layout and graphics section of a module: clipping clause, grid, layers, graph objects, interactor objects. |
-| ModuleCode | The executable section: sequences and equations. |
+| ModuleCode | The executable section: sequences and equation blocks. |
 | Sequence | An SFC program unit. It contains steps, transitions, alternatives, parallels, and subsequences. |
-| Equation | A statement block introduced by `EQUATIONBLOCK` or `EQUATIONS`. |
+| Equation | The node produced by the `equationblock` rule (`EQUATIONBLOCK` or `EQUATIONS`). The rule also carries the optional name, coordinates, size, and layer. |
 | SFC | Sequential function chart. The step and transition model used by a `Sequence`. |
-| Program | In this package, one loaded source artifact (one `.x` or `.s` file). Not one top-level executable program. |
+| Program | In this package, one loaded code artifact (one `.x` or `.s` file). Not one top-level executable program. |
+| Unit | One program or library as the loader sees it: the code body plus its dependency sidecar and graphics companion. Draft is `.s`/`.l`/`.g`; official is `.x`/`.z`/`.y`. |
 | Artifact | A file the project layer can resolve: a code body, a dependency sidecar, or a graphics companion. |
 | Target | A program name passed to `SattLineProject.load`. Its closure is loaded. |
 | Root | A directory the project layer searches. Each root is a library. |
