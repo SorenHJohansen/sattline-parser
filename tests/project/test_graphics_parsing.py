@@ -11,8 +11,20 @@ import pytest
 from lark import Tree
 
 from sattline_parser.models.ast_model import GraphicsBinding, SourceSpan
-from sattline_parser.project import LoadMode, parse_graphics_file, parse_graphics_text, resolve_graphics_companion_path
+from sattline_parser.project import (
+    GraphicsBinding as ProjectGraphicsBinding,
+)
+from sattline_parser.project import (
+    LoadMode,
+    parse_graphics_file,
+    parse_graphics_text,
+    resolve_graphics_companion_path,
+)
 from sattline_parser.project import graphics_bindings as bindings
+
+
+def test_graphics_binding_is_on_the_project_surface() -> None:
+    assert ProjectGraphicsBinding is GraphicsBinding
 
 
 def _span_value(node: object, *, key: str = "span") -> SourceSpan:

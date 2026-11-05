@@ -27,6 +27,7 @@ official is `.x`, `.z`, `.y`. See
 | Draft/official resolution | `project/formats.py` | `LoadMode` |
 | Dependency resolution and project loading | `project/loader.py`, `project/project.py` | `SattLineProject.load` |
 | Language-level structural validation | `validation/` | `validate_basepicture` |
+| Scalar type facts and literal inference | `validation/typing.py`, `types.py` | `sattline_parser.types` |
 | Generic parser and project introspection | `cli/` | the `sattline` command |
 
 ### What it deliberately does not own

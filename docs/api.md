@@ -3,27 +3,32 @@
 The supported public surface is the names listed in
 `sattline_parser.__all__`, `sattline_parser.api.__all__`,
 `sattline_parser.ast.__all__`, `sattline_parser.models.__all__`,
+`sattline_parser.types.__all__`, `sattline_parser.formatting.__all__`,
 `sattline_parser.validation.__all__`, `sattline_parser.project.__all__`, and
 `sattline_parser.builtins.__all__`, plus the documented `sattline` command and
 its JSON schemas. Submodule paths not listed there are internal and may change
 between releases.
 
-## Two import doors
+## Import doors
 
 ```mermaid
 flowchart LR
     TOP["sattline_parser<br/>top-level __all__"] --> CORE["parse and preprocess surface"]
-    TOP --> TYPES["AST and diagnostic types"]
+    TOP --> ASTTYPES["AST and diagnostic types"]
     TOP --> GRAPH["graphics entry points"]
     TOP --> FUZZ["lazy fuzz exports"]
-    AST["sattline_parser.ast<br/>full model surface"] --> TYPES
+    AST["sattline_parser.ast<br/>full model surface"] --> ASTTYPES
     FAÇADE["sattline_parser.api"] --> CORE
     FAÇADE --> VALID["validate_basepicture"]
+    FACTS["sattline_parser.types<br/>scalar type facts"] --> VALIDATION["validation type facts"]
+    FORMAT["sattline_parser.formatting<br/>AST rendering"] --> ASTTYPES
 ```
 
 Use the top-level package for ordinary parsing. Use `sattline_parser.api` when
 you want the parser pipeline in one import. Use `sattline_parser.ast` when you
-need the model itself.
+need the model itself. Use `sattline_parser.types` for scalar type facts and
+literal inference, and `sattline_parser.formatting` to render expressions and
+statements.
 
 ## Parse and preprocess
 
@@ -81,6 +86,49 @@ The registry is metadata, not an execution switch. `validate_basepicture` still
 runs the full strict pass; `sattline rules` and the documentation table read the
 registry. `RETIRED_CODES` is derived from it.
 
+## Type facts
+
+`sattline_parser.types` is the public door for the scalar type facts the parser
+and its validation share. It re-exports the pure inference, normalization, and
+compatibility helpers from the validation layer. Expression typing that needs a
+validation scope stays internal behind `validate_basepicture`.
+
+| Group | Names |
+| --- | --- |
+| Core type | `Simple_DataType` |
+| Families | `TypeFamily`, `datatype_family`, `family_of`, `is_numeric`, `is_numeric_datatype`, `is_boolean`, `is_boolean_datatype`, `is_string_simple_type`, `is_anytype_datatype` |
+| Datatype names | `normalize_builtin_datatype`, `format_datatype`, `suggest_datatype_name` |
+| Dotted names and records | `split_dotted_name`, `resolve_variable_field_datatype`, `FieldGraph`, `FieldSpec` |
+| Literals | `infer_literal_datatype`, `literal_matches_expected_datatype`, `is_valid_duration_literal`, `is_valid_time_literal`, `has_time_literal_marker`, `extract_time_literal`, `expression_is_zero_literal` |
+| Compatibility | `assignment_type_matches`, `builtin_type_matches`, `merge_numeric_types`, `merge_compatible_types` |
+
+`infer_literal_datatype` returns `Simple_DataType | str | None`. A time literal
+returns the grammar marker string `"Time_Value"`, not `Simple_DataType.TIME`,
+because the marker is compared against the declared datatype before the value
+is parsed. Use `has_time_literal_marker`, or compare through
+`literal_matches_expected_datatype`, when the distinction matters.
+
+`FieldGraph` is the structural protocol for a record graph. A consumer's own
+graph passes to `resolve_variable_field_datatype` when it exposes
+`field(record_type, field_name)`. `FieldSpec` is the field result, which exposes
+`datatype`. The base value is an `ast.Variable`.
+
+## Formatting
+
+`sattline_parser.formatting` renders AST values in a readable SattLine-like
+notation. `formatting/formatter.py` adds no dependency of its own beyond the AST
+expression nodes, so a consumer can use it for message text without adopting a
+validation API. The supported contract covers the function names and their
+documented signatures; the exact rendered string is display output, not a
+serialization format.
+
+| Name | Signature summary | Returns |
+| --- | --- | --- |
+| `format_expr` | `(expr, indent="    ")` | expression or statement text |
+| `format_list` | `(items, indent="    ", align_variables=True, inline_if_singleline=False)` | list text |
+| `format_optional` | `(obj)` | `str(obj)` or `"None"` |
+| `format_seq_nodes` | `(nodes, indent="    ")` | sequence text |
+
 ## AST types
 
 `sattline_parser.ast` is the supported model surface. It re-exports every node,
@@ -93,7 +141,8 @@ clause payload, and tail type together with the traversal helpers:
 | `ModuleHeader`, `ModuleDef`, `ModuleCode`, `SingleModule`, `FrameModule`, `ModuleTypeInstance`, `ModuleTypeDef` | Module and layout nodes |
 | `Sequence`, `Equation`, `SFCStep`, `SFCTransition`, and the other `SFC*` nodes | Code and SFC nodes |
 | `Variable`, `DataType`, `ParameterMapping`, `MappingSource` | Declarations |
-| `GraphObject`, `InteractObject`, `GraphicsBinding` | Graphics and interact nodes |
+| `GraphObject`, `InteractObject` | Graphics and interact AST nodes, visited by `walk` |
+| `GraphicsBinding` | Project graphics value carried by `GraphicsModel.bindings`; not an AST node and never visited by `walk` |
 | `GraphProperties`, `InteractProperties` | Typed property maps carried by graphics and interact nodes |
 | `AssignClause`, `EnableClause`, `TailedClause`, `ColourSpec`, `PickButton`, `Alignment`, `InteractBodyEntry`, and the other clause payloads | Typed clause payloads and the interactor body union |
 | `VarTail`, `LitStringTail`, `Tail` | Bound and computed tails |
@@ -151,7 +200,7 @@ of the ordinary import cost. See [testing.md](testing.md).
 | Errors | `ProjectLoadError`, `ArtifactLoadError`, `DependencyNotFoundError`, `DependencyParseError` |
 | Discovery | `ProjectLookup`, `SourceIndex`, `ordered_lookup_bases`, `shared_lookup_root_for` |
 | Formats | `ArtifactKind`, `candidate_extensions`, `code_ext`, `code_ext_candidates`, `deps_ext`, `deps_ext_candidates`, `graphics_ext`, `graphics_ext_candidates`, `preferred_extension` |
-| Graphics | `GraphicsModel`, `GraphicsMessage`, `GraphicsCompositeRecord`, `GraphicsPictureDisplayRecord`, `GraphicsPathRow`, `parse_graphics_file`, `parse_graphics_text`, `resolve_graphics_companion_path` |
+| Graphics | `GraphicsModel`, `GraphicsBinding`, `GraphicsMessage`, `GraphicsCompositeRecord`, `GraphicsPictureDisplayRecord`, `GraphicsPathRow`, `parse_graphics_file`, `parse_graphics_text`, `resolve_graphics_companion_path` |
 | Caches | `FileLookupCache`, `FileASTCache`, `LOOKUP_CACHE_VERSION`, `FILE_AST_CACHE_VERSION`, `DEFAULT_LOOKUP_CACHE_FLUSH_INTERVAL` |
 
 See [project.md](project.md) for behaviour.

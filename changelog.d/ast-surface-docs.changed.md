@@ -1,0 +1,2 @@
+- **AST surface documentation.** `docs/ast.md` points at `sattline_parser.ast` as the traversal door, spells out the two-case reference collector (`VarRef` plus bound `VarTail`), and labels `GraphicsBinding` as a project graphics value rather than a walker node. `GraphicsBinding` is also exported by `sattline_parser.project`.
+- **CLI dogfooding.** The parser's own CLI imports the model and walker from `sattline_parser.ast`, so the public door is exercised by the `sattline` command.

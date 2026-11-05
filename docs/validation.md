@@ -124,6 +124,10 @@ them, not a separate scope.
 | `symbols.py` | Scope chain and reference resolution |
 | `builtins.py` | Builtin arity, output-argument positions, datatype typo helper |
 
+`sattline_parser.types` publishes the pure type facts from `typing.py`. It is a
+consumer door over the same helpers, not a second implementation. Expression
+typing that needs a validation scope stays in this layer.
+
 ## What is checked
 
 ### Declarations

@@ -241,6 +241,7 @@ class DependencyGraph:
 
 __all__ = [
     "DependencyGraph",
+    "GraphicsBinding",
     "GraphicsCompositeRecord",
     "GraphicsMessage",
     "GraphicsModel",

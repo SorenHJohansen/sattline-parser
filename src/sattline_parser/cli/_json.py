@@ -8,7 +8,7 @@ from enum import Enum
 from pathlib import Path
 from typing import cast
 
-from sattline_parser.models.ast_model import SourceSpan
+from sattline_parser.ast import SourceSpan
 
 __all__ = ["SCHEMA_PREFIX", "dumps", "to_jsonable"]
 

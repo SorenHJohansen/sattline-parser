@@ -6,8 +6,8 @@ from dataclasses import dataclass
 from typing import Any
 
 from sattline_parser.api import parse_and_validate
+from sattline_parser.ast import BasePicture
 from sattline_parser.errors import PARSE_FAILURES
-from sattline_parser.models.ast_model import BasePicture
 from sattline_parser.preprocessing import is_compressed
 
 from ._findings import Finding, finding_from_diagnostic, finding_from_parse_error

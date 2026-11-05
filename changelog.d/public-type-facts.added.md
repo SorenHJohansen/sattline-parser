@@ -1,0 +1,2 @@
+- **`sattline_parser.types`.** Scalar type families, literal inference, datatype normalization, dotted-name splitting, and record field resolution are now a supported import surface, so a consumer no longer reaches into `validation.typing`. Expression typing that needs a validation scope stays internal.
+- **`sattline_parser.formatting`.** The formatting helpers (`format_expr`, `format_list`, `format_optional`, `format_seq_nodes`) are documented as a public surface instead of a private import path.
