@@ -125,7 +125,14 @@ class _QueryVisitor(NodeVisitor):
                 )
             )
         for interact_object in module_def.interact_objects or ():
-            self.rows.append(QueryRow(kind="interact-objects", name=interact_object.type, module=self._module_path()))
+            self.rows.append(
+                QueryRow.at(
+                    "interact-objects",
+                    interact_object.type,
+                    span=interact_object.span,
+                    module=self._module_path(),
+                )
+            )
         self.generic_visit(module_def)
 
     def visit_ModuleHeader(self, header: m.ModuleHeader) -> None:
@@ -145,7 +152,7 @@ class _QueryVisitor(NodeVisitor):
                 )
             )
             self.visit(sequence)
-        for equation in module_code.equations or ():
+        for equation in module_code.equationblocks or ():
             self.visit(equation)
 
     def visit_Sequence(self, sequence: m.Sequence) -> None:

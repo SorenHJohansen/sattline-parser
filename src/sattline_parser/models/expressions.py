@@ -41,7 +41,7 @@ SLStmt = Assignment | FuncCallStmt | IfStmt
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Literal
 
 if TYPE_CHECKING:
@@ -79,7 +79,7 @@ class CodeComment:
     """
 
     text: str
-    span: SourceSpan | None = None
+    span: SourceSpan | None = field(default=None, compare=False, metadata={"layout": True})
 
     @property
     def content(self) -> str:
@@ -111,7 +111,7 @@ class VarRef:
 
     name: str
     state: str | None = None
-    span: SourceSpan | None = None
+    span: SourceSpan | None = field(default=None, compare=False, metadata={"layout": True})
 
 
 # ---------------------------------------------------------------------------
@@ -125,7 +125,7 @@ class BoolOp:
 
     op: Literal["OR", "AND"]
     operands: tuple[SLExpression, ...]
-    span: SourceSpan | None = None
+    span: SourceSpan | None = field(default=None, compare=False, metadata={"layout": True})
 
 
 @dataclass(frozen=True)
@@ -133,7 +133,7 @@ class NotOp:
     """Logical NOT."""
 
     operand: SLExpression
-    span: SourceSpan | None = None
+    span: SourceSpan | None = field(default=None, compare=False, metadata={"layout": True})
 
 
 @dataclass(frozen=True)
@@ -143,7 +143,7 @@ class Compare:
     left: SLExpression
     op: str  # one of "<", ">", "==", "<>", "<=", ">="
     right: SLExpression
-    span: SourceSpan | None = None
+    span: SourceSpan | None = field(default=None, compare=False, metadata={"layout": True})
 
 
 @dataclass(frozen=True)
@@ -156,7 +156,7 @@ class BinOp:
     left: SLExpression
     op: str  # one of "+", "-", "*", "/"
     right: SLExpression
-    span: SourceSpan | None = None
+    span: SourceSpan | None = field(default=None, compare=False, metadata={"layout": True})
 
 
 @dataclass(frozen=True)
@@ -165,7 +165,7 @@ class UnaryOp:
 
     op: Literal["+", "-"]
     operand: SLExpression
-    span: SourceSpan | None = None
+    span: SourceSpan | None = field(default=None, compare=False, metadata={"layout": True})
 
 
 @dataclass(frozen=True)
@@ -174,7 +174,7 @@ class FuncCall:
 
     name: str
     args: tuple[SLExpression, ...]
-    span: SourceSpan | None = None
+    span: SourceSpan | None = field(default=None, compare=False, metadata={"layout": True})
 
 
 @dataclass(frozen=True)
@@ -189,7 +189,7 @@ class TernaryOp:
 
     branches: tuple[tuple[SLExpression, SLExpression], ...]
     else_expr: SLExpression | None
-    span: SourceSpan | None = None
+    span: SourceSpan | None = field(default=None, compare=False, metadata={"layout": True})
 
 
 # Convenience type alias covering every possible expression value.
@@ -209,7 +209,7 @@ class Assignment:
 
     target: VarRef
     value: SLExpression
-    span: SourceSpan | None = None
+    span: SourceSpan | None = field(default=None, compare=False, metadata={"layout": True})
 
 
 @dataclass(frozen=True)
@@ -217,7 +217,7 @@ class FuncCallStmt:
     """A function call used as a statement (no assignment target)."""
 
     call: FuncCall
-    span: SourceSpan | None = None
+    span: SourceSpan | None = field(default=None, compare=False, metadata={"layout": True})
 
 
 @dataclass(frozen=True)
@@ -232,7 +232,7 @@ class IfStmt:
 
     branches: tuple[tuple[SLExpression, tuple[Assignment | FuncCallStmt | IfStmt | CodeComment, ...]], ...]
     else_block: tuple[Assignment | FuncCallStmt | IfStmt | CodeComment, ...] | None
-    span: SourceSpan | None = None
+    span: SourceSpan | None = field(default=None, compare=False, metadata={"layout": True})
 
 
 # Convenience type alias for statement nodes. ``CodeComment`` is deliberately

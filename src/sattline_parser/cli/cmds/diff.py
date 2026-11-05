@@ -60,7 +60,9 @@ class DiffResult:
 
 
 def register(subparsers: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:  # pyright: ignore[reportPrivateUsage]
-    parser: argparse.ArgumentParser = subparsers.add_parser("diff", help="compare findings and structure of two units")
+    parser: argparse.ArgumentParser = subparsers.add_parser(
+        "diff", help="compare the official and draft code files of one unit"
+    )
     parser.add_argument("old", metavar="OLD", help="the previous source")
     parser.add_argument("new", metavar="NEW", help="the current source")
     add_source_flags(parser)

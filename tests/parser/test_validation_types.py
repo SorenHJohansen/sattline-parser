@@ -302,7 +302,8 @@ def test_infer_expression_datatype_primitives_and_refs() -> None:
     assert infer_expression_datatype(FloatLiteral(1.5), scope, graph) is Simple_DataType.REAL
     assert infer_expression_datatype("text", scope, graph) is Simple_DataType.STRING
     assert infer_expression_datatype(VarRef("Flag"), scope, graph) is Simple_DataType.BOOLEAN
-    assert infer_expression_datatype(VarRef("On"), scope, graph) is Simple_DataType.BOOLEAN
+    # On/Off are boolean literals, so a VarRef with that spelling is undefined.
+    assert infer_expression_datatype(VarRef("On"), scope, graph) is None
     assert infer_expression_datatype(VarRef("Missing"), scope, graph) is None
 
 

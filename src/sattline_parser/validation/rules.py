@@ -318,8 +318,10 @@ RULES: tuple[Rule, ...] = (
     ),
     _rule(
         DiagnosticCode.RESERVED_NAME_DECLARED,
-        "`On` and `Off` are SFC runtime names and may not be declared.",
+        "`On` and `Off` may not be declared.",
         scope=RuleScope.DECLARATIONS,
+        retired=True,
+        details="The grammar rejects `On`/`Off` at a declaration position, exactly like `True`/`False`; the code stays reserved.",
     ),
     _rule(
         DiagnosticCode.OLD_STATE_NOT_WRITABLE,

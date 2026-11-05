@@ -261,7 +261,7 @@ here. `sattline rules` exposes the same data on the command line.
 | `SL-V031` | `ATTRIBUTE_COMBINATION_INVALID` | active | declarations | Declaration attributes must appear in an accepted order and combination. |
 | `SL-V032` | `COORDINATE_NOT_REAL` | active | code | A coordinate value must be real. |
 | `SL-V033` | `SEQUENCE_ENDS_WITH_STEP` | active | sfc | A closed sequence must end with a transition, not a step. |
-| `SL-V034` | `RESERVED_NAME_DECLARED` | active | declarations | `On` and `Off` are SFC runtime names and may not be declared. |
+| `SL-V034` | `RESERVED_NAME_DECLARED` | retired | declarations | `On` and `Off` may not be declared. |
 | `SL-V035` | `OLD_STATE_NOT_WRITABLE` | active | code | The `:Old` state of a State variable is read-only. |
 | `SL-V036` | `SEQUENCE_POSITION_INVALID` | active | sfc | SFC steps, transitions, and structural constructs must occupy valid positions. |
 | `SL-V037` | `SEQUENCE_FORK_TARGET_KIND` | active | sfc | A SEQFORK on a step must target a transition, and the reverse. |

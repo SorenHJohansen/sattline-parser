@@ -15,9 +15,6 @@ __all__ = ["SCHEMA_PREFIX", "dumps", "to_jsonable"]
 #: Every payload the CLI emits is tagged with a versioned schema id.
 SCHEMA_PREFIX = "sattline.v1"
 
-#: Fields never serialised: the retained Lark tree is tooling state, not the AST.
-_SKIPPED_FIELDS = frozenset({"parse_tree"})
-
 
 def to_jsonable(value: object, *, depth: int) -> object:
     """Convert AST values into JSON-friendly data, stopping at ``depth``.
@@ -46,9 +43,7 @@ def to_jsonable(value: object, *, depth: int) -> object:
         return mapping
     if dataclasses.is_dataclass(value) and not isinstance(value, type):
         return {
-            field.name: to_jsonable(getattr(value, field.name), depth=depth - 1)
-            for field in dataclasses.fields(value)
-            if field.name not in _SKIPPED_FIELDS
+            field.name: to_jsonable(getattr(value, field.name), depth=depth - 1) for field in dataclasses.fields(value)
         }
     return repr(value)[:200]
 

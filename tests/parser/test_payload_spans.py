@@ -98,6 +98,10 @@ def test_every_modelled_payload_carries_a_source_span() -> None:
         assert nodes, node_type.__name__
         assert all(getattr(node, "span", None) is not None for node in nodes), node_type.__name__
 
+    buttons = [node for node in _nodes(picture, PickButton) if isinstance(node, PickButton)]
+    assert buttons
+    assert any(button.reference is not None and button.reference.span is not None for button in buttons)
+
 
 def test_bound_tail_name_covers_name_symbol_and_literal_values() -> None:
     assert VarTail("in", "PosX").bound_name == "PosX"

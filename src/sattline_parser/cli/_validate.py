@@ -51,7 +51,7 @@ def summarise(name: str, text: str, picture: BasePicture, *, coded: bool = False
             "submodules": len(picture.submodules),
             "local_variables": len(picture.localvariables),
             "sequences": sum(len(code.sequences or ()) for code in picture.modulecodes),
-            "equations": sum(len(code.equations or ()) for code in picture.modulecodes),
+            "equationblocks": sum(len(code.equationblocks or ()) for code in picture.modulecodes),
             "graph_objects": sum(len(module_def.graph_objects or ()) for module_def in picture.moduledefs),
             "interact_objects": sum(len(module_def.interact_objects or ()) for module_def in picture.moduledefs),
         },

@@ -22,7 +22,6 @@ from sattline_parser.models.ast_model import (
     FrameModule,
     ModuleCode,
     ModuleHeader,
-    ModuleTypeDef,
     ModuleTypeInstance,
     SFCAlternative,
     SFCBodyItem,
@@ -39,7 +38,6 @@ from sattline_parser.models.ast_model import (
 from sattline_parser.names import fold_identifier
 from sattline_parser.validation.builtins import builtin_datatype_typo
 from sattline_parser.validation.diagnostics import Diagnostic, DiagnosticCode
-from sattline_parser.validation.symbols import is_sfc_runtime_constant
 
 Submodule = SingleModule | FrameModule | ModuleTypeInstance
 
@@ -66,21 +64,17 @@ _BUILTIN_RECORD_KEYS = frozenset(fold_identifier(name) for name in BUILTIN_RECOR
 _MAX_IDENTIFIER_LENGTH = 20
 _IDENTIFIER_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*\Z")
 _ALLOWED_IDENTIFIER_KEYWORDS = frozenset(fold_identifier(name) for name in ("colour", "newwindow"))
-#: On/Off have their own rule (RESERVED_NAME_DECLARED), so keep them out of
-#: the general keyword set to avoid reporting the same declaration twice.
-_SPECIAL_RESERVED_NAMES = frozenset(fold_identifier(name) for name in ("on", "off"))
 
 
 def _build_reserved_identifier_keywords() -> frozenset[str]:
     reserved: set[str] = set()
-    for name in dir(const):
-        if not name.startswith("GRAMMAR_VALUE_"):
-            continue
-        value = getattr(const, name)
+    values: list[object] = [getattr(const, name) for name in dir(const) if name.startswith("GRAMMAR_VALUE_")]
+    values.extend(const.BOOL_SPELLINGS)
+    for value in values:
         if not isinstance(value, str) or _IDENTIFIER_RE.fullmatch(value) is None:
             continue
         folded = fold_identifier(value)
-        if folded in _ALLOWED_IDENTIFIER_KEYWORDS or folded in _SPECIAL_RESERVED_NAMES:
+        if folded in _ALLOWED_IDENTIFIER_KEYWORDS:
             continue
         reserved.add(folded)
     return frozenset(reserved)
@@ -168,7 +162,7 @@ def _check_submodule_identifiers(submodule: Submodule, errors: list[Diagnostic])
 
 
 def _check_modulecode_identifiers(modulecode: ModuleCode, errors: list[Diagnostic]) -> None:
-    for equation in modulecode.equations or ():
+    for equation in modulecode.equationblocks or ():
         check_identifier(equation.name, "Equation", None, errors)
     for sequence in modulecode.sequences or ():
         check_identifier(sequence.name, "Sequence", None, errors)
@@ -320,56 +314,3 @@ def _check_datatype_reference(
             span=variable.declaration_span,
         )
     )
-
-
-def _declaration_span(item: ModuleTypeDef | DataType | Variable) -> SourceSpan | None:
-    return item.declaration_span
-
-
-def check_reserved_name_declarations(bp: BasePicture, errors: list[Diagnostic]) -> None:
-    """Flag declarations that reuse a name reserved for SFC runtime access (SL-V034).
-
-    ``On`` and ``Off`` are readable wherever a boolean is expected, which is why
-    reads stay exempt from SL-V019 - but they are reserved words and may not be
-    declared. A declaration such as ``On: boolean := False;`` in
-    ``LOCALVARIABLES`` is rejected with ``>>>On<<< AliasSym Expected``: at the
-    declaration position an alias is expected and the reserved word is found.
-
-    Scope is the *variable* declaration family, meaning locals, module
-    parameters and record fields, plus ``DATATYPE`` names. ``MODULETYPE`` names
-    are left alone: a moduletype lives in a different namespace. ``GroupData`` is deliberately untouched; it
-    is a reserved *datatype* that we intentionally accept as a type name.
-    """
-    for datatype in bp.datatype_defs:
-        _flag_if_reserved(datatype.name, datatype, "Datatype", errors)
-        for variable in datatype.var_list:
-            _flag_if_reserved(variable.name, variable, "Variable", errors)
-    for variable in (*bp.moduleparameters, *bp.localvariables):
-        _flag_if_reserved(variable.name, variable, "Variable", errors)
-    for module in _walk_modules(bp.submodules):
-        for variable in (*module.localvariables, *module.moduleparameters):
-            _flag_if_reserved(variable.name, variable, "Variable", errors)
-
-
-def _walk_modules(
-    modules: list[SingleModule | FrameModule | ModuleTypeInstance],
-) -> list[SingleModule]:
-    """Every ``SingleModule`` reachable through nested submodules, in source order."""
-    found: list[SingleModule] = []
-    for module in modules:
-        if isinstance(module, SingleModule):
-            found.append(module)
-        if isinstance(module, SingleModule | FrameModule):
-            found.extend(_walk_modules(module.submodules))
-    return found
-
-
-def _flag_if_reserved(name: str, item: Variable | DataType, what: str, errors: list[Diagnostic]) -> None:
-    if is_sfc_runtime_constant(name):
-        errors.append(
-            Diagnostic(
-                code=DiagnosticCode.RESERVED_NAME_DECLARED,
-                message=(f"{what} {name!r} uses a name reserved for SFC runtime access (On/Off)"),
-                span=_declaration_span(item),
-            )
-        )

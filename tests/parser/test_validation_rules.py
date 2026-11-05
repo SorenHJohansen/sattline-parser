@@ -60,7 +60,7 @@ def _sequence(*items: SFCBodyItem, name: str = "Seq", seqcontrol: bool = False, 
 def _bp(*items: CodeItem, variables: list[Variable] | None = None) -> BasePicture:
     bp = BasePicture(header=_header())
     bp.localvariables = variables or []
-    bp.modulecodes = [ModuleCode(equations=[_equation(*items)])]
+    bp.modulecodes = [ModuleCode(equationblocks=[_equation(*items)])]
     return bp
 
 
@@ -148,7 +148,7 @@ def test_step_auto_variable_hold_requires_seqcontrol() -> None:
     bp = BasePicture(header=_header())
     bp.modulecodes = [
         ModuleCode(
-            equations=[_equation(Assignment(VarRef("Sink"), VarRef("S1.Hold")))],
+            equationblocks=[_equation(Assignment(VarRef("Sink"), VarRef("S1.Hold")))],
             sequences=[_sequence(step, SFCTransition(name="T1", condition=True))],
         )
     ]
@@ -161,7 +161,7 @@ def test_step_auto_variable_hold_is_allowed_with_seqcontrol() -> None:
     bp = BasePicture(header=_header())
     bp.modulecodes = [
         ModuleCode(
-            equations=[_equation(Assignment(VarRef("Sink"), VarRef("S1.Hold")))],
+            equationblocks=[_equation(Assignment(VarRef("Sink"), VarRef("S1.Hold")))],
             sequences=[_sequence(step, SFCTransition(name="T1", condition=True), seqcontrol=True)],
         )
     ]
@@ -174,7 +174,7 @@ def test_step_auto_variable_t_requires_seqtimer() -> None:
     bp = BasePicture(header=_header())
     bp.modulecodes = [
         ModuleCode(
-            equations=[_equation(Assignment(VarRef("Sink"), VarRef("S1.T")))],
+            equationblocks=[_equation(Assignment(VarRef("Sink"), VarRef("S1.T")))],
             sequences=[_sequence(step, SFCTransition(name="T1", condition=True))],
         )
     ]
@@ -187,7 +187,7 @@ def test_step_auto_variable_x_is_always_available() -> None:
     bp = BasePicture(header=_header())
     bp.modulecodes = [
         ModuleCode(
-            equations=[_equation(Assignment(VarRef("Sink"), VarRef("S1.X")))],
+            equationblocks=[_equation(Assignment(VarRef("Sink"), VarRef("S1.X")))],
             sequences=[_sequence(step, SFCTransition(name="T1", condition=True))],
         )
     ]
@@ -200,7 +200,7 @@ def test_sequence_hold_requires_seqcontrol() -> None:
     bp = BasePicture(header=_header())
     bp.modulecodes = [
         ModuleCode(
-            equations=[_equation(Assignment(VarRef("Sink"), VarRef("Seq.Hold")))],
+            equationblocks=[_equation(Assignment(VarRef("Sink"), VarRef("Seq.Hold")))],
             sequences=[_sequence(step, SFCTransition(name="T1", condition=True))],
         )
     ]
@@ -213,7 +213,7 @@ def test_step_auto_variable_variable_root_is_skipped() -> None:
     bp = BasePicture(header=_header())
     bp.modulecodes = [
         ModuleCode(
-            equations=[_equation(Assignment(VarRef("Sink"), VarRef("Rec.Hold")))],
+            equationblocks=[_equation(Assignment(VarRef("Sink"), VarRef("Rec.Hold")))],
             sequences=[_sequence(step, SFCTransition(name="T1", condition=True))],
         )
     ]
@@ -230,6 +230,12 @@ def test_identifier_too_long_is_flagged() -> None:
 def test_reserved_keyword_identifier_is_flagged() -> None:
     bp = _bp(variables=[_var("ModuleDef", "integer")])
     assert "SL-V039" in _codes(bp)
+
+
+def test_reserved_boolean_spellings_are_flagged_as_identifiers() -> None:
+    for name in ("True", "False"):
+        bp = _bp(variables=[_var(name, "integer")])
+        assert "SL-V039" in _codes(bp), name
 
 
 def test_quoted_identifier_may_use_a_keyword() -> None:
@@ -256,7 +262,7 @@ def test_step_auto_variables_walk_function_calls_and_ternaries() -> None:
     bp = BasePicture(header=_header())
     bp.modulecodes = [
         ModuleCode(
-            equations=[_equation(call, Assignment(VarRef("Sink"), ternary))],
+            equationblocks=[_equation(call, Assignment(VarRef("Sink"), ternary))],
             sequences=[_sequence(step, SFCTransition(name="T1", condition=True))],
         )
     ]
@@ -270,7 +276,7 @@ def test_step_auto_variable_unknown_suffix_is_skipped() -> None:
     bp = BasePicture(header=_header())
     bp.modulecodes = [
         ModuleCode(
-            equations=[_equation(Assignment(VarRef("Sink"), VarRef("S1.Other")))],
+            equationblocks=[_equation(Assignment(VarRef("Sink"), VarRef("S1.Other")))],
             sequences=[_sequence(step, SFCTransition(name="T1", condition=True))],
         )
     ]
@@ -283,7 +289,7 @@ def test_sequence_runtime_accessor_with_a_step_suffix_is_skipped() -> None:
     bp = BasePicture(header=_header())
     bp.modulecodes = [
         ModuleCode(
-            equations=[_equation(Assignment(VarRef("Sink"), VarRef("Seq.X")))],
+            equationblocks=[_equation(Assignment(VarRef("Sink"), VarRef("Seq.X")))],
             sequences=[_sequence(step, SFCTransition(name="T1", condition=True))],
         )
     ]
@@ -296,7 +302,7 @@ def test_sequence_hold_is_allowed_with_seqcontrol() -> None:
     bp = BasePicture(header=_header())
     bp.modulecodes = [
         ModuleCode(
-            equations=[_equation(Assignment(VarRef("Sink"), VarRef("Seq.Hold")))],
+            equationblocks=[_equation(Assignment(VarRef("Sink"), VarRef("Seq.Hold")))],
             sequences=[_sequence(step, SFCTransition(name="T1", condition=True), seqcontrol=True)],
         )
     ]

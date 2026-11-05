@@ -266,15 +266,8 @@ class ModuleAssemblyMixin:
                     parts.append(".")
                 elif child.type == "STATE_SUFFIX":
                     state = child.value[1:].strip().lower()
-                elif child.type in (const.TOKEN_NEW, const.TOKEN_OLD):
-                    state = child.type.lower()
             elif isinstance(child, str):
-                if child.lower() in (const.GRAMMAR_VALUE_NEW.lower(), const.GRAMMAR_VALUE_OLD.lower()):
-                    state = child.lower()
-                elif child == ".":
-                    parts.append(".")
-                elif child not in (":",):
-                    parts.append(child)
+                parts.append(child)
 
         return VarRef(name="".join(parts), state=state, span=meta_span(meta))
 

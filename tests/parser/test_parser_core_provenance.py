@@ -199,7 +199,7 @@ def test_decode_compressed_only_rewrites_date_timestamps_after_arrow():
 
 def test_parse_compressed_source_spans_slice_original_source():
     bp = parser_core_parse_source_text(_COMPRESSED)
-    assignment = bp.modulecode.equations[0].code[0]
+    assignment = bp.modulecode.equationblocks[0].code[0]
     assert isinstance(assignment, Assignment)
     assert assignment.span is not None
     slice_text = _COMPRESSED[assignment.span.start : assignment.span.end]
@@ -213,7 +213,7 @@ def test_parse_compressed_source_spans_slice_original_source():
 
 def test_parse_plain_source_spans_slice_original_source():
     bp = parser_core_parse_source_text(_PROGRAM)
-    assignment = bp.modulecode.equations[0].code[0]
+    assignment = bp.modulecode.equationblocks[0].code[0]
     assert isinstance(assignment, Assignment)
     assert assignment.span is not None
     assert _PROGRAM[assignment.span.start : assignment.span.end] == "Counter = Counter + 1"
@@ -231,7 +231,7 @@ def test_parse_compressed_source_multiline_construct_spans_slice_original():
     compressed = _compress(source)
     bp = parser_core_parse_source_text(compressed)
     assert bp.modulecode is not None
-    equation = bp.modulecode.equations[0]
+    equation = bp.modulecode.equationblocks[0]
     comment = next(item for item in equation.code if isinstance(item, CodeComment))
     assert comment.span is not None
     assert compressed[comment.span.start : comment.span.end] == "(* first line\n           second line *)"
@@ -266,10 +266,10 @@ def test_parse_source_file_and_parse_source_text_have_consistent_provenance(tmp_
     file_path.write_bytes(_COMPRESSED.encode("utf-8"))
     from_file = parse_source_file(file_path)
     from_text = parser_core_parse_source_text(_COMPRESSED)
-    assert from_file.modulecode.equations[0].code[0].span == from_text.modulecode.equations[0].code[0].span
+    assert from_file.modulecode.equationblocks[0].code[0].span == from_text.modulecode.equationblocks[0].code[0].span
     # No double-decode: spans still point into the original compressed file text.
     raw = file_path.read_bytes().decode("utf-8")
-    assignment = from_file.modulecode.equations[0].code[0]
+    assignment = from_file.modulecode.equationblocks[0].code[0]
     assert raw[assignment.span.start : assignment.span.end].replace("#8?", "=") == "Counter = Counter + 1"
 
 
@@ -296,7 +296,7 @@ def test_parse_compressed_source_preserves_modulecode_from_source():
     doc = preprocess_source(compressed)
     assert "ModuleCode" in doc.normalized_text
     bp = parser_core_parse_source_text(compressed)
-    equation = bp.modulecode.equations[0]
+    equation = bp.modulecode.equationblocks[0]
     assignment = equation.code[0]
     assert isinstance(assignment, Assignment)
     assert assignment.span is not None
@@ -363,8 +363,8 @@ def test_concurrent_parses_with_nested_comments_do_not_interfere():
     assert len(results) == thread_count * 20
     for bp in results:
         assert bp.modulecode is not None
-        assert bp.modulecode.equations is not None
-        equation = bp.modulecode.equations[0]
+        assert bp.modulecode.equationblocks is not None
+        equation = bp.modulecode.equationblocks[0]
         comments = [item for item in equation.code if isinstance(item, CodeComment)]
         assert any("level 3" in c.text for c in comments)
 
@@ -419,8 +419,7 @@ def test_compressed_source_parser_error_at_eof_maps_into_original_source():
 def test_remap_tree_to_original_is_noop_for_identity_documents():
     from sattline_parser.source_document import remap_tree_to_original  # noqa: PLC0415
 
-    tree = parser_core_parse_source_text(_PROGRAM, retain_parse_tree=True).parse_tree
-    assert tree is not None
+    tree = create_parser().parse(_PROGRAM)
     first = tree.children[0]
     before = first.meta.start_pos
     remap_tree_to_original(tree, SourceDocument.identity(_PROGRAM))

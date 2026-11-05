@@ -1,0 +1,1 @@
+- **`On`/`Off` are boolean literals.** `On` and `Off` are now equivalent to `True` and `False` everywhere `BOOL` is accepted, including the invocation-header and graphics property readers. The separate `ON_KW` and `OFF_KW` terminals are removed. Declarations named `On` or `Off` now fail at parse time; `SL-V034` remains a validator backstop for constructed ASTs.

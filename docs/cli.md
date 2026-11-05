@@ -85,7 +85,7 @@ sattline parse M.s --json
 ```
 
 The default output is a structural summary: program name, encoding, and counts
-of module types, submodules, local variables, sequences, equations, graph
+of module types, submodules, local variables, sequences, equation blocks, graph
 objects, and interact objects. `--tree` emits the AST as JSON, bounded by
 `--depth` (default 5). At the limit a composite value is replaced by a
 placeholder such as `<ModuleDef>` or `<12 items>`, so nothing silently
@@ -175,12 +175,17 @@ inside a JSON document with `--json`.
 ### `diff`
 
 ```bash
-sattline diff Old.s New.s
-sattline diff Old.s New.s --json
+sattline diff Program.x Program.s
+sattline diff Program.x Program.s --json
 ```
 
-Compares findings by `(rule, message)` and compares structural counts. It is a
-regression aid, not a semantic diff. Exit `1` when anything changed.
+A SattLine program or library is one unit made of three files: the code body,
+the dependency sidecar, and the graphics companion. `diff` compares the
+official `.x` code body of a unit with its draft `.s` code body. In a unit the
+two versions are the official `.x` and the draft `.s`, never two `.s` files;
+the command itself accepts any two code sources. It compares findings by
+`(rule, message)` and compares structural counts. It is a regression aid, not a
+semantic diff. Exit `1` when anything changed.
 
 ### `corpus`
 

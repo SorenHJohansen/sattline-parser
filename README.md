@@ -98,7 +98,7 @@ sattline check SR/*.s --jsonl     # decode + parse + validate, machine-readable
 sattline parse M.s --tree         # the AST as JSON
 sattline query M.s --what writers # one structural question
 sattline rules --json             # the validation rule registry
-sattline diff Old.s New.s         # findings and counts that moved
+sattline diff Program.x Program.s # official vs draft code of one unit, findings and counts
 sattline version --json           # tool and JSON schema versions
 ```
 
@@ -252,6 +252,15 @@ and `iter_literal_leaves` reads the literal values a node holds. `NodeVisitor`
 dispatches on the class name and supports `leave_<ClassName>` hooks. See
 [docs/ast.md](docs/ast.md) for the covered fields and the parts of the model it
 deliberately does not descend into.
+
+### One unit, three files
+
+A SattLine program or library is one unit made of three files: the code body,
+the dependency sidecar, and the graphics companion. Draft is `.s`, `.l`, `.g`;
+official is `.x`, `.z`, `.y`. The loader resolves each role by mode; a missing
+sidecar is reported as a diagnostic and a missing companion is recorded as
+absent, never invented. See
+[docs/project.md](docs/project.md#artifact-formats) for the extension table.
 
 ### Project layer: load a whole project
 

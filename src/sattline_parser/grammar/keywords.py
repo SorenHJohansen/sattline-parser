@@ -10,8 +10,8 @@ The scanner setup matches keywords case-insensitively, so
   ``NAME: "Text"`` -> ``NAME: /(?i:Text)\\b/``;
 * a named terminal already defined as a regex keeps its body and gains the same
   scope, ``/(?!IF|THEN).../`` -> ``/(?i:(?!IF|THEN)...)/``, which also makes
-  ``NAME``'s keyword exclusion list and the ``True``/``False``/``New``/``Old``
-  patterns case-insensitive;
+  ``NAME``'s keyword exclusion list and the boolean and state-suffix patterns
+  case-insensitive;
 * punctuation-only terminals (``"("``, ``":"``, ``";"`` ...) are left as string
   literals, because case folding them is meaningless.
 

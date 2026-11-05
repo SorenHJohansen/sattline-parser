@@ -9,6 +9,12 @@ A **program** here is one loaded source artifact (one `.x` or `.s` file), not
 one executable top-level program. Loading one target can produce many
 `SattLineProgram` entries through its dependency closure.
 
+A SattLine program or library is one unit made of three files: the code body,
+the dependency sidecar, and the graphics companion. Draft is `.s`, `.l`, `.g`;
+official is `.x`, `.z`, `.y`. The loader resolves each role by mode; a missing
+sidecar is reported as a diagnostic and a missing companion is recorded as
+absent, never invented.
+
 ## Artifact formats
 
 ```mermaid

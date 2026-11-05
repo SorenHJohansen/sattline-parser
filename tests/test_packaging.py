@@ -71,14 +71,6 @@ def test_installed_package_parses_small_valid_program() -> None:
     assert bp.moduledef.clipping_bounds == ((-1.0, -1.0), (1.0, 1.0))
 
 
-def test_installed_package_transforms_and_attaches_parse_tree_when_requested() -> None:
-    bp = parse_source_text(_SMALL_PROGRAM)
-    assert bp.parse_tree is None
-    retained = parse_source_text(_SMALL_PROGRAM, retain_parse_tree=True)
-    assert retained.parse_tree is not None
-    assert retained.parse_tree.data == "start"
-
-
 def test_public_api_surface_is_available() -> None:
     assert callable(create_parser)
     assert callable(parse_source_text)

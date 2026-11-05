@@ -143,7 +143,7 @@ class CommonProperties:
 class ClippingClause:
     """A resolved ``ClippingBounds`` pair and the tails on its corners."""
 
-    bounds: CoordBox
+    bounds: CoordBox = field(compare=False, metadata={"layout": True})
     tails: tuple[Tail, ...] = ()
     span: SourceSpan | None = field(default=None, compare=False, metadata={"layout": True})
 

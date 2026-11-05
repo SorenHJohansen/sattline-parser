@@ -95,8 +95,8 @@ def render_module_code(module_code: ModuleCode) -> str:
         seq_lines.append("No sequences")
 
     eq_lines: list[str] = []
-    if module_code.equations:
-        for equation in module_code.equations:
+    if module_code.equationblocks:
+        for equation in module_code.equationblocks:
             pretty_code = [format_expr(statement) for statement in equation.code]
             size_str = f" with size {equation.size}" if getattr(equation, "size", None) is not None else ""
             eq_lines.append(

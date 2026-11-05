@@ -184,12 +184,19 @@ def test_composite_marker_rejects_other_object_properties():
             parser_core_parse_source_text(_composite_source(body))
 
 
-def test_graphics_property_readers_stay_true_false_only():
-    """`On`/`Off` are value literals; the property readers take BOOL."""
-    with pytest.raises(UnexpectedInput):
-        parser_core_parse_source_text(
-            _composite_source("   RectangleObject ( -1.0 , 1.0 ) ( 1.0 , -1.0 ) Enable_ = On")
-        )
+def test_graphics_property_readers_accept_on_off():
+    """`On`/`Off` are equivalent to `True`/`False` in a property reader."""
+    on = parser_core_parse_source_text(
+        _composite_source("   RectangleObject ( -1.0 , 1.0 ) ( 1.0 , -1.0 ) Enable_ = On")
+    )
+    off = parser_core_parse_source_text(
+        _composite_source("   RectangleObject ( -1.0 , 1.0 ) ( 1.0 , -1.0 ) Enable_ = Off")
+    )
+
+    assert on.moduledef is not None
+    assert on.moduledef.graph_objects[0].properties[parser_const.KEY_ENABLE] is True
+    assert off.moduledef is not None
+    assert off.moduledef.graph_objects[0].properties[parser_const.KEY_ENABLE] is False
 
 
 def test_graph_object_handles_standalone_and_attached_connection_nodes():
@@ -343,7 +350,7 @@ def test_common_properties_preserves_layer_enable_and_colour_content():
         ]
     )
     assert obj.properties["layer"] == 7
-    assert obj.properties[parser_const.TREE_TAG_ENABLE] is False
+    assert obj.properties[parser_const.KEY_ENABLE] is False
     assert obj.properties["colours"] == [colour]
 
 

@@ -254,64 +254,6 @@ def test_load_source_text_decodes_compressed_sources_and_emits_debug(monkeypatch
     ]
 
 
-def test_parse_source_text_reports_parse_tree_attach_failure(monkeypatch):
-    events: list[str] = []
-    tree = object()
-    basepic = BasePicture(header=ModuleHeader(name="BasePicture", invoke_coord=(0.0, 0.0, 0.0, 1.0, 1.0)))
-
-    class FakeParser:
-        def parse(self, text: str):
-            assert text == "A = 1;"
-            return tree
-
-    class FakeTransformer:
-        def transform(self, payload):
-            assert payload is tree
-            return basepic
-
-    def guarded_setattr(self, name, value):
-        if name == "parse_tree":
-            raise AttributeError("read-only")
-        object.__setattr__(self, name, value)
-
-    monkeypatch.setattr(BasePicture, "__setattr__", guarded_setattr)
-    result = parser_api.parse_source_text(
-        "A = 1;",
-        parser=cast(Any, FakeParser()),
-        transformer=cast(Any, FakeTransformer()),
-        debug=events.append,
-        retain_parse_tree=True,
-    )
-
-    assert result is basepic
-    assert events == [
-        "Parse OK, transforming with SLTransformer",
-        "BasePicture does not allow dynamic attributes; parse tree not attached",
-        "Transform result type: BasePicture",
-    ]
-
-
-def test_parse_source_text_does_not_attach_parse_tree_by_default():
-    code = (
-        '"SyntaxVersion"\n'
-        '"OriginalFileDate"\n'
-        '"ProgramDate"\n'
-        "BasePicture Invocation (0.0,0.0,0.0,1.0,1.0) : MODULEDEFINITION DateCode_ 1\n"
-        "LOCALVARIABLES\n"
-        "    A: integer := 0;\n"
-        "ModuleDef\n"
-        "ClippingBounds = ( -1.0 , -1.0 ) ( 1.0 , 1.0 )\n"
-        "ModuleCode\n"
-        "    EQUATIONBLOCK Main COORD 0.0, 0.0 OBJSIZE 1.0, 1.0 :\n"
-        "        A = A + 1;\n"
-    )
-    default = parser_api.parse_source_text(code)
-    assert default.parse_tree is None
-    retained = parser_api.parse_source_text(code, retain_parse_tree=True)
-    assert retained.parse_tree is not None
-    assert retained.parse_tree.data == "start"
-
-
 def test_parse_source_text_raises_when_transformer_returns_non_basepicture(caplog):
     events: list[str] = []
     tree = object()

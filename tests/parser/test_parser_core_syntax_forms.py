@@ -432,18 +432,26 @@ def test_module_in_view_is_a_distinct_invocation_property() -> None:
     assert header.arguments.module_in_view.tail == VarTail("out", "Visible")
 
 
-def test_module_in_view_rejects_on_off() -> None:
-    # The Boolean-property reader takes True/False only, unlike a general
-    # boolean expression where On/Off are legal primaries.
-    source = (
+def test_module_in_view_accepts_on_off() -> None:
+    # On/Off are equivalent to True/False wherever BOOL is accepted, including
+    # the invocation-header boolean property.
+    on_source = (
         _HEADER
         + "BasePicture Invocation (0.0,0.0,0.0,1.0,1.0 Module_In_View = On) : MODULEDEFINITION DateCode_ 1\n"
         + "ModuleDef\n"
         + "ClippingBounds = ( -1.0 , -1.0 ) ( 1.0 , 1.0 )\n"
         + "ENDDEF (*BasePicture*);\n"
     )
-    with pytest.raises(UnexpectedInput):
-        parse_source_text(source)
+    off_source = (
+        _HEADER
+        + "BasePicture Invocation (0.0,0.0,0.0,1.0,1.0 Module_In_View = Off) : MODULEDEFINITION DateCode_ 1\n"
+        + "ModuleDef\n"
+        + "ClippingBounds = ( -1.0 , -1.0 ) ( 1.0 , 1.0 )\n"
+        + "ENDDEF (*BasePicture*);\n"
+    )
+
+    assert parse_source_text(on_source).header.module_in_view is True
+    assert parse_source_text(off_source).header.module_in_view is False
 
 
 def test_equations_keyword_is_accepted_like_equationblock() -> None:
@@ -464,7 +472,7 @@ def test_equations_keyword_is_accepted_like_equationblock() -> None:
     picture = parse_source_text(source)
     module_code = picture.modulecode
     assert module_code is not None
-    assert [equation.name for equation in module_code.equations or []] == ["Eq"]
+    assert [equation.name for equation in module_code.equationblocks or []] == ["Eq"]
 
 
 # --- keyword case insensitivity ---------------------------------------------
@@ -529,7 +537,7 @@ def test_lowercase_boolean_and_state_suffix_are_equivalent() -> None:
     picture = parse_source_text(source)
     module_code = picture.modulecode
     assert module_code is not None
-    equation = (module_code.equations or [])[0]
+    equation = (module_code.equationblocks or [])[0]
     statement = equation.code[0]
     assert isinstance(statement, IfStmt)
     nested = statement.branches[0][1][0]
@@ -568,7 +576,7 @@ def test_equation_block_without_name_or_metadata() -> None:
     picture = parse_source_text(source)
     module_code = picture.modulecode
     assert module_code is not None
-    equations = module_code.equations or []
+    equations = module_code.equationblocks or []
     assert [equation.name for equation in equations] == [None, "Named", "Located"]
     assert equations[0].position is None and equations[0].size is None
     assert equations[2].position == (0.0, 0.0)

@@ -25,7 +25,6 @@ classDiagram
         origin_file: str | None
         origin_lib: str | None
         datecode: int | None
-        parse_tree: Any | None
     }
 
     class ModuleHeader {
@@ -201,7 +200,7 @@ classDiagram
 
     class ModuleCode {
         sequences: list[Sequence] | None
-        equations: list[Equation] | None
+        equationblocks: list[Equation] | None
     }
 
     class Sequence {
@@ -259,6 +258,14 @@ two structurally identical payloads from different files compare equal. Read
 `.span` when you need the provenance. A bound tail exposes the written name
 through `VarTail.bound_name`. A `PickButton` keeps the written `value` and, when
 the `VarName` marker is present, a `reference` `VarRef`.
+
+The same `layout` marker is on the geometry fields: `BasePicture.position`,
+`Sequence.position` and `size`, `Equation.position` and `size`,
+`ModuleHeader.invoke_coord`, and `ClippingClause.bounds`. They are excluded from
+equality too, so a consumer diffing two revisions can drop the marked
+presentation fields. Other layout-adjacent values, such as
+`ModuleDef.zoom_limits`, `ModuleDef.grid`, and `ModuleDef.seq_layers`, remain
+part of the model and still participate in equality.
 
 ## SFC nodes
 
@@ -433,17 +440,14 @@ original source, even after decoding. See
 the AST field that matches their syntactic role, not flattened into a global
 list. The class is defined in `models/expressions.py` and re-exported by
 `models/ast_model.py`, so `CodeItem` and every comment-bearing field use one
-canonical class.
+canonical class. A `comments` run in a `ComButProc_` body or inside a colour
+assignment has no AST field and is not attached; only `interact_body` comments
+become `CodeComment` values.
 
 ## Serialization and pickling
 
-`BasePicture` defines `__getstate__`: `parse_tree` is stripped when pickled. It
-is tooling state, not persistent AST state, and a retained tree can be large.
-
-`parse_tree` is attached only when `retain_parse_tree=True` is passed to a parse
-entry point. Code must not rely on it surviving a pickle round trip.
-
-The file AST cache is versioned. When the model shape changes,
+The AST is plain dataclasses, so it pickles and unpickles without retained
+parser state. The file AST cache is versioned. When the model shape changes,
 `FILE_AST_CACHE_VERSION` is bumped and older entries are discarded rather than
 decoded into the current model.
 
@@ -501,9 +505,9 @@ The walk covers module containers, declarations, module code, SFC nodes,
 statements, expressions, headers, comments, and the typed clause and tail
 payloads attached to graphics, interact, and module-definition nodes. It
 descends into `GraphObject.properties` and `InteractObject.properties`, and into
-`ModuleHeader.arguments` and `ModuleDef.clipping` as ordinary nodes.
-`parse_tree` is not walked. Literal values are leaves and are not emitted as
-nodes. `prune` may stop descent into a node after it has been yielded.
+`ModuleHeader.arguments` and `ModuleDef.clipping` as ordinary nodes. Literal
+values are leaves and are not emitted as nodes. `prune` may stop descent into a
+node after it has been yielded.
 
 Property payloads are visited in a fixed order:
 
@@ -564,4 +568,7 @@ need machine-readable output.
 | `tests/parser/test_models_walk.py` | Field coverage, node order, field and indices, ancestry, pruning, leave events, literal leaves, visitor dispatch |
 | `tests/parser/test_models_boundary.py` | The model layer imports no Lark module |
 | `tests/parser/test_ast_namespace.py` | Every node type and model dataclass is on the `sattline_parser.ast` surface |
+| `tests/parser/test_layout_metadata.py` | Every span and geometry field is classified as layout |
+| `tests/parser/test_payload_spans.py` | Spans and bound names on the modelled payloads |
+| `tests/parser/test_grammar_constants.py` | `Final`, `__all__`, unique values, no orphans, resolved grammar |
 | `tests/parser/test_parser_core_deep_structures.py` | Deep-tree walk, clean nesting errors, iterative remapping |

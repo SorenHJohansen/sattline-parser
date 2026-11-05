@@ -95,7 +95,7 @@ def test_ast_model_helpers_cover_reduce_usage_and_string_formats(monkeypatch: py
     module_code = ModuleCode()
     rendered_module_code = ModuleCode(
         sequences=[sequence],
-        equations=[
+        equationblocks=[
             Equation(
                 name="EqStmt",
                 position=(1.0, 2.0),
@@ -105,7 +105,7 @@ def test_ast_model_helpers_cover_reduce_usage_and_string_formats(monkeypatch: py
         ],
     )
     empty_statement_module_code = ModuleCode(
-        equations=[
+        equationblocks=[
             Equation(
                 name="EqEmpty",
                 position=(5.0, 6.0),
@@ -115,7 +115,7 @@ def test_ast_model_helpers_cover_reduce_usage_and_string_formats(monkeypatch: py
         ]
     )
     direct_statement_module_code = ModuleCode(
-        equations=[
+        equationblocks=[
             Equation(
                 name="EqDirect",
                 position=(7.0, 8.0),

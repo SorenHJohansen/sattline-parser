@@ -95,7 +95,7 @@ from .models.expressions import (
     UnaryOp,
     VarRef,
 )
-from .models.properties import InteractBodyEntry
+from .models.properties import GraphProperties, InteractBodyEntry, InteractProperties
 from .models.tails import (
     ClipValue,
     CoordinateClipping,
@@ -140,12 +140,14 @@ __all__ = [
     "FuncCall",
     "FuncCallStmt",
     "GraphObject",
+    "GraphProperties",
     "GraphicsBinding",
     "Grid",
     "IfStmt",
     "IntLiteral",
     "InteractBodyEntry",
     "InteractObject",
+    "InteractProperties",
     "LitStringTail",
     "LiteralLeaf",
     "MappingSource",

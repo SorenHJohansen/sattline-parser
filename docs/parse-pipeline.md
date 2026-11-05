@@ -28,10 +28,7 @@ flowchart TB
     P -->|yes| DEPTH{"AST depth over MAX_SOURCE_DEPTH?"}
     DEPTH -->|yes| DEPTHFAIL["SourceTooDeepError<br/>clean parse failure"]
     DEPTH -->|no| R["BasePicture"]
-    R --> S{"retain_parse_tree?"}
-    S -->|yes| T["attach Lark tree"]
-    S -->|no| U["return"]
-    T --> U
+    R --> U["return"]
 ```
 
 ## Encoding: bytes to text

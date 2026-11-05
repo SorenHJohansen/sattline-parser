@@ -36,7 +36,6 @@ from sattline_parser.validation.code import (
 from sattline_parser.validation.declarations import (
     check_identifiers,
     check_record_fields,
-    check_reserved_name_declarations,
     check_sibling_submodules,
     check_variable_declarations,
 )
@@ -119,7 +118,6 @@ def validate_basepicture(
         sfc_names=collect_program_sfc_names(bp),
     )
 
-    check_reserved_name_declarations(bp, errors)
     check_identifiers(bp, errors)
     base_scope = build_scope(None, [*bp.moduleparameters, *bp.localvariables])
     check_variable_declarations(

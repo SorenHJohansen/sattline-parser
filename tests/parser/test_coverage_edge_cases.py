@@ -317,9 +317,9 @@ def test_token_span_none_when_no_position() -> None:
 
 def test_base_picture_pickle_roundtrip() -> None:
     basepic = BasePicture(header=ModuleHeader(name="", invoke_coord=(0.0, 0.0, 0.0, 1.0, 1.0)))
-    basepic.parse_tree = Tree("start2", [])
     restored = pickle.loads(pickle.dumps(basepic))
-    assert restored.parse_tree is None
+    assert restored == basepic
+    assert restored.header.invoke_coord == (0.0, 0.0, 0.0, 1.0, 1.0)
     assert "moduledef" not in restored.__dict__
     assert "modulecode" not in restored.__dict__
 

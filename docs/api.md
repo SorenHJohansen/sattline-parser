@@ -29,8 +29,8 @@ need the model itself.
 
 | Name | Exported from | Signature summary | Returns |
 | --- | --- | --- | --- |
-| `parse_source_text` | both | `(src, *, parser=None, transformer=None, debug=None, source_path=None, log_failures=True, retain_parse_tree=False)` | `BasePicture` |
-| `parse_source_file` | both | `(path, *, parser=None, transformer=None, debug=None, log_failures=True, retain_parse_tree=False)` | `BasePicture` |
+| `parse_source_text` | both | `(src, *, parser=None, transformer=None, debug=None, source_path=None, log_failures=True)` | `BasePicture` |
+| `parse_source_file` | both | `(path, *, parser=None, transformer=None, debug=None, log_failures=True)` | `BasePicture` |
 | `parse_and_validate` | both | same options as `parse_source_text` | `(BasePicture, tuple[Diagnostic, ...])` |
 | `create_parser` | both | `()` | `Lark` |
 | `build_lark_parser` | `api` | `(*, start="start", propagate_positions=True)` | `Lark` |
@@ -94,6 +94,7 @@ clause payload, and tail type together with the traversal helpers:
 | `Sequence`, `Equation`, `SFCStep`, `SFCTransition`, and the other `SFC*` nodes | Code and SFC nodes |
 | `Variable`, `DataType`, `ParameterMapping`, `MappingSource` | Declarations |
 | `GraphObject`, `InteractObject`, `GraphicsBinding` | Graphics and interact nodes |
+| `GraphProperties`, `InteractProperties` | Typed property maps carried by graphics and interact nodes |
 | `AssignClause`, `EnableClause`, `TailedClause`, `ColourSpec`, `PickButton`, `Alignment`, `InteractBodyEntry`, and the other clause payloads | Typed clause payloads and the interactor body union |
 | `VarTail`, `LitStringTail`, `Tail` | Bound and computed tails |
 | `walk` | `(node, *, prune=None, emit_leave=False)` yields every AST node in pre-order |

@@ -96,10 +96,10 @@ def test_diff_reports_structural_count_changes(tmp_path, capsys) -> None:
 
     payload = json.loads(capsys.readouterr().out)
     assert payload["findings"]["added"] == []
-    assert payload["counts"]["changed"] == {"equations": {"old": 0, "new": 1}}
+    assert payload["counts"]["changed"] == {"equationblocks": {"old": 0, "new": 1}}
 
     assert main(["diff", str(old), str(new)]) == ExitCode.FINDINGS
-    assert "~ equations: 0 -> 1" in capsys.readouterr().out
+    assert "~ equationblocks: 0 -> 1" in capsys.readouterr().out
 
 
 def test_diff_reports_a_source_that_stops_parsing(tmp_path, capsys) -> None:

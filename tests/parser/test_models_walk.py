@@ -309,6 +309,7 @@ def test_unowned_tails_ignores_a_non_sequence_value() -> None:
 def test_field_specs_cover_every_dataclass_field() -> None:
     for node_type in _NODE_TYPES:
         spec = _FIELD_SPECS[node_type]
+        assert list(spec) == [field.name for field in dataclasses.fields(node_type)], node_type.__name__
         assert set(spec) == {field.name for field in dataclasses.fields(node_type)}, node_type.__name__
         assert set(spec.values()) <= {"leaf", "node", "value", "properties"}
         for kind in spec.values():
@@ -406,6 +407,21 @@ def test_iter_literal_leaves_reads_value_fields() -> None:
     assert [(leaf.field, leaf.indices, leaf.value) for leaf in iter_literal_leaves(call)] == [
         ("args", (1,), 2),
         ("args", (2,), 3),
+    ]
+
+
+def test_iter_literal_leaves_reads_branch_conditions_and_values() -> None:
+    body = (Assignment(VarRef("X"), 1),)
+    statement = IfStmt(branches=((True, body),), else_block=None)
+    ternary = TernaryOp(branches=((False, 1),), else_expr=2)
+
+    assert [(leaf.field, leaf.indices, leaf.value) for leaf in iter_literal_leaves(statement)] == [
+        ("branches", (0, 0), True)
+    ]
+    assert [(leaf.field, leaf.indices, leaf.value) for leaf in iter_literal_leaves(ternary)] == [
+        ("branches", (0, 0), False),
+        ("branches", (0, 1), 1),
+        ("else_expr", (), 2),
     ]
 
 
@@ -585,7 +601,8 @@ def test_iter_child_nodes_skips_non_nodes() -> None:
     picture = _picture()
     relations = {relation for relation, _child in iter_child_nodes(picture)}
 
-    assert "parse_tree" not in relations
+    assert "name" not in relations
+    assert "datecode" not in relations
 
 
 class _Collector(NodeVisitor):

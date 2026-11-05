@@ -37,7 +37,9 @@ from lark.exceptions import UnexpectedCharacters, UnexpectedToken
 from lark.lexer import BasicLexer, ContextualLexer, LexerState, Token
 
 from sattline_parser.grammar.constants import (
+    BOOL_SPELLINGS,
     COMMENT_TERMINALS,
+    GRAMMAR_VALUE_DEFAULT,
     TOKEN_COMMENT_END,
     TOKEN_COMMENT_START,
     TOKEN_COMMENT_TEXT,
@@ -48,7 +50,7 @@ __all__ = ["SattLineLexer", "compact_provenance"]
 
 #: Folded spellings the compressor writes raw because they are literal values and
 #: not keywords. They stay literals even in a coded source.
-_RAW_LITERAL_WORDS = frozenset({"true", "false", "on", "off", "default"})
+_RAW_LITERAL_WORDS = frozenset(spelling.casefold() for spelling in BOOL_SPELLINGS) | {GRAMMAR_VALUE_DEFAULT.casefold()}
 
 _WORD_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*\Z")
 

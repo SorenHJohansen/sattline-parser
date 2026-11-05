@@ -21,8 +21,11 @@ def test_tokens_mixin_coerces_supported_terminals_and_keywords():
     assert mixin.SIGNED_INT_NOTAIL(signed_int) == IntLiteral(-7, SourceSpan(start=10, end=12, line=4, column=2))
     assert mixin.REAL(real_value) == FloatLiteral(3.25, SourceSpan(start=20, end=24, line=8, column=6))
     assert mixin.REAL_NOTAIL(real_value) == FloatLiteral(3.25, SourceSpan(start=20, end=24, line=8, column=6))
-    assert mixin.BOOL(Token("BOOL", parser_const.GRAMMAR_VALUE_BOOL_TRUE)) is True
-    assert mixin.BOOL_NOTAIL(Token("BOOL_NOTAIL", parser_const.GRAMMAR_VALUE_BOOL_FALSE)) is False
+    assert mixin.BOOL(Token("BOOL", "True")) is True
+    assert mixin.BOOL_NOTAIL(Token("BOOL_NOTAIL", "False")) is False
+    assert mixin.BOOL(Token("BOOL", "On")) is True
+    assert mixin.BOOL(Token("BOOL", "Off")) is False
+    assert mixin.BOOL_NOTAIL(Token("BOOL_NOTAIL", "ON")) is True
 
     assert mixin.GLOBAL_KW(None) is True
     assert mixin.CONST_KW(None) == "Const"
@@ -211,8 +214,6 @@ def test_expression_and_value_literal_allowlists_are_symmetric():
     value_line = next(line.strip() for line in grammar.splitlines() if line.startswith("value:"))
     assert {t for t in value_line.split()[1:] if t != "|"} == {
         "BOOL",
-        "ON_KW",
-        "OFF_KW",
         "REAL",
         "STRING",
         "SIGNED_INT",
@@ -233,10 +234,8 @@ def test_expression_and_value_literal_allowlists_are_symmetric():
 
     # Behavioural check: each literal kind accepted by `value` also parses as
     # an expression operand, and each is accepted in a standalone value
-    # context (interact assignment) too.
-    # ``On``/``Off`` are value literals in expressions and initializers only: the
-    # graphics/interact property readers keep their True/False-only BOOL and
-    # plain_value allowlists, so they are not exercised in the interact context.
+    # context (interact assignment) too. On/Off are boolean literals in every
+    # BOOL context; the interact plain-value route is covered separately below.
     cases = {
         "int": ("Sink = 1;", "0"),
         "real": ("Sink = 1.5;", "0.5"),
@@ -260,7 +259,7 @@ def test_expression_and_value_literal_allowlists_are_symmetric():
             f"      {equation_stmt}\n"
             "ENDDEF (*BasePicture*);\n"
         )
-        assignment = bp.modulecode.equations[0].code[0]
+        assignment = bp.modulecode.equationblocks[0].code[0]
         assert isinstance(assignment, Assignment)
         assert not isinstance(assignment.value, VarRef), f"{literal_kind} literal did not parse as expression operand"
 
@@ -297,3 +296,25 @@ def test_expression_and_value_literal_allowlists_are_symmetric():
         )
         assert value_bp.moduledef is not None
         assert value_bp.moduledef.interact_objects
+
+
+def test_interact_plain_value_accepts_on_off() -> None:
+    """`On`/`Off` reach the interact `plain_value` route (BOOL_NOTAIL)."""
+    bp = _parse_to_basepicture(
+        '"SyntaxVersion"\n'
+        '"OriginalFileDate"\n'
+        '"ProgramDate"\n'
+        "BasePicture Invocation (0.0,0.0,0.0,1.0,1.0) : MODULEDEFINITION DateCode_ 1\n"
+        "ModuleDef\n"
+        "ClippingBounds = ( -1.0 , -1.0 ) ( 1.0 , 1.0 )\n"
+        "InteractObjects :\n"
+        "   TextBox_ ( 0.0 , 0.0 ) ( 1.0 , 1.0 )\n"
+        "      Value = On\n"
+        "      Other = Off\n"
+        "ENDDEF (*BasePicture*);\n"
+    )
+
+    assert bp.moduledef is not None
+    body = bp.moduledef.interact_objects[0].properties[parser_const.KEY_BODY]
+    values = {entry.name: entry.value for entry in body if isinstance(entry, AssignClause)}
+    assert values == {"Value": True, "Other": False}

@@ -23,7 +23,7 @@ ModuleCode
 ENDDEF (*BasePicture*);
 """
     bp = _parse_to_basepicture(code)
-    stmt = bp.modulecode.equations[0].code[0]
+    stmt = bp.modulecode.equationblocks[0].code[0]
     assert isinstance(stmt, Assignment)
 
     expr = stmt.value
@@ -345,8 +345,8 @@ ENDDEF (*BasePicture*);
     bp = parser_core_parse_source_text(code)
     declared = bp.localvariables[0]
     assert bp.modulecode is not None
-    assert bp.modulecode.equations is not None
-    assignment = bp.modulecode.equations[0].code[0]
+    assert bp.modulecode.equationblocks is not None
+    assignment = bp.modulecode.equationblocks[0].code[0]
     assert isinstance(assignment, Assignment)
 
     assert declared.declaration_span is not None

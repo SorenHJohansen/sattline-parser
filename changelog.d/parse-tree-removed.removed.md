@@ -1,0 +1,1 @@
+- **The retained parse tree is gone.** `BasePicture.parse_tree`, `BasePicture.__getstate__`, and the `retain_parse_tree` parameter of `parse_source_text`, `parse_and_validate`, and `parse_source_file` are removed. The parser returns the model only; use `create_parser().parse(...)` when you need the raw Lark tree.

@@ -119,10 +119,9 @@ def test_deep_left_associative_chain_is_a_clean_parse_error() -> None:
 
 def test_deep_parentheses_parse_without_recursion() -> None:
     bp = parser_core_parse_source_text(_program(_parens(1000)), log_failures=False)
-    retained = parser_core_parse_source_text(_program(_parens(1000)), retain_parse_tree=True, log_failures=False)
+    tree = create_parser().parse(_program(_parens(1000)))
 
-    assert retained.parse_tree is not None
-    assert _tree_depth(retained.parse_tree) > 1000
+    assert _tree_depth(tree) > 1000
     references = [event.node for event in walk(bp) if isinstance(event.node, VarRef)]
     assert [reference.name for reference in references] == ["R", "A"]
     assert repr(bp)
@@ -158,7 +157,7 @@ def test_chain_boundary_is_exact_and_near_cap_consumers_work() -> None:
 
     assert bp == same
     assert repr(bp)
-    equations = bp.modulecodes[0].equations
+    equations = bp.modulecodes[0].equationblocks
     assert equations is not None
     assert format_expr(equations[0].code[0])
     assert pickle.loads(pickle.dumps(bp)) == bp
