@@ -21,7 +21,7 @@ from collections.abc import Sequence as AbcSequence
 from enum import StrEnum
 from typing import Protocol, cast
 
-from sattline_parser.builtins.functions import get_function_signature
+from sattline_parser.builtins.functions import BuiltinDirection, get_function_signature
 from sattline_parser.grammar import constants as const
 from sattline_parser.models.ast_model import (
     DataType,
@@ -300,7 +300,7 @@ def builtin_type_matches(
     actual: Simple_DataType | str,
     expected: Simple_DataType | str,
     *,
-    direction: str,
+    direction: BuiltinDirection,
 ) -> bool:
     normalized_actual = _normalize(actual)
     normalized_expected = _normalize(expected)
@@ -527,6 +527,8 @@ def suggest_datatype_name(name: str, known_datatypes: AbcSequence[str]) -> str |
 
 
 __all__ = [
+    "FieldGraph",
+    "FieldSpec",
     "TypeFamily",
     "assignment_type_matches",
     "assignment_types",

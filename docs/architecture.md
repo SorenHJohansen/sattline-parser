@@ -15,6 +15,7 @@ flowchart TB
     subgraph L5["Public façade"]
         API["api.py"]
         ASTSURF["ast.py"]
+        TYPEFACTS["types.py"]
         INIT["__init__.py"]
     end
 
@@ -54,6 +55,7 @@ flowchart TB
     INIT --> PREPROCESS
     INIT --> VALIDATION
     ASTSURF --> MODELS
+    TYPEFACTS --> VALIDATION
 
     PROJECT --> SOURCE_IO
     PROJECT --> VALIDATION
@@ -96,6 +98,12 @@ The important import-direction rules:
   points from the project layer.
 - `ast.py` is a façade over `models/`: every node, clause, tail, and walker
   name crosses one import door, and it depends on nothing above `models/`.
+- `types.py` is a façade over the pure type facts in `validation/typing.py`.
+  Expression typing that needs a validation scope stays in the validation
+  layer, not in the public module.
+- `formatting/` renders AST values. It imports `models/`, and the model support
+  layer uses it for `__str__`, so the public rendering helpers are the same code
+  path as model display.
 - `cli/` imports the public API and the project layer, and duplicates no parse
   or validation behaviour.
 
@@ -106,6 +114,7 @@ The important import-direction rules:
 | `src/sattline_parser/__init__.py` | Public names, version, lazy fuzz exports | You need the stable import surface |
 | `src/sattline_parser/api.py` | Public façade over `source_io`, `errors`, and `validation` | You add a public parse or validation entry point |
 | `src/sattline_parser/ast.py` | Supported AST surface: every node, clause, tail, and the walker | You import or document the model |
+| `src/sattline_parser/types.py` | Public scalar type facts and literal inference | You import a type fact in a consumer |
 | `src/sattline_parser/source_io.py` | Parser cache, decoding, the source-to-`BasePicture` pipeline | You change parse orchestration |
 | `src/sattline_parser/source_document.py` | Original/normalized text and offset mapping | You change positions |
 | `src/sattline_parser/errors.py` | Parse-error sentences, structured details, logging | You change diagnostics |
@@ -116,7 +125,7 @@ The important import-direction rules:
 | `src/sattline_parser/transformer/` | `SLTransformer` and responsibility mixins | You change tree construction |
 | `src/sattline_parser/validation/` | Strict single-source rules, scopes, typing | You add a rule |
 | `src/sattline_parser/builtins/` | Generated function catalogue and record specs | You change builtin facts |
-| `src/sattline_parser/formatting/` | `__str__` rendering for AST nodes | You change debug output |
+| `src/sattline_parser/formatting/` | `__str__` and public expression rendering for AST nodes | You change rendered output |
 | `src/sattline_parser/project/` | Discovery, formats, loading, graphics, caches | You change project behaviour |
 | `src/sattline_parser/cli/` | The `sattline` command | You change the interface |
 | `src/sattline_parser/fuzz_harness.py` | Hard-timeout fuzzing and corpus regression | You change fuzzing |

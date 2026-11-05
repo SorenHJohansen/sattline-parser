@@ -144,11 +144,9 @@ other agents.
 - Releases use calendar versioning: `YYYY.M.N`.
 - The version orders releases; it is not a semantic-version compatibility
   contract.
-- The public surface is `sattline_parser.__all__`,
-  `sattline_parser.api.__all__`, `sattline_parser.project.__all__`,
-  `sattline_parser.builtins.__all__`, the documented `sattline` command, and its
-  JSON schemas.
-- Submodule paths not listed there are internal and may change.
+- The public surface is the set of documented `__all__` lists, the `sattline`
+  command, and its JSON schemas. [api.md](api.md) owns the exact list.
+- Submodule paths not listed in [api.md](api.md) are internal and may change.
 - A patch release preserves existing names and behaviour.
 - A breaking change is called out in the changelog and removed in that release.
   There is no deprecation window and no compatibility shim.

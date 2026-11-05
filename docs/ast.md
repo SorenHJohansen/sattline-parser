@@ -242,6 +242,12 @@ property map.
 `models/properties.py`, so the fixed keys are named even though the dataclasses
 expose them as a mapping.
 
+`GraphicsBinding` is not an AST node and `walk` never yields it. It is a project
+graphics value carried by `GraphicsModel.bindings`, where each entry records a
+`Var`, `Expr`, or `Lit` line from a `.g`/`.y` companion. It is exported by
+`sattline_parser.project` with `GraphicsModel`, and by `sattline_parser.ast`
+for consumers that already hold a binding. See [graphics.md](graphics.md).
+
 `InteractProperties.body` is `list[InteractBodyEntry] | None`, in source order.
 `InteractBodyEntry` is the closed union of what a body line can produce:
 `int` for `Layer_`, `Tail` for a literal or a bound/computed tail, `Alignment`
@@ -453,8 +459,10 @@ decoded into the current model.
 
 ## Traversal
 
-Import the model through `sattline_parser.ast`. `models/walk.py` is the public
-traversal. `walk(node)` yields a `WalkEvent` for every AST node in pre-order.
+Import the model and its traversal through `sattline_parser.ast`. The public
+walker is `sattline_parser.ast.walk`; `models/walk.py` holds the implementation,
+and the small `sattline_parser.models` surface also re-exports the walker names.
+`walk(node)` yields a `WalkEvent` for every AST node in pre-order.
 Each event carries the node, the display relation that holds it in its parent
 (for example `localvariables[2]` or `branches[0][1]`), the model field and
 subscript indices behind that relation, the phase, and the ancestor chain (root
@@ -522,9 +530,24 @@ Property payloads are visited in a fixed order:
 `ClippingClause` and never duplicated.
 
 `GraphObject.properties["text_vars"]` holds `VarRef` values, and a
-`PickButton.reference` is a `VarRef` child. `walk` therefore yields every
-text-object and pick-button reference as a `VarRef`, and a consumer can collect
-all references with one `isinstance` filter.
+`PickButton.reference` is a `VarRef` child. A bound `InVar_`/`OutVar_` name is a
+`VarTail`, not a `VarRef`, so a complete reference collector has two cases:
+
+```python
+from sattline_parser.ast import LitStringTail, VarRef, VarTail, walk
+
+references = []
+for event in walk(picture):
+    node = event.node
+    if isinstance(node, VarRef):
+        references.append(node.name)
+    elif isinstance(node, VarTail) and not isinstance(node.value, LitStringTail):
+        if node.bound_name is not None:
+            references.append(node.bound_name)
+```
+
+A `VarTail` whose value is a `LitStringTail` is a quoted symbol, not a variable
+path, so the collector skips it.
 
 The non-node keys (`coords`, `segment_point`, `polygon_type`, `layer`, `enable`,
 and `layers`) stay in the order tuple so a new property forces a walker
@@ -552,9 +575,11 @@ collect variable references. Rule-specific validation walks stay in
 
 ## Formatting
 
-`formatting/formatter.py` renders AST nodes for `__str__` and debugging. It is
-display code, not serialization. Use the CLI or a consumer serializer when you
-need machine-readable output.
+`formatting/formatter.py` renders AST nodes for `__str__`, message text, and
+debugging. `sattline_parser.formatting` is a supported import surface for the
+function names and their documented signatures; the exact rendered string is
+display output, not a serialization contract. Use the CLI or a consumer
+serializer when you need machine-readable output.
 
 ## Tests that pin the model
 

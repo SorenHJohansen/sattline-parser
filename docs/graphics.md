@@ -179,6 +179,10 @@ classDiagram
 `GraphicsModel.errors` and `GraphicsModel.warnings` filter `messages` by
 severity while preserving parse order.
 
+`GraphicsBinding` and the rest of the graphics model are exported by
+`sattline_parser.project`. A binding is a project graphics value, not an AST
+node, so `sattline_parser.ast.walk` never yields one.
+
 ## What the package does not do
 
 - It does not verify that a binding's variable exists in the code picture.

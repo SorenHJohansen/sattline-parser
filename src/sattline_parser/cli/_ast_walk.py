@@ -1,6 +1,6 @@
 """AST walking for ``sattline query``: declarations, uses and SFC/object inventories.
 
-The traversal itself is the public :class:`sattline_parser.models.NodeVisitor`.
+The traversal itself is the public :class:`sattline_parser.ast.NodeVisitor`.
 This module only decides which AST facts become query rows and in what order.
 """
 
@@ -9,10 +9,8 @@ from __future__ import annotations
 from collections.abc import Iterable, Iterator
 from dataclasses import dataclass
 
-from sattline_parser.models import NodeVisitor
-from sattline_parser.models import ast_model as m
-from sattline_parser.models.expressions import Assignment, FuncCall, FuncCallStmt, IfStmt, VarRef
-from sattline_parser.models.tails import LitStringTail, VarTail
+from sattline_parser import ast as m
+from sattline_parser.ast import Assignment, FuncCall, FuncCallStmt, IfStmt, LitStringTail, NodeVisitor, VarRef, VarTail
 
 __all__ = ["QUERY_KINDS", "QueryRow", "iter_rows"]
 

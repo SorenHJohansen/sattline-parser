@@ -328,11 +328,11 @@ project = SattLineProject.load(
 Releases use calendar versioning (`YYYY.M.N`). The version orders releases; it
 does not encode semantic-version compatibility.
 
-The supported public surface is the names listed in `sattline_parser.__all__`,
-`sattline_parser.api.__all__`, `sattline_parser.project.__all__`, and
-`sattline_parser.builtins.__all__`, plus the documented `sattline` command and
-its JSON schemas. Submodule paths and names not listed there are internal and
-may change between releases.
+The supported public surface is documented in
+[`docs/api.md`](https://github.com/SorenHJohansen/sattline-parser/blob/main/docs/api.md):
+the names in the documented `__all__` sets, the `sattline` command, and its JSON
+schemas. Submodule paths and names not listed there are internal and may change
+between releases.
 
 Within that surface, patch releases preserve existing names and behaviour. A
 breaking change is called out in the changelog and removed in that release.
