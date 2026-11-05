@@ -33,10 +33,8 @@ __all__ = [
     "GraphProperties",
     "InteractBodyEntry",
     "InteractProperties",
-    "ModuleDefProperties",
     "graph_properties",
     "interact_properties",
-    "module_def_properties",
 ]
 
 #: One entry of :attr:`InteractProperties.body`, in source order.
@@ -106,20 +104,9 @@ class InteractProperties(TypedDict, total=False):
     colours: list[ColourSpec]
 
 
-class ModuleDefProperties(TypedDict, total=False):
-    """Properties of one ``ModuleDef`` block."""
-
-    #: ``KEY_TAILS``
-    tails: list[Tail]
-
-
 def graph_properties() -> GraphProperties:
     return {}
 
 
 def interact_properties() -> InteractProperties:
-    return {}
-
-
-def module_def_properties() -> ModuleDefProperties:
     return {}

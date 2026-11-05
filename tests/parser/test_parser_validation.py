@@ -1220,20 +1220,20 @@ def test_coordinate_tail_type_rule_scopes_to_computed_expressions():
     """A real-typed tail passes and an integer-typed tail is reported (SL-V032)."""
     integer_tail = BinOp(left=VarRef("Source"), op="+", right=1)
     real_tail = BinOp(left=VarRef("Source"), op="+", right=1.0)
-    module_def = ModuleDef(clipping_bounds=((-1.0, -1.0), (1.0, 1.0)), clipping_tails=[integer_tail])
+    module_def = ModuleDef(clipping=ClippingClause(((-1.0, -1.0), (1.0, 1.0)), (integer_tail,)))
     bp = _base_picture()
     bp.localvariables = [_var("Source", "integer")]
     bp.moduledefs = [module_def]
     assert "SL-V032" in [d.code.value for d in validate_basepicture(bp)]
 
-    module_def.clipping_tails = [real_tail]
+    module_def.clipping = ClippingClause(((-1.0, -1.0), (1.0, 1.0)), (real_tail,))
     bp.localvariables = [_var("Source", "real")]
     assert [d.code.value for d in validate_basepicture(bp)] == []
 
 
 def test_coordinate_tail_rule_covers_bare_variable_tails():
     """A coordinate position is never an integer, computed or bare."""
-    module_def = ModuleDef(clipping_bounds=((-1.0, -1.0), (1.0, 1.0)), clipping_tails=[VarRef("Source")])
+    module_def = ModuleDef(clipping=ClippingClause(((-1.0, -1.0), (1.0, 1.0)), (VarRef("Source"),)))
     bp = _base_picture()
     bp.localvariables = [_var("Source", "integer")]
     bp.moduledefs = [module_def]
@@ -1245,7 +1245,9 @@ def test_coordinate_tail_rule_covers_bare_variable_tails():
 
 def test_coordinate_tail_rule_skips_reference_names():
     """An InVar_ "Name" tail is a reference, not a value, so it stays silent."""
-    module_def = ModuleDef(clipping_bounds=((-1.0, -1.0), (1.0, 1.0)), clipping_tails=[VarTail("in", "ClipX")])
+    module_def = ModuleDef(
+        clipping=ClippingClause(((-1.0, -1.0), (1.0, 1.0)), (VarTail("in", "ClipX"),)),
+    )
     bp = _base_picture()
     bp.moduledefs = [module_def]
     assert [d.code.value for d in validate_basepicture(bp)] == []
@@ -1336,13 +1338,28 @@ def test_interact_enable_and_assign_tails_report_undefined_variables():
     assert any("MissingFlat" in message for message in messages)
 
 
+def test_module_in_view_tail_is_walked():
+    """A ``Module_In_View`` tail is an annotation, so unresolved names are reported."""
+    bp = _base_picture()
+    bp.header = ModuleHeader(
+        name="Base",
+        invoke_coord=(0.0, 0.0, 0.0, 1.0, 1.0),
+        arguments=ModuleArguments(module_in_view=ModuleInViewClause(True, VarRef("MissingView"))),
+    )
+
+    diagnostics = [d for d in validate_basepicture(bp) if d.code is DiagnosticCode.UNDEFINED_VARIABLE]
+
+    assert [d.code.value for d in diagnostics] == ["SL-V019"]
+    assert "MissingView" in diagnostics[0].message
+
+
 def test_header_enable_tail_reports_undefined_and_non_boolean():
     """The unit header is checked in the base scope, not skipped."""
     missing = _base_picture()
     missing.header = ModuleHeader(
         name="Base",
         invoke_coord=(0.0, 0.0, 0.0, 1.0, 1.0),
-        enable_tail=VarRef("MissingHeaderEnable"),
+        arguments=ModuleArguments(enable=EnableClause(True, VarRef("MissingHeaderEnable"))),
     )
     undefined = [d for d in validate_basepicture(missing) if d.code is DiagnosticCode.UNDEFINED_VARIABLE]
     assert [d.code.value for d in undefined] == ["SL-V019"]
@@ -1352,7 +1369,7 @@ def test_header_enable_tail_reports_undefined_and_non_boolean():
     integer_tail.header = ModuleHeader(
         name="Base",
         invoke_coord=(0.0, 0.0, 0.0, 1.0, 1.0),
-        enable_tail=BinOp(VarRef("Count"), "+", 1),
+        arguments=ModuleArguments(enable=EnableClause(True, BinOp(VarRef("Count"), "+", 1))),
     )
     not_boolean = [d for d in validate_basepicture(integer_tail) if d.code is DiagnosticCode.CONDITION_NOT_BOOLEAN]
     assert [d.code.value for d in not_boolean] == ["SL-V030"]
@@ -1379,9 +1396,9 @@ def test_submodule_header_tail_uses_parent_scope():
         invoke_coord=(0.0, 0.0, 0.0, 1.0, 1.0),
         invoke_coord_tails=[VarRef("ParentVar")],
     )
-    child = SingleModule(header=header, localvariables=[_var("ChildVar", "integer")])
+    child = SingleModule(header=header, localvariables=[_var("ChildVar", "real")])
     bp = _base_picture()
-    bp.localvariables = [_var("ParentVar", "integer")]
+    bp.localvariables = [_var("ParentVar", "real")]
     bp.submodules = [child]
 
     assert [d.code.value for d in validate_basepicture(bp)] == []
@@ -1399,8 +1416,10 @@ def test_moduletype_layout_coordinate_tail_is_checked():
         localvariables=[_var("Source", "integer")],
         moduledefs=[
             ModuleDef(
-                clipping_bounds=((-1.0, -1.0), (1.0, 1.0)),
-                clipping_tails=[BinOp(VarRef("Source"), "+", 1)],
+                clipping=ClippingClause(
+                    ((-1.0, -1.0), (1.0, 1.0)),
+                    (BinOp(VarRef("Source"), "+", 1),),
+                )
             )
         ],
     )
@@ -1418,7 +1437,7 @@ def test_bound_tail_names_are_not_diagnosed_in_annotations():
     bp.header = ModuleHeader(
         name="Base",
         invoke_coord=(0.0, 0.0, 0.0, 1.0, 1.0),
-        enable_tail=VarTail("in", "MissingHeaderEnable"),
+        arguments=ModuleArguments(enable=EnableClause(True, VarTail("in", "MissingHeaderEnable"))),
         invoke_coord_tails=[VarTail("out", LitStringTail("LitString", "MissingCoord"))],
     )
     bp.moduledefs = [
@@ -1432,13 +1451,11 @@ def test_bound_tail_names_are_not_diagnosed_in_annotations():
     assert [d.code.value for d in validate_basepicture(bp)] == []
 
 
-def test_shared_module_def_tail_is_checked_once():
-    """clipping_tails owns the entry also present in properties["tails"]."""
+def test_clipping_tail_is_checked_once():
+    """The clipping clause owns its tails, so each tail is checked once."""
     tail = BinOp(VarRef("Source"), "+", 1)
     module_def = ModuleDef(
-        clipping_bounds=((-1.0, -1.0), (1.0, 1.0)),
-        clipping_tails=[tail],
-        properties={"tails": [tail]},
+        clipping=ClippingClause(((-1.0, -1.0), (1.0, 1.0)), (tail,)),
     )
     bp = _base_picture()
     bp.localvariables = [_var("Source", "integer")]

@@ -113,23 +113,11 @@ class ModuleHeaderMixin:
         if coords5 is None:
             raise ValueError("module_header missing invoke_coord")
 
-        enable_tail = arguments.enable.tail if arguments.enable is not None else None
-        if arguments.module_in_view is not None and arguments.module_in_view.tail is not None:
-            coord_tails.append(arguments.module_in_view.tail)
-        coord_tails.extend(assign.tail for assign in arguments.assigns if assign.tail is not None)
-
-        zoom_limits = arguments.zoom_limits
         return ModuleHeader(
             name=name or "",
             invoke_coord=coords5,
             declaration_span=meta_span(meta),
-            invocation_arguments=tuple(marker.kind for marker in arguments.markers),
-            zoomable=arguments.zoomable,
-            layer_info=arguments.layer,
-            enable=arguments.enable.enabled if arguments.enable is not None else None,
-            zoom_limits=(zoom_limits.minimum, zoom_limits.maximum) if zoom_limits is not None else None,
-            enable_tail=enable_tail,
-            module_in_view=arguments.module_in_view.in_view if arguments.module_in_view is not None else None,
+            arguments=arguments,
             invoke_coord_tails=coord_tails,
             description_comments=description_comments,
         )

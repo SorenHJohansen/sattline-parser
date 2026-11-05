@@ -31,10 +31,11 @@ def test_modules_mixin_module_header_collects_argument_metadata():
             ModuleArguments(
                 layer=7,
                 enable=EnableClause(False, VarTail("in", "EnableVar")),
+                module_in_view=ModuleInViewClause(True, VarTail("out", "Allow.RecpSupParameters")),
                 zoom_limits=ZoomLimits(0.5, 2.0),
                 zoomable=True,
                 markers=(ModuleMarker(parser_const.GRAMMAR_VALUE_IGNOREMAXMODULE),),
-                assigns=(AssignClause("Module_In_View", True, VarTail("out", "Allow.RecpSupParameters")),),
+                assigns=(AssignClause("Param1", 5, VarTail("in", "AssignTail")),),
             ),
         ],
     )
@@ -42,7 +43,9 @@ def test_modules_mixin_module_header_collects_argument_metadata():
     assert header.name == "Motor"
     assert header.declaration_span == SourceSpan(start=20, end=30, line=5, column=2)
     assert header.invoke_coord == (1.0, 2.0, 3.0, 4.0, 5.0)
-    assert header.invoke_coord_tails == [VarTail("in", "PosX"), VarTail("out", "Allow.RecpSupParameters")]
+    assert header.invoke_coord_tails == [VarTail("in", "PosX")]
+    assert header.arguments.module_in_view == ModuleInViewClause(True, VarTail("out", "Allow.RecpSupParameters"))
+    assert header.arguments.assigns == (AssignClause("Param1", 5, VarTail("in", "AssignTail")),)
     assert header.layer_info == 7
     assert header.enable is False
     assert header.enable_tail == VarTail("in", "EnableVar")

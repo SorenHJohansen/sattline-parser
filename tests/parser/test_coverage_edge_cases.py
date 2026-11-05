@@ -146,7 +146,8 @@ def test_module_layout_grid_and_def_tails() -> None:
             SeqLayers({"top": 1.0}),
         ],
     )
-    assert module_def.properties[const.KEY_TAILS] == [tail_a, tail_b]
+    assert module_def.clipping_bounds == ((2.0, 2.0), (3.0, 3.0))
+    assert module_def.clipping_tails == (tail_b,)
     assert module_def.seq_layers == {"top": 1.0}
 
 

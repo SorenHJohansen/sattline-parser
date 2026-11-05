@@ -19,7 +19,14 @@ from sattline_parser.api import parse_source_file
 from sattline_parser.grammar import constants as const
 from sattline_parser.grammar.resolved import grammar_fingerprint
 from sattline_parser.models.ast_model import BasePicture, GraphObject, InteractObject, ModuleDef, ModuleHeader
-from sattline_parser.models.clauses import AssignClause, ColourSpec, TailedClause
+from sattline_parser.models.clauses import (
+    AssignClause,
+    ClippingClause,
+    ColourSpec,
+    EnableClause,
+    ModuleArguments,
+    TailedClause,
+)
 from sattline_parser.models.tails import LitStringTail, VarTail
 from sattline_parser.project import FILE_AST_CACHE_VERSION, FileASTCache
 from sattline_parser.project.ast_cache import (
@@ -93,9 +100,7 @@ def test_typed_tail_nodes_survive_a_pickle_round_trip() -> None:
     """
     corner = VarTail("in", "Corner")
     module_def = ModuleDef(
-        clipping_bounds=((-1.0, -1.0), (1.0, 1.0)),
-        clipping_tails=[corner],
-        properties={const.KEY_TAILS: [corner]},
+        clipping=ClippingClause(((-1.0, -1.0), (1.0, 1.0)), (corner,)),
         graph_objects=[
             GraphObject(
                 type=const.GRAMMAR_VALUE_TEXTOBJECT,
@@ -121,7 +126,7 @@ def test_typed_tail_nodes_survive_a_pickle_round_trip() -> None:
         header=ModuleHeader(
             name="BasePicture",
             invoke_coord=(0.0, 0.0, 0.0, 1.0, 1.0),
-            enable_tail=VarTail("in", "EnableVar"),
+            arguments=ModuleArguments(enable=EnableClause(True, VarTail("in", "EnableVar"))),
             invoke_coord_tails=[VarTail("out", LitStringTail("LitString", "Symbol"))],
         ),
         moduledefs=[module_def],
@@ -131,7 +136,7 @@ def test_typed_tail_nodes_survive_a_pickle_round_trip() -> None:
 
     assert restored == picture
     assert restored.header.invoke_coord_tails == [VarTail("out", LitStringTail("LitString", "Symbol"))]
-    assert FILE_AST_CACHE_VERSION == 5
+    assert FILE_AST_CACHE_VERSION == 6
 
 
 def test_envelope_round_trip() -> None:

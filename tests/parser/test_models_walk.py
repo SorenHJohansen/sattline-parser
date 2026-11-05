@@ -30,7 +30,7 @@ from sattline_parser.models.expressions import (
 )
 from sattline_parser.models.properties import GraphProperties, InteractProperties
 from sattline_parser.models.tails import LitStringTail, VarTail
-from sattline_parser.models.walk import _GRAPH_PROPERTY_ORDER, _INTERACT_PROPERTY_ORDER, _NODE_TYPES
+from sattline_parser.models.walk import _GRAPH_PROPERTY_ORDER, _INTERACT_PROPERTY_ORDER, _NODE_TYPES, _unowned_tails
 
 _CORPUS = Path(__file__).resolve().parents[1] / "fixtures" / "corpus" / "valid"
 
@@ -105,6 +105,15 @@ def test_walk_covers_every_model_shape() -> None:
         m.Sequence,
         m.SingleModule,
         m.Variable,
+        clauses.Alignment,
+        clauses.AssignClause,
+        clauses.ClippingClause,
+        clauses.ColourSpec,
+        clauses.EnableClause,
+        clauses.FlagClause,
+        clauses.ModuleArguments,
+        clauses.ModuleInViewClause,
+        clauses.ModuleMarker,
         Assignment,
         BinOp,
         BoolOp,
@@ -158,25 +167,31 @@ def test_walk_reports_branch_shapes_for_statements_and_ternaries() -> None:
     assert "else_expr" in ternary_relations
 
 
-def test_walk_descends_into_header_tails_and_groupconn() -> None:
+def test_walk_descends_into_header_arguments_and_groupconn() -> None:
     header = m.ModuleHeader(
         name="Header",
         invoke_coord=(0.0, 0.0, 0.0, 1.0, 1.0),
+        arguments=clauses.ModuleArguments(
+            enable=EnableClause(True, VarRef("Enabled")),
+            module_in_view=clauses.ModuleInViewClause(True, VarRef("Visible")),
+        ),
         invoke_coord_tails=[VarRef("Coord")],
-        enable_tail=VarRef("Enabled"),
         groupconn=VarRef("Conn"),
     )
 
     relations = {event.relation for event in walk(header)}
 
-    assert {"invoke_coord_tails[0]", "enable_tail", "groupconn"} <= relations
+    assert {"arguments", "enable", "module_in_view", "tail", "invoke_coord_tails[0]", "groupconn"} <= relations
 
 
 def test_walk_orders_header_and_module_type_fields_by_declaration() -> None:
     header = m.ModuleHeader(
         name="Header",
         invoke_coord=(0.0, 0.0, 0.0, 1.0, 1.0),
-        enable_tail=VarRef("Enabled"),
+        arguments=clauses.ModuleArguments(
+            enable=EnableClause(True, VarRef("Enabled")),
+            zoom_limits=clauses.ZoomLimits(0.5, 2.0),
+        ),
         invoke_coord_tails=[VarRef("Coord")],
         groupconn=VarRef("Conn"),
     )
@@ -189,7 +204,10 @@ def test_walk_orders_header_and_module_type_fields_by_declaration() -> None:
 
     assert [event.relation for event in walk(header)] == [
         "",
-        "enable_tail",
+        "arguments",
+        "enable",
+        "tail",
+        "zoom_limits",
         "invoke_coord_tails[0]",
         "groupconn",
     ]
@@ -268,11 +286,17 @@ def test_walk_visits_interact_clause_and_body_tails_once() -> None:
 
 def test_walk_visits_module_def_clipping_tails_once() -> None:
     tail = VarRef("Source")
-    module_def = m.ModuleDef(clipping_tails=[tail], properties={"tails": [tail]})
+    module_def = m.ModuleDef(
+        clipping=clauses.ClippingClause(((0.0, 0.0), (1.0, 1.0)), (tail,)),
+    )
 
     events = list(walk(module_def))
 
-    assert [event.relation for event in events if event.node is tail] == ["clipping_tails[0]"]
+    assert [event.relation for event in events if event.node is tail] == ["tails[0]"]
+
+
+def test_unowned_tails_ignores_a_non_sequence_value() -> None:
+    assert list(_unowned_tails("properties.tails", None, set())) == []
 
 
 def test_walk_emits_bound_tail_nodes() -> None:
@@ -375,16 +399,11 @@ _NOT_AST_NODE = {
     ast_model.GraphicsBinding,
     # Transformer intermediates: their content is folded into an owner before
     # the AST is returned, or they are only arguments to the transformer.
-    clauses.ClippingClause,
     clauses.CommonProperties,
     clauses.Grid,
-    clauses.ModuleArguments,
-    clauses.ModuleInViewClause,
-    clauses.ModuleMarker,
     clauses.ModuleOptions,
     clauses.SeqLayers,
     clauses.TwoLayers,
-    clauses.ZoomLimits,
     clauses.Zoomable,
     tails.ClipValue,
     tails.CoordinateClipping,

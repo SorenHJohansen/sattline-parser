@@ -200,12 +200,17 @@ or transition.
 `ModuleHeaderMixin` builds `ModuleHeader` values:
 
 - name and invocation coordinates;
-- `invocation_arguments` for arguments such as `Zoomable`, `LayerModule`,
-  `SymbolModule`, `Enable_`, `Module_In_View`, and layer info;
+- `arguments` for arguments such as `Zoomable`, `LayerModule`,
+  `SymbolModule`, `Enable_`, `Module_In_View`, layer info, zoom limits, and
+  `Name = value` assignments;
 - `groupconn` and `groupconn_global` from `GroupConn=`;
-- `enable`, `enable_tail`, and `module_in_view` when present;
-- coordinate tails (`_extract_coord_tails`) and invocation tails
-  (`_extract_tailed_rule_payload`).
+- `invoke_coord_tails` for the tails attached to the five invocation
+  coordinates only. Argument tails stay on their clause under `arguments`;
+- description comments.
+
+The singular header names (`layer_info`, `enable`, `enable_tail`,
+`module_in_view`, `zoom_limits`, `zoomable`, `invocation_arguments`) are
+read-only views over `arguments`, so they can never diverge from the payload.
 
 `ModuleAssemblyMixin` is the largest mixin. It normalizes module bodies and
 assembles the AST:
@@ -232,8 +237,9 @@ source omitted is `None` or an empty list, never a synthesized default object.
 - `SeqLayers`;
 - `ModuleDef` assembly.
 
-Coordinate tails are retained on `ModuleDef.clipping_tails` so validation can
-type-check them. `clipping_bounds` keeps only the resolved float values.
+`ClippingBounds` becomes one `ClippingClause` on `ModuleDef.clipping`, keeping
+the resolved corners and the corner tails together. Validation type-checks the
+tails through that clause.
 
 `GraphicsInteractMixin` handles:
 

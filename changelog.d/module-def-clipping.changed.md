@@ -1,0 +1,1 @@
+- **`ModuleDef.clipping`.** The resolved `ClippingBounds` corners and the tails attached to them are one `ClippingClause` on `ModuleDef.clipping`. `clipping_bounds` and `clipping_tails` are read-only views over it, and `ModuleDef.properties` and `ModuleDefProperties` are removed.

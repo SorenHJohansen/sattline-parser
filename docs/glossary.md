@@ -8,7 +8,7 @@
 | BasePicture | The root AST node for one parsed source unit. It is also the name of the root module in the grammar. |
 | Module | A nested executable unit. `SingleModule` has a body; `FrameModule` is a pure container; `ModuleTypeInstance` references a named type. |
 | Module type | A reusable module definition (`ModuleTypeDef`) that instances reference. It may be declared in this file or in a dependency. |
-| ModuleDef | The layout and graphics section of a module: clipping bounds, grid, layers, graph objects, interactor objects. |
+| ModuleDef | The layout and graphics section of a module: clipping clause, grid, layers, graph objects, interactor objects. |
 | ModuleCode | The executable section: sequences and equations. |
 | Sequence | An SFC program unit. It contains steps, transitions, alternatives, parallels, and subsequences. |
 | Equation | A statement block introduced by `EQUATIONBLOCK` or `EQUATIONS`. |

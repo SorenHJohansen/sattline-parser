@@ -124,7 +124,7 @@ def test_ast_model_helpers_cover_reduce_usage_and_string_formats(monkeypatch: py
             )
         ]
     )
-    module_def = ModuleDef(clipping_bounds=((0.0, 0.0), (1.0, 1.0)), zoomable=True)
+    module_def = ModuleDef(clipping=ClippingClause(((0.0, 0.0), (1.0, 1.0))), zoomable=True)
     header = _module_header("Parent")
     child = ModuleTypeInstance(header=_module_header("Child"), moduletype_name="ChildType")
 
