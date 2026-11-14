@@ -206,7 +206,6 @@ def render_moduletype_def(moduletype: ModuleTypeDef) -> str:
         f"ModuleCode      : {format_optional(moduletype.modulecode)}",
         f"ModuleDefBlocks : {len(moduletype.moduledefs)}",
         f"ModuleCodeBlocks: {len(moduletype.modulecodes)}",
-        f"ParameterMappings: {format_list(moduletype.parametermappings)}",
     ]
     return "ModuleType{\n" + textwrap.indent("\n".join(lines), "    ") + "}"
 

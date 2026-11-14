@@ -84,7 +84,6 @@ classDiagram
         modulecode: ModuleCode | None
         moduledefs: list[ModuleDef]
         modulecodes: list[ModuleCode]
-        parametermappings: list[ParameterMapping]
         groupconn: VarRef | None
         groupconn_global: bool
         origin_file: str | None

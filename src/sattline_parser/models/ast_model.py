@@ -531,7 +531,6 @@ class ModuleTypeDef(_ModuleBlockViews):
     submodules: list[SingleModule | FrameModule | ModuleTypeInstance] = field(default_factory=submodule_list)
     moduledefs: list[ModuleDef] = field(default_factory=moduledef_list)
     modulecodes: list[ModuleCode] = field(default_factory=modulecode_list)
-    parametermappings: list[ParameterMapping] = field(default_factory=parameter_mapping_list)
     groupconn: VarRef | None = None
     groupconn_global: bool = False
     origin_file: str | None = None
