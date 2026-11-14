@@ -8,6 +8,7 @@ import pytest
 from lark.exceptions import UnexpectedInput
 
 from sattline_parser.api import parse_source_text as parser_core_parse_source_text
+from sattline_parser.ast import ModuleHeader, walk
 from sattline_parser.preprocessing.compressed import (
     _MARKER_RE,  # pyright: ignore[reportPrivateUsage]
     SCANNER_TOKENS,
@@ -207,3 +208,27 @@ def test_coded_golden_with_raw_identifiers_still_decodes() -> None:
     compressed = (_CORPUS / "CompressedFullGrammar.s").read_text(encoding="cp1252")
     document = preprocess_source(compressed)
     assert "MODULEDEFINITION" in document.normalized_text
+
+
+_COMPRESSED_NON_ZOOMABLE = """\"Syntax version 2.23, date: 2026-04-23-12:00:00.000 C"
+\"Original file date: ---"
+\"Program date: 2026-04-23-12:00:00.000, name: Prog"
+BasePicture #6? ( 0.0 , 0.0 , 0.0 , 1.0 , 1.0 #;> ) : #71
+#6>
+#65 = ( -1.0 , -1.0 ) ( 1.0 , 1.0 )
+#85 (*BasePicture*);
+"""
+
+
+def test_compressed_code_190_is_the_non_zoomable_argument() -> None:
+    # A coded body spells the argument this way where its uncompressed
+    # siblings spell `Non_Zoomable` after the five invocation coordinates.
+    # Ordinal 190 is the only vacant zoom-related argument: `Zoomable` is
+    # already ordinal 106, which is why the earlier seed table's `Zoomable`
+    # reading of this code duplicated an existing row and was dropped.
+    assert is_compressed(_COMPRESSED_NON_ZOOMABLE)
+    assert "Non_Zoomable" in preprocess_source(_COMPRESSED_NON_ZOOMABLE).normalized_text
+
+    picture = parser_core_parse_source_text(_COMPRESSED_NON_ZOOMABLE, log_failures=False)
+    headers = [event.node for event in walk(picture) if isinstance(event.node, ModuleHeader)]
+    assert [header.invocation_arguments for header in headers] == [("Non_Zoomable",)]

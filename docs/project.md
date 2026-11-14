@@ -98,8 +98,12 @@ sequenceDiagram
     end
     V->>V: append a _Plan, so plans come out post-order
     Note over L: phase 2: parse every planned body
-    L->>P: one task per plan, in workers processes
-    P-->>L: BasePicture, or the text of the failure
+    alt workers > 1
+        L->>P: one task per plan, in workers processes
+        P-->>L: BasePicture, or the text of the failure
+    else workers = 1
+        L->>L: parse in this process
+    end
     Note over L: phase 3: assemble, sequential, plan order
     L->>L: dependency incomplete? mark incomplete
     L->>L: set origin_file and origin_lib
@@ -120,6 +124,20 @@ program's diagnostics are computed against a complete prefix of its closure.
 `_assert_registry_post_order` checks this and raises `RuntimeError` if a
 dependency appears after its consumer. A cycle never reaches that check because
 the loader rejects it first.
+
+Discovery runs to completion before any body is parsed, which changes two
+observable orders:
+
+- **Errors.** A discovery failure (a missing body, an unreadable sidecar, a
+  cycle) is raised before any body-parse failure, because the whole closure is
+  resolved first. With two targets, `B`'s unreadable sidecar therefore wins over
+  `A`'s broken body even when `A` was requested first. Structural errors win
+  over everything.
+- **Diagnostics.** `SattLineProject.diagnostics()` reports every discovery
+  finding (a missing or empty sidecar, a sidecar elsewhere, a body skipped
+  during discovery) before every assembly finding (a body that failed to parse,
+  a graphics companion that failed to read). Within each group the order is plan
+  order, which is post-order.
 
 `validate=INVOKED` runs **after** the graph is complete, because it needs the
 whole invocation graph. The loader first builds the registry, then walks
@@ -345,19 +363,21 @@ become `GraphicsMessage` values, never exceptions. See [graphics.md](graphics.md
 - The AST cache skips re-parsing an unchanged file.
 - `INVOKED` scope avoids validating a library's unused module types.
 
-Measured on a 268-program library tree (315 MB of `.x` bodies, all
-`validate=INVOKED`, one 6-core machine):
+Measured with `sattline project` over a 268-program library tree (315 MB of
+`.x` bodies, `validate=invoked`) on a 6-core machine:
 
 | Load | Time |
 | --- | --- |
-| `workers=1`, no cache | 224 s |
-| `workers=6`, no cache | 72 s |
-| `workers=1`, warm AST cache | 75 s |
-| `workers=6`, warm AST cache | 61 s |
+| `--workers 1 --no-cache` | 255 s |
+| defaults, second load (warm AST cache) | 68 s |
 
 Parsing is 99% of a load. Lookup, sidecar reads, graphics companions, and graph
 assembly together are under a second on that tree, which is why `workers` is the
 only lever with a large factor.
+
+A `ProjectLoader` resolves one load. Discovery plans, parse outcomes, and the
+registry are per-load state, so a second `resolve()` call raises rather than
+doubling the plans over an existing registry; construct another loader.
 
 ### Parallel parsing
 
@@ -365,15 +385,18 @@ only lever with a large factor.
 defaults to `min(8, cpu_count)`. Results do not depend on the worker count:
 discovery fixes the plan order before any parse runs.
 
-- A single-threaded caller forks, so a worker inherits the compiled parser. A
-  caller with other threads gets `forkserver`: forking a threaded process is
+- A single-threaded caller forks, which needs no `__main__` guard. A caller
+  with other threads gets `forkserver`, because forking a threaded process is
   deprecated in CPython and can inherit a lock another thread held at fork
-  time. That costs each worker one parser build from the on-disk cache, about
-  50 ms and 50 MB.
+  time. Discovery parses nothing, so the parser is not built before the pool
+  starts: every worker builds it from the on-disk Lark cache, about 50 ms and
+  50 MB each.
 - A daemonic process may not start children, so a load called from inside an
   outer pool parses in that process instead of raising.
-- A worker that meets the AST cache reads and writes it directly, so a warm
-  load does not hand a large pickle back and forth.
+- A worker reads the AST cache but never writes it: the parent owns every
+  write, so the per-user key and the entry signatures stay single-process. A
+  cached body still crosses the pipe to the parent, which is why a warm cache
+  and `workers` do not multiply.
 - If a pool cannot be created (a restricted sandbox, a bootstrap failure), the
   load logs and parses in this process rather than failing.
 - `workers > 1` and a warm cache do not add up: the parent must still receive
