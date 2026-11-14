@@ -65,8 +65,8 @@ five positional arguments.
 The single-file caller may legitimately reference a datatype that lives in
 another file it has not loaded. `allow_unresolved_external_datatypes=True`
 suppresses only unknown-name findings. It does not suppress typo suggestions or
-local rules. The project loader never sets it; it marks external-dependent
-findings tentative instead.
+local rules. The project loader never sets it: a project load has the whole
+closure, or it raises.
 
 ## Walk
 
@@ -220,9 +220,8 @@ it is a suffix of its host step or transition.
   are unknown: the target check stays silent while the local duplicate-target
   check still runs.
 - A module-type instance whose type is neither declared in the file nor visible
-  from a loaded dependency reports `SL-V058`. The project loader marks that
-  finding tentative when part of the closure failed to load, and the single-file
-  escape hatch suppresses it.
+  from a loaded dependency reports `SL-V058`. The single-file escape hatch
+  suppresses it; a project load always has the whole closure.
 - When the module type is external, the mapping rule resolves against the
   loaded definition through the project layer.
 
@@ -234,7 +233,6 @@ class Diagnostic:
     code: DiagnosticCode
     message: str
     span: SourceSpan | None = None
-    tentative: bool = False
 ```
 
 Every validation diagnostic is an error. The finding shape in the CLI keeps a
@@ -242,9 +240,8 @@ severity field because graphics scan messages can be warnings, but validation
 never produces one.
 
 `code` is a stable machine identifier (`SL-V###`). `message` is a sentence
-about the source. `span` points into the original source. `tentative` is set by
-the project loader, never by the validator: it means the finding depends on
-definitions from a part of the closure that failed to load, so it is not final.
+about the source. `span` points into the original source. Every finding is
+final: a project load either has the whole closure or raises.
 
 The full code table lives in the rule registry, not in the enum. Every
 `DiagnosticCode` has exactly one `Rule` in `validation/rules.py` with an id, an
@@ -351,13 +348,12 @@ not reported; `SEQUENCE_TRANSITION_AFTER_TRANSITION`; and
 
 ## Relation to the project loader
 
-The loader adds findings the single-file validator cannot know, and marks the
-ones that depend on an incomplete closure as tentative:
+The loader adds findings the single-file validator cannot know:
 
 | Finding | Why it needs the project |
 | --- | --- |
 | `DATECODE_CONFLICT` | The same module type or datatype is declared with different datecodes in the visible closure |
-| `UNKNOWN_MODULETYPE_NAME` | The validator emits it; the loader marks it tentative when the module type may live in a dependency that failed to load |
+| `UNKNOWN_MODULETYPE_NAME` | The validator emits it; a project load resolves the type from the visible closure or fails the load |
 | `PARAM_TRANSFER_TYPE_MISMATCH` | The formal parameter is in another file |
 | `PARAMETER_MAPPING_TARGET_UNKNOWN` | The formal parameter is in another file |
 | `PARAMETER_MAPPING_TYPE_MISMATCH` | The formal parameter is in another file |
@@ -404,4 +400,4 @@ applies its policy.
 | `tests/parser/test_validation_expectations.py` | Golden manifest agreement |
 | `tests/parser/test_parser_sequence_positions.py` | SFC body shapes |
 | `tests/parser/test_moduletype_declarations.py` | Declarations and transfers |
-| `tests/project/test_project_validation.py` | Project-scope validation and tentative marking |
+| `tests/project/test_project_validation.py` | Project-scope validation |

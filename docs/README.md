@@ -181,8 +181,7 @@ flowchart TB
 
 1. **Strict, no silent fallback.** An unknown compressed marker raises
    `PreprocessError`. A source that does not parse raises. A project load
-   failure raises under `strict=True`, and a skipped program under
-   `strict=False` is recorded as a `LOAD_SKIPPED` diagnostic. Nothing is
+   failure raises, so a project is either complete or not returned. Nothing is
    silently dropped.
 2. **Positions always refer to the original source.** Even when a file is
    decoded from a coded stream or expanded from compressed markers, every

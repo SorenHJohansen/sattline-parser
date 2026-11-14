@@ -20,7 +20,6 @@ def test_project_reports_validation_findings_and_fails(tmp_path, capsys) -> None
     assert payload["validation"]
     assert payload["validation"][0]["code"] == "SL-V016"
     assert "severity" not in payload["validation"][0]
-    assert payload["validation"][0]["tentative"] is False
     assert payload["programs"][0]["library"] == tmp_path.name
 
 
@@ -33,18 +32,15 @@ def test_project_fail_on_none_keeps_a_success_exit(tmp_path, capsys) -> None:
     assert payload["validation"]
 
 
-def test_project_fail_on_none_ignores_a_skipped_program(tmp_path, capsys) -> None:
+def test_project_fail_on_none_does_not_hide_a_load_failure(tmp_path, capsys) -> None:
     write_source(tmp_path, "Child.s", VALID_SOURCE.replace("name: Sample", "name: Child"))
     (tmp_path / "Child.l").write_bytes(b"MissingLib")
 
-    # A skipped program is a finding by default, so the run fails.
-    assert main(["project", str(tmp_path), "--lenient"]) == ExitCode.FINDINGS
-    assert "load-skipped MissingLib" in capsys.readouterr().out
-
-    # Under --fail-on none the omission is still reported but does not fail.
-    assert main(["project", str(tmp_path), "--lenient", "--json", "--fail-on", "none"]) == ExitCode.OK
+    # A missing body is a load failure, not a validation finding, so
+    # --fail-on none cannot downgrade it.
+    assert main(["project", str(tmp_path), "--json", "--fail-on", "none"]) == ExitCode.FINDINGS
     payload = json.loads(capsys.readouterr().out)
-    assert [row["kind"] for row in payload["diagnostics"]] == ["load-skipped"]
+    assert [row["rule"] for row in payload["findings"]] == ["PROJECT_LOAD_ERROR"]
 
 
 def test_project_no_validate_skips_validation(tmp_path, capsys) -> None:

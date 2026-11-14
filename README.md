@@ -309,13 +309,10 @@ if program.graphics is not None:  # GraphicsMessage values, never raised
   instantiates itself raises `ModuleTypeCycleError`, so `SattLineProject.load`
   never returns a cyclic project. `SattLineProject.cycles()` still reports the
   declared cycles of a project you assemble directly from programs.
-- `strict=True` (default) fails fast on missing or unparseable artifacts;
-  `strict=False` skips the failing program and continues. Failures surface as
-  structured errors (`ProjectLoadError`, `ArtifactLoadError`,
-  `DependencyNotFoundError`, `DependencyParseError`, `DependencyCycleError`,
-  `ModuleTypeCycleError`), and a skipped program is recorded as a
-  `LoadDiagnosticKind.LOAD_SKIPPED` diagnostic, so a partial load is never
-  silent.
+- A missing or unparseable artifact fails the load, so a project is either
+  complete or not returned. Failures surface as structured errors
+  (`ProjectLoadError`, `ArtifactLoadError`, `DependencyNotFoundError`,
+  `DependencyParseError`, `DependencyCycleError`, `ModuleTypeCycleError`).
 - `validate=LoadValidation.INVOKED` (default) validates each target in full and
   limits a dependency file to the module types that target invokes,
   transitively, so an imported library's unused module types are never checked

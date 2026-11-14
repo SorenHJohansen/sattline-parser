@@ -165,9 +165,6 @@ class LoadDiagnosticKind(StrEnum):
     #: A sidecar sits beside the body but belongs to the other artifact family,
     #: for example a ``.z`` beside a ``.s`` body. It is never paired.
     SIDECAR_FAMILY_MISMATCH = "sidecar-family-mismatch"
-    #: A program was left out of a non-strict load because it could not be
-    #: resolved or parsed. The load continues, but the omission stays visible.
-    LOAD_SKIPPED = "load-skipped"
     #: One folded name resolved to different bodies for different requesters,
     #: for example ``Util`` in two roots. Both bodies load, but the project
     #: registry can only expose one program per name.
@@ -251,8 +248,7 @@ class SattLineProgram:
 
     ``library`` is the name of the root directory that resolved the body, and
     ``resolved_base`` is that directory. ``diagnostics`` holds this program's
-    validation findings, including tentative ones produced when a part of its
-    dependency closure could not be loaded.
+    validation findings.
 
     ``distribution_path`` is the resolved distribution companion and
     ``distribution`` its parsed content. Both stay ``None`` when no companion was

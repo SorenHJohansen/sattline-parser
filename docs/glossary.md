@@ -76,7 +76,7 @@
 
 | Term | Meaning |
 | --- | --- |
-| Diagnostic | One validation finding: code, message, span, tentative. It is always an error. |
+| Diagnostic | One validation finding: code, message, span. It is always an error. |
 | Rule code | A stable `SL-V###` identifier. |
 | Severity | A CLI finding field: `error` for validation and parse findings, `warning` for graphics scan messages. |
 | Tentative | A finding that depends on a part of the closure that failed to load. Set by the loader, never by the validator. |

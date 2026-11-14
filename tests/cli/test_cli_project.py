@@ -181,7 +181,7 @@ def test_sources_nested_below_a_root_are_not_discovered(tmp_path, capsys) -> Non
     assert "programs: 1" in capsys.readouterr().out
 
 
-def test_strict_load_failure_is_a_finding_and_lenient_continues(tmp_path, capsys) -> None:
+def test_load_failure_is_a_finding(tmp_path, capsys) -> None:
     _program(tmp_path, "Child", "MissingLib")
 
     assert main(["project", str(tmp_path)]) == ExitCode.FINDINGS
@@ -189,16 +189,10 @@ def test_strict_load_failure_is_a_finding_and_lenient_continues(tmp_path, capsys
     assert "cannot load project" in out
     assert "MissingLib" in out
 
-    # --lenient keeps what loaded, but the omission is a finding, not silence.
-    assert main(["project", str(tmp_path), "--lenient"]) == ExitCode.FINDINGS
-    out = capsys.readouterr().out
-    assert "programs: 1" in out
-    assert "load-skipped MissingLib" in out
-
-    assert main(["project", str(tmp_path), "--lenient", "--json"]) == ExitCode.FINDINGS
+    assert main(["project", str(tmp_path), "--json"]) == ExitCode.FINDINGS
     payload = json.loads(capsys.readouterr().out)
-    assert [row["name"] for row in payload["programs"]] == ["Child"]
-    assert [row["kind"] for row in payload["diagnostics"]] == ["load-skipped"]
+    assert payload["programs"] == []
+    assert [row["rule"] for row in payload["findings"]] == ["PROJECT_LOAD_ERROR"]
 
 
 def test_targets_flag_limits_the_load(tmp_path, capsys) -> None:

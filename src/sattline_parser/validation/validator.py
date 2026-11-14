@@ -129,10 +129,10 @@ def validate_basepicture(
 
     ``external_datatypes`` and ``external_moduletype_defs`` are the definitions
     visible from already-loaded dependencies. The project loader passes them and
-    never sets ``allow_unresolved_external_datatypes``: it marks external
-    findings tentative instead. The flag exists for the standalone single-file
-    path, where an unknown name may genuinely be external; it suppresses only
-    the unknown-name findings, not typo suggestions or local rules.
+    leaves ``allow_unresolved_external_datatypes`` off. The flag exists for the
+    standalone single-file path, where an unknown name may genuinely be external;
+    it suppresses only the unknown-name findings, not typo suggestions or local
+    rules.
 
     The tables are built external-first, so a definition in this file wins over a
     same-named definition from a dependency, and a builtin name is only a

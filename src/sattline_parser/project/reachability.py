@@ -44,9 +44,8 @@ def visible_program_keys(
 ) -> frozenset[str]:
     """The program keys *key* can see: itself plus its transitive dependencies.
 
-    A dependency that was not loaded contributes nothing, so an incomplete
-    closure stays incomplete rather than silently borrowing a same-named
-    definition from an unrelated program.
+    Only keys in the closure contribute, so a definition from an unrelated
+    program is never borrowed.
     """
     visible = {key}
     seen = {key}

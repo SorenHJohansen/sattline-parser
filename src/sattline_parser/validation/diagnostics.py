@@ -76,14 +76,8 @@ class DiagnosticCode(StrEnum):
 
 @dataclass(frozen=True, slots=True)
 class Diagnostic:
-    """A single validation finding, tied to a source span when available.
-
-    ``tentative`` means the finding depends on definitions from a part of the
-    closure that failed to load, so it is not final. The project loader sets it;
-    the validator never does.
-    """
+    """A single validation finding, tied to a source span when available."""
 
     code: DiagnosticCode
     message: str
     span: SourceSpan | None = None
-    tentative: bool = False
