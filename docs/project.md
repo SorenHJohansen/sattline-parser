@@ -298,13 +298,17 @@ envelope. The key includes:
 - the load mode;
 - the package version;
 - the resolved grammar fingerprint;
+- a fingerprint of the `models/` and `transformer/` sources;
 - a `mtime_ns` and `size` stat snapshot.
 
 The namespace and file-format magic belong to `sattline-parser`
 (`FILE_AST_CACHE_VERSION`), so another tool's cache never cross-reads. The HMAC
 key lives beside the entries. It proves the entry was written by whoever could
 write that directory; it is not a defence against that user. The real boundary
-is the private `0700` directory. Never point `cache_dir` at a shared location.
+is a private `0700` directory owned by the current user. Both the cache root
+and its `file_ast` subdirectory are checked; a directory owned by someone else
+disables the caches instead of being tightened in place. Never point
+`cache_dir` at a shared location.
 
 A cache write failure is swallowed and logged; it must not turn a successful
 parse into a load failure.

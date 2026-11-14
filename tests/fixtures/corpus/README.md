@@ -8,4 +8,4 @@ Layout:
 - `invalid/` for sources that must fail strict validation (or at minimum not crash the parser)
 - `edge_cases/` for high-risk semantics and parser corner cases
 
-The fuzz harness consumes this directory via `collect_corpus_inputs` / `run_corpus_regression` in `src/sattline_parser/fuzz_harness.py`. Every file is re-parsed on each regression run, and the corpus seeds the `parser_fuzzer`.
+The fuzz harness consumes this directory via `collect_corpus_inputs` / `run_corpus_regression` in `fuzzing/fuzz_harness.py`. Every file is re-parsed on each regression run, and the corpus seeds the `parser_fuzzer`.

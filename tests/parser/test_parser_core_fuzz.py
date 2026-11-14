@@ -1,9 +1,7 @@
 # pyright: reportUnknownVariableType=false, reportUnknownParameterType=false, reportMissingParameterType=false, reportPrivateUsage=false, reportUnusedImport=false
 # ruff: noqa: F403, F405
 import queue
-import shutil
 import struct
-import subprocess
 
 from ._parser_core_test_support import *
 
@@ -72,7 +70,7 @@ def test_fuzz_worker_close_terminates_process_and_reader():
 def test_drain_worker_results_handles_eof_truncation_and_results():
     from io import BytesIO  # noqa: PLC0415
 
-    from sattline_parser.fuzz_harness import _drain_worker_results  # noqa: PLC0415
+    from fuzzing.fuzz_harness import _drain_worker_results  # noqa: PLC0415
 
     # A stream with one valid result then EOF.
     stream = BytesIO(struct.pack(">I", 2) + b"{}")
@@ -172,32 +170,10 @@ def test_fuzz_harness_collect_corpus_inputs_uses_default_dir_and_skips_missing_o
     assert inputs == [(str(good_file), "good")]
 
 
-def test_parser_package_root_import_skips_fuzz_harness_outside_repo(tmp_path: Path) -> None:
-    package_copy = tmp_path / "sattline_parser"
-    shutil.copytree(_repo_path("src", "sattline_parser"), package_copy)
+def test_fuzz_harness_lives_outside_the_parser_package() -> None:
+    package_root = _repo_path("src", "sattline_parser")
 
-    result = subprocess.run(
-        [
-            sys.executable,
-            "-c",
-            (
-                f"import sys; sys.path.insert(0, {str(tmp_path)!r}); "
-                "import sattline_parser; print(sattline_parser.parse_source_text.__name__)"
-            ),
-        ],
-        cwd=tmp_path,
-        text=True,
-        capture_output=True,
-        check=False,
-    )
-
-    assert result.returncode == 0, result.stderr
-    assert result.stdout.strip() == "parse_source_text"
-
-
-def test_parser_package_root_still_reexports_fuzz_harness_symbols() -> None:
-    sattline_parser = sys.modules["sattline_parser"]
-
-    assert sattline_parser.fuzz_harness is parser_fuzz_harness
-    assert sattline_parser.FuzzResult is parser_fuzz_harness.FuzzResult
-    assert sattline_parser.run_random_fuzz is parser_fuzz_harness.run_random_fuzz
+    assert not (package_root / "fuzz_harness.py").exists()
+    assert not (package_root / "parser_fuzzer.py").exists()
+    assert not (package_root / "decode_fuzzer.py").exists()
+    assert _repo_path("fuzzing", "fuzz_harness.py").is_file()

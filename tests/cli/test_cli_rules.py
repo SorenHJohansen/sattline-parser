@@ -7,7 +7,7 @@ import json
 
 from sattline_parser.cli import main
 from sattline_parser.cli._exit import ExitCode
-from sattline_parser.validation.rules import RULES
+from sattline_parser.validation.rules import RULES, RuleStatus
 
 from ._cli_support import VALID_SOURCE, write_source
 
@@ -54,7 +54,7 @@ def test_rules_json_matches_the_registry(capsys) -> None:
     payload = json.loads(capsys.readouterr().out)
 
     assert payload["schema"] == "sattline.v1.rules"
-    assert payload["count"] == len([rule for rule in RULES if not rule.retired])
+    assert payload["count"] == len([rule for rule in RULES if rule.status is not RuleStatus.RETIRED])
     assert any(row["id"] == "SL-V019" for row in payload["rules"])
     assert all("status" in row and "severity" not in row for row in payload["rules"])
 

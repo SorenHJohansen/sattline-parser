@@ -32,7 +32,7 @@ from sattline_parser.models.clauses import (
 from sattline_parser.models.expressions import SLExpression
 from sattline_parser.models.tails import is_expression_tail
 from sattline_parser.names import fold_identifier
-from sattline_parser.validation.code import walk_expression
+from sattline_parser.validation.code import ValidationContext, walk_expression
 from sattline_parser.validation.diagnostics import Diagnostic, DiagnosticCode
 from sattline_parser.validation.symbols import Scope
 from sattline_parser.validation.type_graph import TypeGraph
@@ -156,6 +156,13 @@ def check_annotation_tails(
     names are references, not values, and the parser does not evidence how a
     name resolves.
     """
+    walk_context = ValidationContext(
+        scope=scope,
+        records=records,
+        type_graph=type_graph,
+        sfc_names=set(sfc_names),
+        errors=errors,
+    )
     for event in walk(container):
         context = _tail_context(event)
         if context is None:
@@ -163,7 +170,7 @@ def check_annotation_tails(
         if not is_expression_tail(event.node):
             continue
         tail = event.node
-        walk_expression(tail, scope, records, type_graph, set(sfc_names), errors)
+        walk_expression(tail, walk_context)
         if context == _ENABLE:
             _check_enable_condition(tail, scope, records, type_graph, errors)
         elif context == _COORDINATE:

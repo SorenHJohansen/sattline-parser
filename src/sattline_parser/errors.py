@@ -25,6 +25,8 @@ from typing import TYPE_CHECKING, cast
 
 from lark.exceptions import UnexpectedCharacters, UnexpectedEOF, UnexpectedInput, UnexpectedToken
 
+from sattline_parser.source_document import is_remapped
+
 if TYPE_CHECKING:
     from sattline_parser.source_document import SourceDocument
 
@@ -65,6 +67,10 @@ class SourceTooDeepError(UnexpectedInput):
     matching every other parse failure the public API exposes.
     """
 
+    line: int
+    column: int
+    pos_in_stream: int | None
+
     def __init__(
         self,
         limit: int,
@@ -78,7 +84,7 @@ class SourceTooDeepError(UnexpectedInput):
             self.line = line
         if column is not None:
             self.column = column
-        self.pos_in_stream = pos_in_stream  # type: ignore[assignment]  # runtime-only attribute
+        self.pos_in_stream = pos_in_stream
         super().__init__(f"the parsed structure is nested too deeply to analyze safely (limit {limit} levels)")
 
     def __reduce__(self) -> tuple[object, tuple[object, ...]]:
@@ -257,7 +263,7 @@ def _mapped_error_position(exc: UnexpectedInput, source_document: SourceDocument
     the exception's ``pos_in_stream`` (an offset in the normalized text) is
     translated to an offset in the original source.
     """
-    if getattr(exc, "_sattline_remapped", False):
+    if is_remapped(exc):
         return None
     pos = getattr(exc, "pos_in_stream", None)
     if not isinstance(pos, int):

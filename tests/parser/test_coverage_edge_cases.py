@@ -1,5 +1,5 @@
 # pyright: reportUnknownVariableType=false, reportUnknownMemberType=false, reportUnknownArgumentType=false, reportPrivateUsage=false, reportUnusedImport=false, reportUnknownParameterType=false, reportArgumentType=false, reportTypedDictNotRequiredAccess=false
-"""Edge-case coverage tests driving otherwise-unreached parser-core branches."""
+"""Edge-case behaviour tests for parser-core internals and error paths."""
 
 # pyright: reportUnknownParameterType=false, reportMissingParameterType=false, reportUnknownLambdaType=false, reportArgumentType=false, reportCallIssue=false
 import importlib
@@ -16,9 +16,8 @@ from lark import Token, Tree
 from lark.exceptions import UnexpectedInput
 from lark.tree import Meta
 
-import sattline_parser
+from fuzzing import fuzz_harness as fuzzharness
 from sattline_parser import errors as parser_errors
-from sattline_parser import fuzz_harness as fuzzharness
 from sattline_parser import source_io as parser_api
 from sattline_parser.grammar import constants as const
 from sattline_parser.models.ast_model import (
@@ -57,18 +56,6 @@ from sattline_parser.transformer._tokens_mixin import TokensMixin
 from ._parser_core_test_support import _GraphicsHarness, _repo_path, _SFCHarness, parser_core_parse_source_text
 
 # ---- Package __getattr__ / __dir__ ----
-
-
-def test_package_lazy_fuzz_exports_and_dir() -> None:
-    for name in sattline_parser._FUZZ_EXPORT_SET:
-        sattline_parser.__dict__.pop(name, None)
-    assert sattline_parser.FuzzResult is not None
-    for name in sattline_parser._FUZZ_EXPORT_SET:
-        sattline_parser.__dict__.pop(name, None)
-    assert sattline_parser.fuzz_harness is not None
-    assert isinstance(dir(sattline_parser), list)
-    with pytest.raises(AttributeError):
-        _ = sattline_parser.does_not_exist_anywhere
 
 
 # ---- errors helpers ----
@@ -365,14 +352,14 @@ def test_fuzzer_entry_modules(monkeypatch: pytest.MonkeyPatch, module_name: str)
     )
     monkeypatch.setitem(sys.modules, "atheris", fake_atheris)
 
-    module = importlib.import_module(f"sattline_parser.{module_name}")
+    module = importlib.import_module(f"fuzzing.{module_name}")
     module.test_one_input(b"data")
     runpy.run_path(Path(module.__file__).resolve(), run_name="__main__")
     assert "setup" in calls and "fuzz" in calls
 
 
 def test_decode_fuzzer_absorbs_only_expected_preprocess_errors() -> None:
-    from sattline_parser import decode_fuzzer  # noqa: PLC0415
+    from fuzzing import decode_fuzzer  # noqa: PLC0415
 
     # Unknown marker -> PreprocessError -> absorbed, no crash.
     decode_fuzzer.test_one_input(b"#XX")
@@ -381,7 +368,7 @@ def test_decode_fuzzer_absorbs_only_expected_preprocess_errors() -> None:
 
 
 def test_parser_fuzzer_propagates_internal_exceptions(monkeypatch: pytest.MonkeyPatch) -> None:
-    from sattline_parser import parser_fuzzer  # noqa: PLC0415
+    from fuzzing import parser_fuzzer  # noqa: PLC0415
 
     class InternalTransformerError(ValueError):
         pass
@@ -538,12 +525,12 @@ def test_remap_parse_error_does_not_shift_an_already_remapped_error() -> None:
 
 
 def test_remap_parse_error_ignores_non_unexpected_input() -> None:
-    from sattline_parser.source_document import remap_parse_error  # noqa: PLC0415
+    from sattline_parser.source_document import is_remapped, remap_parse_error  # noqa: PLC0415
 
     exc = ValueError("plain failure")
     remap_parse_error(exc, SourceDocument.identity("abc"))
     assert str(exc) == "plain failure"
-    assert not hasattr(exc, "_sattline_remapped")
+    assert not is_remapped(exc)
 
 
 def test_remap_parse_error_remaps_token_end_fields() -> None:

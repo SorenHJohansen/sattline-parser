@@ -11,6 +11,8 @@ element names.
 
 from __future__ import annotations
 
+from dataclasses import dataclass, replace
+
 from sattline_parser.models import walk
 from sattline_parser.models.ast_model import (
     BasePicture,
@@ -71,32 +73,26 @@ from sattline_parser.validation.typing import (
 
 _EQUALITY_COMPARISON_OPERATORS = frozenset({"==", "=", "!=", "<>"})
 
-# Boolean constants the SattLine language provides but that resolve through the
-# grammar as plain name references rather than True/False literals.
+
+@dataclass(frozen=True, slots=True)
+class ValidationContext:
+    """State shared by every step of one module-code validation walk."""
+
+    scope: Scope
+    records: dict[str, DataType]
+    type_graph: TypeGraph
+    sfc_names: set[str]
+    errors: list[Diagnostic]
 
 
-def walk_equation_block(
-    equation: Equation,
-    scope: Scope,
-    records: dict[str, DataType],
-    type_graph: TypeGraph,
-    sfc_names: set[str],
-    errors: list[Diagnostic],
-) -> None:
+def walk_equation_block(equation: Equation, context: ValidationContext) -> None:
     for item in equation.code:
-        walk_code_item(item, scope, records, type_graph, sfc_names, errors)
+        walk_code_item(item, context)
 
 
-def walk_sequence_body(
-    items: list[SFCBodyItem],
-    scope: Scope,
-    records: dict[str, DataType],
-    type_graph: TypeGraph,
-    sfc_names: set[str],
-    errors: list[Diagnostic],
-) -> None:
+def walk_sequence_body(items: list[SFCBodyItem], context: ValidationContext) -> None:
     for item in items:
-        walk_sfc_item(item, scope, records, type_graph, sfc_names, errors)
+        walk_sfc_item(item, context)
 
 
 def _iter_program_module_codes(bp: BasePicture) -> list[ModuleCode]:
@@ -132,10 +128,7 @@ def collect_program_sfc_names(bp: BasePicture) -> frozenset[str]:
 
 def walk_module_code(
     mc: ModuleCode,
-    scope: Scope,
-    records: dict[str, DataType],
-    type_graph: TypeGraph,
-    errors: list[Diagnostic],
+    context: ValidationContext,
     *,
     program_sfc_names: frozenset[str] = frozenset(),
 ) -> None:
@@ -146,14 +139,15 @@ def walk_module_code(
     sfc_names = (
         all_known | {fold_identifier(sequence.name) for sequence in sequences if sequence.name} | program_sfc_names
     )
-    _check_duplicate_sfc_names(mc.sequences, errors)
-    check_sequence_positions(mc.sequences, errors)
-    check_step_auto_variables(mc, scope, errors)
+    module_context = replace(context, sfc_names=set(sfc_names))
+    _check_duplicate_sfc_names(mc.sequences, context.errors)
+    check_sequence_positions(mc.sequences, context.errors)
+    check_step_auto_variables(mc, context)
     for sequence in sequences:
-        _check_fork_targets(sequence.code, step_names, transition_names, name_counts, errors)
-        walk_sequence_body(sequence.code, scope, records, type_graph, sfc_names, errors)
+        _check_fork_targets(sequence.code, step_names, transition_names, name_counts, context.errors)
+        walk_sequence_body(sequence.code, module_context)
     for equation in mc.equationblocks or ():
-        walk_equation_block(equation, scope, records, type_graph, sfc_names, errors)
+        walk_equation_block(equation, module_context)
 
 
 def _iter_var_refs(node: object) -> list[VarRef]:
@@ -207,7 +201,7 @@ def _collect_step_features(
             _collect_step_features(item.body, seqcontrol, seqtimer, steps, step_features)
 
 
-def check_step_auto_variables(mc: ModuleCode, scope: Scope, errors: list[Diagnostic]) -> None:
+def check_step_auto_variables(mc: ModuleCode, context: ValidationContext) -> None:
     """Check step/sequence runtime accessors such as ``Step.X`` and ``Step.Hold``.
 
     A step always exposes ``.X``; ``.Hold``/``.Reset`` require ``SeqControl`` on
@@ -233,7 +227,7 @@ def check_step_auto_variables(mc: ModuleCode, scope: Scope, errors: list[Diagnos
         suffix = field_path.casefold()
         if suffix not in {"x", "hold", "reset", "t"}:
             continue
-        if scope.lookup(base_name) is not None:
+        if context.scope.lookup(base_name) is not None:
             continue
         base_key = fold_identifier(base_name)
         step_name = steps.get(base_key)
@@ -244,7 +238,7 @@ def check_step_auto_variables(mc: ModuleCode, scope: Scope, errors: list[Diagnos
             if suffix in sequence_features.get(base_key, set()):
                 continue
             feature = "Hold" if suffix == "hold" else "Reset"
-            errors.append(
+            context.errors.append(
                 Diagnostic(
                     code=DiagnosticCode.STEP_AUTO_VARIABLE_UNAVAILABLE,
                     message=(
@@ -260,7 +254,7 @@ def check_step_auto_variables(mc: ModuleCode, scope: Scope, errors: list[Diagnos
             continue
         feature = {"hold": "Hold", "reset": "Reset", "t": "T"}[suffix]
         reason = "SeqTimer" if suffix == "t" else "SeqControl"
-        errors.append(
+        context.errors.append(
             Diagnostic(
                 code=DiagnosticCode.STEP_AUTO_VARIABLE_UNAVAILABLE,
                 message=(
@@ -272,48 +266,34 @@ def check_step_auto_variables(mc: ModuleCode, scope: Scope, errors: list[Diagnos
         )
 
 
-def walk_code_item(
-    item: object,
-    scope: Scope,
-    records: dict[str, DataType],
-    type_graph: TypeGraph,
-    sfc_names: set[str],
-    errors: list[Diagnostic],
-) -> None:
+def walk_code_item(item: object, context: ValidationContext) -> None:
     if isinstance(item, Assignment):
-        _check_assignment(item, scope, records, type_graph, sfc_names, errors)
-        walk_expression(item.value, scope, records, type_graph, sfc_names, errors)
+        _check_assignment(item, context)
+        walk_expression(item.value, context)
     elif isinstance(item, FuncCallStmt):
-        _check_call(item.call, scope, records, type_graph, sfc_names, errors)
+        _check_call(item.call, context)
         for arg in item.call.args:
-            walk_expression(arg, scope, records, type_graph, sfc_names, errors)
+            walk_expression(arg, context)
     elif isinstance(item, IfStmt):
         for condition, body in item.branches:
-            _check_condition(condition, scope, records, type_graph, errors)
-            walk_expression(condition, scope, records, type_graph, sfc_names, errors)
+            _check_condition(condition, context)
+            walk_expression(condition, context)
             for nested in body:
-                walk_code_item(nested, scope, records, type_graph, sfc_names, errors)
+                walk_code_item(nested, context)
         for nested in item.else_block or ():
-            walk_code_item(nested, scope, records, type_graph, sfc_names, errors)
+            walk_code_item(nested, context)
 
 
-def walk_expression(
-    expr: SLExpression,
-    scope: Scope,
-    records: dict[str, DataType],
-    type_graph: TypeGraph,
-    sfc_names: set[str],
-    errors: list[Diagnostic],
-) -> None:
+def walk_expression(expr: SLExpression, context: ValidationContext) -> None:
     if isinstance(expr, VarRef):
-        resolved = resolve_var(expr, scope, records)
-        _check_old_new(expr, resolved, errors)
+        resolved = resolve_var(expr, context.scope, context.records)
+        _check_old_new(expr, resolved, context.errors)
         if (
             resolved is None
-            and _ref_needs_undefined_diagnostic(expr, scope)
-            and not _is_sfc_runtime_accessor(expr, sfc_names)
+            and _ref_needs_undefined_diagnostic(expr, context.scope)
+            and not _is_sfc_runtime_accessor(expr, context.sfc_names)
         ):
-            errors.append(
+            context.errors.append(
                 Diagnostic(
                     code=DiagnosticCode.UNDEFINED_VARIABLE,
                     message=f"Reference to undefined variable {expr.name!r}",
@@ -321,55 +301,48 @@ def walk_expression(
                 )
             )
     elif isinstance(expr, BoolOp):
-        _check_bool_operand(expr, scope, records, type_graph, errors)
+        _check_bool_operand(expr, context)
         for operand in expr.operands:
-            walk_expression(operand, scope, records, type_graph, sfc_names, errors)
+            walk_expression(operand, context)
     elif isinstance(expr, NotOp):
-        _check_bool_operand(expr, scope, records, type_graph, errors)
-        walk_expression(expr.operand, scope, records, type_graph, sfc_names, errors)
+        _check_bool_operand(expr, context)
+        walk_expression(expr.operand, context)
     elif isinstance(expr, Compare | BinOp):
-        _check_operands(expr, scope, records, type_graph, errors)
-        walk_expression(expr.left, scope, records, type_graph, sfc_names, errors)
-        walk_expression(expr.right, scope, records, type_graph, sfc_names, errors)
+        _check_operands(expr, context)
+        walk_expression(expr.left, context)
+        walk_expression(expr.right, context)
     elif isinstance(expr, UnaryOp):
-        _check_unary_operand(expr, scope, records, type_graph, errors)
-        walk_expression(expr.operand, scope, records, type_graph, sfc_names, errors)
+        _check_unary_operand(expr, context)
+        walk_expression(expr.operand, context)
     elif isinstance(expr, FuncCall):
-        _check_call(expr, scope, records, type_graph, sfc_names, errors)
+        _check_call(expr, context)
         for arg in expr.args:
-            walk_expression(arg, scope, records, type_graph, sfc_names, errors)
+            walk_expression(arg, context)
     elif isinstance(expr, TernaryOp):
-        _check_ternary_branches(expr, scope, records, type_graph, errors)
+        _check_ternary_branches(expr, context)
         for condition, then_expr in expr.branches:
-            _check_condition(condition, scope, records, type_graph, errors)
-            walk_expression(condition, scope, records, type_graph, sfc_names, errors)
-            walk_expression(then_expr, scope, records, type_graph, sfc_names, errors)
+            _check_condition(condition, context)
+            walk_expression(condition, context)
+            walk_expression(then_expr, context)
         if expr.else_expr is not None:
-            walk_expression(expr.else_expr, scope, records, type_graph, sfc_names, errors)
+            walk_expression(expr.else_expr, context)
 
 
-def walk_sfc_item(
-    item: SFCBodyItem,
-    scope: Scope,
-    records: dict[str, DataType],
-    type_graph: TypeGraph,
-    sfc_names: set[str],
-    errors: list[Diagnostic],
-) -> None:
+def walk_sfc_item(item: SFCBodyItem, context: ValidationContext) -> None:
     if isinstance(item, SFCStep):
         for block in (item.code.enter, item.code.active, item.code.exit):
             for code_item in block:
-                walk_code_item(code_item, scope, records, type_graph, sfc_names, errors)
+                walk_code_item(code_item, context)
     elif isinstance(item, SFCTransition):
         if item.condition is not None:
-            walk_expression(item.condition, scope, records, type_graph, sfc_names, errors)
+            walk_expression(item.condition, context)
     elif isinstance(item, SFCTransitionSub):
-        walk_sequence_body(item.body, scope, records, type_graph, sfc_names, errors)
+        walk_sequence_body(item.body, context)
     elif isinstance(item, SFCAlternative | SFCParallel):
         for branch in item.branches:
-            walk_sequence_body(branch, scope, records, type_graph, sfc_names, errors)
+            walk_sequence_body(branch, context)
     elif isinstance(item, SFCSubsequence):
-        walk_sequence_body(item.body, scope, records, type_graph, sfc_names, errors)
+        walk_sequence_body(item.body, context)
 
 
 def _temporal_numeric_pair(left_type: str | None, right_type: str | None) -> bool:
@@ -383,13 +356,7 @@ def _temporal_numeric_pair(left_type: str | None, right_type: str | None) -> boo
     )
 
 
-def _check_operands(
-    expr: Compare | BinOp,
-    scope: Scope,
-    records: dict[str, DataType],
-    type_graph: TypeGraph,
-    errors: list[Diagnostic],
-) -> None:
+def _check_operands(expr: Compare | BinOp, context: ValidationContext) -> None:
     """Operands of an operator must be of a type the operator accepts.
 
     A comparison splits by operator: equality accepts any two compatible
@@ -397,8 +364,8 @@ def _check_operands(
     ordering requires numeric operands. Arithmetic requires numeric operands
     on both sides.
     """
-    left_type = infer_expr_type(expr.left, scope, records, type_graph)
-    right_type = infer_expr_type(expr.right, scope, records, type_graph)
+    left_type = infer_expr_type(expr.left, context.scope, context.records, context.type_graph)
+    right_type = infer_expr_type(expr.right, context.scope, context.records, context.type_graph)
 
     if isinstance(expr, Compare):
         if expr.op in _EQUALITY_COMPARISON_OPERATORS:
@@ -418,7 +385,7 @@ def _check_operands(
             )
             if both_temporal:
                 for operand_type in (left_type, right_type):
-                    errors.append(
+                    context.errors.append(
                         Diagnostic(
                             code=DiagnosticCode.OPERAND_NOT_NUMERIC,
                             message=(
@@ -429,7 +396,7 @@ def _check_operands(
                         )
                     )
             elif incompatible:
-                errors.append(
+                context.errors.append(
                     Diagnostic(
                         code=DiagnosticCode.COMPARE_INCOMPATIBLE_OPERANDS,
                         message=(
@@ -447,7 +414,7 @@ def _check_operands(
             other_type = (left_type, right_type)[1 - position]
             if _temporal_numeric_pair(operand_type, other_type):
                 continue
-            errors.append(
+            context.errors.append(
                 Diagnostic(
                     code=DiagnosticCode.OPERAND_NOT_NUMERIC,
                     message=(
@@ -461,7 +428,7 @@ def _check_operands(
     for operand_type in (left_type, right_type):
         if operand_type is None or is_anytype_datatype(operand_type) or is_numeric(operand_type):
             continue
-        errors.append(
+        context.errors.append(
             Diagnostic(
                 code=DiagnosticCode.OPERAND_NOT_NUMERIC,
                 message=(
@@ -472,21 +439,15 @@ def _check_operands(
         )
 
 
-def _check_bool_operand(
-    expr: BoolOp | NotOp,
-    scope: Scope,
-    records: dict[str, DataType],
-    type_graph: TypeGraph,
-    errors: list[Diagnostic],
-) -> None:
+def _check_bool_operand(expr: BoolOp | NotOp, context: ValidationContext) -> None:
     """Logical operators require boolean operands."""
     operands = expr.operands if isinstance(expr, BoolOp) else (expr.operand,)
     operator = expr.op if isinstance(expr, BoolOp) else "NOT"
     for operand in operands:
-        operand_type = infer_expr_type(operand, scope, records, type_graph)
+        operand_type = infer_expr_type(operand, context.scope, context.records, context.type_graph)
         if operand_type is None or is_anytype_datatype(operand_type) or is_boolean(operand_type):
             continue
-        errors.append(
+        context.errors.append(
             Diagnostic(
                 code=DiagnosticCode.LOGICAL_OPERAND_NOT_BOOLEAN,
                 message=f"Logical operator {operator!r} expects boolean operands but got {operand_type!r}",
@@ -495,18 +456,12 @@ def _check_bool_operand(
         )
 
 
-def _check_unary_operand(
-    expr: UnaryOp,
-    scope: Scope,
-    records: dict[str, DataType],
-    type_graph: TypeGraph,
-    errors: list[Diagnostic],
-) -> None:
+def _check_unary_operand(expr: UnaryOp, context: ValidationContext) -> None:
     """Unary plus and minus require a numeric operand."""
-    operand_type = infer_expr_type(expr.operand, scope, records, type_graph)
+    operand_type = infer_expr_type(expr.operand, context.scope, context.records, context.type_graph)
     if operand_type is None or is_anytype_datatype(operand_type) or is_numeric(operand_type):
         return
-    errors.append(
+    context.errors.append(
         Diagnostic(
             code=DiagnosticCode.OPERAND_NOT_NUMERIC,
             message=f"Unary operator {expr.op!r} expects a numeric operand but got {operand_type!r}",
@@ -515,22 +470,19 @@ def _check_unary_operand(
     )
 
 
-def _check_ternary_branches(
-    expr: TernaryOp,
-    scope: Scope,
-    records: dict[str, DataType],
-    type_graph: TypeGraph,
-    errors: list[Diagnostic],
-) -> None:
+def _check_ternary_branches(expr: TernaryOp, context: ValidationContext) -> None:
     """IF-expression branches must have compatible datatypes."""
-    branch_types = [infer_expr_type(value, scope, records, type_graph) for _condition, value in expr.branches]
+    branch_types = [
+        infer_expr_type(value, context.scope, context.records, context.type_graph)
+        for _condition, value in expr.branches
+    ]
     if expr.else_expr is not None:
-        branch_types.append(infer_expr_type(expr.else_expr, scope, records, type_graph))
+        branch_types.append(infer_expr_type(expr.else_expr, context.scope, context.records, context.type_graph))
     known_types = [datatype for datatype in branch_types if datatype is not None]
     if len(known_types) < 2 or merge_compatible_types(known_types) is not None:
         return
     joined = ", ".join(sorted(set(known_types)))
-    errors.append(
+    context.errors.append(
         Diagnostic(
             code=DiagnosticCode.TERNARY_BRANCH_TYPES_INCOMPATIBLE,
             message=f"IF-expression branches must have compatible datatypes; got {joined}",
@@ -539,20 +491,14 @@ def _check_ternary_branches(
     )
 
 
-def _check_condition(
-    condition: SLExpression,
-    scope: Scope,
-    records: dict[str, DataType],
-    type_graph: TypeGraph,
-    errors: list[Diagnostic],
-) -> None:
+def _check_condition(condition: SLExpression, context: ValidationContext) -> None:
     """An IF / ELSIF / ternary condition must be boolean.
 
     Real message: ``Condition in IF-sentence is not boolean``.
     """
-    condition_type = infer_expr_type(condition, scope, records, type_graph)
+    condition_type = infer_expr_type(condition, context.scope, context.records, context.type_graph)
     if condition_type is not None and not is_boolean(condition_type):
-        errors.append(
+        context.errors.append(
             Diagnostic(
                 code=DiagnosticCode.CONDITION_NOT_BOOLEAN,
                 message=f"Condition in IF-sentence is not boolean; condition is of type {condition_type}",
@@ -567,20 +513,13 @@ def _expression_span(expr: SLExpression) -> SourceSpan | None:
     return span if isinstance(span, SourceSpan) else None
 
 
-def _check_assignment(
-    assignment: Assignment,
-    scope: Scope,
-    records: dict[str, DataType],
-    type_graph: TypeGraph,
-    sfc_names: set[str],
-    errors: list[Diagnostic],
-) -> None:
-    resolved = resolve_var(assignment.target, scope, records)
+def _check_assignment(assignment: Assignment, context: ValidationContext) -> None:
+    resolved = resolve_var(assignment.target, context.scope, context.records)
     if resolved is None:
-        if _is_sfc_runtime_accessor(assignment.target, sfc_names):
+        if _is_sfc_runtime_accessor(assignment.target, context.sfc_names):
             return
-        if _ref_needs_undefined_diagnostic(assignment.target, scope):
-            errors.append(
+        if _ref_needs_undefined_diagnostic(assignment.target, context.scope):
+            context.errors.append(
                 Diagnostic(
                     code=DiagnosticCode.UNDEFINED_VARIABLE,
                     message=f"Assignment to undefined variable {assignment.target.name!r}",
@@ -589,17 +528,17 @@ def _check_assignment(
             )
         return
     if resolved.const:
-        errors.append(
+        context.errors.append(
             Diagnostic(
                 code=DiagnosticCode.WRITE_TO_CONST_VARIABLE,
                 message=f"Cannot assign to Const variable {assignment.target.name} in module code",
                 span=assignment.span,
             )
         )
-    _check_old_new(assignment.target, resolved, errors)
-    _check_old_write_target(assignment.target, resolved, errors)
+    _check_old_new(assignment.target, resolved, context.errors)
+    _check_old_write_target(assignment.target, resolved, context.errors)
     if resolved.datatype == Simple_DataType.STRING:
-        errors.append(
+        context.errors.append(
             Diagnostic(
                 code=DiagnosticCode.STRING_ASSIGNMENT_NOT_ALLOWED,
                 message=(
@@ -608,9 +547,9 @@ def _check_assignment(
                 span=assignment.span,
             )
         )
-    target_type, source_type = assignment_types(assignment, scope, records, type_graph)
+    target_type, source_type = assignment_types(assignment, context.scope, context.records, context.type_graph)
     if target_type is not None and source_type is not None and not assignment_type_matches(source_type, target_type):
-        errors.append(
+        context.errors.append(
             Diagnostic(
                 code=DiagnosticCode.ASSIGNMENT_TYPE_MISMATCH,
                 message=(
@@ -658,17 +597,10 @@ def _check_old_new(ref: VarRef, resolved: Variable | None, errors: list[Diagnost
     )
 
 
-def _check_call(
-    call: FuncCall,
-    scope: Scope,
-    records: dict[str, DataType],
-    type_graph: TypeGraph,
-    sfc_names: set[str],
-    errors: list[Diagnostic],
-) -> None:
+def _check_call(call: FuncCall, context: ValidationContext) -> None:
     for arg in call.args:
         if isinstance(arg, str):
-            errors.append(
+            context.errors.append(
                 Diagnostic(
                     code=DiagnosticCode.STRING_LITERAL_CALL_ARGUMENT,
                     message=f"String literal argument {arg!r} is not allowed in call to {call.name}",
@@ -679,7 +611,7 @@ def _check_call(
     if signature is None:
         return
     if not signature.min_args <= len(call.args) <= signature.max_args:
-        errors.append(
+        context.errors.append(
             Diagnostic(
                 code=DiagnosticCode.BUILTIN_WRONG_ARITY,
                 message=(
@@ -695,15 +627,15 @@ def _check_call(
         if index >= len(call.args):
             continue
         arg = call.args[index]
-        if signature.name.casefold() in {"setstringpos", "getstringpos"} and position == 1:
-            # The first argument is the string cursor, not a data write, so a
-            # Const string is accepted here.
+        if parameter.accepts_const_string:
+            # The parameter is a string cursor, not a data write, so a Const
+            # string is accepted even though its documented direction is inout.
             continue
         if isinstance(arg, VarRef):
             if parameter.direction in {"out", "inout"}:
-                resolved = resolve_var(arg, scope, records)
+                resolved = resolve_var(arg, context.scope, context.records)
                 if resolved is not None and resolved.const:
-                    errors.append(
+                    context.errors.append(
                         Diagnostic(
                             code=DiagnosticCode.WRITE_TO_CONST_VARIABLE,
                             message=(
@@ -713,9 +645,9 @@ def _check_call(
                             span=call.span,
                         )
                     )
-                _check_old_write_target(arg, resolved, errors)
+                _check_old_write_target(arg, resolved, context.errors)
         elif parameter.direction in {"out", "inout"}:
-            errors.append(
+            context.errors.append(
                 Diagnostic(
                     code=DiagnosticCode.BUILTIN_OUT_ARG_NOT_VARIABLE,
                     message=(
@@ -727,7 +659,7 @@ def _check_call(
             )
             continue
         elif parameter.direction == "in var":
-            errors.append(
+            context.errors.append(
                 Diagnostic(
                     code=DiagnosticCode.BUILTIN_ARG_NOT_VARIABLE,
                     message=(
@@ -738,11 +670,11 @@ def _check_call(
                 )
             )
             continue
-        actual_type = infer_expr_type(arg, scope, records, type_graph)
+        actual_type = infer_expr_type(arg, context.scope, context.records, context.type_graph)
         if actual_type is not None and not builtin_type_matches(
             actual_type, parameter.datatype, direction=parameter.direction
         ):
-            errors.append(
+            context.errors.append(
                 Diagnostic(
                     code=DiagnosticCode.BUILTIN_ARG_TYPE_MISMATCH,
                     message=(

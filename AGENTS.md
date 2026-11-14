@@ -43,7 +43,7 @@
 | `src/sattline_parser/grammar/` | Lark grammar (`sattline.lark`), `constants.py`, `sattline_lexer.py` |
 | `src/sattline_parser/models/` | AST models (`ast_model.py`) |
 | `src/sattline_parser/transformer/` | Transformer mixins and `SLTransformer` |
-| `src/sattline_parser/fuzz_harness.py` | Standalone fuzz harness |
+| `fuzzing/fuzz_harness.py` | Standalone fuzz harness |
 | `src/sattline_parser/cli/` | Read-only `sattline` command line: one module per subcommand in `cli/cmds/` |
 | `src/sattline_parser/project/` | Project layer: discovery, resolution, `.g`/`.y` companions, per-program validation, provenance, caches, `SattLineProject` |
 | `src/sattline_parser/builtins/` | Builtin function signatures and record field specs (generated catalogue) |

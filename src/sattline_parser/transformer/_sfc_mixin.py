@@ -201,7 +201,7 @@ class SFCMixin:
             if not (isinstance(items[1], Tree) and items[1].data == const.KEY_SEQUENCE_BODY):
                 raise ValueError(
                     f"seqtransitionsub expected (SUBSEQTRANSITION, sequence_body, ENDSUBSEQTRANSITION); got: {items!r}"
-                )  # pragma: no cover
+                )
             tree = cast(TransformerTree, items[1])
         elif len(items) == 4 and isinstance(items[1], str):
             name = items[1]
@@ -213,7 +213,7 @@ class SFCMixin:
         else:
             raise ValueError(
                 f"seqtransitionsub expected (SUBSEQTRANSITION, [NAME], sequence_body, ENDSUBSEQTRANSITION); got: {items!r}"
-            )  # pragma: no cover
+            )
         return SFCTransitionSub(name=name, body=cast(SfcBody, tree_children(tree)))
 
     def _subsequence_body(self, items: list[TransformerItem], rule: str) -> tuple[str | None, SfcBody]:
@@ -299,7 +299,7 @@ class SFCMixin:
         diagnostics can report a location instead of a bare message.
         """
         node = next((item for item in items if not isinstance(item, Token)), None)
-        if node is None:  # pragma: no cover - the grammar always yields one
+        if node is None:
             raise ValueError(f"seq_element expected an element; got: {items!r}")
         span = meta_span(meta)
         if span is not None:

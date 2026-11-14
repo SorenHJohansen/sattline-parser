@@ -346,10 +346,18 @@ def test_parser_cache_is_disabled_without_a_private_directory(monkeypatch):
     assert parser_api._parser_cache_path(start="start", propagate_positions=True) is None
 
 
+def test_build_lark_parser_disables_grammar_cache_without_a_cache_path(monkeypatch):
+    monkeypatch.setattr(parser_api, "_parser_cache_path", lambda **_: None)
+
+    parser = parser_api.build_lark_parser()
+
+    assert parser.options.cache is None
+
+
 def test_private_cache_dir_creates_a_private_directory(tmp_path):
     directory = tmp_path / "nested" / "lark-cache"
 
-    assert parser_api._private_cache_dir(directory) == directory
+    assert parser_api.private_cache_dir(directory) == directory
     if os.name == "posix":
         # Windows has no POSIX permission bits; chmod only toggles the read-only
         # attribute, so the mode is not asserted there.
@@ -361,7 +369,7 @@ def test_private_cache_dir_tightens_existing_permissions(tmp_path):
     directory.mkdir()
     directory.chmod(0o755)
 
-    assert parser_api._private_cache_dir(directory) == directory
+    assert parser_api.private_cache_dir(directory) == directory
     if os.name == "posix":
         assert directory.stat().st_mode & 0o777 == 0o700
 
@@ -371,14 +379,14 @@ def test_private_cache_dir_rejects_a_foreign_owner(monkeypatch, tmp_path):
     # current user never owns the synthetic uid.
     monkeypatch.setattr(parser_api, "_getuid", lambda: -1)
 
-    assert parser_api._private_cache_dir(tmp_path / "lark-cache") is None
+    assert parser_api.private_cache_dir(tmp_path / "lark-cache") is None
 
 
 def test_private_cache_dir_gives_up_when_it_cannot_be_created(tmp_path):
     blocker = tmp_path / "blocker"
     blocker.write_text("not a directory")
 
-    assert parser_api._private_cache_dir(blocker / "lark-cache") is None
+    assert parser_api.private_cache_dir(blocker / "lark-cache") is None
 
 
 def test_cache_owner_token_falls_back_without_getuid(monkeypatch):

@@ -179,10 +179,10 @@ standard library, then an existing dependency, then a new one.
 - [ ] The focused test passes.
 - [ ] `pytest -q` passes.
 - [ ] `python scripts/check_branch_coverage.py` passes.
-- [ ] `ruff check src tests scripts benchmarks` passes.
-- [ ] `ruff format --check src tests scripts benchmarks` passes.
-- [ ] `pyright src tests benchmarks` passes.
-- [ ] `bandit -q -r src -x tests -c pyproject.toml` passes.
+- [ ] `ruff check src tests scripts benchmarks fuzzing` passes.
+- [ ] `ruff format --check src tests scripts benchmarks fuzzing` passes.
+- [ ] `pyright src tests benchmarks fuzzing` passes.
+- [ ] `bandit -q -r src fuzzing -x tests -c pyproject.toml` passes.
 - [ ] `python scripts/check_docs.py` passes when Markdown changed.
 - [ ] New syntax or rules have fixtures.
 - [ ] New rules have golden expectations.

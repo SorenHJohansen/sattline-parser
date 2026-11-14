@@ -346,10 +346,10 @@ python -m venv .venv && source .venv/bin/activate
 pip install -e ".[dev]"
 pytest -q                                   # full configured suite
 pytest benchmarks --no-cov -q               # parse benchmarks
-ruff check src tests scripts benchmarks
-ruff format --check src tests scripts benchmarks
-pyright src tests benchmarks
-bandit -q -r src -x tests -c pyproject.toml
+ruff check src tests scripts benchmarks fuzzing
+ruff format --check src tests scripts benchmarks fuzzing
+pyright src tests benchmarks fuzzing
+bandit -q -r src fuzzing -x tests -c pyproject.toml
 pip-audit
 python scripts/check_branch_coverage.py     # line >= 100%, branch >= 93%
 ```
@@ -410,7 +410,7 @@ actually exercised. Installs use `uv.lock` for reproducibility.
 - `src/sattline_parser/cli/` : the `sattline` command line (one module per command)
 - `src/sattline_parser/api.py` : public entry points
 - `src/sattline_parser/project/` : project/artifact layer (`SattLineProject`, discovery, resolution, `.g`/`.y` parsing, parser-owned caches)
-- `src/sattline_parser/fuzz_harness.py` : standalone fuzzing
+- `fuzzing/fuzz_harness.py` : standalone fuzzing
 - `docs/` : architecture and internals documentation
 
 ## License

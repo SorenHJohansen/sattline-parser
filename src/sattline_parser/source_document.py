@@ -42,6 +42,8 @@ character.
 from __future__ import annotations
 
 from bisect import bisect_right
+from typing import Protocol, cast
+from weakref import WeakSet
 
 from lark import Token, Tree
 from lark.exceptions import UnexpectedCharacters, UnexpectedInput
@@ -51,9 +53,32 @@ __all__ = [
     "GENERATED",
     "Generated",
     "SourceDocument",
+    "is_remapped",
+    "mark_remapped",
     "remap_parse_error",
     "remap_tree_to_original",
 ]
+
+#: Parse failures whose positions already refer to the original source.
+_REMAPPED: WeakSet[Exception] = WeakSet()
+
+
+def mark_remapped(exc: Exception) -> None:
+    """Record that ``exc`` already carries original-source coordinates."""
+    _REMAPPED.add(exc)
+
+
+def is_remapped(exc: Exception) -> bool:
+    """Whether ``exc`` was already remapped into original-source coordinates."""
+    return exc in _REMAPPED
+
+
+class _PositionedError(Protocol):
+    """The runtime position fields Lark attaches to an ``UnexpectedInput``."""
+
+    pos_in_stream: int | None
+    line: int
+    column: int
 
 
 class Generated(int):
@@ -298,7 +323,7 @@ def remap_parse_error(exc: Exception, doc: SourceDocument) -> None:
     """
     if not isinstance(exc, UnexpectedInput):
         return
-    if getattr(exc, "_sattline_remapped", False):
+    if is_remapped(exc):
         # Already in original coordinates; remapping again would shift twice.
         return
     remapped = False
@@ -308,9 +333,10 @@ def remap_parse_error(exc: Exception, doc: SourceDocument) -> None:
         mapped = doc.map_position(pos)
         if mapped is not None:
             line, column = doc.line_col(mapped)
-            exc.pos_in_stream = mapped  # type: ignore[assignment]  # runtime-only attribute
-            exc.line = line
-            exc.column = column
+            positioned = cast(_PositionedError, exc)
+            positioned.pos_in_stream = mapped
+            positioned.line = line
+            positioned.column = column
             remapped = True
     if isinstance(exc, UnexpectedCharacters) and mapped is not None and 0 <= mapped < len(doc.original_text):
         exc.char = doc.original_text[mapped]
@@ -321,4 +347,4 @@ def remap_parse_error(exc: Exception, doc: SourceDocument) -> None:
     if remapped:
         # Only claim original coordinates when something was actually rewritten;
         # diagnostics fall back to translating the normalized offset otherwise.
-        exc._sattline_remapped = True  # type: ignore[attr-defined]  # runtime tag consumed by diagnostics
+        mark_remapped(exc)

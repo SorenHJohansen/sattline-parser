@@ -7,6 +7,8 @@ ORIGINAL source, including for compressed input. Each end-to-end test checks
 ``original -> preprocess -> parse -> AST node -> span -> slice original source``.
 """
 
+from sattline_parser.source_document import is_remapped
+
 from ._parser_core_test_support import *
 
 
@@ -245,7 +247,7 @@ def test_parse_compressed_source_error_maps_to_original_source():
     with pytest.raises(UnexpectedInput) as exc_info:
         parser_core_parse_source_text(bad)
     exc = exc_info.value
-    assert getattr(exc, "_sattline_remapped", False) is True
+    assert is_remapped(exc)
     original_lines = bad.splitlines()
     assert exc.line == len(original_lines)
     assert exc.column is not None
@@ -281,7 +283,7 @@ def test_describe_parse_error_maps_untagged_exception_with_source_document():
         raw_parser.parse(source_doc.normalized_text)
     except UnexpectedInput as exc:
         # Raw exception carries normalized coordinates and is not tagged.
-        assert getattr(exc, "_sattline_remapped", False) is False
+        assert not is_remapped(exc)
         details = parser_api.describe_parse_error(exc, bad, source_document=source_doc)
         assert details.line == len(bad.splitlines())
         assert bad.splitlines()[details.line - 1] == " THIS IS GARBAGE !!!"

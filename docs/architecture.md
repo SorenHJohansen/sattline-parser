@@ -128,7 +128,7 @@ The important import-direction rules:
 | `src/sattline_parser/formatting/` | `__str__` and public expression rendering for AST nodes | You change rendered output |
 | `src/sattline_parser/project/` | Discovery, formats, loading, graphics, caches | You change project behaviour |
 | `src/sattline_parser/cli/` | The `sattline` command | You change the interface |
-| `src/sattline_parser/fuzz_harness.py` | Hard-timeout fuzzing and corpus regression | You change fuzzing |
+| `fuzzing/fuzz_harness.py` | Hard-timeout fuzzing and corpus regression | You change fuzzing |
 | `tests/` | Parser, project, CLI, builtins, packaging suites | You verify a change |
 | `docs/` | This documentation | You need the design intent |
 

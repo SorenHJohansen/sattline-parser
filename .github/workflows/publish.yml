@@ -51,13 +51,13 @@ jobs:
           echo "Version consistency OK: ${package_version}"
 
       - name: Ruff lint
-        run: uv run ruff check src tests scripts benchmarks
+        run: uv run ruff check src tests scripts benchmarks fuzzing
 
       - name: Ruff format check
-        run: uv run ruff format --check src tests scripts benchmarks
+        run: uv run ruff format --check src tests scripts benchmarks fuzzing
 
       - name: Pyright strict
-        run: uv run pyright src tests benchmarks
+        run: uv run pyright src tests benchmarks fuzzing
 
       - name: Full suite with line + branch coverage gates
         run: uv run python scripts/check_branch_coverage.py

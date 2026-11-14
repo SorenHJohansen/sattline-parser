@@ -64,7 +64,7 @@ def test_every_rule_has_a_summary() -> None:
 
 
 def test_retired_codes_come_from_the_registry() -> None:
-    retired = {rule.code for rule in RULES if rule.retired}
+    retired = {rule.code for rule in RULES if rule.status is RuleStatus.RETIRED}
 
     assert set(RETIRED_CODES) == retired
     assert retired
@@ -76,7 +76,7 @@ def test_retired_codes_come_from_the_registry() -> None:
 
 
 def test_unimplemented_codes_are_recorded_not_enabled() -> None:
-    unimplemented = {rule.code for rule in RULES if not rule.implemented}
+    unimplemented = {rule.code for rule in RULES if rule.status is RuleStatus.UNIMPLEMENTED}
 
     assert unimplemented == _UNIMPLEMENTED
     for rule in RULES:
@@ -104,8 +104,8 @@ def test_active_rules_have_an_emit_site() -> None:
     assert missing == []
 
 
-def test_retired_and_unimplemented_rules_never_overlap() -> None:
-    assert not any(rule.retired and not rule.implemented for rule in RULES)
+def test_every_rule_status_is_a_known_value() -> None:
+    assert all(rule.status in tuple(RuleStatus) for rule in RULES)
 
 
 def test_find_rule_accepts_ids_and_names_case_insensitively() -> None:

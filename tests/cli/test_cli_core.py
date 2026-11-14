@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import runpy
 import subprocess
 import sys
 
@@ -127,3 +128,16 @@ def test_module_entry_point_runs_as_a_process() -> None:
 
     assert result.returncode == 0
     assert result.stdout.startswith("sattline ")
+
+
+def test_module_entry_point_guard_returns_the_cli_exit_code(
+    monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]
+) -> None:
+    monkeypatch.setattr(sys, "argv", ["sattline", "version"])
+    monkeypatch.delitem(sys.modules, "sattline_parser.__main__", raising=False)
+
+    with pytest.raises(SystemExit) as exc_info:
+        runpy.run_module("sattline_parser.__main__", run_name="__main__", alter_sys=True)
+
+    assert exc_info.value.code == ExitCode.OK
+    assert capsys.readouterr().out.startswith("sattline ")

@@ -118,9 +118,9 @@ rewrites `start_pos`, `end_pos`, `line`, `column`, `end_line`, and
 the normalized text keeps its recorded span rather than being nudged to 0.
 
 `remap_parse_error` mutates the exception so downstream code, logging, and
-callers reading exception attributes all see original positions. It sets
-`_sattline_remapped` only when something was actually rewritten, so a second
-pass cannot shift the position twice.
+callers reading exception attributes all see original positions. It records the
+exception with `mark_remapped` only when something was actually rewritten, so
+`is_remapped` lets a second pass avoid shifting the position twice.
 
 ## Coded streams
 

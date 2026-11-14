@@ -24,13 +24,13 @@ chain and a module type that instantiates itself.
 from __future__ import annotations
 
 from collections.abc import Callable, Sequence
-from dataclasses import replace
+from dataclasses import dataclass, replace
 from pathlib import Path
 
 from sattline_parser.errors import PARSE_FAILURES
 from sattline_parser.models.ast_model import BasePicture, DataType, ModuleTypeDef, SourceSpan
 from sattline_parser.names import fold_identifier
-from sattline_parser.source_io import parse_source_file, read_text_cp1252
+from sattline_parser.source_io import parse_source_file, private_cache_dir, read_text_cp1252
 from sattline_parser.validation import validate_basepicture
 from sattline_parser.validation.diagnostics import Diagnostic, DiagnosticCode
 
@@ -89,6 +89,19 @@ def read_dependency_names(deps_path: Path) -> tuple[str, ...]:
     return tuple(line.strip() for line in text.splitlines() if line.strip())
 
 
+@dataclass(frozen=True, slots=True)
+class _ResolvedArtifact:
+    """The resolved files and dependency metadata for one program name."""
+
+    code_path: Path
+    resolved_base: Path
+    library: str
+    deps_path: Path | None
+    sidecar: SidecarState
+    dependencies: tuple[str, ...]
+    dependency_requester: Path
+
+
 class ProjectLoader:
     """Recursive resolver producing the canonical program registry for a load."""
 
@@ -102,15 +115,20 @@ class ProjectLoader:
         cache_dir: Path | None,
         validate: LoadValidation = LoadValidation.INVOKED,
     ) -> None:
-        self._lookup_cache = FileLookupCache(cache_dir) if cache_dir is not None else None
-        self._ast_cache = FileASTCache(cache_dir) if cache_dir is not None else None
+        # The whole cache root has to be private: the AST cache stores pickles,
+        # and the lookup cache shares the same directory. Fail closed by
+        # disabling both caches when the directory is not ours.
+        secure_cache_dir = private_cache_dir(cache_dir) if cache_dir is not None else None
+        self._lookup_cache = FileLookupCache(secure_cache_dir) if secure_cache_dir is not None else None
+        self._ast_cache = FileASTCache(secure_cache_dir) if secure_cache_dir is not None else None
         self._lookup = ProjectLookup(roots, mode, cache=self._lookup_cache, debug=debug)
         self._mode = mode
         self._strict = strict
         self._debug = debug
         self._validate = validate
         self._registry: dict[str, SattLineProgram] = {}
-        self._loading: list[str] = []
+        #: Insertion-ordered set of program keys currently being loaded.
+        self._loading: dict[str, None] = {}
         self._diagnostics: list[LoadDiagnostic] = []
         self._incomplete: set[str] = set()
         #: name -> datecode -> program keys declaring it. Conflict checks are
@@ -193,13 +211,14 @@ class ProjectLoader:
         if key in self._loading:
             # A dependency loop has no finite load order. It is structural, so
             # neither strictness setting may recover from it.
-            start = self._loading.index(key)
-            raise DependencyCycleError(canonical_cycle((*self._loading[start:], key)))
-        self._loading.append(key)
+            loading = tuple(self._loading)
+            start = loading.index(key)
+            raise DependencyCycleError(canonical_cycle((*loading[start:], key)))
+        self._loading[key] = None
         try:
             self._load_one(name, requester_dir=requester_dir, declared_by=declared_by)
         finally:
-            self._loading.pop()
+            del self._loading[key]
 
     def _load_one(self, name: str, *, requester_dir: Path | None, declared_by: str | None) -> None:
         program_name = declared_by if declared_by is not None else name
@@ -207,104 +226,53 @@ class ProjectLoader:
         key = name.casefold()
         try:
             self._dbg(f"Visiting: {name}")
-            resolved = self._lookup.find_code_with_base(name, requester_dir=requester_dir)
-            if resolved is None:
-                raise DependencyNotFoundError(
-                    program_name,
-                    f"missing code file for {name!r}",
-                    dependency=dependency,
-                )
-            code_path, resolved_base = resolved
-            library = resolved_base.name
-            # The sidecar belongs to the selected body's prefix; see
-            # ProjectLookup.find_deps_beside.
-            deps_path = self._lookup.find_deps_beside(code_path, name, requester_dir=requester_dir)
-            sidecar = SidecarState.ABSENT
-            if deps_path is None:
-                stray = self._lookup.find_deps(name, requester_dir=requester_dir)
-                if stray is not None:
-                    self._diagnose(
-                        LoadDiagnosticKind.SIDECAR_ELSEWHERE,
-                        program_name,
-                        f"sidecar {stray.name!r} is not beside body {code_path.name!r}; not paired",
-                        stray,
-                    )
-                else:
-                    self._diagnose(
-                        LoadDiagnosticKind.SIDECAR_MISSING,
-                        program_name,
-                        f"no dependency sidecar beside {code_path.name!r}",
-                        code_path,
-                    )
-            dep_requester = deps_path.parent if deps_path is not None else code_path.parent
-            dep_names = self._read_deps(name, deps_path, program_name, dependency)
-            if deps_path is not None:
-                sidecar = SidecarState.PRESENT if dep_names else SidecarState.EMPTY
-                if sidecar is SidecarState.EMPTY:
-                    self._diagnose(
-                        LoadDiagnosticKind.SIDECAR_EMPTY,
-                        program_name,
-                        f"sidecar {deps_path.name!r} declares no dependencies",
-                        deps_path,
-                    )
-            for dep in dep_names:
-                self._visit(dep, requester_dir=dep_requester, declared_by=name)
-            if any(dep.casefold() in self._incomplete for dep in dep_names):
-                self._incomplete.add(key)
-
-            basepicture = self._load_ast(code_path, program_name=program_name, dependency=dependency)
-            _set_origin(basepicture, file_name=code_path.name, library=library)
-            if self._validate is LoadValidation.INVOKED:
-                # Module diagnostics need the whole graph. Datecode findings
-                # belong to an explicitly selected program; a library import is
-                # not the place to report its own version drift.
-                diagnostics = (
-                    ()
-                    if declared_by is not None
-                    else tuple(
-                        self._datecode_conflicts(
-                            basepicture,
-                            library=library,
-                            file_name=code_path.name,
-                            visible=self._visible_program_keys(key, dep_names),
-                        )
-                    )
-                )
-            else:
-                diagnostics = self._program_diagnostics(
-                    basepicture,
-                    dependencies=dep_names,
-                    library=library,
-                    file_name=code_path.name,
-                    key=key,
-                )
-            self._remember_definitions(basepicture, library=library, file_name=code_path.name, program_key=key)
-
-            graphics_path = resolve_graphics_companion_path(code_path, mode=self._mode)
-            graphics = (
-                _load_graphics(self._dbg, graphics_path, program_name=program_name, dependency=dependency, name=name)
-                if graphics_path is not None
-                else None
+            artifact = self._resolve_artifact(
+                name,
+                requester_dir=requester_dir,
+                program_name=program_name,
+                dependency=dependency,
             )
-            program = SattLineProgram(
+            self._load_dependencies(name, key=key, artifact=artifact)
+
+            basepicture = self._load_ast(artifact.code_path, program_name=program_name, dependency=dependency)
+            _set_origin(basepicture, file_name=artifact.code_path.name, library=artifact.library)
+            diagnostics = self._artifact_diagnostics(
+                basepicture,
+                key=key,
+                artifact=artifact,
+                declared_by=declared_by,
+            )
+            self._remember_definitions(
+                basepicture,
+                library=artifact.library,
+                file_name=artifact.code_path.name,
+                program_key=key,
+            )
+
+            graphics_path, graphics = self._load_companion(
+                artifact.code_path,
+                name=name,
+                program_name=program_name,
+                dependency=dependency,
+            )
+            self._registry[key] = SattLineProgram(
                 name=name,
                 code=basepicture,
                 graphics=graphics,
-                dependencies=dep_names,
+                dependencies=artifact.dependencies,
                 format=ProgramFormat(
                     mode=self._mode,
-                    code_ext=code_path.suffix.lower(),
+                    code_ext=artifact.code_path.suffix.lower(),
                     graphics_ext=graphics_path.suffix.lower() if graphics_path is not None else None,
-                    deps_ext=deps_path.suffix.lower() if deps_path is not None else None,
+                    deps_ext=artifact.deps_path.suffix.lower() if artifact.deps_path is not None else None,
                 ),
-                source_path=code_path,
-                deps_path=deps_path,
-                sidecar=sidecar,
-                library=library,
-                resolved_base=resolved_base,
+                source_path=artifact.code_path,
+                deps_path=artifact.deps_path,
+                sidecar=artifact.sidecar,
+                library=artifact.library,
+                resolved_base=artifact.resolved_base,
                 diagnostics=diagnostics,
             )
-            self._registry[key] = program
         except StructuralProjectError:
             raise
         except ProjectLoadError as exc:
@@ -314,6 +282,125 @@ class ProjectLoader:
             # be able to tell that a program is missing from the result.
             self._incomplete.add(key)
             self._diagnose(LoadDiagnosticKind.LOAD_SKIPPED, name, f"skipped {name!r}: {exc}")
+
+    def _resolve_artifact(
+        self,
+        name: str,
+        *,
+        requester_dir: Path | None,
+        program_name: str,
+        dependency: str | None,
+    ) -> _ResolvedArtifact:
+        """Find the body, its sidecar, and the declared dependencies."""
+        resolved = self._lookup.find_code_with_base(name, requester_dir=requester_dir)
+        if resolved is None:
+            raise DependencyNotFoundError(
+                program_name,
+                f"missing code file for {name!r}",
+                dependency=dependency,
+            )
+        code_path, resolved_base = resolved
+        library = resolved_base.name
+        # The sidecar belongs to the selected body's prefix; see
+        # ProjectLookup.find_deps_beside.
+        deps_path = self._lookup.find_deps_beside(code_path, name, requester_dir=requester_dir)
+        sidecar = SidecarState.ABSENT
+        if deps_path is None:
+            stray = self._lookup.find_deps(name, requester_dir=requester_dir)
+            if stray is not None:
+                self._diagnose(
+                    LoadDiagnosticKind.SIDECAR_ELSEWHERE,
+                    program_name,
+                    f"sidecar {stray.name!r} is not beside body {code_path.name!r}; not paired",
+                    stray,
+                )
+            else:
+                self._diagnose(
+                    LoadDiagnosticKind.SIDECAR_MISSING,
+                    program_name,
+                    f"no dependency sidecar beside {code_path.name!r}",
+                    code_path,
+                )
+        dependency_requester = deps_path.parent if deps_path is not None else code_path.parent
+        dependencies = self._read_deps(name, deps_path, program_name, dependency)
+        if deps_path is not None:
+            sidecar = SidecarState.PRESENT if dependencies else SidecarState.EMPTY
+            if sidecar is SidecarState.EMPTY:
+                self._diagnose(
+                    LoadDiagnosticKind.SIDECAR_EMPTY,
+                    program_name,
+                    f"sidecar {deps_path.name!r} declares no dependencies",
+                    deps_path,
+                )
+        return _ResolvedArtifact(
+            code_path=code_path,
+            resolved_base=resolved_base,
+            library=library,
+            deps_path=deps_path,
+            sidecar=sidecar,
+            dependencies=dependencies,
+            dependency_requester=dependency_requester,
+        )
+
+    def _load_dependencies(self, name: str, *, key: str, artifact: _ResolvedArtifact) -> None:
+        for dependency in artifact.dependencies:
+            self._visit(
+                dependency,
+                requester_dir=artifact.dependency_requester,
+                declared_by=name,
+            )
+        if any(dependency.casefold() in self._incomplete for dependency in artifact.dependencies):
+            self._incomplete.add(key)
+
+    def _artifact_diagnostics(
+        self,
+        basepicture: BasePicture,
+        *,
+        key: str,
+        artifact: _ResolvedArtifact,
+        declared_by: str | None,
+    ) -> tuple[Diagnostic, ...]:
+        if self._validate is not LoadValidation.INVOKED:
+            return self._program_diagnostics(
+                basepicture,
+                dependencies=artifact.dependencies,
+                library=artifact.library,
+                file_name=artifact.code_path.name,
+                key=key,
+            )
+        # Module diagnostics need the whole graph. Datecode findings belong to
+        # an explicitly selected program; a library import is not the place to
+        # report its own version drift.
+        if declared_by is not None:
+            return ()
+        return tuple(
+            self._datecode_conflicts(
+                basepicture,
+                library=artifact.library,
+                file_name=artifact.code_path.name,
+                visible=self._visible_program_keys(key, artifact.dependencies),
+            )
+        )
+
+    def _load_companion(
+        self,
+        code_path: Path,
+        *,
+        name: str,
+        program_name: str,
+        dependency: str | None,
+    ) -> tuple[Path | None, GraphicsModel | None]:
+        graphics_path = resolve_graphics_companion_path(code_path, mode=self._mode)
+        if graphics_path is None:
+            return None, None
+        graphics = _load_graphics(
+            self._dbg,
+            graphics_path,
+            program_name=program_name,
+            dependency=dependency,
+            name=name,
+        )
+        return graphics_path, graphics
 
     def _visible_definitions(
         self, dependencies: tuple[str, ...]

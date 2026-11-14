@@ -68,6 +68,11 @@ def _validate_parameter(name: str, parameter: object) -> dict[str, object]:
     _require(entry["ownership"] in _OWNERSHIP, f"{name}: unknown ownership {entry['ownership']!r}")
     optional = entry.get("optional", False)
     _require(isinstance(optional, bool), f"{name}: parameter optional must be a boolean")
+    accepts_const_string = entry.get("accepts_const_string", False)
+    _require(
+        isinstance(accepts_const_string, bool),
+        f"{name}: parameter accepts_const_string must be a boolean",
+    )
     validated: dict[str, object] = {
         "name": entry["name"],
         "datatype": entry["datatype"],
@@ -77,6 +82,8 @@ def _validate_parameter(name: str, parameter: object) -> dict[str, object]:
     }
     if optional:
         validated["optional"] = True
+    if accepts_const_string:
+        validated["accepts_const_string"] = True
     return validated
 
 

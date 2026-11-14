@@ -16,9 +16,7 @@ from lark import Token, Tree
 from lark.exceptions import UnexpectedCharacters, UnexpectedEOF, UnexpectedInput, UnexpectedToken
 from lark.tree import Meta
 
-from sattline_parser import (
-    fuzz_harness as parser_fuzz_harness,
-)
+from fuzzing import fuzz_harness as parser_fuzz_harness
 from sattline_parser import (
     parse_source_text as parser_core_parse_source_text,
 )

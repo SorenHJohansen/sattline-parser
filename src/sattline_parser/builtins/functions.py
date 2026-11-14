@@ -34,6 +34,8 @@ class BuiltinParameter:
     ownership: BuiltinOwnership
     #: Trailing parameters documented as optional may be left out of a call.
     optional: bool = False
+    #: The parameter is written, but a Const string is still accepted here.
+    accepts_const_string: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -76,6 +78,7 @@ def _parse_parameter(raw: object) -> BuiltinParameter:
         sorting=cast("BuiltinSorting", entry["sorting"]),
         ownership=cast("BuiltinOwnership", entry["ownership"]),
         optional=cast("bool", entry.get("optional", False)),
+        accepts_const_string=cast("bool", entry.get("accepts_const_string", False)),
     )
 
 

@@ -3,9 +3,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
 from pathlib import Path
-from typing import cast
 
 import pytest
 from lark import Tree
@@ -25,13 +23,6 @@ from sattline_parser.project import graphics_bindings as bindings
 
 def test_graphics_binding_is_on_the_project_surface() -> None:
     assert ProjectGraphicsBinding is GraphicsBinding
-
-
-def _span_value(node: object, *, key: str = "span") -> SourceSpan:
-    assert isinstance(node, dict)
-    raw = cast(dict[str, object], node).get(key)
-    assert isinstance(raw, SourceSpan)
-    return raw
 
 
 def test_resolve_graphics_companion_path_returns_input_for_graphics(tmp_path: Path) -> None:
@@ -117,7 +108,7 @@ def test_parse_graphics_binding_match_var() -> None:
 def test_parse_graphics_binding_match_lit() -> None:
     match = bindings.BINDING_LINE_RE.search("  Lit  True  4 True ")
     assert match is not None
-    binding, _ = bindings.parse_graphics_binding_match(match.string, line=2, match=match)
+    binding, _ = bindings.parse_graphics_binding_match(match.string, line=2, match=match, line_start_offset=1)
     assert binding is not None
     assert binding.kind == "lit"
     assert binding.value is True
@@ -127,7 +118,7 @@ def test_parse_graphics_binding_match_expr_success() -> None:
     text = "  Expr  True  15 not ZoomableVar"
     match = bindings.BINDING_LINE_RE.search(text)
     assert match is not None
-    binding, messages = bindings.parse_graphics_binding_match(text, line=5, match=match)
+    binding, messages = bindings.parse_graphics_binding_match(text, line=5, match=match, line_start_offset=4)
     assert messages == ()
     assert binding is not None
     assert binding.kind == "expr"
@@ -141,7 +132,7 @@ def test_parse_graphics_binding_match_expr_failure_warns() -> None:
     text = "  Expr  True  3 ((("
     match = bindings.BINDING_LINE_RE.search(text)
     assert match is not None
-    binding, messages = bindings.parse_graphics_binding_match(text, line=9, match=match)
+    binding, messages = bindings.parse_graphics_binding_match(text, line=9, match=match, line_start_offset=8)
     assert binding is not None
     assert binding.kind == "expr"
     assert binding.value == "((("
@@ -154,20 +145,24 @@ def test_parse_graphics_binding_match_expr_failure_warns() -> None:
 def test_parse_graphics_binding_match_negative_length() -> None:
     match = bindings.BINDING_LINE_RE.search("  Expr  True  -1  x")
     assert match is not None
-    assert bindings.parse_graphics_binding_match(match.string, line=1, match=match) == (None, ())
+    assert bindings.parse_graphics_binding_match(match.string, line=1, match=match, line_start_offset=0) == (None, ())
 
 
 def test_parse_graphics_binding_match_length_overflow_and_empty() -> None:
     overflow_match = bindings.BINDING_LINE_RE.search("  Var  True  99 x")
     assert overflow_match is not None
-    binding, messages = bindings.parse_graphics_binding_match(overflow_match.string, line=1, match=overflow_match)
+    binding, messages = bindings.parse_graphics_binding_match(
+        overflow_match.string, line=1, match=overflow_match, line_start_offset=0
+    )
     assert messages == ()
     assert binding is not None
     assert binding.raw_text == "x"
 
     empty_match = bindings.BINDING_LINE_RE.search("  Lit  True  0  ")
     assert empty_match is not None
-    assert bindings.parse_graphics_binding_match(empty_match.string, line=1, match=empty_match) == (None, ())
+    assert bindings.parse_graphics_binding_match(
+        empty_match.string, line=1, match=empty_match, line_start_offset=0
+    ) == (None, ())
 
 
 def test_parse_graphics_binding_line_multiple_bindings() -> None:
@@ -177,151 +172,86 @@ def test_parse_graphics_binding_line_multiple_bindings() -> None:
     assert [(b.kind, b.raw_text) for b in bindings_] == [("var", "OprPathIndex"), ("lit", "-1")]
 
 
-# --- expression span offsetting -------------------------------------------------
+# --- source positions -----------------------------------------------------------
 
 
-def test_offset_source_spans_dict_and_span_key() -> None:
-    node = {"var_name": "X", "span": SourceSpan(start=0, end=0, line=1, column=2)}
-    result = bindings._offset_source_spans(node, line_offset=3, column_offset=5)
-    span = _span_value(result)
-    assert span.line == 3
-    assert span.column == 6
+def test_expression_prefix_places_the_payload_at_the_requested_position() -> None:
+    prefix = bindings._expression_prefix(line=2, line_start_offset=11, absolute_start=29)
+
+    assert len(prefix) == 29
+    assert prefix.count("\n") == 1
+    assert prefix.rfind("\n") == 10
 
 
-def test_offset_source_spans_dict_non_span_key_is_str() -> None:
-    node: dict[str, object] = {"span": "not-a-span"}
-    result = bindings._offset_source_spans(node, line_offset=1, column_offset=1)
-    assert result == node
+def test_expression_prefix_rejects_an_impossible_position() -> None:
+    with pytest.raises(ValueError, match="inconsistent"):
+        bindings._expression_prefix(line=3, line_start_offset=1, absolute_start=2)
+    with pytest.raises(ValueError, match="inconsistent"):
+        bindings._expression_prefix(line=1, line_start_offset=5, absolute_start=4)
 
 
-def test_offset_source_spans_list_and_tuple() -> None:
-    items: list[object] = [{"span": SourceSpan(start=0, end=0, line=1, column=1), "name": "X"}]
-    bindings._offset_source_spans(items, line_offset=2, column_offset=1)
-    inner = _span_value(items[0])
-    assert inner.line == 2
-    assert inner.column == 1
+def test_parse_graphics_text_binding_spans_are_offsets_into_the_companion_text() -> None:
+    text = "first line\r\n  Var  True  5 HVar tail\r\n  Lit  True  4 True \r\n  Expr  True  15 not ZoomableVar\r\n"
 
-    shared = SourceSpan(start=0, end=0, line=1, column=1)
-    raw = ({"span": shared, "n": 1}, {"span": shared, "n": 2})
-    rebuilt = bindings._offset_source_spans(raw, line_offset=2, column_offset=1)
-    assert isinstance(rebuilt, tuple)
-    assert rebuilt is not raw
-    assert rebuilt[0] is raw[0]
-    assert rebuilt[1] is raw[1]
-    first_span = raw[0]["span"]
-    assert isinstance(first_span, SourceSpan)
-    assert first_span.line == 2
+    model = parse_graphics_text(text)
 
-
-def test_offset_source_spans_bare_span_is_identity() -> None:
-    span = SourceSpan(start=0, end=0, line=1, column=1)
-    result = bindings._offset_source_spans(span, line_offset=5, column_offset=3)
-    assert result is span
-    assert span.line == 1
-
-
-def test_offset_source_spans_tree() -> None:
-    tree = Tree("step", [{"span": SourceSpan(start=0, end=0, line=1, column=1), "value": "x"}])
-    result = bindings._offset_source_spans(tree, line_offset=4, column_offset=1)
-    tree_result = cast(Tree[object], result)
-    inner = _span_value(tree_result.children[0])
-    assert inner.line == 4
-
-
-def test_offset_source_spans_object_with_children_unchanged_and_changed() -> None:
-    class WithChildren:
-        children: list[object]
-
-        def __init__(self, children: list[object]) -> None:
-            self.children = children
-
-    node = WithChildren([1, 2])
-    assert bindings._offset_source_spans(node, line_offset=1, column_offset=1) is node
-
-    span_node = WithChildren([("payload", {"span": SourceSpan(start=0, end=0, line=1, column=1)})])
-    result = bindings._offset_source_spans(span_node, line_offset=2, column_offset=1)
-    assert result is span_node
-    entry = span_node.children[0]
-    assert isinstance(entry, tuple)
-    payload = cast(tuple[object, object], entry)[1]
-    inner = _span_value(payload)
-    assert inner.line == 2
-
-
-def test_offset_source_spans_object_with_readonly_children() -> None:
-    class ReadOnlyChildren:
-        @property
-        def children(self) -> tuple[tuple[object, object], ...]:
-            return (("payload", {"span": SourceSpan(start=0, end=0, line=1, column=1)}),)
-
-    node = ReadOnlyChildren()
-    assert bindings._offset_source_spans(node, line_offset=1, column_offset=1) is node
-
-
-def test_offset_source_spans_dataclass_span_field_not_a_span() -> None:
-    @dataclass(frozen=True)
-    class WithStringSpan:
-        span: object
-        other: int
-
-    node = WithStringSpan("kept", 1)
-    assert bindings._offset_source_spans(node, line_offset=2, column_offset=1) is node
-
-
-def test_offset_source_spans_dataclass_replace() -> None:
-    binding = GraphicsBinding(
-        kind="var",
-        raw_text="X",
-        value=None,
-        span=SourceSpan(start=0, end=0, line=4, column=1),
+    var_binding, lit_binding, expr_binding = model.bindings
+    var_start = text.index("HVar")
+    assert var_binding.span == SourceSpan(
+        start=var_start,
+        end=var_start + len("HVar"),
+        line=2,
+        column=16,
     )
-    result = bindings._offset_source_spans(binding, line_offset=5, column_offset=1)
-    assert result is not binding
-    assert isinstance(result, GraphicsBinding)
-    assert result.span is not None
-    assert result.span.line == 8
-    assert result.raw_text == "X"
+    lit_start = text.index("  Lit") + 15
+    assert lit_binding.span == SourceSpan(
+        start=lit_start,
+        end=lit_start + len("True"),
+        line=3,
+        column=16,
+    )
+    expr_start = text.index("not ZoomableVar")
+    assert expr_binding.span == SourceSpan(
+        start=expr_start,
+        end=expr_start + len("not ZoomableVar"),
+        line=4,
+        column=18,
+    )
+    assert expr_binding.value is not None
+    value_span = expr_binding.value.span
+    assert isinstance(value_span, SourceSpan)
+    assert value_span == expr_binding.span
 
 
-def test_offset_source_spans_dataclass_unchanged() -> None:
-    @dataclass(frozen=True)
-    class Plain:
-        x: int
+def test_parse_graphics_binding_match_var_value_carries_the_binding_span() -> None:
+    match = bindings.BINDING_LINE_RE.search(" Var  True  5 HVar tail")
+    assert match is not None
+    binding, messages = bindings.parse_graphics_binding_match(
+        match.string,
+        line=1,
+        match=match,
+        line_start_offset=0,
+    )
 
-    node = Plain(5)
-    assert bindings._offset_source_spans(node, line_offset=1, column_offset=1) is node
-
-
-def test_offset_source_spans_falls_back_when_replace_rejects_a_field() -> None:
-    @dataclass
-    class InitFalse:
-        span: SourceSpan = field(default_factory=lambda: SourceSpan(start=0, end=0, line=1, column=1))
-        other: int = field(init=False, default=5)
-
-    node = InitFalse()
-    assert bindings._offset_source_spans(node, line_offset=2, column_offset=1) is node
+    assert messages == ()
+    assert binding is not None
+    assert binding.span is not None
+    assert binding.value == {"var_name": "HVar", "span": binding.span}
 
 
-def test_offset_source_spans_dict_object_and_scalar() -> None:
-    class WithDict:
-        def __init__(self) -> None:
-            self.meta: dict[str, list[object]] = {"nested": [{"span": SourceSpan(start=0, end=0, line=1, column=1)}]}
+def test_parse_graphics_binding_line_reports_offsets_for_every_binding() -> None:
+    text = " Var 0 12 OprPathIndex  Lit 0 2 -1     2"
+    parsed, messages = bindings.parse_graphics_binding_line(text, line=1, line_start_offset=0)
 
-    node = WithDict()
-    assert bindings._offset_source_spans(node, line_offset=3, column_offset=1) is node
-    nested = node.meta["nested"]
-    inner = _span_value(nested[0])
-    assert inner.line == 3
-
-    assert bindings._offset_source_spans(5, line_offset=1, column_offset=1) == 5
-
-
-def test_offset_source_spans_later_line_column_unchanged() -> None:
-    span = SourceSpan(start=0, end=0, line=3, column=9)
-    result = bindings._offset_source_spans({"span": span}, line_offset=10, column_offset=5)
-    offset = _span_value(result)
-    assert offset.line == 12
-    assert offset.column == 9
+    assert messages == ()
+    spans: list[tuple[str, int, int]] = []
+    for binding in parsed:
+        assert binding.span is not None
+        spans.append((binding.raw_text, binding.span.start, binding.span.end))
+    assert spans == [
+        ("OprPathIndex", text.index("OprPathIndex"), text.index("OprPathIndex") + len("OprPathIndex")),
+        ("-1", text.index("-1"), text.index("-1") + len("-1")),
+    ]
 
 
 # --- companion scanning ----------------------------------------------------------
