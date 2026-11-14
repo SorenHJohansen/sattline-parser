@@ -733,6 +733,7 @@ def test_code_fingerprint_hashes_a_standalone_module(tmp_path: Path, monkeypatch
         _code_fingerprint.cache_clear()
 
 
+@pytest.mark.skipif(os.name == "nt", reason="NTFS names are UTF-16; undecodable byte names are POSIX-only")
 def test_cache_key_keeps_non_utf8_names_distinct(tmp_path: Path) -> None:
     """A lossy UTF-8 encode would collide two undecodable file names."""
     first = tmp_path / os.fsdecode(b"Bad\xffName.s")

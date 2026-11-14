@@ -83,12 +83,12 @@ def _check_links(path: Path, root: Path) -> list[str]:
         if relative:
             resolved = (path.parent / relative).resolve()
             if not resolved.exists():
-                errors.append(f"{path.relative_to(root)}: missing link target {target}")
+                errors.append(f"{path.relative_to(root).as_posix()}: missing link target {target}")
                 continue
         else:
             resolved = path
         if fragment and resolved.suffix == ".md" and resolved.is_file() and fragment not in _anchors(resolved):
-            errors.append(f"{path.relative_to(root)}: missing anchor #{fragment} in {target}")
+            errors.append(f"{path.relative_to(root).as_posix()}: missing anchor #{fragment} in {target}")
     return errors
 
 
@@ -100,7 +100,7 @@ def _check_dashes(path: Path, root: Path) -> list[str]:
             in_fence = not in_fence
             continue
         if not in_fence and any(dash in line for dash in _DASHES):
-            errors.append(f"{path.relative_to(root)}:{line_number}: dash punctuation")
+            errors.append(f"{path.relative_to(root).as_posix()}:{line_number}: dash punctuation")
     return errors
 
 
