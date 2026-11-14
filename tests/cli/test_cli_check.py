@@ -219,4 +219,15 @@ def test_companion_files_are_refused_with_a_pointed_message(tmp_path, capsys) ->
 
     err = capsys.readouterr().err
     assert "is a graphics companion (.y)" in err
-    assert "read SattLine source units" in err
+    assert "SattLine source units" in err
+
+
+def test_distribution_companions_are_refused_with_a_pointed_message(tmp_path, capsys) -> None:
+    companion = tmp_path / "M.q"
+    companion.write_text("", encoding="utf-8")
+
+    assert main(["check", str(companion)]) == ExitCode.USAGE
+
+    err = capsys.readouterr().err
+    assert "is a distribution companion (.q)" in err
+    assert "SattLine source units" in err

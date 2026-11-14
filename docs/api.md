@@ -170,6 +170,18 @@ historical reasons, but the supported import path is `sattline_parser.ast`. See
 These live in `sattline_parser.project` and are re-exported by
 `sattline_parser`, not by `sattline_parser.api`.
 
+## Distribution
+
+| Name | Signature summary | Returns |
+| --- | --- | --- |
+| `parse_distribution_text` | `(text)` | `DistributionData` |
+| `parse_distribution_file` | `(path)` | `DistributionData` |
+| `resolve_distribution_companion_path` | `(code_path, *, mode)` | `Path | None` |
+
+These live in `sattline_parser.project` and are re-exported by
+`sattline_parser`, not by `sattline_parser.api`. A companion is resolved beside
+the body, never through the ordered root list.
+
 ## Fuzz tooling
 
 The fuzz harness and Atheris targets live under the repository-local `fuzzing/`
@@ -188,9 +200,21 @@ wheel, and the top-level package does not re-export them. Import
 | Diagnostics | `LoadDiagnostic`, `LoadDiagnosticKind` |
 | Errors | `ProjectLoadError`, `StructuralProjectError`, `DependencyCycleError`, `ModuleTypeCycleError`, `ArtifactLoadError`, `DependencyNotFoundError`, `DependencyParseError` |
 | Discovery | `ProjectLookup`, `SourceIndex`, `ordered_lookup_bases`, `shared_lookup_root_for` |
-| Formats | `ArtifactKind`, `candidate_extensions`, `code_ext`, `code_ext_candidates`, `deps_ext`, `deps_ext_candidates`, `graphics_ext`, `graphics_ext_candidates`, `preferred_extension` |
+| Formats | `ArtifactKind`, `body_mode`, `candidate_extensions`, `code_ext`, `code_ext_candidates`, `deps_ext`, `deps_ext_candidates`, `deps_extensions_for_code`, `distribution_ext`, `distribution_ext_candidates`, `distribution_extensions_for_code`, `graphics_ext`, `graphics_ext_candidates`, `preferred_extension` |
 | Graphics | `GraphicsModel`, `GraphicsBinding`, `GraphicsMessage`, `GraphicsCompositeRecord`, `GraphicsPictureDisplayRecord`, `GraphicsPathRow`, `parse_graphics_file`, `parse_graphics_text`, `resolve_graphics_companion_path` |
+| Distribution | `DistributionData`, `DistributionTarget`, `DistributionParseError`, `parse_distribution_file`, `parse_distribution_text`, `resolve_distribution_companion_path` |
 | Caches | `FileLookupCache`, `FileASTCache`, `LOOKUP_CACHE_VERSION`, `FILE_AST_CACHE_VERSION`, `DEFAULT_LOOKUP_CACHE_FLUSH_INTERVAL` |
+
+`DistributionData` has `version`, `source_code_systems`, `executing_systems`, and
+the derived `has_executing_system`. `SattLineProgram.has_executing_system` adds
+the missing case: `None` when no companion was found. `DistributionParseError`
+is a `ValueError` raised by the parser, not a `ProjectLoadError`; the loader
+wraps it in `ArtifactLoadError` or `DependencyParseError`. See
+[project.md](project.md#distribution-companion).
+
+`parse_distribution_file`, `parse_distribution_text`, and
+`resolve_distribution_companion_path` are also re-exported by the top-level
+package, like their graphics counterparts.
 
 See [project.md](project.md) for behaviour.
 

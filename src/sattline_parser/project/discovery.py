@@ -11,7 +11,13 @@ from __future__ import annotations
 from collections.abc import Callable, Sequence
 from pathlib import Path
 
-from .formats import ALL_CODE_EXTENSIONS, ALL_DEPS_EXTENSIONS, ArtifactKind, candidate_extensions
+from .formats import (
+    ALL_CODE_EXTENSIONS,
+    ALL_DEPS_EXTENSIONS,
+    ArtifactKind,
+    candidate_extensions,
+    deps_extensions_for_code,
+)
 from .lookup_cache import FileLookupCache
 from .models import LoadMode
 
@@ -198,7 +204,15 @@ class ProjectLookup:
     bases, and the artifact still exists, and after confirming no
     higher-precedence base holds it. Misses fall through to the full ordered
     scan, which refreshes the cache.
+
+    Only code bodies and dependency sidecars resolve through the ordered roots.
+    Graphics and distribution companions are anchored to the body that owns
+    them, so a root-ordered search for either is refused rather than answered
+    with another unit's companion.
     """
+
+    #: Artifact kinds that must never resolve through the ordered roots.
+    _BODY_ANCHORED_KINDS = frozenset({ArtifactKind.GRAPHICS, ArtifactKind.DISTRIBUTION})
 
     def __init__(
         self,
@@ -300,6 +314,11 @@ class ProjectLookup:
         requester_dir: Path | None = None,
     ) -> tuple[Path, Path] | None:
         """Resolve ``name`` and return ``(path, resolving_base)``, or ``None``."""
+        if kind in self._BODY_ANCHORED_KINDS:
+            raise ValueError(
+                f"{kind.value} companions are resolved beside the body that owns them, "
+                f"not through the ordered roots; use the companion resolver for the body"
+            )
         extensions = candidate_extensions(kind, self._mode)
         kind_value = kind.value
         ordered = ordered_lookup_bases(self._roots, requester_dir)
@@ -319,6 +338,9 @@ class ProjectLookup:
         The cache is consulted first (when present) so a stable layout skips the
         ordered scan entirely; only on a miss is the full ordered scan run, and
         every successful resolution refreshes the cache.
+
+        Raises ``ValueError`` for a graphics or distribution companion, which has
+        no root-ordered meaning.
         """
         result = self._find_with_base(name, kind, requester_dir=requester_dir)
         return None if result is None else result[0]
@@ -343,9 +365,13 @@ class ProjectLookup:
         body with an unrelated library's sidecar, so the body prefix decides and
         *requester_dir* is ignored here. :meth:`find_deps` keeps the
         requester-relative behaviour for consumers that want it.
+
+        The body's own suffix selects the artifact family, so a ``.s`` body
+        looks only for ``.l`` and an ``.x`` body only for ``.z``. A sidecar from
+        the other family is never paired.
         """
         del requester_dir  # the body prefix, not the requester, decides
-        extensions = candidate_extensions(ArtifactKind.DEPS, self._mode)
+        extensions = deps_extensions_for_code(code_path.suffix, self._mode)
         return self._find_in_base(name, extensions, code_path.parent, kind=ArtifactKind.DEPS.value)
 
     def find_deps(self, name: str, *, requester_dir: Path | None = None) -> Path | None:

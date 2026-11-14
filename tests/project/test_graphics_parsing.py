@@ -42,17 +42,23 @@ def test_resolve_graphics_companion_path_draft_prefers_g(tmp_path: Path) -> None
     assert resolve_graphics_companion_path(tmp_path / "M.s", mode=LoadMode.DRAFT) == tmp_path / "M.g"
 
 
-def test_resolve_graphics_companion_path_draft_falls_back_to_y(tmp_path: Path) -> None:
+def test_resolve_graphics_companion_path_draft_does_not_use_official_y(tmp_path: Path) -> None:
     (tmp_path / "M.s").write_text("", encoding="utf-8")
     (tmp_path / "M.y").write_text("", encoding="utf-8")
-    assert resolve_graphics_companion_path(tmp_path / "M.s", mode=LoadMode.DRAFT) == tmp_path / "M.y"
+    assert resolve_graphics_companion_path(tmp_path / "M.s", mode=LoadMode.DRAFT) is None
+
+
+def test_resolve_graphics_companion_path_draft_uses_g(tmp_path: Path) -> None:
+    (tmp_path / "M.s").write_text("", encoding="utf-8")
+    (tmp_path / "M.g").write_text("", encoding="utf-8")
+    assert resolve_graphics_companion_path(tmp_path / "M.s", mode=LoadMode.DRAFT) == tmp_path / "M.g"
 
 
 def test_resolve_graphics_companion_path_official_only_y(tmp_path: Path) -> None:
     (tmp_path / "M.s").write_text("", encoding="utf-8")
     (tmp_path / "M.g").write_text("", encoding="utf-8")
     (tmp_path / "M.y").write_text("", encoding="utf-8")
-    assert resolve_graphics_companion_path(tmp_path / "M.s", mode=LoadMode.OFFICIAL) == tmp_path / "M.y"
+    assert resolve_graphics_companion_path(tmp_path / "M.x", mode=LoadMode.OFFICIAL) == tmp_path / "M.y"
 
 
 def test_resolve_graphics_companion_path_x_code_only_y(tmp_path: Path) -> None:

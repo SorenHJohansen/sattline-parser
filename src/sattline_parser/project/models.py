@@ -52,6 +52,7 @@ class ProgramFormat:
     code_ext: str | None = None
     graphics_ext: str | None = None
     deps_ext: str | None = None
+    distribution_ext: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -156,6 +157,9 @@ class LoadDiagnosticKind(StrEnum):
     SIDECAR_MISSING = "sidecar-missing"
     SIDECAR_ELSEWHERE = "sidecar-elsewhere"
     SIDECAR_EMPTY = "sidecar-empty"
+    #: A sidecar sits beside the body but belongs to the other artifact family,
+    #: for example a ``.z`` beside a ``.s`` body. It is never paired.
+    SIDECAR_FAMILY_MISMATCH = "sidecar-family-mismatch"
     #: A program was left out of a non-strict load because it could not be
     #: resolved or parsed. The load continues, but the omission stays visible.
     LOAD_SKIPPED = "load-skipped"
@@ -174,6 +178,48 @@ class LoadDiagnostic:
     program: str
     detail: str
     path: Path | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class DistributionTarget:
+    """One entry of a distribution section: a named download target.
+
+    ``kind`` is the section keyword as written (for example ``Controller`` or
+    ``OpStation``), ``name`` is the target's ``Name`` string, and
+    ``attributes`` holds the trailing ``Keyword Value`` pairs in file order.
+    """
+
+    kind: str
+    name: str
+    attributes: tuple[tuple[str, str], ...] = ()
+
+    @property
+    def download(self) -> str | None:
+        """The value of the ``Download`` attribute, when the target declares one."""
+        for key, value in self.attributes:
+            if key.casefold() == "download":
+                return value
+        return None
+
+
+@dataclass(frozen=True, slots=True)
+class DistributionData:
+    """The parsed representation of a program's distribution companion.
+
+    A distribution companion (``.p`` draft, ``.q`` official) records which
+    systems the unit is sent to. It is configuration, not proof that the unit is
+    running anywhere, and it is not a module type: a program and a library both
+    may have one.
+    """
+
+    version: str
+    source_code_systems: tuple[DistributionTarget, ...] = ()
+    executing_systems: tuple[DistributionTarget, ...] = ()
+
+    @property
+    def has_executing_system(self) -> bool:
+        """Whether at least one executing system is configured."""
+        return bool(self.executing_systems)
 
 
 @dataclass(frozen=True, slots=True)
@@ -196,6 +242,11 @@ class SattLineProgram:
     ``resolved_base`` is that directory. ``diagnostics`` holds this program's
     validation findings, including tentative ones produced when a part of its
     dependency closure could not be loaded.
+
+    ``distribution_path`` is the resolved distribution companion and
+    ``distribution`` its parsed content. Both stay ``None`` when no companion was
+    found; a companion that exists but cannot be parsed is a load failure, never
+    an empty result.
     """
 
     name: str
@@ -212,8 +263,24 @@ class SattLineProgram:
     library: str | None = None
     #: Root directory that resolved the body.
     resolved_base: Path | None = None
+    #: Resolved distribution companion, when one was read at the body prefix.
+    distribution_path: Path | None = None
+    #: Parsed distribution companion; ``None`` when there was no companion.
+    distribution: DistributionData | None = None
     #: Validation findings for this program, in emission order.
     diagnostics: tuple[Diagnostic, ...] = ()
+
+    @property
+    def has_executing_system(self) -> bool | None:
+        """Whether the unit declares an executing system.
+
+        ``None`` means the question could not be answered because no distribution
+        companion was found. ``False`` means a companion was parsed and its
+        executing-system list is empty.
+        """
+        if self.distribution is None:
+            return None
+        return self.distribution.has_executing_system
 
 
 @dataclass(frozen=True, slots=True)
@@ -240,6 +307,8 @@ class DependencyGraph:
 
 __all__ = [
     "DependencyGraph",
+    "DistributionData",
+    "DistributionTarget",
     "GraphicsBinding",
     "GraphicsCompositeRecord",
     "GraphicsMessage",

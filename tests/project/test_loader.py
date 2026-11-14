@@ -437,14 +437,14 @@ def test_load_parses_graphics_companion(tmp_path: Path) -> None:
     ]
 
 
-def test_load_draft_falls_back_to_official_graphics_ext(tmp_path: Path) -> None:
+def test_load_draft_body_does_not_use_official_graphics(tmp_path: Path) -> None:
     _write(tmp_path, "Main.s", _CODE)
     _write(tmp_path, "Main.y", _GFX)
 
     program = _load(tmp_path).programs()["main"]
 
-    assert program.format.graphics_ext == ".y"
-    assert program.graphics is not None
+    assert program.format.graphics_ext is None
+    assert program.graphics is None
 
 
 def test_load_without_graphics_companion(tmp_path: Path) -> None:
@@ -515,6 +515,235 @@ def test_load_dependency_graphics_read_failure_raises_dependency_parse_error(tmp
 
     assert exc_info.value.program == "Main"
     assert exc_info.value.dependency == "Lib"
+
+
+# --- distribution companion wiring ---------------------------------------------
+
+_DISTRIBUTION = (
+    "DistributionData\n"
+    ' ( Version "Distributiondata version 1.0" )\n'
+    "SourceCodeSystems\n"
+    " (  )\n"
+    "ExecutingSystems\n"
+    " ( Controller\n"
+    '    ( Name "172.18.0.1"\n'
+    "      Download ShortStopReconfig ) )\n"
+)
+
+_DISTRIBUTION_EMPTY = (
+    'DistributionData\n ( Version "Distributiondata version 1.0" )\nSourceCodeSystems\n (  )\nExecutingSystems\n (  )\n'
+)
+
+
+def test_load_parses_distribution_companion(tmp_path: Path) -> None:
+    _write(tmp_path, "Main.s", _CODE)
+    _write(tmp_path, "Main.p", _DISTRIBUTION)
+
+    program = _load(tmp_path).programs()["main"]
+
+    assert program.format.distribution_ext == ".p"
+    assert program.distribution_path == tmp_path / "Main.p"
+    assert program.has_executing_system is True
+    assert program.distribution is not None
+    assert [(t.kind, t.name, t.download) for t in program.distribution.executing_systems] == [
+        ("Controller", "172.18.0.1", "ShortStopReconfig")
+    ]
+
+
+def test_load_empty_executing_systems_is_false(tmp_path: Path) -> None:
+    _write(tmp_path, "Main.s", _CODE)
+    _write(tmp_path, "Main.p", _DISTRIBUTION_EMPTY)
+
+    program = _load(tmp_path).programs()["main"]
+
+    assert program.has_executing_system is False
+
+
+def test_load_without_distribution_companion_is_unknown(tmp_path: Path) -> None:
+    _write(tmp_path, "Main.s", _CODE)
+
+    program = _load(tmp_path).programs()["main"]
+
+    assert program.format.distribution_ext is None
+    assert program.distribution_path is None
+    assert program.distribution is None
+    assert program.has_executing_system is None
+
+
+def test_load_draft_body_does_not_use_official_distribution(tmp_path: Path) -> None:
+    _write(tmp_path, "Main.s", _CODE)
+    _write(tmp_path, "Main.q", _DISTRIBUTION)
+
+    program = _load(tmp_path).programs()["main"]
+
+    assert program.format.distribution_ext is None
+    assert program.has_executing_system is None
+
+
+def test_load_official_mode_ignores_draft_distribution(tmp_path: Path) -> None:
+    _write(tmp_path, "Main.x", _CODE)
+    _write(tmp_path, "Main.p", _DISTRIBUTION)
+
+    program = _load(tmp_path, mode=LoadMode.OFFICIAL).programs()["main"]
+
+    assert program.format.distribution_ext is None
+    assert program.has_executing_system is None
+
+
+def test_load_x_code_only_accepts_official_distribution(tmp_path: Path) -> None:
+    _write(tmp_path, "Main.x", _CODE)
+    _write(tmp_path, "Main.p", _DISTRIBUTION)
+    _write(tmp_path, "Main.q", _DISTRIBUTION)
+
+    program = _load(tmp_path).programs()["main"]
+
+    assert program.format.distribution_ext == ".q"
+
+
+def test_load_distribution_decode_failure_strict_raises(tmp_path: Path) -> None:
+    _write(tmp_path, "Main.s", _CODE)
+    (tmp_path / "Main.p").write_bytes(b"\x81\n")
+
+    with pytest.raises(ArtifactLoadError) as exc_info:
+        _load(tmp_path)
+
+    assert exc_info.value.program == "Main"
+
+
+def test_load_malformed_distribution_strict_raises(tmp_path: Path) -> None:
+    _write(tmp_path, "Main.s", _CODE)
+    _write(tmp_path, "Main.p", "not a distribution companion\n")
+
+    with pytest.raises(ArtifactLoadError) as exc_info:
+        _load(tmp_path)
+
+    assert exc_info.value.program == "Main"
+    assert "distribution companion" in str(exc_info.value)
+
+
+def test_load_malformed_distribution_non_strict_skips(tmp_path: Path) -> None:
+    _write(tmp_path, "Main.s", _CODE)
+    _write(tmp_path, "Main.p", "not a distribution companion\n")
+    _write(tmp_path, "Ok.s", _CODE)
+
+    project = _load(tmp_path, targets=("Ok", "Main"), strict=False)
+
+    assert "main" not in project
+    skipped = [d for d in project.diagnostics() if d.kind is LoadDiagnosticKind.LOAD_SKIPPED]
+    assert [d.program for d in skipped] == ["Main"]
+    assert "distribution companion" in skipped[0].detail
+
+
+def test_load_dependency_distribution_failure_raises_dependency_parse_error(tmp_path: Path) -> None:
+    _write(tmp_path, "Main.l", "Lib\n")
+    _write(tmp_path, "Main.s", _CODE)
+    _write(tmp_path, "Lib.s", _CODE)
+    _write(tmp_path, "Lib.p", "not a distribution companion\n")
+
+    with pytest.raises(DependencyParseError) as exc_info:
+        _load(tmp_path)
+
+    assert exc_info.value.program == "Main"
+    assert exc_info.value.dependency == "Lib"
+
+
+def test_load_distribution_is_read_even_with_a_warm_ast_cache(tmp_path: Path) -> None:
+    cache_dir = tmp_path / "cache"
+    _write(tmp_path, "Main.s", _CODE)
+    _write(tmp_path, "Main.p", _DISTRIBUTION_EMPTY)
+
+    first = _load(tmp_path, cache_dir=cache_dir).programs()["main"]
+    assert first.has_executing_system is False
+
+    _write(tmp_path, "Main.p", _DISTRIBUTION)
+    second = _load(tmp_path, cache_dir=cache_dir).programs()["main"]
+
+    assert second.has_executing_system is True
+
+
+def test_load_distribution_companion_appearing_later_is_seen(tmp_path: Path) -> None:
+    cache_dir = tmp_path / "cache"
+    _write(tmp_path, "Main.s", _CODE)
+
+    assert _load(tmp_path, cache_dir=cache_dir).programs()["main"].has_executing_system is None
+
+    _write(tmp_path, "Main.p", _DISTRIBUTION)
+    assert _load(tmp_path, cache_dir=cache_dir).programs()["main"].has_executing_system is True
+
+
+# --- artifact family coherence ------------------------------------------------
+
+#: Each artifact family pairs only with itself: the body's suffix decides.
+_FAMILY_CASES = [
+    ("Main.s", "Main.l", "deps", ".l"),
+    ("Main.x", "Main.z", "deps", ".z"),
+    ("Main.s", "Main.g", "graphics", ".g"),
+    ("Main.x", "Main.y", "graphics", ".y"),
+    ("Main.s", "Main.p", "distribution", ".p"),
+    ("Main.x", "Main.q", "distribution", ".q"),
+]
+
+_MISMATCH_CASES = [
+    ("Main.s", "Main.z", "deps"),
+    ("Main.x", "Main.l", "deps"),
+    ("Main.s", "Main.y", "graphics"),
+    ("Main.x", "Main.g", "graphics"),
+    ("Main.s", "Main.q", "distribution"),
+    ("Main.x", "Main.p", "distribution"),
+]
+
+
+def _companion_text(kind: str) -> str:
+    if kind == "graphics":
+        return _GFX
+    if kind == "distribution":
+        return _DISTRIBUTION
+    return ""
+
+
+@pytest.mark.parametrize(("body", "companion", "kind", "expected_ext"), _FAMILY_CASES)
+def test_load_pairs_only_within_the_body_family(
+    tmp_path: Path, body: str, companion: str, kind: str, expected_ext: str
+) -> None:
+    _write(tmp_path, body, _CODE)
+    _write(tmp_path, companion, _companion_text(kind))
+
+    program = _load(tmp_path).programs()["main"]
+
+    resolved = getattr(program.format, f"{kind}_ext")
+    assert resolved == expected_ext
+
+
+@pytest.mark.parametrize(("body", "companion", "kind"), _MISMATCH_CASES)
+def test_load_never_pairs_across_artifact_families(tmp_path: Path, body: str, companion: str, kind: str) -> None:
+    _write(tmp_path, body, _CODE)
+    _write(tmp_path, companion, _companion_text(kind))
+
+    program = _load(tmp_path).programs()["main"]
+
+    assert getattr(program.format, f"{kind}_ext") is None
+
+
+def test_load_reports_a_same_directory_family_mismatch(tmp_path: Path) -> None:
+    _write(tmp_path, "Main.s", _CODE)
+    _write(tmp_path, "Main.z", "")
+
+    project = _load(tmp_path)
+
+    kinds = [d.kind for d in project.diagnostics()]
+    assert LoadDiagnosticKind.SIDECAR_FAMILY_MISMATCH in kinds
+    detail = next(d.detail for d in project.diagnostics() if d.kind is LoadDiagnosticKind.SIDECAR_FAMILY_MISMATCH)
+    assert "does not match the artifact family" in detail
+
+
+def test_load_official_body_with_draft_sidecar_is_not_paired(tmp_path: Path) -> None:
+    _write(tmp_path, "Main.x", _CODE)
+    _write(tmp_path, "Main.l", "")
+
+    project = _load(tmp_path)
+
+    assert project.get("Main").format.deps_ext is None
+    assert LoadDiagnosticKind.SIDECAR_FAMILY_MISMATCH in [d.kind for d in project.diagnostics()]
 
 
 # --- sidecar pairing invariant ----------------------------------------------

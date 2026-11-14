@@ -39,7 +39,14 @@ from .api import (
     parse_source_text,
 )
 from .grammar import constants
-from .project import parse_graphics_file, parse_graphics_text, resolve_graphics_companion_path
+from .project import (
+    parse_distribution_file,
+    parse_distribution_text,
+    parse_graphics_file,
+    parse_graphics_text,
+    resolve_distribution_companion_path,
+    resolve_graphics_companion_path,
+)
 
 __all__ = [
     "MAX_SOURCE_DEPTH",
@@ -71,6 +78,8 @@ __all__ = [
     "is_compressed",
     "iter_child_nodes",
     "parse_and_validate",
+    "parse_distribution_file",
+    "parse_distribution_text",
     "parse_graphics_file",
     "parse_graphics_text",
     "parse_source_file",
@@ -78,6 +87,7 @@ __all__ = [
     "preprocess_sl_text",
     "preprocess_source",
     "render_ide_text",
+    "resolve_distribution_companion_path",
     "resolve_graphics_companion_path",
     "validate_basepicture",
     "walk",

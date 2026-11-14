@@ -14,15 +14,17 @@
 | Equation | The node produced by the `equationblock` rule (`EQUATIONBLOCK` or `EQUATIONS`). The rule also carries the optional name, coordinates, size, and layer. |
 | SFC | Sequential function chart. The step and transition model used by a `Sequence`. |
 | Program | In this package, one loaded code artifact (one `.x` or `.s` file). Not one top-level executable program. |
-| Unit | One program or library as the loader sees it: the code body plus its dependency sidecar and graphics companion. Draft is `.s`/`.l`/`.g`; official is `.x`/`.z`/`.y`. |
-| Artifact | A file the project layer can resolve: a code body, a dependency sidecar, or a graphics companion. |
+| Unit | One program or library as the loader sees it: the code body plus its dependency sidecar, graphics companion, and distribution companion. Draft is `.s`/`.l`/`.g`/`.p`; official is `.x`/`.z`/`.y`/`.q`. |
+| Artifact | A file the project layer can resolve: a code body, a dependency sidecar, a graphics companion, or a distribution companion. |
 | Target | A program name passed to `SattLineProject.load`. Its closure is loaded. |
 | Root | A directory the project layer searches. Each root is a library. |
 | Sidecar | A `.l` / `.z` file that lists a program's declared dependencies. |
 | Companion | A `.g` / `.y` graphics file paired with a code body. |
+| Distribution companion | A `.p` / `.q` file that records the systems a unit is sent to. |
+| Executing system | One target listed under `ExecutingSystems` in a distribution companion. Configuration, not proof of a running unit. |
 | Datecode | A numeric version attached to a module type or datatype. The parser preserves absence; it never invents one. |
-| Draft | `.s` code, `.l` dependencies, `.g` graphics. |
-| Official | `.x` code, `.z` dependencies, `.y` graphics. |
+| Draft | `.s` code, `.l` dependencies, `.g` graphics, `.p` distribution. |
+| Official | `.x` code, `.z` dependencies, `.y` graphics, `.q` distribution. |
 
 ## Grammar and parsing
 

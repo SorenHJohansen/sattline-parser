@@ -149,6 +149,12 @@ dependency or a module type that instantiates itself is a structural load
 error: the command reports `cannot load project` with the cycle path and exits
 `1`, even under `--lenient`.
 
+Each program row reports `distribution` (the resolved companion extension or
+`null`), `has_executing_system` (`true`, `false`, or `null` when no companion was
+found), and `executing_systems` (one `kind` / `name` / `download` object per
+target). A companion that exists but does not parse is a load finding, never an
+empty list. See [project.md](project.md#distribution-companion).
+
 | Flag | Meaning |
 | --- | --- |
 | `--workers N` | Parse bodies in `N` processes. Default `min(8, cpu_count)`; `1` parses in this process |
@@ -168,9 +174,9 @@ sattline graphics drawing.y
 sattline graphics drawing.y --json
 ```
 
-Refuses a `.s`/`.x` source. Conversely, `check`, `parse`, `query`, `decode`,
-`diff`, and `corpus` refuse a `.g`/`.y` companion, so a companion is never
-reported as broken source.
+Refuses a `.s`/`.x` source. Conversely, `check`, `parse`, `query`, `decode`, and
+`diff` refuse a `.g`/`.y` graphics companion and a `.p`/`.q`
+distribution companion, so a companion is never reported as broken source.
 
 ### `decode`
 
@@ -190,8 +196,9 @@ sattline diff Program.x Program.s
 sattline diff Program.x Program.s --json
 ```
 
-A SattLine program or library is one unit made of three files: the code body,
-the dependency sidecar, and the graphics companion. `diff` compares the
+A SattLine program or library is one unit made of four files: the code body,
+the dependency sidecar, the graphics companion, and the distribution companion.
+`diff` compares the
 official `.x` code body of a unit with its draft `.s` code body. In a unit the
 two versions are the official `.x` and the draft `.s`, never two `.s` files;
 the command itself accepts any two code sources. It compares findings by

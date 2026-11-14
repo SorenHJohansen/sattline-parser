@@ -8,6 +8,7 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 
 from sattline_parser.project import (
+    DistributionTarget,
     LoadDiagnostic,
     LoadDiagnosticKind,
     LoadMode,
@@ -251,12 +252,39 @@ def _program_row(program: SattLineProgram) -> dict[str, object]:
         "code": program.format.code_ext,
         "graphics": program.format.graphics_ext,
         "deps": program.format.deps_ext,
+        "distribution": program.format.distribution_ext,
         "sidecar": program.sidecar.value,
         "dependencies": list(program.dependencies),
         "source": str(program.source_path) if program.source_path is not None else None,
         "library": program.library,
         "resolved_base": str(program.resolved_base) if program.resolved_base is not None else None,
+        "has_executing_system": program.has_executing_system,
+        "executing_systems": [_executing_system_row(target) for target in _executing_targets(program)],
     }
+
+
+def _executing_targets(program: SattLineProgram) -> Sequence[DistributionTarget]:
+    if program.distribution is None:
+        return ()
+    return program.distribution.executing_systems
+
+
+def _executing_system_row(target: DistributionTarget) -> dict[str, object]:
+    return {
+        "kind": target.kind,
+        "name": target.name,
+        "download": target.download,
+    }
+
+
+def _executing_summary(program: SattLineProgram) -> str:
+    """A short text form of the executing-system answer: yes, no, or unknown."""
+    answer = program.has_executing_system
+    if answer is None:
+        return "-"
+    if not answer:
+        return "no"
+    return "yes (" + ", ".join(target.name for target in _executing_targets(program)) + ")"
 
 
 def _diagnostic_row(diagnostic: LoadDiagnostic) -> dict[str, object]:
@@ -293,9 +321,11 @@ def _emit_programs(
     for program in programs.values():
         dependencies = ", ".join(program.dependencies) if program.dependencies else "-"
         library = program.library or "-"
+        executing = _executing_summary(program)
         print(
             f"  {program.name}  library={library} code={program.format.code_ext or '-'} "
             f"graphics={program.format.graphics_ext or '-'} deps={program.format.deps_ext or '-'} "
+            f"distribution={program.format.distribution_ext or '-'} exec={executing} "
             f"sidecar={program.sidecar.value} depends on: {dependencies}"
         )
     print(f"edges: {len(edges)}")

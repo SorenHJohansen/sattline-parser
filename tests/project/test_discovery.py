@@ -236,11 +236,26 @@ def test_lookup_missing_reports_via_debug(tmp_path: Path) -> None:
     assert any("No code file found" in message for message in messages)
 
 
-def test_lookup_graphics_kind_resolves_through_candidates(tmp_path: Path) -> None:
+def test_lookup_refuses_root_ordered_companion_search(tmp_path: Path) -> None:
     root = tmp_path / "p"
     _write(root, "Pic.g")
+    _write(root, "Pic.q")
     lookup = ProjectLookup([root], LoadMode.DRAFT)
-    assert lookup.find("Pic", ArtifactKind.GRAPHICS) == root / "Pic.g"
+    for kind in (ArtifactKind.GRAPHICS, ArtifactKind.DISTRIBUTION):
+        with pytest.raises(ValueError, match="beside the body"):
+            lookup.find("Pic", kind)
+
+
+def test_companions_never_enter_the_source_index(tmp_path: Path) -> None:
+    root = tmp_path / "p"
+    _write(root, "Pic.g")
+    _write(root, "Pic.q")
+    index = SourceIndex([root])
+    lookup = ProjectLookup([root], LoadMode.DRAFT, index=index)
+    with pytest.raises(ValueError):
+        lookup.find("Pic", ArtifactKind.GRAPHICS)
+    assert index.find_in_index(base=root, name="Pic", extensions=(".g",)) is None
+    assert index.find_in_index(base=root, name="Pic", extensions=(".q",)) is None
 
 
 def test_lookup_custom_index_discovers_previously_unindexed_file(tmp_path: Path) -> None:

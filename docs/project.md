@@ -2,38 +2,48 @@
 
 The project layer turns a set of SattLine artifact files into a resolved graph
 of `SattLineProgram` instances. It owns discovery, draft/official selection,
-dependency resolution, graphics companion loading, parser-owned caches, and
-project-scope validation.
+dependency resolution, graphics and distribution companion loading,
+parser-owned caches, and project-scope validation.
 
 A **program** here is one loaded source artifact (one `.x` or `.s` file), not
 one executable top-level program. Loading one target can produce many
 `SattLineProgram` entries through its dependency closure.
 
-A SattLine program or library is one unit made of three files: the code body,
-the dependency sidecar, and the graphics companion. Draft is `.s`, `.l`, `.g`;
-official is `.x`, `.z`, `.y`. The loader resolves each role by mode; a missing
-sidecar is reported as a diagnostic and a missing companion is recorded as
-absent, never invented.
+A SattLine program or library is one unit made of four files: the code body,
+the dependency sidecar, the graphics companion, and the distribution companion.
+Draft is `.s`, `.l`, `.g`, `.p`; official is `.x`, `.z`, `.y`, `.q`. The loader
+resolves each role by mode; a missing sidecar is reported as a diagnostic and a
+missing companion is recorded as absent, never invented.
 
 ## Artifact formats
 
 ```mermaid
 flowchart LR
-    MODE{"LoadMode"} -->|DRAFT| D["code .s -> fallback .x<br/>deps .l -> fallback .z<br/>graphics .g -> fallback .y"]
-    MODE -->|OFFICIAL| O["code .x only<br/>deps .z only<br/>graphics .y only"]
+    BODY{"resolved body"} -->|".s"| D["draft family<br/>.l deps<br/>.g graphics<br/>.p distribution"]
+    BODY -->|".x"| O["official family<br/>.z deps<br/>.y graphics<br/>.q distribution"]
 ```
 
-| Artifact | Draft | Official | Fallback |
-| --- | --- | --- | --- |
-| Code body | `.s` | `.x` | Draft falls back to `.x`; official does not |
-| Dependency sidecar | `.l` | `.z` | Draft falls back to `.z`; official does not |
-| Graphics companion | `.g` | `.y` | Draft falls back to `.y`; official does not |
+| Artifact | Draft | Official |
+| --- | --- | --- |
+| Code body | `.s` | `.x` |
+| Dependency sidecar | `.l` | `.z` |
+| Graphics companion | `.g` | `.y` |
+| Distribution companion | `.p` | `.q` |
 
-A `.x` body always pairs only with a `.y` companion, regardless of mode,
-because `.x` is the official body format. See
-`companion_extensions_for_code` in `project/formats.py`.
+The **resolved body's suffix decides the artifact family for the whole unit**.
+A `.s` body pairs only with `.l`, `.g`, and `.p`; an `.x` body pairs only with
+`.z`, `.y`, and `.q`. Artifacts never fall back across families, so a draft body
+is never paired with an official sidecar or companion, and the reverse never
+happens either.
 
-There is no "guess the extension" step. The mode decides the candidate list,
+Only the code body falls back, and only within one mode: draft mode prefers
+`.s` and falls back to `.x`, while official mode accepts `.x` only. Once the
+body is resolved, every other role has exactly one candidate extension, chosen
+by the body suffix. See `body_mode`, `deps_extensions_for_code`,
+`companion_extensions_for_code`, and `distribution_extensions_for_code` in
+`project/formats.py`.
+
+There is no "guess the extension" step. Each role has a fixed candidate list,
 and the first candidate that exists wins.
 
 ## Discovery
@@ -60,16 +70,24 @@ Each root is indexed once by `SourceIndex`:
 stem.casefold() -> {extension -> Path}
 ```
 
-Only code and dependency extensions are indexed. Graphics companions are
-resolved from their code path and never appear in the index. A miss in the
-index falls back to a `stat` check for each candidate extension, and a hit
-updates the index.
+Only code and dependency extensions are indexed. Graphics and distribution
+companions are resolved from their code path and never appear in the index. A
+miss in the index falls back to a `stat` check for each candidate extension, and
+a hit updates the index.
+
+`ProjectLookup.find` resolves only a code body or a dependency sidecar. It
+raises `ValueError` for `ArtifactKind.GRAPHICS` and
+`ArtifactKind.DISTRIBUTION`, because a companion has no root-ordered meaning: a
+search across the roots could return another unit's companion. Companions reach
+a program only through `resolve_graphics_companion_path` and
+`resolve_distribution_companion_path`, which anchor to the selected body.
 
 `find_deps_beside(code_path, name)` is deliberately different from
 `find_deps(name, requester_dir)`. A SattLine library is a body plus a sidecar
 at **one** prefix. Resolving the sidecar through the whole root list could pair
 a body with an unrelated library's sidecar, so the body's own directory decides
-and the requester is ignored.
+and the requester is ignored. The body's suffix also decides which sidecar
+extension may pair, through `deps_extensions_for_code`.
 
 ## Loading
 
@@ -109,6 +127,7 @@ sequenceDiagram
     L->>L: set origin_file and origin_lib
     L->>L: record datecodes
     L->>L: resolve and parse graphics companion
+    L->>L: resolve and parse distribution companion
     L->>VAL: validate when scope is INVOKED or FULL
     VAL-->>L: diagnostics
     L->>L: store SattLineProgram in registry
@@ -134,10 +153,11 @@ observable orders:
   `A`'s broken body even when `A` was requested first. Structural errors win
   over everything.
 - **Diagnostics.** `SattLineProject.diagnostics()` reports every discovery
-  finding (a missing or empty sidecar, a sidecar elsewhere, a body skipped
-  during discovery) before every assembly finding (a body that failed to parse,
-  a graphics companion that failed to read). Within each group the order is plan
-  order, which is post-order.
+  finding (a missing or empty sidecar, a sidecar elsewhere, a sidecar from the
+  other artifact family, a body skipped during discovery) before every assembly
+  finding (a body that failed to parse, a graphics or distribution companion
+  that failed to read). Within each group the order is plan order, which is
+  post-order.
 
 `validate=INVOKED` runs **after** the graph is complete, because it needs the
 whole invocation graph. The loader first builds the registry, then walks
@@ -179,11 +199,13 @@ enumerate an exponential number of elementary cycles.
 
 ```mermaid
 stateDiagram-v2
-    [*] --> Absent: no .l/.z found beside the body
+    [*] --> Missing: no sidecar in the body's family
     [*] --> Empty: file exists, no names
     [*] --> Present: file exists with names
-    Absent --> Elsewhere: a sidecar exists but not beside the body
-    Elsewhere --> Absent: diagnostic only, not paired
+    Missing --> Elsewhere: a sidecar exists but not beside the body
+    Missing --> FamilyMismatch: a sidecar sits beside the body in the other family
+    Elsewhere --> Missing: diagnostic only, not paired
+    FamilyMismatch --> Missing: diagnostic only, not paired
     Empty --> Present: names added
     Present --> Empty: names removed
 ```
@@ -191,7 +213,10 @@ stateDiagram-v2
 `SidecarState` distinguishes absent, empty, and present. Conflating absent with
 empty would silently drop a dependency chain: a library with an empty sidecar
 is still a library whose body was found, while a missing sidecar may indicate a
-layout mistake. `SIDECAR_ELSEWHERE` reports the stray file without pairing it.
+layout mistake. `SIDECAR_ELSEWHERE` reports a stray file in another directory
+without pairing it. `SIDECAR_FAMILY_MISMATCH` reports a sidecar that sits beside
+the body but belongs to the other artifact family, for example a `.z` beside a
+`.s` body. Neither stray is ever paired.
 
 ## Validation scopes
 
@@ -266,6 +291,7 @@ classDiagram
         name: str
         code: BasePicture
         graphics: GraphicsModel | None
+        distribution: DistributionData | None
         dependencies: tuple[str, ...]
         format: ProgramFormat
         source_path: Path | None
@@ -274,6 +300,18 @@ classDiagram
         library: str | None
         resolved_base: Path | None
         diagnostics: tuple[Diagnostic, ...]
+    }
+    class DistributionData {
+        version: str | None
+        source_code_systems: tuple[DistributionTarget, ...]
+        executing_systems: tuple[DistributionTarget, ...]
+        has_executing_system: bool
+    }
+    class DistributionTarget {
+        kind: str
+        name: str
+        attributes: tuple[tuple[str, str], ...]
+        download: str | None
     }
     class DependencyGraph {
         nodes: tuple[str, ...]
@@ -284,11 +322,14 @@ classDiagram
         code_ext: str | None
         graphics_ext: str | None
         deps_ext: str | None
+        distribution_ext: str | None
     }
 
     SattLineProject --> SattLineProgram
     SattLineProject --> DependencyGraph
     SattLineProgram --> ProgramFormat
+    SattLineProgram --> DistributionData
+    DistributionData --> DistributionTarget
 ```
 
 `SattLineProject` keys programs by `str.casefold()` identity internally while
@@ -367,6 +408,91 @@ code file's directory. It never does a root-ordered lookup:
 The loader parses the companion into `program.graphics`. Structural problems
 become `GraphicsMessage` values, never exceptions. See [graphics.md](graphics.md).
 
+## Distribution companion
+
+A distribution companion (`.p` draft, `.q` official) records which systems a
+unit is sent to. It is configuration, not proof that the unit is running
+anywhere, and it is not a module type: a program and a library both may carry
+one.
+
+```mermaid
+stateDiagram-v2
+    [*] --> Unknown: no .p/.q beside the body
+    [*] --> Parsed: companion read
+    [*] --> Failed: companion does not match the structure
+    Parsed --> Configured: ExecutingSystems lists a target
+    Parsed --> Unconfigured: ExecutingSystems is empty
+    Configured --> Unconfigured: targets removed
+    Unconfigured --> Configured: a target added
+```
+
+`resolve_distribution_companion_path(code_path, mode)` uses `with_suffix` in the
+code file's directory, never a root-ordered lookup:
+
+- an `.x` body resolves only to `.q`;
+- a draft body resolves only to `.p`;
+- a `.p` or `.q` input resolves to itself.
+
+The file is a small nested structure of named groups:
+
+```
+DistributionData
+ ( Version "Distributiondata version 1.0" )
+SourceCodeSystems
+ (  )
+ExecutingSystems
+ ( Controller
+    ( Name "172.18.0.1"
+      Download ShortStopReconfig ) )
+```
+
+`parse_distribution_file` reads it into `DistributionData`:
+
+| Field | Meaning |
+| --- | --- |
+| `version` | The `Version` string of `DistributionData` |
+| `source_code_systems` | Targets of `SourceCodeSystems` |
+| `executing_systems` | Targets of `ExecutingSystems` |
+| `has_executing_system` | `True` when `executing_systems` is non-empty |
+
+A target is a `DistributionTarget` with `kind` (the section keyword as written,
+for example `Controller` or `OpStation`), `name` (the `Name` string), and
+`attributes` (the trailing `Keyword Value` pairs in file order).
+
+`SourceCodeSystems` entries never count as executing systems. The parse is
+structural: a group is read as an executing system only when it sits inside
+`ExecutingSystems`.
+
+`SattLineProgram.has_executing_system` is the three-state answer a consumer
+needs:
+
+| Value | Meaning |
+| --- | --- |
+| `True` | A parsed companion lists at least one executing system |
+| `False` | A parsed companion lists none |
+| `None` | No companion was found, so the question is unanswerable |
+
+A companion that exists but does not match the structure raises
+`DistributionParseError`, which the loader turns into `ArtifactLoadError` (for a
+target) or `DependencyParseError` (for a dependency). It is never reported as an
+empty list, because "none" and "could not tell" are different answers. A missing
+companion is not a diagnostic: distribution data is optional.
+
+This is deliberately stricter than the graphics companion, where structural
+problems become `GraphicsMessage` values on a companion that still loads. A
+graphics message still describes the file it came from; an unusable distribution
+companion cannot answer the one question it exists to answer, so the program is
+either failed or skipped instead of being reported as unconfigured. The
+three-state field therefore describes only what the parser could establish: a
+program that was skipped for a bad companion is absent from `programs()` and
+appears in `diagnostics()` as `LOAD_SKIPPED`, so a consumer that only reads
+`programs()` must also read the diagnostics to distinguish "no companion" from
+"companion rejected".
+
+The companion is read during assembly on every load, including a load served
+from a warm AST cache, so editing only the `.q` changes the answer without
+re-parsing the body.
+
 ## Loading performance
 
 - Dependencies are parsed once, by casefolded identity.
@@ -383,9 +509,9 @@ Measured with `sattline project` over a 268-program library tree (315 MB of
 | `--workers 1 --no-cache` | 255 s |
 | defaults, second load (warm AST cache) | 68 s |
 
-Parsing is 99% of a load. Lookup, sidecar reads, graphics companions, and graph
-assembly together are under a second on that tree, which is why `workers` is the
-only lever with a large factor.
+Parsing is 99% of a load. Lookup, sidecar reads, graphics and distribution
+companions, and graph assembly together are under a second on that tree, which
+is why `workers` is the only lever with a large factor.
 
 A `ProjectLoader` resolves one load. Discovery plans, parse outcomes, and the
 registry are per-load state, so a second `resolve()` call raises rather than
@@ -429,4 +555,5 @@ discovery fixes the plan order before any parse runs.
 | `tests/project/test_lookup_cache.py` | Cache trust and invalidation |
 | `tests/project/test_ast_cache.py` | Cache key, signature, pruning |
 | `tests/project/test_graphics_parsing.py` | Companion parsing |
+| `tests/project/test_distribution.py` | Distribution companion parsing and pairing |
 | `tests/project/test_graphics_records.py` | Composite and picture display records |
