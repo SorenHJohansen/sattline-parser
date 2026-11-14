@@ -194,10 +194,10 @@ def _collect_step_features(
                 features.update({"hold", "reset"})
             if seqtimer:
                 features.add("t")
-        elif isinstance(item, SFCAlternative | SFCParallel):
+        elif isinstance(item, (SFCAlternative, SFCParallel)):
             for branch in item.branches:
                 _collect_step_features(branch, seqcontrol, seqtimer, steps, step_features)
-        elif isinstance(item, SFCSubsequence | SFCTransitionSub):
+        elif isinstance(item, (SFCSubsequence, SFCTransitionSub)):
             _collect_step_features(item.body, seqcontrol, seqtimer, steps, step_features)
 
 
@@ -307,7 +307,7 @@ def walk_expression(expr: SLExpression, context: ValidationContext) -> None:
     elif isinstance(expr, NotOp):
         _check_bool_operand(expr, context)
         walk_expression(expr.operand, context)
-    elif isinstance(expr, Compare | BinOp):
+    elif isinstance(expr, (Compare, BinOp)):
         _check_operands(expr, context)
         walk_expression(expr.left, context)
         walk_expression(expr.right, context)
@@ -338,7 +338,7 @@ def walk_sfc_item(item: SFCBodyItem, context: ValidationContext) -> None:
             walk_expression(item.condition, context)
     elif isinstance(item, SFCTransitionSub):
         walk_sequence_body(item.body, context)
-    elif isinstance(item, SFCAlternative | SFCParallel):
+    elif isinstance(item, (SFCAlternative, SFCParallel)):
         for branch in item.branches:
             walk_sequence_body(branch, context)
     elif isinstance(item, SFCSubsequence):
@@ -728,12 +728,12 @@ def _collect_jump_targets(items: list[SFCBodyItem], step_names: set[str], transi
         if isinstance(item, SFCStep):
             if item.name is not None:
                 step_names.add(fold_identifier(item.name))
-        elif isinstance(item, SFCTransition | SFCTransitionSub):
+        elif isinstance(item, (SFCTransition, SFCTransitionSub)):
             if item.name is not None:
                 transition_names.add(fold_identifier(item.name))
             if isinstance(item, SFCTransitionSub):
                 _collect_jump_targets(item.body, step_names, transition_names)
-        elif isinstance(item, SFCAlternative | SFCParallel):
+        elif isinstance(item, (SFCAlternative, SFCParallel)):
             for branch in item.branches:
                 _collect_jump_targets(branch, step_names, transition_names)
         elif isinstance(item, SFCSubsequence):
@@ -756,10 +756,10 @@ def _count_sfc_names(items: list[SFCBodyItem], counts: dict[str, int]) -> None:
         if name is not None:
             folded = fold_identifier(name)
             counts[folded] = counts.get(folded, 0) + 1
-        if isinstance(item, SFCAlternative | SFCParallel):
+        if isinstance(item, (SFCAlternative, SFCParallel)):
             for branch in item.branches:
                 _count_sfc_names(branch, counts)
-        elif isinstance(item, SFCSubsequence | SFCTransitionSub):
+        elif isinstance(item, (SFCSubsequence, SFCTransitionSub)):
             _count_sfc_names(item.body, counts)
 
 
@@ -822,10 +822,10 @@ def _check_fork_targets(
             _check_fork(item.fork, "step", item.span)
         elif isinstance(item, SFCTransition):
             _check_fork(item.fork, "transition", item.span)
-        elif isinstance(item, SFCAlternative | SFCParallel):
+        elif isinstance(item, (SFCAlternative, SFCParallel)):
             for branch in item.branches:
                 _check_fork_targets(branch, step_names, transition_names, name_counts, errors)
-        elif isinstance(item, SFCSubsequence | SFCTransitionSub):
+        elif isinstance(item, (SFCSubsequence, SFCTransitionSub)):
             _check_fork_targets(item.body, step_names, transition_names, name_counts, errors)
 
 
@@ -851,16 +851,16 @@ def _record_module_names(items: list[SFCBodyItem], seen: set[str], errors: list[
                 )
             else:
                 seen.add(folded)
-        if isinstance(item, SFCAlternative | SFCParallel):
+        if isinstance(item, (SFCAlternative, SFCParallel)):
             for branch in item.branches:
                 _record_module_names(branch, seen, errors)
-        elif isinstance(item, SFCSubsequence | SFCTransitionSub):
+        elif isinstance(item, (SFCSubsequence, SFCTransitionSub)):
             _record_module_names(item.body, seen, errors)
 
 
 def _named_sfc_element_name(item: SFCBodyItem) -> str | None:
     if isinstance(item, SFCSubsequence):
         return item.name
-    if isinstance(item, SFCStep | SFCTransition | SFCTransitionSub):
+    if isinstance(item, (SFCStep, SFCTransition, SFCTransitionSub)):
         return item.name
     return None

@@ -24,7 +24,7 @@ def to_jsonable(value: object, *, depth: int) -> object:
     the output. At the limit a composite value is replaced by a placeholder such
     as ``<ModuleDef>`` or ``<12 items>`` rather than silently disappearing.
     """
-    if value is None or isinstance(value, bool | int | float | str):
+    if value is None or isinstance(value, (bool, int, float, str)):
         return value
     if depth <= 0:
         return _placeholder(value)
@@ -34,7 +34,7 @@ def to_jsonable(value: object, *, depth: int) -> object:
         return _span(value)
     if isinstance(value, Path):
         return str(value)
-    if isinstance(value, list | tuple):
+    if isinstance(value, (list, tuple)):
         items = cast("list[object] | tuple[object, ...]", value)
         return [to_jsonable(item, depth=depth - 1) for item in items]
     if isinstance(value, dict):
@@ -53,7 +53,7 @@ def _span(span: SourceSpan) -> dict[str, object]:
 
 
 def _placeholder(value: object) -> str:
-    if isinstance(value, list | tuple):
+    if isinstance(value, (list, tuple)):
         items = cast("list[object] | tuple[object, ...]", value)
         return f"<{len(items)} items>"
     if isinstance(value, dict):

@@ -183,6 +183,12 @@ The scanner never rewrites text inside an opaque region. An unknown marker
 raises `PreprocessError` with its character offset instead of being replaced by
 whitespace.
 
+`preprocessing/scanner_tokens.json` is the scanner enum: the ordinal `n` is
+encoded as `'#' + chr(48 + n // 16) + chr(48 + n % 16)` and the row `id` is
+`n + 8`. The table covers keywords and operators; literal source text is
+emitted unencoded. A code is added only with a fixture that decodes it, because
+the ordinal alone does not prove which word an export used.
+
 Replacement text is aligned to the matched source region by longest common
 subsequence. A replacement character gets a real source mapping only when it
 genuinely survives from the region. Inserted, renamed, or rewritten characters

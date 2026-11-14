@@ -158,7 +158,7 @@ def format_expr(expr: object, indent: str = _DEFAULT_INDENT) -> str:
             else_block=None if expr.else_expr is None else [expr.else_expr],
         )
 
-    if isinstance(expr, int | float | bool | str):
+    if isinstance(expr, (int, float, bool, str)):
         return repr(expr) if isinstance(expr, str) else str(expr)
 
     # Unhandled nodes fall back to ``str``: the formatter also accepts the

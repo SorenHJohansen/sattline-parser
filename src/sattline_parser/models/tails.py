@@ -112,6 +112,6 @@ def is_expression_tail(value: object) -> TypeGuard[SLExpression]:
     False for the bound ``InVar_``/``OutVar_`` wrappers, which carry a symbol or
     literal rather than a computed value.
     """
-    if isinstance(value, VarTail | LitStringTail):
+    if isinstance(value, (VarTail, LitStringTail)):
         return False
     return isinstance(value, _LITERAL_TAIL_TYPES + _EXPRESSION_NODE_TYPES)

@@ -253,9 +253,9 @@ def is_valid_time_literal(value: object) -> bool:
 def infer_literal_datatype(value: object, *, is_duration: bool = False) -> Simple_DataType | str | None:
     if isinstance(value, bool):
         return Simple_DataType.BOOLEAN
-    if isinstance(value, IntLiteral | int) and not isinstance(value, bool):
+    if isinstance(value, (IntLiteral, int)) and not isinstance(value, bool):
         return Simple_DataType.INTEGER
-    if isinstance(value, FloatLiteral | float):
+    if isinstance(value, (FloatLiteral, float)):
         return Simple_DataType.REAL
     if is_duration and isinstance(value, str) and is_valid_duration_literal(value):
         return Simple_DataType.DURATION
@@ -387,9 +387,9 @@ def merge_compatible_types(
 
 
 def expression_is_zero_literal(node: object) -> bool:
-    if isinstance(node, IntLiteral | int) and not isinstance(node, bool):
+    if isinstance(node, (IntLiteral, int)) and not isinstance(node, bool):
         return int(node) == 0
-    if isinstance(node, FloatLiteral | float):
+    if isinstance(node, (FloatLiteral, float)):
         return float(node) == 0.0
     if isinstance(node, UnaryOp) and node.op in {const.KEY_PLUS, const.KEY_MINUS, "+", "-"}:
         return expression_is_zero_literal(node.operand)
@@ -404,15 +404,15 @@ def infer_expression_datatype(
     """Static datatype of an expression node, or ``None`` when unproven."""
     if isinstance(expr, bool):
         return Simple_DataType.BOOLEAN
-    if isinstance(expr, IntLiteral | int) and not isinstance(expr, bool):
+    if isinstance(expr, (IntLiteral, int)) and not isinstance(expr, bool):
         return Simple_DataType.INTEGER
-    if isinstance(expr, FloatLiteral | float):
+    if isinstance(expr, (FloatLiteral, float)):
         return Simple_DataType.REAL
     if isinstance(expr, str):
         return Simple_DataType.STRING
     if isinstance(expr, VarRef):
         return resolve_ref_datatype(expr, scope, type_graph)
-    if isinstance(expr, Compare | BoolOp | NotOp):
+    if isinstance(expr, (Compare, BoolOp, NotOp)):
         return Simple_DataType.BOOLEAN
     if isinstance(expr, BinOp):
         return merge_numeric_types(

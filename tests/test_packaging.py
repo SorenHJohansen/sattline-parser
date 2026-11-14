@@ -59,7 +59,7 @@ def test_scanner_token_resource_is_packaged() -> None:
     token_path = importlib.resources.files("sattline_parser").joinpath("preprocessing", "scanner_tokens.json")
     assert token_path.is_file()
     rows = json.loads(token_path.read_text(encoding="utf-8"))
-    assert len(rows) == 173
+    assert len(rows) == 174
     assert rows[0]["code"] == "#01"
 
 

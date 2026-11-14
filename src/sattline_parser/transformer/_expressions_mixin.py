@@ -46,7 +46,7 @@ def _bound_tail(items: list[object], span: SourceSpan | None = None) -> VarTail:
             if item.type == _OUTVAR_TOKEN:
                 direction = "out"
             continue
-        if value is None and isinstance(item, str | bool | int | float | LitStringTail):
+        if value is None and isinstance(item, (str, bool, int, float, LitStringTail)):
             value = item
     if value is None:
         raise ValueError(f"invar tail expected a value after InVar_/OutVar_; got: {items!r}")

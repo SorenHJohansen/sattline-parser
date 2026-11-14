@@ -785,6 +785,11 @@
     "text": "Cancel_Variable"
   },
   {
+    "id": 198,
+    "code": "#;>",
+    "text": "Non_Zoomable"
+  },
+  {
     "id": 199,
     "code": "#;?",
     "text": "LayerLimit_"

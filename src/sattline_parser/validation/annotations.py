@@ -84,7 +84,7 @@ def _tail_context(event: WalkEvent) -> str | None:
     if isinstance(parent, ModuleInViewClause):
         return "annotation" if field == "tail" else None
 
-    if isinstance(parent, TailedClause | AssignClause | FlagClause):
+    if isinstance(parent, (TailedClause, AssignClause, FlagClause)):
         return "annotation" if field == "tail" else None
 
     if isinstance(parent, ProcedureCall):

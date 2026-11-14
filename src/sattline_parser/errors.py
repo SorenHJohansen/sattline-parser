@@ -245,7 +245,7 @@ def _unexpected_description(exc: UnexpectedInput) -> tuple[str, str | None, tupl
     found = _unexpected_found(exc)
     labels = _expected_labels(getattr(exc, "expected", None))
     if found is None:
-        sentence = "unexpected end of file" if isinstance(exc, UnexpectedEOF | UnexpectedToken) else "unexpected input"
+        sentence = "unexpected end of file" if isinstance(exc, (UnexpectedEOF, UnexpectedToken)) else "unexpected input"
     elif isinstance(exc, UnexpectedCharacters):
         sentence = f"unexpected character {found!r}"
     else:

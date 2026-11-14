@@ -144,11 +144,22 @@ sattline project programs/ libs/ --validate full --fail-on error
 
 A root is a library directory: the loader indexes artifacts directly inside it.
 When `--targets` is omitted, every source directly under each root is a target.
-`--lenient` is the CLI spelling of `strict=False`. `--no-cache` bypasses the
-parser caches; `--cache-dir` points them at a private directory. A recursive
-`.l`/`.z` dependency or a module type that instantiates itself is a structural
-load error: the command reports `cannot load project` with the cycle path and
-exits `1`, even under `--lenient`.
+`--lenient` is the CLI spelling of `strict=False`. A recursive `.l`/`.z`
+dependency or a module type that instantiates itself is a structural load
+error: the command reports `cannot load project` with the cycle path and exits
+`1`, even under `--lenient`.
+
+| Flag | Meaning |
+| --- | --- |
+| `--workers N` | Parse bodies in `N` processes. Default `min(8, cpu_count)`; `1` parses in this process |
+| `--cache-dir DIR` | Parser cache directory |
+| `--no-cache` | Bypass the parser caches |
+
+The caches live under `$XDG_CACHE_HOME/sattline-parser/project` unless
+`--cache-dir` names another private directory. `--no-cache` makes the load
+hermetic: nothing is written and nothing is read. A first load in a warm
+directory writes the cache; every later load of an unchanged tree skips parsing.
+The directory holds parsed ASTs of the loaded sources, so keep it private.
 
 ### `graphics`
 

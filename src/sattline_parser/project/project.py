@@ -51,6 +51,7 @@ class SattLineProject:
         debug: Callable[[str], None] | None = None,
         cache_dir: Path | None = None,
         validate: LoadValidation = LoadValidation.INVOKED,
+        workers: int = 1,
     ) -> SattLineProject:
         """Load a project from ``roots`` plus ``targets``.
 
@@ -75,6 +76,11 @@ class SattLineProject:
         ``cache_dir`` optionally enables the parser-owned lookup and AST caches
         so repeated loads skip re-discovery and re-parsing. When ``None`` the
         load is fully in-memory and hermetic.
+
+        ``workers`` parses program bodies in that many processes. Discovery
+        resolves every artifact first, so the closure is complete before any
+        parse starts and the result is identical at any worker count; only the
+        time changes. ``1`` keeps the load in the calling process.
         """
         loader = ProjectLoader(
             roots=roots,
@@ -83,6 +89,7 @@ class SattLineProject:
             debug=debug,
             cache_dir=cache_dir,
             validate=validate,
+            workers=workers,
         )
         program_registry = loader.resolve(targets)
         project = cls()

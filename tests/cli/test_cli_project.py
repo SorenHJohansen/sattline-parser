@@ -7,6 +7,7 @@ import json
 
 from sattline_parser.cli import main
 from sattline_parser.cli._exit import ExitCode
+from sattline_parser.cli.cmds import project as project_cmd
 from sattline_parser.project._cycles import dependency_cycles
 
 from ._cli_support import VALID_SOURCE, write_source
@@ -257,3 +258,36 @@ def test_cycles_keeps_opposite_orderings_with_the_same_members_apart() -> None:
         ["a", "c", "b"],
         ["b", "c"],
     ]
+
+
+def test_cache_flags(tmp_path, capsys) -> None:
+    _program(tmp_path, "Base")
+    _program(tmp_path, "Child", "Base")
+    explicit = tmp_path / "explicit-cache"
+
+    assert main(["project", str(tmp_path), "--no-cache"]) == ExitCode.OK
+    assert "programs: 2" in capsys.readouterr().out
+
+    assert main(["project", str(tmp_path), "--cache-dir", str(explicit), "--workers", "1"]) == ExitCode.OK
+    assert "programs: 2" in capsys.readouterr().out
+    assert any(explicit.rglob("*"))
+
+
+def test_default_cache_dir_is_the_xdg_cache(tmp_path, capsys, monkeypatch) -> None:
+    _program(tmp_path, "Base")
+    cache_home = tmp_path / "xdg"
+    monkeypatch.setenv("XDG_CACHE_HOME", str(cache_home))
+
+    assert main(["project", str(tmp_path)]) == ExitCode.OK
+    assert "programs: 1" in capsys.readouterr().out
+    assert project_cmd._default_cache_dir() == cache_home / "sattline-parser" / "project"
+    assert any(project_cmd._default_cache_dir().rglob("*"))
+
+
+def test_workers_flag_defaults_to_cpu_count_capped(monkeypatch) -> None:
+    monkeypatch.setattr(project_cmd.os, "cpu_count", lambda: 2)
+    assert project_cmd._default_workers() == 2
+    monkeypatch.setattr(project_cmd.os, "cpu_count", lambda: 64)
+    assert project_cmd._default_workers() == project_cmd._MAX_DEFAULT_WORKERS
+    monkeypatch.setattr(project_cmd.os, "cpu_count", lambda: None)
+    assert project_cmd._default_workers() == 1

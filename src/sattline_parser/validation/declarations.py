@@ -173,18 +173,18 @@ def _check_sequence_identifiers(items: list[SFCBodyItem], errors: list[Diagnosti
     for item in items:
         name: str | None = None
         span: SourceSpan | None = None
-        if isinstance(item, SFCStep | SFCTransition | SFCTransitionSub | SFCSubsequence):
+        if isinstance(item, (SFCStep, SFCTransition, SFCTransitionSub, SFCSubsequence)):
             name = item.name
             span = item.span
         if name:
             check_identifier(name, "Sequence element", span, errors)
-        if isinstance(item, SFCStep | SFCTransition) and item.fork is not None:
+        if isinstance(item, (SFCStep, SFCTransition)) and item.fork is not None:
             for target in item.fork.targets:
                 check_identifier(target, "Fork target", span, errors)
-        if isinstance(item, SFCAlternative | SFCParallel):
+        if isinstance(item, (SFCAlternative, SFCParallel)):
             for branch in item.branches:
                 _check_sequence_identifiers(branch, errors)
-        elif isinstance(item, SFCSubsequence | SFCTransitionSub):
+        elif isinstance(item, (SFCSubsequence, SFCTransitionSub)):
             _check_sequence_identifiers(item.body, errors)
 
 

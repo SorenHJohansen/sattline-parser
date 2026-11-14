@@ -246,6 +246,7 @@ project = SattLineProject.load(
     mode=LoadMode.DRAFT,
     targets=["MyProgram"],
     cache_dir=None,
+    workers=1,
 )
 program = project.get("MyProgram")
 print(program.name, len(program.dependencies))

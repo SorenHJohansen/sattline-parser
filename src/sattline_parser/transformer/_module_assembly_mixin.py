@@ -392,7 +392,7 @@ class ModuleAssemblyMixin:
             if isinstance(source, VarRef):
                 source_var = source
                 source_type = MappingSource.VARIABLE
-            elif isinstance(source, int | float | str | bool):
+            elif isinstance(source, (int, float, str, bool)):
                 source_literal = source
                 source_type = MappingSource.VALUE
             elif isinstance(source, dict) and const.GRAMMAR_VALUE_TIME_VALUE in source:

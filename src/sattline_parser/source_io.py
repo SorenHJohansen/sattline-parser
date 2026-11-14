@@ -12,7 +12,7 @@ import dataclasses
 import getpass
 import os
 import sys
-from collections.abc import Callable, Generator, Iterator
+from collections.abc import Callable, Collection, Generator
 from contextlib import contextmanager
 from functools import lru_cache
 from hashlib import sha256
@@ -79,17 +79,27 @@ _CACHE_DIR_NAME = "sattline-parser"
 MAX_SOURCE_DEPTH = 256
 
 
-def _structure_children(value: object) -> Iterator[object]:
-    """Yield the values that a recursive consumer would descend into."""
-    if isinstance(value, Tree):
-        yield from cast(Tree[object], value).children
-    elif isinstance(value, dict):
-        yield from value.values()
-    elif isinstance(value, list | tuple | set | frozenset):
-        yield from value
-    elif dataclasses.is_dataclass(value) and not isinstance(value, type):
-        for structure_field in dataclasses.fields(value):
-            yield getattr(value, structure_field.name)
+#: Values that a recursive consumer never descends into.
+_ATOMIC_TYPES = (bool, int, float, str, bytes)
+
+#: Types whose field names this module has already resolved.
+_STRUCTURE_FIELDS: dict[type, tuple[str, ...]] = {}
+
+
+def _structure_fields(cls: type) -> tuple[str, ...]:
+    """The dataclass fields a recursive consumer would descend into, or ``()``.
+
+    Resolving the field list per type once keeps ``dataclasses.fields`` out of a
+    traversal that visits every node of every parse. A dataclass *class* is not
+    a dataclass instance and yields no fields, exactly as before.
+    """
+    names = _STRUCTURE_FIELDS.get(cls)
+    if names is None:
+        names = ()
+        if dataclasses.is_dataclass(cls) and not issubclass(cls, Tree):
+            names = tuple(structure_field.name for structure_field in dataclasses.fields(cls))
+        _STRUCTURE_FIELDS[cls] = names
+    return names
 
 
 def _first_too_deep_structure(root: object, limit: int) -> object | None:
@@ -98,10 +108,13 @@ def _first_too_deep_structure(root: object, limit: int) -> object | None:
     The traversal is iterative, so the check itself cannot raise
     ``RecursionError``. It stops at the first offending value: the exact depth
     beyond the limit and the rest of the structure do not change the
-    diagnostic.
+    diagnostic. Children are pushed in reverse so the offending value reported
+    is the first one in source order, and ``seen`` bounds the work on a value
+    reachable by more than one path.
     """
     stack: list[tuple[object, int]] = [(root, 1)]
     seen: dict[int, int] = {}
+    atomic = _ATOMIC_TYPES
     while stack:
         current, depth = stack.pop()
         if depth > limit:
@@ -110,13 +123,30 @@ def _first_too_deep_structure(root: object, limit: int) -> object | None:
         if seen.get(identity, 0) >= depth:
             continue
         seen[identity] = depth
-        children = [
-            child
-            for child in _structure_children(current)
-            if not isinstance(child, bool | int | float | str | bytes) and child is not None
-        ]
+
+        cls = type(current)
+        names = _structure_fields(cls)
+        if names:
+            for name in reversed(names):
+                child = getattr(current, name)
+                if child is not None and not isinstance(child, atomic):
+                    stack.append((child, depth + 1))
+            continue
+
+        if issubclass(cls, Tree):
+            children: list[object] = cast(Tree[object], current).children
+        elif issubclass(cls, dict):
+            children = list(cast(dict[object, object], current).values())
+        elif issubclass(cls, list):
+            children = cast(list[object], current)
+        elif issubclass(cls, (tuple, set, frozenset)):
+            children = list(cast(Collection[object], current))
+        else:
+            continue
+
         for child in reversed(children):
-            stack.append((child, depth + 1))
+            if child is not None and not isinstance(child, atomic):
+                stack.append((child, depth + 1))
     return None
 
 
