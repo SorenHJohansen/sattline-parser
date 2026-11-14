@@ -149,6 +149,11 @@ policy are documented in the README.
 
 ### Removed
 
+- **`ModuleTypeDef.parametermappings`.** The field is removed. A module type
+  definition has no mapping list in the grammar, so the field could never be
+  populated; a mapping belongs to the submodule or module-type instance that
+  invokes it.
+
 - **Fuzz exports leave the package.** `FuzzResult`, `assert_no_crashes`,
   `assert_no_timeouts`, `collect_corpus_inputs`, `fuzz_harness`,
   `fuzz_parse_text`, `generate_random_text`, `run_corpus_regression`, and

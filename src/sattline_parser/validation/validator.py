@@ -238,9 +238,8 @@ def _walk_moduletype_def(
     errors: list[Diagnostic],
 ) -> None:
     # A module type definition carries no parameter mapping: the grammar has no
-    # ``moduletype_par_list`` on ``moduletype_definition``, and the transformer
-    # never fills ``ModuleTypeDef.parametermappings``. Mappings belong to the
-    # submodule or module-type instance that invokes it.
+    # ``moduletype_par_list`` on ``moduletype_definition``, and a mapping belongs
+    # to the submodule or module-type instance that invokes it.
     scope = build_scope(None, [*moduletype.moduleparameters, *moduletype.localvariables])
     check_variable_declarations(
         [*moduletype.moduleparameters, *moduletype.localvariables],

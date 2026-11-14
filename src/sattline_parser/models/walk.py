@@ -228,7 +228,6 @@ _FIELD_SPECS: _FieldSpecs = {
         "submodules": "node",
         "moduledefs": "node",
         "modulecodes": "node",
-        "parametermappings": "node",
         "groupconn": "node",
         "groupconn_global": "leaf",
         "origin_file": "leaf",
