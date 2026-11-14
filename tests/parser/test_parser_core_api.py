@@ -389,6 +389,102 @@ def test_private_cache_dir_gives_up_when_it_cannot_be_created(tmp_path):
     assert parser_api.private_cache_dir(blocker / "lark-cache") is None
 
 
+def test_private_directory_gives_up_when_creation_raises(tmp_path, monkeypatch):
+    def failing_mkdir(self, mode=0o777, parents=False, exist_ok=False):
+        raise OSError("boom")
+
+    monkeypatch.setattr(Path, "mkdir", failing_mkdir)
+
+    assert parser_api._private_directory(tmp_path / "cache") is None
+
+
+def test_private_directory_gives_up_when_lstat_fails(tmp_path, monkeypatch):
+    def failing_lstat(self):
+        raise OSError("boom")
+
+    monkeypatch.setattr(Path, "lstat", failing_lstat)
+
+    assert parser_api._private_directory(tmp_path / "cache") is None
+
+
+@pytest.mark.skipif(os.name != "posix", reason="Windows has no POSIX permission bits")
+def test_private_directory_gives_up_when_chmod_fails(tmp_path, monkeypatch):
+    directory = tmp_path / "cache"
+    directory.mkdir()
+    directory.chmod(0o755)
+
+    def failing_chmod(self, mode, *, follow_symlinks=True):
+        raise OSError("boom")
+
+    monkeypatch.setattr(Path, "chmod", failing_chmod)
+
+    assert parser_api._private_directory(directory) is None
+
+
+@pytest.mark.skipif(os.name != "posix", reason="Windows has no POSIX permission bits")
+def test_private_directory_gives_up_when_it_stays_too_open(tmp_path, monkeypatch):
+    directory = tmp_path / "cache"
+    directory.mkdir()
+    directory.chmod(0o755)
+
+    def no_op_chmod(self, mode, *, follow_symlinks=True):
+        return None
+
+    monkeypatch.setattr(Path, "chmod", no_op_chmod)
+
+    assert parser_api._private_directory(directory) is None
+
+
+def test_parser_cache_dir_disables_a_cache_under_a_foreign_parent(monkeypatch, tmp_path):
+    """A predictable name under the shared temp directory is attacker-reachable."""
+    monkeypatch.setattr(parser_api, "gettempdir", lambda: str(tmp_path))
+    monkeypatch.setattr(parser_api, "_getuid", lambda: -1)
+
+    assert parser_api._parser_cache_dir() is None
+
+
+def test_parser_cache_dir_validates_the_per_user_parent(monkeypatch, tmp_path):
+    monkeypatch.setattr(parser_api, "gettempdir", lambda: str(tmp_path))
+    root = tmp_path / f"sattline-parser-{parser_api._cache_owner_token()}"
+    root.write_text("not a directory", encoding="utf-8")
+
+    assert parser_api._parser_cache_dir() is None
+
+
+@pytest.mark.skipif(os.name != "posix", reason="symlink creation needs POSIX permissions")
+def test_parser_cache_dir_rejects_a_symlinked_per_user_directory(monkeypatch, tmp_path):
+    target = tmp_path / "elsewhere"
+    target.mkdir()
+    root = tmp_path / f"sattline-parser-{parser_api._cache_owner_token()}"
+    root.symlink_to(target, target_is_directory=True)
+    monkeypatch.setattr(parser_api, "gettempdir", lambda: str(tmp_path))
+
+    assert parser_api._parser_cache_dir() is None
+    assert not (target / "lark-cache").exists()
+
+
+def test_parser_cache_dir_creates_a_private_parent_and_child(monkeypatch, tmp_path):
+    monkeypatch.setattr(parser_api, "gettempdir", lambda: str(tmp_path))
+
+    directory = parser_api._parser_cache_dir()
+
+    assert directory is not None
+    assert directory.name == "lark-cache"
+    if os.name == "posix":
+        assert directory.stat().st_mode & 0o777 == 0o700
+        assert directory.parent.stat().st_mode & 0o777 == 0o700
+
+
+@pytest.mark.skipif(os.name != "posix", reason="symlink creation needs POSIX permissions")
+def test_private_cache_dir_rejects_a_symlinked_directory(tmp_path):
+    target = tmp_path / "target"
+    target.mkdir()
+    link = tmp_path / "link"
+    link.symlink_to(target, target_is_directory=True)
+
+    assert parser_api.private_cache_dir(link) is None
+
+
 def test_cache_owner_token_falls_back_without_getuid(monkeypatch):
     monkeypatch.setattr(parser_api, "_getuid", None)
 

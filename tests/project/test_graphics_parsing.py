@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any, cast
 
 import pytest
 from lark import Tree
@@ -175,19 +176,52 @@ def test_parse_graphics_binding_line_multiple_bindings() -> None:
 # --- source positions -----------------------------------------------------------
 
 
-def test_expression_prefix_places_the_payload_at_the_requested_position() -> None:
-    prefix = bindings._expression_prefix(line=2, line_start_offset=11, absolute_start=29)
+def test_rebase_expression_spans_places_the_payload_at_the_requested_position() -> None:
+    span = SourceSpan(start=4, end=9, line=1, column=5)
 
-    assert len(prefix) == 29
-    assert prefix.count("\n") == 1
-    assert prefix.rfind("\n") == 10
+    rebased = bindings._rebase_expression_spans(span, line=2, column=11, start=100)
+
+    assert rebased == SourceSpan(start=104, end=109, line=2, column=15)
 
 
-def test_expression_prefix_rejects_an_impossible_position() -> None:
-    with pytest.raises(ValueError, match="inconsistent"):
-        bindings._expression_prefix(line=3, line_start_offset=1, absolute_start=2)
-    with pytest.raises(ValueError, match="inconsistent"):
-        bindings._expression_prefix(line=1, line_start_offset=5, absolute_start=4)
+def test_rebase_expression_spans_keeps_later_lines_in_their_own_column() -> None:
+    span = SourceSpan(start=30, end=31, line=3, column=4)
+
+    rebased = bindings._rebase_expression_spans(span, line=7, column=11, start=100)
+
+    assert rebased == SourceSpan(start=130, end=131, line=9, column=4)
+
+
+def test_rebase_expression_spans_rebuilds_nested_dataclasses_and_containers() -> None:
+    text = "  Expr  True  15 not ZoomableVar"
+    match = bindings.BINDING_LINE_RE.search(text)
+    assert match is not None
+    binding, _ = bindings.parse_graphics_binding_match(text, line=3, match=match, line_start_offset=0)
+
+    assert binding is not None
+    assert binding.span == SourceSpan(start=17, end=32, line=3, column=18)
+    assert binding.value is not None
+    assert binding.value.span == binding.span
+
+
+def test_rebase_expression_spans_walks_dicts_lists_tuples_and_trees() -> None:
+    span = SourceSpan(start=0, end=1, line=1, column=1)
+    payload: dict[str, object] = {
+        "span": span,
+        "items": [span, (span,)],
+        "tree": Tree("expression", [span]),
+        "plain": 3,
+    }
+
+    rebased = cast("dict[str, Any]", bindings._rebase_expression_spans(payload, line=2, column=3, start=10))
+
+    expected = SourceSpan(start=10, end=11, line=2, column=3)
+    assert rebased["span"] == expected
+    items = cast("list[Any]", rebased["items"])
+    assert items[0] == expected
+    assert cast("tuple[Any, ...]", items[1])[0] == expected
+    assert cast("Tree[Any]", rebased["tree"]).children[0] == expected
+    assert rebased["plain"] == 3
 
 
 def test_parse_graphics_text_binding_spans_are_offsets_into_the_companion_text() -> None:

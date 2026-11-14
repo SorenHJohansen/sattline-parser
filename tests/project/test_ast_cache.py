@@ -52,6 +52,7 @@ from sattline_parser.project.ast_cache import (
     _save_pickle_payload,
     _temp_file_is_abandoned,
     _temp_path_for,
+    source_snapshot,
 )
 
 _AC_PATH = "sattline_parser.project.ast_cache"
@@ -550,6 +551,31 @@ def test_load_rejects_stat_change(tmp_path: Path) -> None:
     assert cache.load(code_path, "draft") == ast
     code_path.write_text(_MINIMAL_SOURCE + "\n", encoding="utf-8")
     assert cache.load(code_path, "draft") is None
+
+
+def test_save_refuses_a_snapshot_the_source_no_longer_matches(tmp_path: Path) -> None:
+    """A body parsed from an older revision must not be stored as current."""
+    code_path = _write_code(tmp_path)
+    cache = FileASTCache(tmp_path)
+
+    cache.save(code_path, "draft", _picture(code_path), snapshot=(0, 0))
+
+    assert cache.load(code_path, "draft") is None
+
+
+def test_save_with_the_snapshot_the_parse_started_from_writes_the_entry(tmp_path: Path) -> None:
+    code_path = _write_code(tmp_path)
+    cache = FileASTCache(tmp_path)
+    snapshot = source_snapshot(code_path)
+    assert snapshot is not None
+
+    cache.save(code_path, "draft", _picture(code_path), snapshot=snapshot)
+
+    assert cache.load(code_path, "draft") is not None
+
+
+def test_source_snapshot_is_none_for_a_missing_file(tmp_path: Path) -> None:
+    assert source_snapshot(tmp_path / "missing.s") is None
 
 
 def test_load_key_normalizes_path_spelling(tmp_path: Path) -> None:

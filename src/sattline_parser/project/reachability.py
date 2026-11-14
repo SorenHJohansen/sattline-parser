@@ -5,15 +5,18 @@ more than any one consumer invokes. Validation for an invoked scope starts at
 the selected program's own module tree, follows every ``ModuleTypeInstance``
 reference into the loaded definitions, and continues through the submodules of
 those definitions. Only the module types reached this way are validated.
+
+Name resolution is scoped to the referencing program's dependency closure: two
+libraries may reuse a module-type name, and a reference inside one closure must
+never pull the other library's definition into the invoked set.
 """
 
 from __future__ import annotations
 
 from collections import deque
-from collections.abc import Iterable, Mapping
+from collections.abc import Iterable, Mapping, Sequence
 
 from sattline_parser.models.ast_model import (
-    BasePicture,
     FrameModule,
     ModuleTypeDef,
     ModuleTypeInstance,
@@ -34,6 +37,33 @@ def iter_moduletype_refs(nodes: Iterable[ModuleNode]) -> Iterable[str]:
             yield from iter_moduletype_refs(node.submodules)
 
 
+def visible_program_keys(
+    programs: Mapping[str, SattLineProgram],
+    key: str,
+    dependencies: Sequence[str],
+) -> frozenset[str]:
+    """The program keys *key* can see: itself plus its transitive dependencies.
+
+    A dependency that was not loaded contributes nothing, so an incomplete
+    closure stays incomplete rather than silently borrowing a same-named
+    definition from an unrelated program.
+    """
+    visible = {key}
+    seen = {key}
+    pending = [dependency.casefold() for dependency in dependencies]
+    while pending:
+        current = pending.pop()
+        if current in seen:
+            continue
+        seen.add(current)
+        program = programs.get(current)
+        if program is None:
+            continue
+        visible.add(current)
+        pending.extend(dependency.casefold() for dependency in program.dependencies)
+    return frozenset(visible)
+
+
 def invoked_moduletypes(
     programs: Mapping[str, SattLineProgram],
     targets: Iterable[str],
@@ -46,33 +76,55 @@ def invoked_moduletypes(
     definitions contribute their own nested invocations, transitively.
     """
     index: dict[str, list[tuple[str, ModuleTypeDef]]] = {}
-    codes: dict[str, BasePicture] = {}
+    closures: dict[str, frozenset[str]] = {}
     for key, program in programs.items():
-        code = program.code
-        codes[key] = code
-        for moduletype in code.moduletype_defs:
+        closures[key] = visible_program_keys(programs, key, program.dependencies)
+        for moduletype in program.code.moduletype_defs:
             index.setdefault(moduletype.name.casefold(), []).append((key, moduletype))
 
-    pending: deque[str] = deque()
+    pending: deque[tuple[str, str]] = deque()
     for target in targets:
-        code = codes.get(target.casefold())
-        if code is None:
+        key = target.casefold()
+        program = programs.get(key)
+        if program is None:
             continue
-        pending.extend(iter_moduletype_refs(code.submodules))
-        for moduletype in code.moduletype_defs:
-            pending.extend(iter_moduletype_refs(moduletype.submodules))
+        pending.extend((reference, key) for reference in iter_moduletype_refs(program.code.submodules))
+        for moduletype in program.code.moduletype_defs:
+            pending.extend((reference, key) for reference in iter_moduletype_refs(moduletype.submodules))
 
     reachable: dict[str, set[str]] = {}
-    seen: set[str] = set()
+    seen: set[tuple[str, str]] = set()
     while pending:
-        name = pending.popleft().casefold()
-        if name in seen:
+        name, requester = pending.popleft()
+        folded = name.casefold()
+        if (folded, requester) in seen:
             continue
-        seen.add(name)
-        for key, moduletype in index.get(name, ()):
+        seen.add((folded, requester))
+        for key, moduletype in _resolve_moduletype(folded, requester, index, closures):
             reachable.setdefault(key, set()).add(moduletype.name.casefold())
-            pending.extend(iter_moduletype_refs(moduletype.submodules))
+            pending.extend((reference, key) for reference in iter_moduletype_refs(moduletype.submodules))
     return reachable
 
 
-__all__ = ["invoked_moduletypes", "iter_moduletype_refs"]
+def _resolve_moduletype(
+    name: str,
+    requester: str,
+    index: Mapping[str, list[tuple[str, ModuleTypeDef]]],
+    closures: Mapping[str, frozenset[str]],
+) -> list[tuple[str, ModuleTypeDef]]:
+    """Definitions visible to *requester* for *name*.
+
+    A local definition wins, then a definition from the requester's dependency
+    closure. A definition in an unrelated program is never used, so a library
+    that reuses a module-type name cannot have its unused types validated
+    because another closure happened to invoke the same name.
+    """
+    entries = index.get(name, ())
+    local = [entry for entry in entries if entry[0] == requester]
+    if local:
+        return local
+    visible = closures[requester]
+    return [entry for entry in entries if entry[0] in visible]
+
+
+__all__ = ["invoked_moduletypes", "iter_moduletype_refs", "visible_program_keys"]

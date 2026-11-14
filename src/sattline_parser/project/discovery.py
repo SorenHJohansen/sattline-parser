@@ -275,14 +275,16 @@ class ProjectLookup:
         # Extension *preference* wins over the extension recorded in the cache:
         # an artifact that appeared after the cache was written must not be
         # shadowed by the cached one, or a warm lookup would disagree with a cold
-        # one (gap P10). The cached base is still trusted as the resolving base,
-        # and every outranking base was checked above.
-        for ext in extensions:
-            path = base / f"{name}{ext}"
-            if path.exists():
-                self._dbg(f"Using cached {kind} file: {path}")
-                self._remember(kind, name, base, ext)
-                return path, base
+        # one (gap P10). The name is resolved through the same case-insensitive
+        # index the cold scan uses, because a literal path check would miss a
+        # file whose case differs from the dependency spelling and silently
+        # fall through to a coarser extension. A stale index only costs a full
+        # ordered scan: the caller forgets the entry and rescans.
+        found = self._index.find_in_index(base=base, name=name, extensions=extensions)
+        if found is not None:
+            self._dbg(f"Using cached {kind} file: {found}")
+            self._remember(kind, name, base, found.suffix.lower())
+            return found, base
         self._cache.forget(kind, name, self._mode.value)
         return None
 

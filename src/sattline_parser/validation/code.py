@@ -335,6 +335,7 @@ def walk_sfc_item(item: SFCBodyItem, context: ValidationContext) -> None:
                 walk_code_item(code_item, context)
     elif isinstance(item, SFCTransition):
         if item.condition is not None:
+            _check_condition(item.condition, context)
             walk_expression(item.condition, context)
     elif isinstance(item, SFCTransitionSub):
         walk_sequence_body(item.body, context)
@@ -627,14 +628,16 @@ def _check_call(call: FuncCall, context: ValidationContext) -> None:
         if index >= len(call.args):
             continue
         arg = call.args[index]
-        if parameter.accepts_const_string:
-            # The parameter is a string cursor, not a data write, so a Const
-            # string is accepted even though its documented direction is inout.
-            continue
+        is_write = parameter.direction in {"out", "inout"}
+        # A string-cursor parameter (`accepts_const_string`) names a string
+        # buffer rather than a data destination, so a Const string is accepted
+        # there. The exemption covers the Const-write finding only: the argument
+        # is still checked for being a reference and for its datatype.
+        const_exempt = parameter.accepts_const_string
         if isinstance(arg, VarRef):
-            if parameter.direction in {"out", "inout"}:
+            if is_write:
                 resolved = resolve_var(arg, context.scope, context.records)
-                if resolved is not None and resolved.const:
+                if resolved is not None and resolved.const and not const_exempt:
                     context.errors.append(
                         Diagnostic(
                             code=DiagnosticCode.WRITE_TO_CONST_VARIABLE,
@@ -646,7 +649,11 @@ def _check_call(call: FuncCall, context: ValidationContext) -> None:
                         )
                     )
                 _check_old_write_target(arg, resolved, context.errors)
-        elif parameter.direction in {"out", "inout"}:
+                if not const_exempt:
+                    # A data destination is checked against its declaration,
+                    # not against its value, so it needs no datatype check.
+                    continue
+        elif is_write:
             context.errors.append(
                 Diagnostic(
                     code=DiagnosticCode.BUILTIN_OUT_ARG_NOT_VARIABLE,

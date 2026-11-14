@@ -15,7 +15,7 @@ from sattline_parser.project import (
     ModuleTypeCycleError,
     SattLineProject,
 )
-from sattline_parser.project._cycles import cycle_key, dependency_cycles
+from sattline_parser.project._cycles import cycle_key, dependency_cycles, first_cycle
 from sattline_parser.project.loader import ProjectLoader
 from sattline_parser.project.models import SattLineProgram
 
@@ -309,6 +309,94 @@ def test_datecode_conflict_is_reported_on_the_later_program(tmp_path: Path) -> N
     assert "1 in libs/Dep.s" in conflicts[0].message
 
 
+def test_datecode_conflict_names_only_the_differing_version(tmp_path: Path) -> None:
+    """A visible version equal to the program's own is not a conflict.
+
+    With versions 1 and 2 both visible, a program declaring 1 conflicts with 2
+    and must not report 1 against itself.
+    """
+    root = tmp_path / "libs"
+    root.mkdir()
+    moduletype = (
+        "TYPEDEFINITIONS\n"
+        "   ControllerType = MODULEDEFINITION DateCode_ {datecode}\n"
+        "   MODULEPARAMETERS\n"
+        "      Setpoint: real := 0.0;\n"
+        "   ModuleDef\n"
+        "   ClippingBounds = ( -1.0 , -1.0 ) ( 1.0 , 1.0 )\n"
+        "   ENDDEF (*ControllerType*);\n"
+    )
+    _write(root, "First.s", _source("First", typedefs=moduletype.format(datecode=1)))
+    _write(root, "Second.s", _source("Second", typedefs=moduletype.format(datecode=2)))
+    _write(root, "Main.s", _source("Main", typedefs=moduletype.format(datecode=1)))
+    _write(root, "Main.l", "First\nSecond\n")
+
+    program = _load(root, "Main").get("Main")
+
+    conflicts = [diagnostic for diagnostic in program.diagnostics if diagnostic.code.value == "SL-V057"]
+    assert len(conflicts) == 1
+    assert "conflicts with 2 in libs/Second.s" in conflicts[0].message
+    assert "1 in libs/First.s" not in conflicts[0].message
+
+
+def test_a_duplicate_datecode_is_not_a_conflict(tmp_path: Path) -> None:
+    """Copies of a declaration at the same datecode are the same revision."""
+    root = tmp_path / "libs"
+    root.mkdir()
+    datatype = (
+        "TYPEDEFINITIONS\n"
+        "   SensorType = RECORD DateCode_ 1\n"
+        "      RawValue: real := 0.0;\n"
+        "   ENDDEF\n"
+        "    (*SensorType*);\n"
+    )
+    _write(root, "Dep.s", _source("Dep", typedefs=datatype))
+    _write(root, "Main.s", _source("Main", typedefs=datatype))
+    _write(root, "Main.l", "Dep\n")
+
+    program = _load(root, "Main").get("Main")
+
+    assert [d.code.value for d in program.diagnostics] == []
+
+
+def test_invoked_validation_stays_inside_the_referencing_closure(tmp_path: Path) -> None:
+    """A same-named module type in an unrelated closure is not validated.
+
+    ``Main`` depends on ``A`` and invokes ``SharedType``. ``B`` also defines
+    ``SharedType`` but is loaded only through ``Other``, which invokes nothing.
+    The reference in ``Main`` must resolve to ``A``, never to ``B``.
+    """
+    root = tmp_path / "libs"
+    root.mkdir()
+    body = "SUBMODULES\n   Child Invocation ( 0.1 , 0.1 , 0.0 , 0.4 , 0.4 ) : SharedType;\n"
+    shared = (
+        "TYPEDEFINITIONS\n"
+        "   SharedType = MODULEDEFINITION DateCode_ 1\n"
+        "   LOCALVARIABLES\n"
+        "      {local}: MissingType;\n"
+        "   ModuleDef\n"
+        "   ClippingBounds = ( -1.0 , -1.0 ) ( 1.0 , 1.0 )\n"
+        "   ENDDEF (*SharedType*);\n"
+    )
+    _write(root, "A.s", _source("A", typedefs=shared.format(local="BadInA")))
+    _write(root, "B.s", _source("B", typedefs=shared.format(local="BadInB")))
+    _write(root, "Main.s", _source("Main", body=body))
+    _write(root, "Main.l", "A\n")
+    _write(root, "Other.s", _source("Other"))
+    _write(root, "Other.l", "B\n")
+
+    project = SattLineProject.load(
+        [root],
+        mode=LoadMode.DRAFT,
+        targets=("Main", "Other"),
+        validate=LoadValidation.INVOKED,
+    )
+
+    assert project.get("Main").diagnostics == ()
+    assert "MissingType" in " ".join(d.message for d in project.get("A").diagnostics)
+    assert project.get("B").diagnostics == ()
+
+
 def test_datecode_conflicts_only_cover_the_program_closure(tmp_path: Path) -> None:
     """A sibling program that the target cannot see is not a conflict.
 
@@ -528,6 +616,32 @@ def test_cycle_key_keeps_direction_and_folds_rotation() -> None:
     assert cycle_key(("a", "b", "c", "a")) == cycle_key(("b", "c", "a", "b")) == ("a", "b", "c")
     assert cycle_key(("a", "b", "c", "a")) != cycle_key(("a", "c", "b", "a"))
     assert cycle_key(()) == ()
+
+
+def test_first_cycle_stops_at_the_first_cycle() -> None:
+    """A dense graph holds exponentially many cycles; rejection must not list them."""
+    names = [f"t{index:02d}" for index in range(14)]
+    edges = [(name, other) for name in names for other in names]
+
+    assert first_cycle(edges) == ("t00", "t00")
+
+
+def test_first_cycle_is_canonical_and_closed() -> None:
+    edges = (("b", "c"), ("c", "a"), ("a", "b"))
+
+    found = first_cycle(edges)
+
+    assert found == ("a", "b", "c", "a")
+    assert found in dependency_cycles(edges)
+
+
+def test_first_cycle_is_none_for_a_dag() -> None:
+    assert first_cycle((("a", "b"), ("b", "c"), ("a", "c"))) is None
+
+
+def test_first_cycle_keeps_opposite_orderings_apart() -> None:
+    assert first_cycle((("a", "b"), ("b", "a"))) == ("a", "b", "a")
+    assert first_cycle((("a", "b"), ("b", "c"), ("c", "a"), ("a", "c"), ("c", "b"), ("b", "a"))) == ("a", "b", "a")
 
 
 def test_dependency_cycles_does_not_collapse_orderings_with_the_same_members() -> None:

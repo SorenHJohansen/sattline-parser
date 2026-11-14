@@ -177,7 +177,11 @@ flowchart LR
 - nested `(* ... *)` comments;
 - doubled `""` inside a string literal;
 - `(*` or `*)` inside a string as text, not a delimiter;
-- a `"` inside a comment as text, not a string start.
+- a `"` inside a comment as text, not a string start;
+- a description that ends at a line break, because the grammar accepts an
+  unterminated description (`STRING_CRLF`) and no string spans lines;
+- a single-quoted identifier such as `'#84'`, whose body is literal text rather
+  than a marker.
 
 The scanner never rewrites text inside an opaque region. An unknown marker
 raises `PreprocessError` with its character offset instead of being replaced by

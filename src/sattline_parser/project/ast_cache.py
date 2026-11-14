@@ -120,6 +120,19 @@ def _matches_stat_snapshot(path: Path, *, mtime_ns: object, size: object) -> boo
     return stat_result.st_mtime_ns == mtime_ns and stat_result.st_size == size
 
 
+def source_snapshot(path: Path) -> tuple[int, int] | None:
+    """The ``(mtime_ns, size)`` snapshot an AST was parsed from.
+
+    Callers capture this *before* reading the source and pass it back to
+    :meth:`FileASTCache.save`, so an entry can never claim a source revision it
+    does not describe. ``None`` means the file could not be stat'ed.
+    """
+    stat_result = _safe_stat(path)
+    if stat_result is None:
+        return None
+    return (stat_result.st_mtime_ns, stat_result.st_size)
+
+
 def _code_path_key(code_path: Path) -> str:
     """A stable cache identity for a code path.
 
@@ -335,12 +348,29 @@ class FileASTCache:
             return None
         return ast
 
-    def save(self, code_path: Path, mode: str, ast: BasePicture) -> None:
+    def save(
+        self,
+        code_path: Path,
+        mode: str,
+        ast: BasePicture,
+        *,
+        snapshot: tuple[int, int] | None = None,
+    ) -> None:
+        """Store *ast* for ``code_path``/``mode``.
+
+        ``snapshot`` is the source stat taken before the parse. When it is
+        given and the file no longer matches, the entry is not written: the AST
+        describes an older revision, and storing it under the current metadata
+        would serve stale syntax until the next edit.
+        """
         if not self._enabled:
             return
-        stat_result = _safe_stat(code_path)
-        if stat_result is None:
+        current = source_snapshot(code_path)
+        if current is None:
             return
+        if snapshot is not None and snapshot != current:
+            return
+        mtime_ns, size = current
         payload: dict[str, object] = {
             "version": FILE_AST_CACHE_VERSION,
             "meta": {
@@ -349,8 +379,8 @@ class FileASTCache:
                 "parser_version": __version__,
                 "grammar": grammar_fingerprint(),
                 "code": _code_fingerprint(),
-                "mtime_ns": stat_result.st_mtime_ns,
-                "size": stat_result.st_size,
+                "mtime_ns": mtime_ns,
+                "size": size,
             },
             "ast": ast,
         }

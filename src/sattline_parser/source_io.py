@@ -11,6 +11,7 @@ from __future__ import annotations
 import dataclasses
 import getpass
 import os
+import stat
 import sys
 from collections.abc import Callable, Collection, Generator
 from contextlib import contextmanager
@@ -191,35 +192,73 @@ def _cache_owner_token() -> str:
     return str(_getuid())
 
 
+def _private_directory(path: Path) -> Path | None:
+    """Create or validate one cache directory level ``0700``.
+
+    ``lstat`` is deliberate: a symlink is never followed, so a planted link
+    cannot redirect a cache write into a directory this user did not create. A
+    level that exists with the wrong owner, or that cannot be tightened to
+    ``0700``, disables the cache (fail closed).
+    """
+    try:
+        path.mkdir(mode=_CACHE_DIR_MODE)
+    except FileExistsError:
+        pass
+    except OSError:
+        return None
+    try:
+        info = path.lstat()
+    except OSError:
+        return None
+    if not stat.S_ISDIR(info.st_mode):
+        return None
+    # Ownership and POSIX permission bits are the only check available here.
+    # Windows reports ``0o777`` for every directory and only toggles the
+    # read-only attribute through ``chmod``, so the mode rule stays POSIX-only.
+    if _getuid is not None:
+        if info.st_uid != _getuid():
+            return None
+        if info.st_mode & 0o077:
+            try:
+                path.chmod(_CACHE_DIR_MODE)
+                info = path.lstat()
+            except OSError:
+                return None
+            if info.st_mode & 0o077:
+                return None
+    return path
+
+
 def private_cache_dir(path: Path) -> Path | None:
     """Create ``path`` as a private directory, or return ``None``.
 
-    The directory is created with mode ``0700`` and reused only when it belongs
-    to this user and no group or world bits are set. Anything else (a read-only
-    temp directory, a directory planted by another user) disables the cache.
+    Parents are created with the process umask (so a missing ``.cache`` level
+    stays usable), and the final directory is created ``0700``. It is reused
+    only when ``lstat`` shows a real directory owned by this user with no group
+    or world bits set. Anything else (a read-only temp directory, a symlink, a
+    directory planted by another user) disables the cache instead of following
+    or tightening a path this process does not own.
     """
     try:
-        path.mkdir(mode=_CACHE_DIR_MODE, parents=True, exist_ok=True)
-        info = path.stat()
-        if _getuid is not None and info.st_uid != _getuid():
-            return None
-        if info.st_mode & 0o077:
-            path.chmod(_CACHE_DIR_MODE)
+        path.parent.mkdir(parents=True, exist_ok=True)
     except OSError:
         return None
-    return path
+    return _private_directory(path)
 
 
 def _parser_cache_dir() -> Path | None:
     """The per-user Lark cache directory, or ``None`` when it cannot be private.
 
     Lark's parser cache is a pickle, so it must not live in a directory another
-    user of the machine can write to. Each user gets a directory named after
-    their uid, created ``0700``, and a directory that fails the ownership or
-    permission check disables the cache entirely.
+    user of the machine can write to. Both levels are checked: the per-user
+    directory has a predictable name under a shared temporary directory, which
+    is exactly what another user can pre-create, and owning that parent would
+    let them replace the ``lark-cache`` entry after it passed its own check.
     """
-    directory = Path(gettempdir()) / f"{_CACHE_DIR_NAME}-{_cache_owner_token()}" / "lark-cache"
-    return private_cache_dir(directory)
+    root = Path(gettempdir()) / f"{_CACHE_DIR_NAME}-{_cache_owner_token()}"
+    if _private_directory(root) is None:
+        return None
+    return _private_directory(root / "lark-cache")
 
 
 class _ParserProtocol(Protocol):
@@ -462,8 +501,11 @@ def load_source_text(
 
     raw_bytes = source_path.read_bytes()
     if is_coded(raw_bytes):
-        return _decode_coded_file_bytes(raw_bytes, debug=debug, source_path=source_path)
-    src = _decode_source_bytes_for_parse(source_path)
+        src = _decode_coded_file_bytes(raw_bytes, debug=debug, source_path=source_path)
+    else:
+        src = _decode_source_bytes_for_parse(source_path)
+    # A coded stream can still hold marker-compressed text, so the coded and
+    # plain branches share the marker expansion before the text is returned.
     return _decode_compressed_source(src, debug=debug, source_path=source_path)
 
 

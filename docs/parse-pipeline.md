@@ -200,6 +200,9 @@ way by `sattline check` and by the project loader.
 - Parse-tree transformation and position remapping use explicit stacks, so
   their cost follows the tree size rather than the Python call stack.
 - The Lark cache is opt-in only through the private cache directory. It is
-  never written into the source tree.
+  never written into the source tree. The per-user directory under the system
+  temporary directory and its `lark-cache` child are both ownership-checked and
+  created `0700`; a symlink or a directory owned by another user disables the
+  cache instead of being followed.
 - `parse_source_text` reuses a caller-supplied parser and transformer, which is
   how the project loader avoids recompiling the grammar per file.

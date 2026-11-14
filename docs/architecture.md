@@ -111,7 +111,7 @@ The important import-direction rules:
 
 | Path | Responsibility | Read when |
 | --- | --- | --- |
-| `src/sattline_parser/__init__.py` | Public names, version, lazy fuzz exports | You need the stable import surface |
+| `src/sattline_parser/__init__.py` | Public names and version | You need the stable import surface |
 | `src/sattline_parser/api.py` | Public façade over `source_io`, `errors`, and `validation` | You add a public parse or validation entry point |
 | `src/sattline_parser/ast.py` | Supported AST surface: every node, clause, tail, and the walker | You import or document the model |
 | `src/sattline_parser/types.py` | Public scalar type facts and literal inference | You import a type fact in a consumer |

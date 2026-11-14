@@ -16,7 +16,6 @@ flowchart LR
     TOP["sattline_parser<br/>top-level __all__"] --> CORE["parse and preprocess surface"]
     TOP --> ASTTYPES["AST and diagnostic types"]
     TOP --> GRAPH["graphics entry points"]
-    TOP --> FUZZ["lazy fuzz exports"]
     AST["sattline_parser.ast<br/>full model surface"] --> ASTTYPES
     FAÇADE["sattline_parser.api"] --> CORE
     FAÇADE --> VALID["validate_basepicture"]
@@ -174,11 +173,9 @@ These live in `sattline_parser.project` and are re-exported by
 ## Fuzz tooling
 
 The fuzz harness and Atheris targets live under the repository-local `fuzzing/`
-package. They are not part of `sattline_parser` and are not shipped in the wheel.
-- `run_corpus_regression`
-
-They are imported on first access so the fuzz subprocess machinery is not part
-of the ordinary import cost. See [testing.md](testing.md).
+package. They are not part of `sattline_parser` and are not shipped in the
+wheel, and the top-level package does not re-export them. Import
+`fuzzing.fuzz_harness` from a repository checkout. See [testing.md](testing.md).
 
 ## Project surface
 

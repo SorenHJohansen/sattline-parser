@@ -68,6 +68,7 @@ _INVALID_VALIDATION_FIXTURES: dict[str, str] = {
     "AssignmentFamilyMismatch": "SL-V029",
     "IfConditionNotBoolean": "SL-V030",
     "EnableTailNotBoolean": "SL-V030",
+    "TransitionConditionNotBoolean": "SL-V030",
 }
 
 #: Fixtures for rules the real parser does NOT enforce. Kept as files so the
@@ -555,6 +556,44 @@ def test_builtin_missing_required_argument_is_still_flagged():
     bp.modulecodes = [ModuleCode(equationblocks=[_equation(call)])]
     codes = {d.code.value for d in validate_basepicture(bp)}
     assert "SL-V013" in codes
+
+
+def test_string_cursor_parameter_accepts_a_const_string_but_checks_the_rest():
+    """``accepts_const_string`` exempts the Const write, not the argument rules."""
+    bp = _base_picture()
+    bp.localvariables = [
+        _var("Template", "string", const=True, init_value="Template"),
+        _var("Cursor", "integer", init_value=0),
+    ]
+    const_ok = FuncCallStmt(FuncCall(name="GetStringPos", args=(VarRef("Template"),)))
+    wrong_datatype = FuncCallStmt(FuncCall(name="GetStringPos", args=(VarRef("Cursor"),)))
+    not_a_reference = FuncCallStmt(FuncCall(name="GetStringPos", args=(1,)))
+    bp.modulecodes = [ModuleCode(equationblocks=[_equation(const_ok, wrong_datatype, not_a_reference)])]
+
+    diagnostics = [d.code.value for d in validate_basepicture(bp)]
+
+    assert diagnostics == ["SL-V047", "SL-V014"]
+
+
+def test_transition_guard_must_be_boolean():
+    """A ``WAIT_FOR`` guard follows the same boolean rule as an IF condition."""
+    transition = SFCTransition(name="TrCount", condition=VarRef("Count"))
+    bp = _base_picture()
+    bp.localvariables = [_var("Count", "integer", init_value=0)]
+    bp.modulecodes = [ModuleCode(sequences=[_sequence(transition, name="Counter")])]
+
+    diagnostics = [d for d in validate_basepicture(bp) if d.code is DiagnosticCode.CONDITION_NOT_BOOLEAN]
+
+    assert [d.code.value for d in diagnostics] == ["SL-V030"]
+
+
+def test_transition_guard_accepts_a_boolean():
+    transition = SFCTransition(name="TrDone", condition=VarRef("Done"))
+    bp = _base_picture()
+    bp.localvariables = [_var("Done", "boolean", init_value=False)]
+    bp.modulecodes = [ModuleCode(sequences=[_sequence(transition, name="Counter")])]
+
+    assert [d for d in validate_basepicture(bp) if d.code is DiagnosticCode.CONDITION_NOT_BOOLEAN] == []
 
 
 def test_builtin_record_field_access_resolves_without_undefined_finding():

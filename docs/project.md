@@ -171,7 +171,9 @@ instantiation graph over every loaded module type and rejects the first cycle
 with `ModuleTypeCycleError`. The check runs before validation and is not
 governed by `LoadValidation`, so `validate=NONE` and `strict=False` cannot let a
 recursive type through. Unused module types in a loaded dependency are checked
-too, because the type itself is structurally invalid.
+too, because the type itself is structurally invalid. The search stops at the
+first cycle it finds, so a dense instantiation graph cannot make rejection
+enumerate an exponential number of elementary cycles.
 
 ## Sidecars
 
@@ -240,8 +242,11 @@ type that instantiates itself always raise.
 The loader records the datecode of every module type and datatype it sees,
 keyed by folded name and scoped to the program's visible closure. A conflict is
 reported when the same name is declared with two different datecodes in one
-closure. Datecode findings belong to an explicitly selected program, not to a
-library import: a library is not the place to report its own version drift.
+closure. A program compares its own declaration against the visible versions,
+so a closure holding versions 1 and 2 reports the conflict on a program that
+declares either one, naming only the version that differs. Datecode findings
+belong to an explicitly selected program, not to a library import: a library is
+not the place to report its own version drift.
 
 ## Models
 
@@ -316,8 +321,10 @@ when:
 
 On any failure the entry is forgotten and the full ordered scan runs. Extension
 preference wins over the extension recorded in the cache, so an artifact that
-appeared after the cache was written is not shadowed. A warm lookup and a cold
-lookup always agree.
+appeared after the cache was written is not shadowed. The cached base is
+resolved through the same case-insensitive index a cold scan uses, so a
+dependency spelling whose case differs from the file name resolves identically
+warm and cold. A warm lookup and a cold lookup always agree.
 
 ### AST cache
 
@@ -331,14 +338,19 @@ envelope. The key includes:
 - a fingerprint of the `models/` and `transformer/` sources;
 - a `mtime_ns` and `size` stat snapshot.
 
+The snapshot is taken **before** the source is parsed, and the entry records
+that snapshot, so an entry can never claim a source revision it was not parsed
+from. A body whose source changed while a worker was reading it is left
+uncached: the next load reparses it instead of trusting a stale AST.
+
 The namespace and file-format magic belong to `sattline-parser`
 (`FILE_AST_CACHE_VERSION`), so another tool's cache never cross-reads. The HMAC
 key lives beside the entries. It proves the entry was written by whoever could
 write that directory; it is not a defence against that user. The real boundary
 is a private `0700` directory owned by the current user. Both the cache root
-and its `file_ast` subdirectory are checked; a directory owned by someone else
-disables the caches instead of being tightened in place. Never point
-`cache_dir` at a shared location.
+and its `file_ast` subdirectory are checked; an entry that is a symlink, or a
+directory owned by someone else, disables the caches instead of being followed
+or tightened in place. Never point `cache_dir` at a shared location.
 
 A cache write failure is swallowed and logged; it must not turn a successful
 parse into a load failure.
@@ -394,9 +406,10 @@ discovery fixes the plan order before any parse runs.
 - A daemonic process may not start children, so a load called from inside an
   outer pool parses in that process instead of raising.
 - A worker reads the AST cache but never writes it: the parent owns every
-  write, so the per-user key and the entry signatures stay single-process. A
-  cached body still crosses the pipe to the parent, which is why a warm cache
-  and `workers` do not multiply.
+  write, so the per-user key and the entry signatures stay single-process, and
+  the parent stores a worker's body only under the source snapshot the worker
+  read. A cached body still crosses the pipe to the parent, which is why a warm
+  cache and `workers` do not multiply.
 - If a pool cannot be created (a restricted sandbox, a bootstrap failure), the
   load logs and parses in this process rather than failing.
 - `workers > 1` and a warm cache do not add up: the parent must still receive

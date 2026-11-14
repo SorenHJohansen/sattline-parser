@@ -78,12 +78,13 @@ class GraphicsBinding:
 ```
 
 `Expr` bindings are parsed with the package's own expression grammar, a small
-Lark grammar over the same `SLTransformer`. The expression text is prefixed
-with padding whose length and newlines match its position in the companion, so
-Lark reports absolute character offsets and the companion's line/column
-directly. Binding spans and picture-display path-row spans use the same
-absolute coordinates. A failure to parse an expression becomes a
-`GraphicsMessage`, not an exception.
+Lark grammar over the same `SLTransformer`. The expression text is parsed on
+its own, then every span in the resulting node is rebased into companion
+coordinates: line and column are offset by the binding's position, and
+character offsets are shifted by the payload's absolute start. That keeps the
+work linear in the expression length rather than in the file offset. Binding
+spans and picture-display path-row spans use the same absolute coordinates. A
+failure to parse an expression becomes a `GraphicsMessage`, not an exception.
 
 ## Records
 
