@@ -73,6 +73,67 @@ def test_json_payload(tmp_path, capsys) -> None:
     assert payload["edges"] == [{"from": "child", "to": "base"}]
 
 
+_DISTRIBUTION = (
+    "DistributionData\n"
+    ' ( Version "Distributiondata version 1.0" )\n'
+    "SourceCodeSystems\n"
+    " (  )\n"
+    "ExecutingSystems\n"
+    " ( Controller\n"
+    '    ( Name "172.18.0.1"\n'
+    "      Download ShortStopReconfig ) )\n"
+)
+
+_DISTRIBUTION_EMPTY = (
+    'DistributionData\n ( Version "Distributiondata version 1.0" )\nSourceCodeSystems\n (  )\nExecutingSystems\n (  )\n'
+)
+
+
+def test_json_payload_reports_executing_system(tmp_path, capsys) -> None:
+    _program(tmp_path, "Running")
+    _program(tmp_path, "Idle")
+    _program(tmp_path, "Unknown")
+    write_source(tmp_path, "Running.p", _DISTRIBUTION)
+    write_source(tmp_path, "Idle.p", _DISTRIBUTION_EMPTY)
+
+    assert main(["project", str(tmp_path), "--json"]) == ExitCode.OK
+
+    payload = json.loads(capsys.readouterr().out)
+    rows = {row["name"]: row for row in payload["programs"]}
+    assert rows["Running"]["has_executing_system"] is True
+    assert rows["Running"]["distribution"] == ".p"
+    assert rows["Running"]["executing_systems"] == [
+        {"kind": "Controller", "name": "172.18.0.1", "download": "ShortStopReconfig"}
+    ]
+    assert rows["Idle"]["has_executing_system"] is False
+    assert rows["Idle"]["executing_systems"] == []
+    assert rows["Unknown"]["has_executing_system"] is None
+    assert rows["Unknown"]["distribution"] is None
+
+
+def test_text_output_reports_executing_system(tmp_path, capsys) -> None:
+    _program(tmp_path, "Running")
+    _program(tmp_path, "Idle")
+    _program(tmp_path, "Unknown")
+    write_source(tmp_path, "Running.p", _DISTRIBUTION)
+    write_source(tmp_path, "Idle.p", _DISTRIBUTION_EMPTY)
+
+    assert main(["project", str(tmp_path)]) == ExitCode.OK
+
+    out = capsys.readouterr().out
+    assert "distribution=.p exec=yes (172.18.0.1)" in out
+    assert "distribution=.p exec=no" in out
+    assert "distribution=- exec=-" in out
+
+
+def test_malformed_distribution_companion_is_a_finding(tmp_path, capsys) -> None:
+    _program(tmp_path, "Main")
+    write_source(tmp_path, "Main.p", "not a distribution companion\n")
+
+    assert main(["project", str(tmp_path)]) == ExitCode.FINDINGS
+    assert "distribution companion" in capsys.readouterr().out
+
+
 def test_missing_root_and_empty_tree_are_usage_errors(tmp_path, capsys) -> None:
     assert main(["project", str(tmp_path / "Absent")]) == ExitCode.USAGE
     assert "cannot read" in capsys.readouterr().err

@@ -5,7 +5,7 @@
 ## Quick Reference
 
 **Purpose:** `sattline-parser` owns the SattLine grammar, AST models, and `SLTransformer`. It is a standalone parser core for the SattLine language.
-**Scope:** language infrastructure only. It owns grammar and tokenization, compressed-source preprocessing and provenance, AST models and transformation, syntax diagnostics, graphics companion parsing, project discovery, draft/official resolution, dependency resolution and loading, language-level structural validation, and generic parser/project introspection. It does **not** own analysis policy, lint rules, metrics, refactoring, code generation, graphics correlation, rendering, or consumer-specific behaviour.
+**Scope:** language infrastructure only. It owns grammar and tokenization, compressed-source preprocessing and provenance, AST models and transformation, syntax diagnostics, graphics and distribution companion parsing, project discovery, draft/official resolution, dependency resolution and loading, language-level structural validation, and generic parser/project introspection. It does **not** own analysis policy, lint rules, metrics, refactoring, code generation, graphics correlation, rendering, or consumer-specific behaviour.
 **Boundary:** this package is self-contained and standalone; it must never import from or depend on other tooling packages. It ships standalone on PyPI as an external dependency.
 **Documentation:** `docs/README.md` is the index. Read it before changing an unfamiliar subsystem.
 **Communication:** terse and concrete.
@@ -45,7 +45,7 @@
 | `src/sattline_parser/transformer/` | Transformer mixins and `SLTransformer` |
 | `fuzzing/fuzz_harness.py` | Standalone fuzz harness |
 | `src/sattline_parser/cli/` | Read-only `sattline` command line: one module per subcommand in `cli/cmds/` |
-| `src/sattline_parser/project/` | Project layer: discovery, resolution, `.g`/`.y` companions, per-program validation, provenance, caches, `SattLineProject` |
+| `src/sattline_parser/project/` | Project layer: discovery, resolution, `.g`/`.y` graphics and `.p`/`.q` distribution companions, per-program validation, provenance, caches, `SattLineProject` |
 | `src/sattline_parser/builtins/` | Builtin function signatures and record field specs (generated catalogue) |
 | `src/sattline_parser/validation/` | Validator rules, diagnostics, type graph, builtin call checks |
 | `src/sattline_parser/source_document.py` | Source provenance: original/normalized text + source map, span remapping |

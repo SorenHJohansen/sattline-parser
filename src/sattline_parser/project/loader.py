@@ -41,6 +41,11 @@ from sattline_parser.validation.diagnostics import Diagnostic, DiagnosticCode
 from ._cycles import canonical_cycle, first_cycle
 from .ast_cache import FileASTCache, source_snapshot
 from .discovery import ProjectLookup
+from .distribution import (
+    DistributionParseError,
+    parse_distribution_file,
+    resolve_distribution_companion_path,
+)
 from .errors import (
     ArtifactLoadError,
     DependencyCycleError,
@@ -53,6 +58,7 @@ from .errors import (
 from .graphics_parsing import parse_graphics_file, resolve_graphics_companion_path
 from .lookup_cache import FileLookupCache
 from .models import (
+    DistributionData,
     GraphicsModel,
     LoadDiagnostic,
     LoadDiagnosticKind,
@@ -549,6 +555,12 @@ class ProjectLoader:
             program_name=program_name,
             dependency=dependency,
         )
+        distribution_path, distribution = self._load_distribution(
+            artifact.code_path,
+            name=name,
+            program_name=program_name,
+            dependency=dependency,
+        )
         self._registry[plan.key] = SattLineProgram(
             name=name,
             code=basepicture,
@@ -559,12 +571,15 @@ class ProjectLoader:
                 code_ext=artifact.code_path.suffix.lower(),
                 graphics_ext=graphics_path.suffix.lower() if graphics_path is not None else None,
                 deps_ext=artifact.deps_path.suffix.lower() if artifact.deps_path is not None else None,
+                distribution_ext=distribution_path.suffix.lower() if distribution_path is not None else None,
             ),
             source_path=artifact.code_path,
             deps_path=artifact.deps_path,
             sidecar=artifact.sidecar,
             library=artifact.library,
             resolved_base=artifact.resolved_base,
+            distribution_path=distribution_path,
+            distribution=distribution,
             diagnostics=diagnostics,
         )
 
@@ -592,7 +607,14 @@ class ProjectLoader:
         sidecar = SidecarState.ABSENT
         if deps_path is None:
             stray = self._lookup.find_deps(name, requester_dir=requester_dir)
-            if stray is not None:
+            if stray is not None and stray.parent == code_path.parent:
+                self._diagnose(
+                    LoadDiagnosticKind.SIDECAR_FAMILY_MISMATCH,
+                    program_name,
+                    f"sidecar {stray.name!r} does not match the artifact family of body {code_path.name!r}; not paired",
+                    stray,
+                )
+            elif stray is not None:
                 self._diagnose(
                     LoadDiagnosticKind.SIDECAR_ELSEWHERE,
                     program_name,
@@ -676,6 +698,40 @@ class ProjectLoader:
             name=name,
         )
         return graphics_path, graphics
+
+    def _load_distribution(
+        self,
+        code_path: Path,
+        *,
+        name: str,
+        program_name: str,
+        dependency: str | None,
+    ) -> tuple[Path | None, DistributionData | None]:
+        """Read the distribution companion beside the selected body.
+
+        A missing companion answers "unknown" and stays silent: distribution data
+        is optional. A companion that exists but does not parse is an artifact
+        failure, because an unreadable file must never be reported as "no
+        executing system".
+        """
+        distribution_path = resolve_distribution_companion_path(code_path, mode=self._mode)
+        if distribution_path is None:
+            return None, None
+        self._dbg(f"Parsing distribution: {distribution_path}")
+        try:
+            distribution = parse_distribution_file(distribution_path)
+        except (OSError, UnicodeError, DistributionParseError) as exc:
+            if dependency is None:
+                raise ArtifactLoadError(
+                    program_name,
+                    f"failed to parse distribution companion {distribution_path.name} for {name!r}: {exc}",
+                ) from exc
+            raise DependencyParseError(
+                program_name,
+                f"failed to parse distribution companion for dependency {dependency!r}: {exc}",
+                dependency=dependency,
+            ) from exc
+        return distribution_path, distribution
 
     def _visible_definitions(
         self, dependencies: tuple[str, ...]

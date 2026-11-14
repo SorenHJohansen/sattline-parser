@@ -8,7 +8,7 @@ the focused test passes, then the wider gates pass.
 | Path | Scope |
 | --- | --- |
 | `tests/parser/` | Grammar, decoding, provenance, AST, transformer, validation, formatter |
-| `tests/project/` | Discovery, formats, loader, caches, reachability, graphics, project validation |
+| `tests/project/` | Discovery, formats, loader, caches, reachability, graphics, distribution, project validation |
 | `tests/cli/` | Every subcommand, exit codes, JSON output, refusal rules |
 | `tests/builtins/` | Catalogue freshness and signature shape |
 | `tests/test_packaging.py` | Installed-package smoke tests outside the parser tree |

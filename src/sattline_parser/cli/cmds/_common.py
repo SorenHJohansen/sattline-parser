@@ -7,7 +7,7 @@ import sys
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 
-from ...project.formats import ALL_GRAPHICS_EXTENSIONS
+from ...project.formats import ALL_DISTRIBUTION_EXTENSIONS, ALL_GRAPHICS_EXTENSIONS
 from ...validation.rules import RuleStatus, UnknownRuleError, require_rule
 from .._errors import CliError
 from .._findings import CLI_RULE_IDS, Finding
@@ -32,15 +32,19 @@ __all__ = [
 ]
 
 
-#: Companion extensions hold graphics records, not SattLine source.
-_COMPANION_SUFFIXES = ALL_GRAPHICS_EXTENSIONS
+#: Companion extensions hold graphics records or distribution data, not SattLine source.
+#:
+#: Each family is checked by its own set, so adding a companion kind never
+#: mislabels an existing one.
 
 
 def reject_companion(target: str) -> None:
-    """Refuse a graphics companion before it is mis-reported as broken source."""
+    """Refuse a companion file before it is mis-reported as broken source."""
     suffix = Path(target).suffix.lower()
-    if suffix in _COMPANION_SUFFIXES:
-        raise CliError(f"{target} is a graphics companion ({suffix}); check and parse read SattLine source units")
+    if suffix in ALL_DISTRIBUTION_EXTENSIONS:
+        raise CliError(f"{target} is a distribution companion ({suffix}); this command reads SattLine source units")
+    if suffix in ALL_GRAPHICS_EXTENSIONS:
+        raise CliError(f"{target} is a graphics companion ({suffix}); this command reads SattLine source units")
 
 
 def require_companion(target: str) -> None:
@@ -48,7 +52,7 @@ def require_companion(target: str) -> None:
     if target == "-":
         return
     suffix = Path(target).suffix.lower()
-    if suffix not in _COMPANION_SUFFIXES:
+    if suffix not in ALL_GRAPHICS_EXTENSIONS:
         raise CliError(f"{target} is not a graphics companion (.g/.y)")
 
 

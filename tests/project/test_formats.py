@@ -14,6 +14,8 @@ from sattline_parser.project import (
     code_ext_candidates,
     deps_ext,
     deps_ext_candidates,
+    distribution_ext,
+    distribution_ext_candidates,
     graphics_ext,
     graphics_ext_candidates,
     preferred_extension,
@@ -22,12 +24,18 @@ from sattline_parser.project import (
 
 def test_artifact_kind_is_enum() -> None:
     assert issubclass(ArtifactKind, Enum)
-    assert set(ArtifactKind) == {ArtifactKind.CODE, ArtifactKind.GRAPHICS, ArtifactKind.DEPS}
+    assert set(ArtifactKind) == {
+        ArtifactKind.CODE,
+        ArtifactKind.GRAPHICS,
+        ArtifactKind.DEPS,
+        ArtifactKind.DISTRIBUTION,
+    }
     assert (ArtifactKind.CODE.value, ArtifactKind.GRAPHICS.value, ArtifactKind.DEPS.value) == (
         "code",
         "graphics",
         "deps",
     )
+    assert ArtifactKind.DISTRIBUTION.value == "distribution"
 
 
 @pytest.mark.parametrize(
@@ -56,6 +64,14 @@ def test_graphics_ext(mode: LoadMode, expected: str) -> None:
 
 @pytest.mark.parametrize(
     ("mode", "expected"),
+    [(LoadMode.DRAFT, ".p"), (LoadMode.OFFICIAL, ".q")],
+)
+def test_distribution_ext(mode: LoadMode, expected: str) -> None:
+    assert distribution_ext(mode) == expected
+
+
+@pytest.mark.parametrize(
+    ("mode", "expected"),
     [(LoadMode.DRAFT, (".s", ".x")), (LoadMode.OFFICIAL, (".x",))],
 )
 def test_code_ext_candidates(mode: LoadMode, expected: tuple[str, ...]) -> None:
@@ -79,6 +95,14 @@ def test_graphics_ext_candidates(mode: LoadMode, expected: tuple[str, ...]) -> N
 
 
 @pytest.mark.parametrize(
+    ("mode", "expected"),
+    [(LoadMode.DRAFT, (".p", ".q")), (LoadMode.OFFICIAL, (".q",))],
+)
+def test_distribution_ext_candidates(mode: LoadMode, expected: tuple[str, ...]) -> None:
+    assert distribution_ext_candidates(mode) == expected
+
+
+@pytest.mark.parametrize(
     ("kind", "mode", "expected"),
     [
         (ArtifactKind.CODE, LoadMode.DRAFT, ".s"),
@@ -87,6 +111,8 @@ def test_graphics_ext_candidates(mode: LoadMode, expected: tuple[str, ...]) -> N
         (ArtifactKind.GRAPHICS, LoadMode.OFFICIAL, ".y"),
         (ArtifactKind.DEPS, LoadMode.DRAFT, ".l"),
         (ArtifactKind.DEPS, LoadMode.OFFICIAL, ".z"),
+        (ArtifactKind.DISTRIBUTION, LoadMode.DRAFT, ".p"),
+        (ArtifactKind.DISTRIBUTION, LoadMode.OFFICIAL, ".q"),
     ],
 )
 def test_preferred_extension(kind: ArtifactKind, mode: LoadMode, expected: str) -> None:
@@ -102,6 +128,8 @@ def test_preferred_extension(kind: ArtifactKind, mode: LoadMode, expected: str) 
         (ArtifactKind.GRAPHICS, LoadMode.OFFICIAL, (".y",)),
         (ArtifactKind.DEPS, LoadMode.DRAFT, (".l", ".z")),
         (ArtifactKind.DEPS, LoadMode.OFFICIAL, (".z",)),
+        (ArtifactKind.DISTRIBUTION, LoadMode.DRAFT, (".p", ".q")),
+        (ArtifactKind.DISTRIBUTION, LoadMode.OFFICIAL, (".q",)),
     ],
 )
 def test_candidate_extensions(kind: ArtifactKind, mode: LoadMode, expected: tuple[str, ...]) -> None:

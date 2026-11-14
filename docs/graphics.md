@@ -11,7 +11,7 @@ bindings against the code, resolve assets, or render anything.
 flowchart TB
     C["code path"] --> S{"suffix"}
     S -->|.x| Y["only .y"]
-    S -->|.s, draft| G["try .g, then .y"]
+    S -->|.s, draft| G["only .g"]
     S -->|.g or .y| SELF["itself"]
     Y --> R["path or None"]
     G --> R
@@ -19,9 +19,11 @@ flowchart TB
 ```
 
 The companion always sits in the code file's own directory, as a `with_suffix`
-substitution. It is never resolved through the ordered root list. A `.x` body
-is official, so it only pairs with an official `.y`; a draft body keeps the
-`.g` to `.y` fallback.
+substitution. It is never resolved through the ordered root list. The body's
+suffix decides the artifact family, so a `.x` body pairs only with `.y` and a
+draft body pairs only with `.g`. A draft body never picks up an official `.y`,
+because that would mix families within one unit. See
+[project.md](project.md#artifact-formats).
 
 ## Parsing
 

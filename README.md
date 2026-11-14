@@ -18,7 +18,7 @@ refactor it, or decide whether it is correct for a machine.
 | Compressed-source preprocessing and source provenance | `src/sattline_parser/preprocessing/`, `src/sattline_parser/source_document.py` |
 | AST models and transformation | `src/sattline_parser/models/`, `src/sattline_parser/transformer/` |
 | Syntax diagnostics | `src/sattline_parser/errors.py` |
-| Graphics file parsing and data models | `src/sattline_parser/project/graphics_*.py`, `project/models.py` |
+| Graphics and distribution companion parsing | `src/sattline_parser/project/graphics_*.py`, `src/sattline_parser/project/distribution.py`, `project/models.py` |
 | SattLine project discovery | `src/sattline_parser/project/discovery.py` |
 | Draft/official resolution | `src/sattline_parser/project/formats.py` |
 | Dependency resolution and project loading | `src/sattline_parser/project/loader.py` |
@@ -43,6 +43,7 @@ The internals are documented in [`docs/`](docs/README.md):
 - [Validation](docs/validation.md): the strict single-source rules
 - [Project layer](docs/project.md): discovery, dependencies, caches
 - [Graphics companions](docs/graphics.md): `.g` / `.y` parsing
+- [Distribution companions](docs/project.md#distribution-companion): `.p` / `.q` parsing
 - [Command line](docs/cli.md): commands, exit codes, JSON schemas
 - [Builtins](docs/builtins.md): function signatures and record fields
 - [Public API](docs/api.md): the stable import surface
@@ -253,21 +254,24 @@ dispatches on the class name and supports `leave_<ClassName>` hooks. See
 [docs/ast.md](docs/ast.md) for the covered fields and the parts of the model it
 deliberately does not descend into.
 
-### One unit, three files
+### One unit, four files
 
-A SattLine program or library is one unit made of three files: the code body,
-the dependency sidecar, and the graphics companion. Draft is `.s`, `.l`, `.g`;
-official is `.x`, `.z`, `.y`. The loader resolves each role by mode; a missing
-sidecar is reported as a diagnostic and a missing companion is recorded as
-absent, never invented. See
+A SattLine program or library is one unit made of up to four files: the code
+body, the dependency sidecar, the graphics companion, and the distribution
+companion. Draft is `.s`, `.l`, `.g`, `.p`; official is `.x`, `.z`, `.y`, `.q`.
+The resolved body decides the artifact family, so every other file comes from
+the same family: a `.s` body pairs only with `.l`, `.g`, and `.p`, and an `.x`
+body only with `.z`, `.y`, and `.q`. A missing sidecar is reported as a
+diagnostic and a missing companion is recorded as absent, never invented. See
 [docs/project.md](docs/project.md#artifact-formats) for the extension table.
 
 ### Project layer: load a whole project
 
 Beyond single sources, `sattline_parser.project` owns the SattLine **project
-layer**: search-root discovery, per-artifact draft→official fallback,
-recursive requester-relative dependency resolution, and `.g`/`.y` graphics
-companion parsing. `SattLineProject.load` resolves one or more targets across
+layer**: search-root discovery, per-artifact draft→official resolution,
+recursive requester-relative dependency resolution, `.g`/`.y` graphics
+companion parsing, and `.p`/`.q` distribution companion parsing.
+`SattLineProject.load` resolves one or more targets across
 the ordered roots and returns the complete resolved graph:
 
 ```python

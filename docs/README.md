@@ -11,9 +11,9 @@ It answers "what is in this source, and how is it structured?". It does not
 answer "is this program good?", "what does this program do?", or "which
 variables are never used?".
 
-A SattLine program or library is one unit made of three files: the code body,
-the dependency sidecar, and the graphics companion. Draft is `.s`, `.l`, `.g`;
-official is `.x`, `.z`, `.y`. See
+A SattLine program or library is one unit made of four files: the code body,
+the dependency sidecar, the graphics companion, and the distribution companion.
+Draft is `.s`, `.l`, `.g`, `.p`; official is `.x`, `.z`, `.y`, `.q`. See
 [project.md](project.md#artifact-formats) for how each role is resolved.
 
 | Responsibility | Owned by | Entry point |
@@ -22,7 +22,7 @@ official is `.x`, `.z`, `.y`. See
 | Compressed-source preprocessing and source provenance | `preprocessing/`, `source_document.py` | `preprocess_source`, `SourceDocument` |
 | AST models and transformation | `models/`, `transformer/` | `BasePicture`, `SLTransformer` |
 | Syntax diagnostics | `errors.py` | `describe_parse_error` |
-| Graphics file parsing and data models | `project/graphics_*.py`, `project/models.py` | `parse_graphics_file`, `GraphicsModel` |
+| Graphics and distribution companion parsing and data models | `project/graphics_*.py`, `project/distribution.py`, `project/models.py` | `parse_graphics_file`, `parse_distribution_file` |
 | SattLine project discovery | `project/discovery.py`, `project/formats.py` | `ProjectLookup` |
 | Draft/official resolution | `project/formats.py` | `LoadMode` |
 | Dependency resolution and project loading | `project/loader.py`, `project/project.py` | `SattLineProject.load` |
@@ -50,7 +50,7 @@ flowchart LR
         S["source decoding and provenance"]
         A["AST and transformation"]
         D["syntax diagnostics"]
-        GR["graphics parsing"]
+        GR["companion parsing<br/>graphics and distribution"]
         P["project discovery and loading"]
         V["language-level validation"]
         I["parser and project introspection"]
@@ -78,6 +78,7 @@ flowchart LR
 | Add or change validation rules | [validation.md](validation.md) |
 | Work on project loading or dependencies | [project.md](project.md) |
 | Work on graphics companions | [graphics.md](graphics.md) |
+| Work on distribution companions | [project.md](project.md#distribution-companion) |
 | Change the CLI or JSON output | [cli.md](cli.md) |
 | Change builtin signatures or record fields | [builtins.md](builtins.md) |
 | Run tests, fuzzing, or CI | [testing.md](testing.md) |
@@ -134,7 +135,7 @@ flowchart TB
         LOAD["loader<br/>dependency closure, post-order"]
         CACHE["parser-owned caches<br/>lookup and AST"]
         GRAPH["models<br/>SattLineProgram, DependencyGraph"]
-        GPARSE["graphics parsing<br/>bindings and records"]
+        GPARSE["companion parsing<br/>graphics and distribution"]
     end
 
     APP --> API

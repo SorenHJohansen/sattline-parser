@@ -6,8 +6,9 @@ a ``SattLineProject`` registry, a resolved ``DependencyGraph``, and per-program
 validation findings.
 
 ``SattLineProject.load`` resolves targets across ordered roots, reads dependency
-sidecars, loads dependencies first, parses ``.g`` / ``.y`` companions, and (with
-``validate=FULL``) runs the single-file validator against the definitions visible
+sidecars, loads dependencies first, parses ``.g`` / ``.y`` graphics and ``.p`` /
+``.q`` distribution companions, and (with ``validate=FULL``) runs the
+single-file validator against the definitions visible
 from already-loaded dependencies. The loader records library and origin
 provenance, marks external-dependent findings tentative when a non-strict load
 skips part of the closure, reports definition datecode conflicts, and rejects
@@ -18,6 +19,12 @@ from __future__ import annotations
 
 from .ast_cache import FILE_AST_CACHE_VERSION, FileASTCache
 from .discovery import ProjectLookup, SourceIndex, ordered_lookup_bases, shared_lookup_root_for
+from .distribution import (
+    DistributionParseError,
+    parse_distribution_file,
+    parse_distribution_text,
+    resolve_distribution_companion_path,
+)
 from .errors import (
     ArtifactLoadError,
     DependencyCycleError,
@@ -34,6 +41,8 @@ from .formats import (
     code_ext_candidates,
     deps_ext,
     deps_ext_candidates,
+    distribution_ext,
+    distribution_ext_candidates,
     graphics_ext,
     graphics_ext_candidates,
     preferred_extension,
@@ -43,6 +52,8 @@ from .loader import ProjectLoader, read_dependency_names
 from .lookup_cache import DEFAULT_LOOKUP_CACHE_FLUSH_INTERVAL, LOOKUP_CACHE_VERSION, FileLookupCache
 from .models import (
     DependencyGraph,
+    DistributionData,
+    DistributionTarget,
     GraphicsBinding,
     GraphicsCompositeRecord,
     GraphicsMessage,
@@ -69,6 +80,9 @@ __all__ = [
     "DependencyGraph",
     "DependencyNotFoundError",
     "DependencyParseError",
+    "DistributionData",
+    "DistributionParseError",
+    "DistributionTarget",
     "FileASTCache",
     "FileLookupCache",
     "GraphicsBinding",
@@ -96,13 +110,18 @@ __all__ = [
     "code_ext_candidates",
     "deps_ext",
     "deps_ext_candidates",
+    "distribution_ext",
+    "distribution_ext_candidates",
     "graphics_ext",
     "graphics_ext_candidates",
     "ordered_lookup_bases",
+    "parse_distribution_file",
+    "parse_distribution_text",
     "parse_graphics_file",
     "parse_graphics_text",
     "preferred_extension",
     "read_dependency_names",
+    "resolve_distribution_companion_path",
     "resolve_graphics_companion_path",
     "shared_lookup_root_for",
 ]

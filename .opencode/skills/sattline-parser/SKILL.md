@@ -50,6 +50,7 @@ Do not read the whole `docs/` tree up front. Load the matching document.
 | Validation rule | `validation/` |
 | Discovery, formats, loading, caches | `project/` |
 | Graphics companion parsing | `project/graphics_parsing.py`, `project/graphics_bindings.py` |
+| Distribution companion parsing | `project/distribution.py` |
 | CLI command | `cli/cmds/` |
 | Builtin signature or record field | `scripts/builtin_catalogue_source.json`, `builtins/records.py` |
 | Documentation | `docs/` |
