@@ -23,11 +23,11 @@ chain and a module type that instantiates itself.
 
 from __future__ import annotations
 
-import contextlib
 import multiprocessing
 import threading
 from collections.abc import Callable, Sequence
 from concurrent.futures import ProcessPoolExecutor
+from concurrent.futures.process import BrokenProcessPool
 from dataclasses import dataclass, replace
 from pathlib import Path
 
@@ -127,6 +127,10 @@ class _ParseOutcome:
 
     ast: BasePicture | None = None
     failure: str | None = None
+    #: The original failure, kept when the parse ran in this process so a
+    #: caller can still reach a ``SourceTooDeepError`` limit or a decode
+    #: offset through ``__cause__``. A worker returns text only.
+    error: ProjectLoadError | None = None
 
 
 def _program_name(plan: _Plan) -> str:
@@ -148,38 +152,50 @@ def _parse_failure(program_name: str, code_name: str, dependency: str | None) ->
     )
 
 
+#: One cache handle per worker process. Constructing a handle per task would
+#: re-run the private-directory check and the startup prune for every file.
+_WORKER_CACHES: dict[str, FileASTCache] = {}
+
+
+def _worker_cache(cache_text: str) -> FileASTCache:
+    cache = _WORKER_CACHES.get(cache_text)
+    if cache is None:
+        cache = FileASTCache(Path(cache_text))
+        _WORKER_CACHES[cache_text] = cache
+    return cache
+
+
 def _parse_code_file(task: tuple[str, str, str | None]) -> _ParseOutcome:
     """Parse one code file into an AST.
 
     Runs in a child process when ``workers`` is greater than one, so it must not
-    touch the loader or its registry. A failure comes back as text: the parent
-    owns the error type and wording, which depend on the dependency edge.
+    touch the loader or its registry. It reads the AST cache but never writes
+    it: the parent owns every write, so the per-user cache key is created and
+    the entries are signed by a single process. A failure comes back as text,
+    because the error type and wording depend on the dependency edge and the
+    parent owns both.
     """
     code_text, mode, cache_text = task
     code_path = Path(code_text)
-    cache = FileASTCache(Path(cache_text)) if cache_text is not None else None
-    if cache is not None:
-        cached = cache.load(code_path, mode)
+    if cache_text is not None:
+        cached = _worker_cache(cache_text).load(code_path, mode)
         if cached is not None:
             return _ParseOutcome(ast=cached)
     try:
         picture = parse_source_file(code_path)
     except PARSE_FAILURES as exc:
         return _ParseOutcome(failure=str(exc) or type(exc).__name__)
-    if cache is not None:
-        with contextlib.suppress(OSError):
-            cache.save(code_path, mode, picture)
     return _ParseOutcome(ast=picture)
 
 
 def _start_method(methods: Sequence[str], *, threaded: bool) -> str | None:
-    """The pool start method to use, or ``None`` for the platform default.
+    """The preferred pool start method, or ``None`` for the platform default.
 
-    A single-threaded process forks: a worker inherits the compiled parser and
-    the caller needs no ``__main__`` guard. Forking a process with other
-    threads is deprecated in CPython and can inherit a lock another thread held
-    at fork time, so a threaded host gets ``forkserver``, and ``spawn`` is the
-    portable fallback.
+    A single-threaded process prefers ``fork``: the caller needs no ``__main__``
+    guard. Forking a process with other threads is deprecated in CPython and
+    can inherit a lock another thread held at fork time, so a threaded host
+    prefers ``forkserver``, then ``spawn``. Platforms that offer only ``fork``
+    still get it: this is a preference, not a guarantee.
     """
     if threaded:
         for candidate in ("forkserver", "spawn"):
@@ -233,6 +249,7 @@ class ProjectLoader:
         self._plans: list[_Plan] = []
         self._planned_keys: set[str] = set()
         self._parsed: dict[str, _ParseOutcome] = {}
+        self._resolved = False
         self._registry: dict[str, SattLineProgram] = {}
         #: Insertion-ordered set of program keys currently being loaded.
         self._loading: dict[str, None] = {}
@@ -261,6 +278,16 @@ class ProjectLoader:
             self._diagnostics.append(diagnostic)
 
     def resolve(self, targets: Sequence[str]) -> dict[str, SattLineProgram]:
+        """Resolve ``targets`` into the canonical registry for this load.
+
+        A loader accumulates one registry: discovery plans, parse outcomes, and
+        the registry itself are per-load state, so a second call would double
+        the plans and re-assemble over the first result. One loader resolves
+        once; construct another for another load.
+        """
+        if self._resolved:
+            raise RuntimeError("ProjectLoader.resolve() resolves one load; construct another loader")
+        self._resolved = True
         try:
             for target in targets:
                 self._visit(target, requester_dir=None, declared_by=None)
@@ -340,7 +367,6 @@ class ProjectLoader:
         program_name = declared_by if declared_by is not None else name
         dependency = None if declared_by is None else name
         key = name.casefold()
-        self._planned_keys.add(key)
         try:
             self._dbg(f"Visiting: {name}")
             artifact = self._resolve_artifact(
@@ -349,6 +375,7 @@ class ProjectLoader:
                 program_name=program_name,
                 dependency=dependency,
             )
+            self._planned_keys.add(key)
             for declared in artifact.dependencies:
                 self._visit(
                     declared,
@@ -396,23 +423,35 @@ class ProjectLoader:
 
         cache_text = None if self._secure_cache_dir is None else str(self._secure_cache_dir)
         tasks = [(str(plan.artifact.code_path), self._mode.value, cache_text) for plan in self._plans]
-        for plan in self._plans:
-            self._dbg(f"Parsing: {plan.artifact.code_path}")
         workers = min(self._workers, len(tasks))
+        self._dbg(f"Parsing {len(tasks)} bodies in {workers} processes")
         try:
-            with _process_pool(workers) as pool:
-                outcomes = list(pool.map(_parse_code_file, tasks, chunksize=1))
+            pool = _process_pool(workers)
         except (OSError, RuntimeError, ValueError) as exc:
-            # A pool cannot always be created (no fork support, a daemonic
-            # parent, a restricted sandbox). Parsing is the load, not an
-            # optimisation detail, so fall back to this process rather than
-            # failing the load.
+            # A pool cannot always be created (no worker start method, a
+            # restricted sandbox). Parsing is the load, not an optimisation
+            # detail, so fall back to this process rather than failing.
             self._dbg(f"Parallel parsing unavailable ({exc}); parsing in this process")
             for plan in self._plans:
                 self._parsed[plan.key] = self._parse_in_process(plan)
             return
+        try:
+            with pool:
+                outcomes = list(pool.map(_parse_code_file, tasks, chunksize=1))
+        except BrokenProcessPool as exc:
+            # A worker died before returning its result. Anything else raised
+            # through ``map`` is a real failure and must reach the caller.
+            self._dbg(f"Worker pool failed ({exc}); parsing in this process")
+            for plan in self._plans:
+                self._parsed[plan.key] = self._parse_in_process(plan)
+            return
+        except BaseException:
+            # Interrupt: drop the queued bodies instead of waiting for them.
+            pool.shutdown(wait=False, cancel_futures=True)
+            raise
         for plan, outcome in zip(self._plans, outcomes, strict=True):
             self._parsed[plan.key] = outcome
+            self._save_cached(plan, outcome)
 
     def _parse_in_process(self, plan: _Plan) -> _ParseOutcome:
         """Parse one plan through the loader's own cache, parser, and errors."""
@@ -423,8 +462,25 @@ class ProjectLoader:
                 dependency=_dependency(plan),
             )
         except ProjectLoadError as exc:
-            return _ParseOutcome(failure=str(exc))
+            return _ParseOutcome(failure=str(exc), error=exc)
         return _ParseOutcome(ast=ast)
+
+    def _save_cached(self, plan: _Plan, outcome: _ParseOutcome) -> None:
+        """Store a body the worker parsed and did not cache itself.
+
+        A worker never writes the cache, so the per-user key and the entry
+        signatures stay single-process. A parse that came from the cache has
+        nothing to store.
+        """
+        if outcome.ast is None or self._ast_cache is None:
+            return
+        code_path = plan.artifact.code_path
+        try:
+            self._ast_cache.save(code_path, self._mode.value, outcome.ast)
+        except OSError as exc:
+            # The cache is an optimisation: a failed write must not turn a
+            # successful parse into a load failure.
+            self._dbg(f"Cache write failed for {code_path}: {exc}")
 
     def _assemble(self) -> None:
         """Turn the parsed plans into the canonical registry, in post-order."""
@@ -441,7 +497,7 @@ class ProjectLoader:
         if basepicture is None:
             error = _parse_failure(_program_name(plan), artifact.code_path.name, _dependency(plan))
             if self._strict:
-                raise error from RuntimeError(outcome.failure)
+                raise error from (outcome.error or RuntimeError(outcome.failure))
             self._incomplete.add(plan.key)
             self._diagnose(LoadDiagnosticKind.LOAD_SKIPPED, plan.name, f"skipped {plan.name!r}: {error}")
             return

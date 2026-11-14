@@ -5,6 +5,7 @@
 from __future__ import annotations
 
 import pickle
+from dataclasses import dataclass
 
 from lark.exceptions import VisitError
 
@@ -310,3 +311,26 @@ def test_remap_tree_handles_a_deep_synthetic_tree() -> None:
     assert isinstance(current, Token)
     assert current.start_pos == 1999
     assert current.end_pos == 2000
+
+
+def test_depth_check_walks_dataclasses_and_containers() -> None:
+    @dataclass
+    class Leaf:
+        value: object = None
+
+    @dataclass
+    class Node:
+        children: object = None
+
+    chain = Node(Node(Node(Leaf())))
+    assert parser_api._first_too_deep_structure(chain, 2) is not None
+    assert parser_api._first_too_deep_structure(chain, 10) is None
+
+    # A container counts as one level, and a set is a container too.
+    assert parser_api._first_too_deep_structure({"a": [Leaf()]}, 2) is not None
+    assert parser_api._first_too_deep_structure({"a": [Leaf()]}, 3) is None
+    assert parser_api._first_too_deep_structure({frozenset({(1, 2)})}, 2) is not None
+
+    # The value reported is the first offending one in source order.
+    offending = parser_api._first_too_deep_structure([Leaf("first"), Leaf("second")], 1)
+    assert getattr(offending, "value", None) == "first"

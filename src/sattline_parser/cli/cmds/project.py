@@ -64,7 +64,7 @@ def register(subparsers: argparse._SubParsersAction[argparse.ArgumentParser]) ->
     parser.add_argument(
         "--cache-dir",
         metavar="DIR",
-        help=f"parser cache directory (default: {_default_cache_dir()})",
+        help="parser cache directory (default: $XDG_CACHE_HOME/sattline-parser/project)",
     )
     parser.add_argument("--no-cache", action="store_true", help="bypass the parser caches")
     parser.add_argument(

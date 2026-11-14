@@ -267,6 +267,7 @@ def test_cache_flags(tmp_path, capsys) -> None:
 
     assert main(["project", str(tmp_path), "--no-cache"]) == ExitCode.OK
     assert "programs: 2" in capsys.readouterr().out
+    assert not project_cmd._default_cache_dir().exists()
 
     assert main(["project", str(tmp_path), "--cache-dir", str(explicit), "--workers", "1"]) == ExitCode.OK
     assert "programs: 2" in capsys.readouterr().out

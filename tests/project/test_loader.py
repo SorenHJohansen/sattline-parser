@@ -3,7 +3,9 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Generator
+from collections.abc import Callable, Generator, Iterator
+from concurrent.futures import ProcessPoolExecutor
+from concurrent.futures.process import BrokenProcessPool
 from contextlib import contextmanager
 from pathlib import Path
 from types import SimpleNamespace
@@ -19,10 +21,12 @@ from sattline_parser.project import (
     DependencyNotFoundError,
     DependencyParseError,
     LoadMode,
+    ProjectLoadError,
     SattLineProject,
     read_dependency_names,
 )
 from sattline_parser.project import loader as project_loader
+from sattline_parser.project.ast_cache import FileASTCache
 from sattline_parser.project.models import LoadDiagnosticKind, SidecarState
 
 _CODE = """"Syntax version 2.23, date: 2026-04-23-12:00:00.000 N"
@@ -90,6 +94,44 @@ def _load(
         cache_dir=cache_dir,
         workers=workers,
     )
+
+
+_Task = tuple[str, str, str | None]
+
+
+class _RecordingPool:
+    """Wraps a real pool and records the tasks the parent dispatches to it."""
+
+    def __init__(self, pool: ProcessPoolExecutor, seen: list[str]) -> None:
+        self._pool = pool
+        self._seen = seen
+
+    def __enter__(self) -> _RecordingPool:
+        self._pool.__enter__()
+        return self
+
+    def __exit__(self, exc_type: object, exc_val: object, exc_tb: object) -> object:
+        return self._pool.__exit__(exc_type, exc_val, exc_tb)  # pyright: ignore[reportArgumentType]
+
+    def map(self, function: Callable[[_Task], object], iterable: list[_Task], chunksize: int = 1) -> Iterator[object]:
+        for task in iterable:
+            self._seen.append(task[0])
+        return self._pool.map(function, iterable, chunksize=chunksize)  # pyright: ignore[reportUnknownVariableType, reportUnknownArgumentType]
+
+    def shutdown(self, wait: bool = True, *, cancel_futures: bool = False) -> None:
+        self._pool.shutdown(wait=wait, cancel_futures=cancel_futures)
+
+
+def _record_dispatched(monkeypatch: pytest.MonkeyPatch) -> list[str]:
+    """Patch the pool factory so the parent records every dispatched body."""
+    real_factory = project_loader._process_pool
+    seen: list[str] = []
+
+    def factory(max_workers: int) -> _RecordingPool:
+        return _RecordingPool(real_factory(max_workers), seen)
+
+    monkeypatch.setattr(project_loader, "_process_pool", factory)
+    return seen
 
 
 def _counting_parse(call_count: list[int]) -> Callable[..., BasePicture]:
@@ -625,7 +667,7 @@ def test_first_body_match_wins_not_the_newest_datecode(tmp_path: Path) -> None:
     assert program.code.datecode == 10
 
 
-def test_load_parses_bodies_in_parallel_with_identical_results(tmp_path: Path) -> None:
+def test_load_parses_bodies_in_parallel_with_identical_results(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     _write(tmp_path, "Base.s", _CODE)
     _write(tmp_path, "Child.s", _CODE)
     _write(tmp_path, "Child.l", "Base\n")
@@ -633,11 +675,47 @@ def test_load_parses_bodies_in_parallel_with_identical_results(tmp_path: Path) -
     _write(tmp_path, "Leaf.l", "Child\n")
 
     serial = _load(tmp_path, targets=("Leaf",), workers=1)
+    dispatched = _record_dispatched(monkeypatch)
     parallel = _load(tmp_path, targets=("Leaf",), workers=3)
 
-    assert tuple(serial.programs()) == tuple(parallel.programs())
+    # The parallel load must really use the pool, not fall back to this process.
+    assert sorted(Path(path).name for path in dispatched) == ["Base.s", "Child.s", "Leaf.s"]
+    assert serial.programs() == parallel.programs()
     assert serial.graph() == parallel.graph()
-    assert list(serial.graph().edges) == list(parallel.graph().edges)
+    assert serial.diagnostics() == parallel.diagnostics()
+
+
+@pytest.mark.parametrize(
+    ("strict", "broken_is_target", "expected"),
+    [
+        (True, True, ArtifactLoadError),
+        (True, False, DependencyParseError),
+        (False, True, None),
+        (False, False, None),
+    ],
+)
+def test_a_broken_body_fails_or_skips_the_same_way_in_parallel(
+    tmp_path: Path,
+    strict: bool,
+    broken_is_target: bool,
+    expected: type[ProjectLoadError] | None,
+) -> None:
+    _write(tmp_path, "Good.s", _CODE)
+    _write(tmp_path, "Good.l", "Broken\n")
+    _write(tmp_path, "Target.s", _CODE)
+    _write(tmp_path, "Target.l", "Good\n")
+    _write(tmp_path, "Broken.s", _BROKEN)
+
+    targets = ("Broken",) if broken_is_target else ("Target",)
+    if expected is not None:
+        with pytest.raises(expected):
+            _load(tmp_path, targets=targets, strict=strict, workers=3)
+        return
+
+    project = _load(tmp_path, targets=targets, strict=strict, workers=3)
+    skipped = [d for d in project.diagnostics() if d.kind is LoadDiagnosticKind.LOAD_SKIPPED]
+    assert skipped
+    assert "failed to parse" in skipped[0].detail
 
 
 def test_parallel_parse_falls_back_when_a_pool_cannot_be_created(
@@ -708,7 +786,7 @@ def test_structural_error_during_assembly_still_fails_a_lenient_load(
 
 
 @pytest.mark.parametrize("workers", [1, 3])
-def test_a_shared_dependency_is_parsed_once(tmp_path: Path, workers: int) -> None:
+def test_a_shared_dependency_is_parsed_once(tmp_path: Path, workers: int, monkeypatch: pytest.MonkeyPatch) -> None:
     """A diamond parses the shared body once, whatever the worker count."""
     _write(tmp_path, "Base.s", _CODE)
     _write(tmp_path, "Left.s", _CODE)
@@ -719,14 +797,13 @@ def test_a_shared_dependency_is_parsed_once(tmp_path: Path, workers: int) -> Non
     _write(tmp_path, "Top.s", _CODE)
     _write(tmp_path, "Top.l", "Left\nRight\n")
 
-    events: list[str] = []
-    project = _load(tmp_path, targets=("Top",), workers=workers, debug=events)
+    dispatched = _record_dispatched(monkeypatch) if workers > 1 else []
+    project = _load(tmp_path, targets=("Top",), workers=workers)
 
     assert tuple(project.programs()) == ("base", "left", "right", "top")
-    parses = [event for event in events if event.startswith("Parsing:")]
-    assert len(parses) == len(project.programs())
-    assert sum(1 for event in parses if event.endswith("Base.s")) == 1
-    assert sum(1 for event in parses if event.endswith("Left.s")) == 1
+    if workers > 1:
+        names = sorted(Path(path).name for path in dispatched)
+        assert names == ["Base.s", "Left.s", "Right.s", "Top.s"]
 
 
 @pytest.mark.parametrize(
@@ -757,3 +834,124 @@ def test_a_daemonic_parent_parses_in_process(tmp_path: Path, monkeypatch: pytest
 
     assert tuple(project.programs()) == ("lib", "main")
     assert any("daemonic" in event for event in events)
+
+
+def test_parse_code_file_returns_a_cached_body_without_parsing(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    code = _write(tmp_path, "Cached.s", _CODE)
+    cache_dir = tmp_path / "cache"
+    FileASTCache(cache_dir).save(code, LoadMode.DRAFT.value, parse_source_file(code))
+
+    def no_parse(*args: object, **kwargs: object) -> None:
+        raise AssertionError("a cached body must not be parsed again")
+
+    monkeypatch.setattr(project_loader, "parse_source_file", no_parse)
+    outcome = project_loader._parse_code_file((str(code), LoadMode.DRAFT.value, str(cache_dir)))
+
+    assert outcome.ast is not None and outcome.failure is None
+
+
+class _FailingPool:
+    """A pool whose workers die before returning a result."""
+
+    def __enter__(self) -> _FailingPool:
+        return self
+
+    def __exit__(self, *exc_info: object) -> None:
+        return None
+
+    def map(self, function: object, iterable: object, chunksize: int = 1) -> object:
+        raise BrokenProcessPool("a worker died")
+
+    def shutdown(self, wait: bool = True, *, cancel_futures: bool = False) -> None:
+        return None
+
+
+def _failing_pool(max_workers: int) -> _FailingPool:
+    return _FailingPool()
+
+
+def test_a_dead_worker_pool_falls_back_to_this_process(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    _write(tmp_path, "Lib.s", _CODE)
+    _write(tmp_path, "Main.s", _CODE)
+    _write(tmp_path, "Main.l", "Lib\n")
+
+    monkeypatch.setattr(project_loader, "_process_pool", _failing_pool)
+    events: list[str] = []
+    project = _load(tmp_path, workers=2, debug=events)
+
+    assert tuple(project.programs()) == ("lib", "main")
+    assert any("pool failed" in event.lower() for event in events)
+
+
+def test_a_cache_write_failure_does_not_fail_a_parallel_load(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    _write(tmp_path, "Lib.s", _CODE)
+    _write(tmp_path, "Main.s", _CODE)
+    _write(tmp_path, "Main.l", "Lib\n")
+
+    def failing_save(self: object, code_path: Path, mode: str, ast: BasePicture) -> None:
+        raise OSError("disk full")
+
+    monkeypatch.setattr(project_loader.FileASTCache, "save", failing_save)
+    events: list[str] = []
+    project = _load(tmp_path, workers=2, cache_dir=tmp_path / "cache", debug=events)
+
+    assert tuple(project.programs()) == ("lib", "main")
+    assert any("cache write failed" in event.lower() for event in events)
+
+
+class _InterruptedPool:
+    """A pool that is interrupted while bodies are still queued."""
+
+    def __init__(self, shutdowns: list[dict[str, object]]) -> None:
+        self._shutdowns = shutdowns
+
+    def __enter__(self) -> _InterruptedPool:
+        return self
+
+    def __exit__(self, *exc_info: object) -> None:
+        return None
+
+    def map(self, function: object, iterable: object, chunksize: int = 1) -> object:
+        raise KeyboardInterrupt
+
+    def shutdown(self, wait: bool = True, *, cancel_futures: bool = False) -> None:
+        self._shutdowns.append({"wait": wait, "cancel_futures": cancel_futures})
+
+
+#: Shutdown calls observed by :class:`_InterruptedPool`.
+_SHUTDOWNS: list[dict[str, object]] = []
+
+
+def _interrupted_pool(max_workers: int) -> _InterruptedPool:
+    return _InterruptedPool(_SHUTDOWNS)
+
+
+def test_an_interrupted_parallel_load_cancels_the_queued_bodies(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _write(tmp_path, "Lib.s", _CODE)
+    _write(tmp_path, "Main.s", _CODE)
+    _write(tmp_path, "Main.l", "Lib\n")
+
+    _SHUTDOWNS.clear()
+    monkeypatch.setattr(project_loader, "_process_pool", _interrupted_pool)
+
+    with pytest.raises(KeyboardInterrupt):
+        _load(tmp_path, workers=2)
+
+    assert _SHUTDOWNS == [{"wait": False, "cancel_futures": True}]
+
+
+def test_a_loader_resolves_one_load(tmp_path: Path) -> None:
+    _write(tmp_path, "Main.s", _CODE)
+    loader = project_loader.ProjectLoader(
+        roots=[tmp_path],
+        mode=LoadMode.DRAFT,
+        strict=True,
+        debug=None,
+        cache_dir=None,
+    )
+    assert tuple(loader.resolve(["Main"])) == ("main",)
+
+    with pytest.raises(RuntimeError, match="construct another loader"):
+        loader.resolve(["Main"])

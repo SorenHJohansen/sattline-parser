@@ -139,6 +139,10 @@ class SattLineLexer(ContextualLexer):
         # instance is shared by the cached parser, so instance state would leak
         # between concurrent parses.
         comment_depth = 0
+        # Compact provenance is fixed for the whole run (``compact_provenance``
+        # wraps the parse), so read it once instead of once per token. A plain
+        # source has none and skips the keyword retype entirely.
+        retype = _PROVENANCE.get() is not None
         try:
             while True:
                 if comment_depth > 0:
@@ -146,7 +150,7 @@ class SattLineLexer(ContextualLexer):
                 else:
                     token = self.lexers[parser_state.position].next_token(lexer_state, parser_state)
                 token_type = token.type
-                if comment_depth == 0:
+                if retype and comment_depth == 0:
                     token_type = _retype_raw_keyword(token, token_type)
                 if token_type == TOKEN_COMMENT_START:
                     comment_depth += 1
