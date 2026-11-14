@@ -781,7 +781,8 @@ def test_load_pairs_a_companion_whose_name_case_differs(tmp_path: Path) -> None:
 
     program = project.get("PUMP")
     assert program.distribution_path is not None
-    assert program.distribution_path.name == "pump.p"
+    # A case-insensitive filesystem may report the spelling it found on disk.
+    assert program.distribution_path.name.lower() == "pump.p"
     assert program.has_executing_system is True
 
 
@@ -1529,7 +1530,7 @@ def test_plan_key_falls_back_to_the_raw_path_when_resolve_fails(monkeypatch: pyt
 
     monkeypatch.setattr(Path, "resolve", _raise)
 
-    assert project_loader._plan_key(Path("/missing/Prog.s")) == "/missing/Prog.s"
+    assert project_loader._plan_key(Path("/missing/Prog.s")) == str(Path("/missing/Prog.s"))
 
 
 def test_iter_moduletype_instances_reaches_nested_submodules() -> None:
