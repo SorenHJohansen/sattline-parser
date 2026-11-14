@@ -207,7 +207,7 @@ sequenceDiagram
     else validate=FULL
         L->>V: validate every loaded program
     end
-    L-->>P: registry, diagnostics, cycles
+    L-->>P: registry, diagnostics
     P-->>Caller: SattLineProject
 ```
 

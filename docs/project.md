@@ -84,7 +84,7 @@ sequenceDiagram
 
     L->>V: visit(target, requester_dir=None, declared_by=None)
     V->>V: already in registry? return
-    V->>V: already loading? record cycle, return
+    V->>V: already loading? raise DependencyCycleError
     V->>V: push key on _loading
     V->>F: find_code_with_base(name, requester_dir)
     F-->>V: code_path, resolved_base
@@ -107,9 +107,9 @@ sequenceDiagram
 
 Post-order is an invariant: the registry is built dependencies-first, so a
 program's diagnostics are computed against a complete prefix of its closure.
-`_assert_registry_post_order` checks this for acyclic loads and raises
-`RuntimeError` if a dependency appears after its consumer. The check is skipped
-when a cycle was recorded, because a cycle has no valid post-order.
+`_assert_registry_post_order` checks this and raises `RuntimeError` if a
+dependency appears after its consumer. A cycle never reaches that check because
+the loader rejects it first.
 
 `validate=INVOKED` runs **after** the graph is complete, because it needs the
 whole invocation graph. The loader first builds the registry, then walks
@@ -118,24 +118,32 @@ invoked-scope diagnostics.
 
 ## Cycles
 
-A cycle is an edge in the graph, not an infinite recursion. When `_visit`
-sees a key already in `_loading`, it records the path
-`("alpha", "beta", "alpha")` in `_cycles`, adds a `DEPENDENCY_CYCLE` load
-diagnostic, and returns. The graph keeps the edge. Consumers can render the
-path or compare it.
+A recursive dependency has no finite load order, so the loader rejects it. When
+`_visit` sees a key already in `_loading`, it raises `DependencyCycleError`
+with the canonical cycle path, for example `("alpha", "beta", "alpha")`. The
+error is structural: `strict=True` and `strict=False` both fail, and a cycle
+inside an unparseable dependency still fails the load.
 
 A cycle is identified by its directed node sequence, not by its member set.
-`alpha -> beta -> gamma -> alpha` and `alpha -> gamma -> beta -> alpha` are
-different cycles and are both reported. Rotations of the same sequence describe
-the same cycle, so every path is rotated to start at its smallest node name and
-recorded once.
+Rotations of the same sequence describe the same cycle, so every path is
+rotated to start at its smallest node name before it is reported.
 
-`SattLineProject.cycles()` merges the paths recorded during the load with the
-cycles computed from the graph edges. The merge keeps a cycle visible even when
-a skipped program produced the load diagnostic. The CLI renders that same view.
+`SattLineProject.cycles()` stays available for a project built directly with
+`_from_programs`: it enumerates the cycles in the declared graph edges.
+`SattLineProject.load` never returns one because the loader has already raised.
 Enumeration is linear on a DAG because the search is confined to strongly
 connected components. It is exponential in the worst case for a dense component
 because every elementary cycle is reported.
+
+## Module-type recursion
+
+A module type that instantiates itself, directly or through other module types,
+has no finite expansion. After the registry is complete, the loader builds the
+instantiation graph over every loaded module type and rejects the first cycle
+with `ModuleTypeCycleError`. The check runs before validation and is not
+governed by `LoadValidation`, so `validate=NONE` and `strict=False` cannot let a
+recursive type through. Unused module types in a loaded dependency are checked
+too, because the type itself is structurally invalid.
 
 ## Sidecars
 
@@ -195,7 +203,9 @@ recorded as a `LOAD_SKIPPED` diagnostic.
 | `True` (default) | Raise `ProjectLoadError` and its subclasses |
 | `False` | Record `LOAD_SKIPPED`, mark dependents incomplete, continue |
 
-Validation findings never raise. `strict` governs load failures only.
+Validation findings never raise. `strict` governs load failures only. It does
+not govern the two structural errors: a recursive sidecar chain and a module
+type that instantiates itself always raise.
 
 ## Datecodes
 

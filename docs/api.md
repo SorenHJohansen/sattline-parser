@@ -197,7 +197,7 @@ of the ordinary import cost. See [testing.md](testing.md).
 | Loading | `SattLineProject`, `ProjectLoader`, `LoadMode`, `LoadValidation` |
 | Models | `SattLineProgram`, `DependencyGraph`, `ProgramFormat`, `SidecarState` |
 | Diagnostics | `LoadDiagnostic`, `LoadDiagnosticKind` |
-| Errors | `ProjectLoadError`, `ArtifactLoadError`, `DependencyNotFoundError`, `DependencyParseError` |
+| Errors | `ProjectLoadError`, `StructuralProjectError`, `DependencyCycleError`, `ModuleTypeCycleError`, `ArtifactLoadError`, `DependencyNotFoundError`, `DependencyParseError` |
 | Discovery | `ProjectLookup`, `SourceIndex`, `ordered_lookup_bases`, `shared_lookup_root_for` |
 | Formats | `ArtifactKind`, `candidate_extensions`, `code_ext`, `code_ext_candidates`, `deps_ext`, `deps_ext_candidates`, `graphics_ext`, `graphics_ext_candidates`, `preferred_extension` |
 | Graphics | `GraphicsModel`, `GraphicsBinding`, `GraphicsMessage`, `GraphicsCompositeRecord`, `GraphicsPictureDisplayRecord`, `GraphicsPathRow`, `parse_graphics_file`, `parse_graphics_text`, `resolve_graphics_companion_path` |

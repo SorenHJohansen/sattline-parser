@@ -70,7 +70,6 @@ def test_json_payload(tmp_path, capsys) -> None:
     assert child["code"] == ".s"
     assert child["dependencies"] == ["Base"]
     assert payload["edges"] == [{"from": "child", "to": "base"}]
-    assert payload["cycles"] == []
 
 
 def test_missing_root_and_empty_tree_are_usage_errors(tmp_path, capsys) -> None:
@@ -155,25 +154,58 @@ def test_graph_json_payload(tmp_path, capsys) -> None:
     payload = json.loads(capsys.readouterr().out)
     assert payload["schema"] == "sattline.v1.project"
     assert payload["edges"] == [{"from": "child", "to": "base"}]
-    assert payload["cycles"] == []
 
 
-def test_dependency_cycle_is_a_finding(tmp_path, capsys) -> None:
+def test_dependency_cycle_is_a_load_error(tmp_path, capsys) -> None:
     _program(tmp_path, "Alpha", "Beta")
     _program(tmp_path, "Beta", "Alpha")
 
     assert main(["project", str(tmp_path)]) == ExitCode.FINDINGS
     out = capsys.readouterr().out
-    assert "cycles:" in out
-    assert "alpha -> beta -> alpha" in out
-    assert "dependency-cycle" in out
+    assert "cannot load project" in out
+    assert "dependency cycle: alpha -> beta -> alpha" in out
 
-    assert main(["project", str(tmp_path), "--cycles"]) == ExitCode.FINDINGS
-    assert capsys.readouterr().out.strip() == "alpha -> beta -> alpha"
-
-    assert main(["project", str(tmp_path), "--cycles", "--json"]) == ExitCode.FINDINGS
+    assert main(["project", str(tmp_path), "--json"]) == ExitCode.FINDINGS
     payload = json.loads(capsys.readouterr().out)
-    assert payload["cycles"] == [["alpha", "beta"]]
+    assert payload["findings"][0]["severity"] == "error"
+    assert "dependency cycle: alpha -> beta -> alpha" in payload["findings"][0]["message"]
+
+    assert main(["project", str(tmp_path), "--cycles"]) == ExitCode.USAGE
+
+
+_RECURSIVE_MODULE_TYPE_SOURCE = """\
+"Syntax version 2.23, date: 2026-06-19-12:00:00.000 N"
+"Original file date: ---"
+"Program date: 2026-06-19-12:00:00.000, name: Loop"
+
+BasePicture Invocation
+   ( 0.0 , 0.0 , 0.0 , 1.0 , 1.0
+    ) : MODULEDEFINITION DateCode_ 1
+TYPEDEFINITIONS
+   LoopType = MODULEDEFINITION DateCode_ 1
+   LOCALVARIABLES
+      Value: integer := 0;
+   SUBMODULES
+      Child Invocation
+         ( 0.0 , 0.0 , 0.0 , 0.4 , 0.4
+          ) : LoopType;
+   ModuleDef
+   ClippingBounds = ( -1.0 , -1.0 ) ( 1.0 , 1.0 )
+   ENDDEF (*LoopType*);
+
+ModuleDef
+ClippingBounds = ( -1.0 , -1.0 ) ( 1.0 , 1.0 )
+ENDDEF (*BasePicture*);
+"""
+
+
+def test_moduletype_cycle_is_a_load_error(tmp_path, capsys) -> None:
+    (tmp_path / "Loop.s").write_text(_RECURSIVE_MODULE_TYPE_SOURCE, encoding="utf-8")
+
+    assert main(["project", str(tmp_path)]) == ExitCode.FINDINGS
+    out = capsys.readouterr().out
+    assert "cannot load project" in out
+    assert "module type instantiates itself recursively: LoopType -> LoopType" in out
 
 
 def test_bad_depth_is_a_usage_error(tmp_path, capsys) -> None:

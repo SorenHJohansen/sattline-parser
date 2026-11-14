@@ -12,7 +12,7 @@ from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 from types import MappingProxyType
 
-from ._cycles import dependency_cycles, merge_cycles
+from ._cycles import dependency_cycles
 from .loader import ProjectLoader
 from .models import DependencyGraph, LoadDiagnostic, LoadMode, LoadValidation, SattLineProgram
 
@@ -28,7 +28,6 @@ class SattLineProject:
     def __init__(self) -> None:
         self._programs: dict[str, SattLineProgram] = {}
         self._diagnostics: tuple[LoadDiagnostic, ...] = ()
-        self._cycles: tuple[tuple[str, ...], ...] = ()
 
     @classmethod
     def _from_programs(cls, programs: Mapping[str, SattLineProgram]) -> SattLineProject:
@@ -64,10 +63,10 @@ class SattLineProject:
         recursively before the target itself. When a code file has a ``.g`` /
         ``.y`` sibling, the companion is parsed into the program's graphics
         model. Programs are canonicalized by casefolded identity: each name is
-        visited and parsed exactly once, and cycles resolve as edges in the
-        derived graph. ``strict=True`` (default) fails fast on missing or
-        unparseable artifacts; ``strict=False`` skips the failing program and
-        continues.
+        visited and parsed exactly once. A recursive sidecar chain or a module
+        type that instantiates itself is a structural error and always raises.
+        ``strict=True`` (default) fails fast on missing or unparseable
+        artifacts; ``strict=False`` skips the failing program and continues.
 
         ``validate=FULL`` (default) runs the single-file validator per program
         with the definitions visible from already-loaded dependencies and stores
@@ -89,7 +88,6 @@ class SattLineProject:
         project = cls()
         project._programs = program_registry
         project._diagnostics = loader.diagnostics
-        project._cycles = loader.cycles
         return project
 
     def get(self, name: str) -> SattLineProgram:
@@ -110,7 +108,7 @@ class SattLineProject:
         return MappingProxyType(self._programs)
 
     def diagnostics(self) -> tuple[LoadDiagnostic, ...]:
-        """Non-fatal load findings (missing/empty sidecars, cycles, stray sidecars).
+        """Non-fatal load findings (missing/empty sidecars, stray sidecars).
 
         These are conditions the loader reports and an operator may
         continue past; they are surfaced rather than raised so the default
@@ -119,16 +117,15 @@ class SattLineProject:
         return self._diagnostics
 
     def cycles(self) -> tuple[tuple[str, ...], ...]:
-        """Every dependency cycle in the project, canonical and sorted.
+        """Every dependency cycle in the declared graph, canonical and sorted.
 
         Each path starts at its smallest node name and ends at the same name,
-        for example ``("alpha", "beta", "alpha")``. The view merges cycles
-        recorded during the load with cycles computed from the graph edges, so a
-        skipped program that still produced a load diagnostic stays visible.
-        The loader also records a ``dependency-cycle`` load diagnostic; this
-        view is the data form consumers can render or compare.
+        for example ``("alpha", "beta", "alpha")``. A loaded project has no
+        cycles because the loader rejects them, so this view is only non-empty
+        for a project built directly from programs. It stays available for
+        consumers that inspect a hand-built graph or a stored edge set.
         """
-        return merge_cycles(self._cycles, dependency_cycles(self.graph().edges))
+        return dependency_cycles(self.graph().edges)
 
     def libraries(self) -> tuple[str, ...]:
         """Library names that resolved at least one loaded program, sorted."""

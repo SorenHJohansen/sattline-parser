@@ -10,8 +10,8 @@ sidecars, loads dependencies first, parses ``.g`` / ``.y`` companions, and (with
 ``validate=FULL``) runs the single-file validator against the definitions visible
 from already-loaded dependencies. The loader records library and origin
 provenance, marks external-dependent findings tentative when a non-strict load
-skips part of the closure, reports definition datecode conflicts, and returns
-dependency cycles as paths.
+skips part of the closure, reports definition datecode conflicts, and rejects
+recursive dependency sidecars and recursive module-type instantiation.
 """
 
 from __future__ import annotations
@@ -20,9 +20,12 @@ from .ast_cache import FILE_AST_CACHE_VERSION, FileASTCache
 from .discovery import ProjectLookup, SourceIndex, ordered_lookup_bases, shared_lookup_root_for
 from .errors import (
     ArtifactLoadError,
+    DependencyCycleError,
     DependencyNotFoundError,
     DependencyParseError,
+    ModuleTypeCycleError,
     ProjectLoadError,
+    StructuralProjectError,
 )
 from .formats import (
     ArtifactKind,
@@ -62,6 +65,7 @@ __all__ = [
     "LOOKUP_CACHE_VERSION",
     "ArtifactKind",
     "ArtifactLoadError",
+    "DependencyCycleError",
     "DependencyGraph",
     "DependencyNotFoundError",
     "DependencyParseError",
@@ -77,6 +81,7 @@ __all__ = [
     "LoadDiagnosticKind",
     "LoadMode",
     "LoadValidation",
+    "ModuleTypeCycleError",
     "ProgramFormat",
     "ProjectLoadError",
     "ProjectLoader",
@@ -85,6 +90,7 @@ __all__ = [
     "SattLineProject",
     "SidecarState",
     "SourceIndex",
+    "StructuralProjectError",
     "candidate_extensions",
     "code_ext",
     "code_ext_candidates",

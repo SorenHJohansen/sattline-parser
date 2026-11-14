@@ -7,6 +7,8 @@ per-target reports.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
+
 
 class ProjectLoadError(Exception):
     """Base error for project loading failures.
@@ -25,6 +27,10 @@ class ProjectLoadError(Exception):
         super().__init__(prefix if dependency is None else f"{prefix} (dependency {dependency!r})")
 
 
+class StructuralProjectError(ProjectLoadError):
+    """A structural error that no strictness setting can recover from."""
+
+
 class DependencyNotFoundError(ProjectLoadError):
     """A declared dependency could not be resolved under the configured roots."""
 
@@ -37,4 +43,28 @@ class ArtifactLoadError(ProjectLoadError):
     """A required companion artifact for a program could not be loaded."""
 
 
-__all__ = ["ArtifactLoadError", "DependencyNotFoundError", "DependencyParseError", "ProjectLoadError"]
+class DependencyCycleError(StructuralProjectError):
+    """A dependency sidecar chain returns to a program that is still loading."""
+
+    def __init__(self, cycle: Sequence[str]) -> None:
+        self.cycle = tuple(cycle)
+        super().__init__(self.cycle[0], f"dependency cycle: {' -> '.join(self.cycle)}")
+
+
+class ModuleTypeCycleError(StructuralProjectError):
+    """A module type expands into itself through its submodule instances."""
+
+    def __init__(self, program: str, cycle: Sequence[str]) -> None:
+        self.cycle = tuple(cycle)
+        super().__init__(program, f"module type instantiates itself recursively: {' -> '.join(self.cycle)}")
+
+
+__all__ = [
+    "ArtifactLoadError",
+    "DependencyCycleError",
+    "DependencyNotFoundError",
+    "DependencyParseError",
+    "ModuleTypeCycleError",
+    "ProjectLoadError",
+    "StructuralProjectError",
+]
