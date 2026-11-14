@@ -25,6 +25,7 @@ BRANCH_MIN = 93.0
 
 _REPO_ROOT = Path(__file__).resolve().parents[1]
 _JSON_REPORT = _REPO_ROOT / "coverage-branch.json"
+_XML_REPORT = _REPO_ROOT / "coverage.xml"
 
 
 def main() -> int:
@@ -37,6 +38,10 @@ def main() -> int:
             "--cov-branch",
             "--cov-fail-under=0",
             f"--cov-report=json:{_JSON_REPORT}",
+            # CI checks that this file was produced, and it is the report a
+            # consumer of the artifact opens, so the suite writes it here
+            # rather than relying on an addopts default.
+            f"--cov-report=xml:{_XML_REPORT}",
             "-q",
             "--no-cov-on-fail",
         ],
