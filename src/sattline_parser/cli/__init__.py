@@ -20,8 +20,9 @@ so an agent needs neither Python glue nor a lookup table:
 
 Exit codes are the contract: ``0`` clean, ``1`` findings, ``2`` usage/input,
 ``3`` internal error. Output is plain text unless ``--json``/``--jsonl`` is
-given, and a traceback is only printed under ``--debug``. Every command is
-read-only: there is no ``--fix``, no network access and no watch mode.
+given, and a traceback is only printed under ``--debug``. No command edits a
+source tree: there is no ``--fix``, no network access and no watch mode. The
+``project`` command does write its parser cache unless ``--no-cache`` is given.
 """
 
 from __future__ import annotations

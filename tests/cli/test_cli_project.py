@@ -134,6 +134,26 @@ def test_malformed_distribution_companion_is_a_finding(tmp_path, capsys) -> None
     assert "distribution companion" in capsys.readouterr().out
 
 
+def test_default_cache_dir_ignores_a_relative_xdg_cache_home(tmp_path, monkeypatch) -> None:
+    """A relative cache root would put the cache inside the tree being read."""
+    monkeypatch.setenv("XDG_CACHE_HOME", "relative-cache")
+
+    assert project_cmd._default_cache_dir() is None
+
+
+def test_default_cache_dir_survives_an_unknown_home(tmp_path, monkeypatch) -> None:
+    monkeypatch.delenv("XDG_CACHE_HOME", raising=False)
+    monkeypatch.setattr(project_cmd.Path, "home", classmethod(lambda cls: (_ for _ in ()).throw(RuntimeError())))
+
+    assert project_cmd._default_cache_dir() is None
+
+
+def test_default_cache_dir_honours_an_absolute_xdg_cache_home(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv("XDG_CACHE_HOME", str(tmp_path))
+
+    assert project_cmd._default_cache_dir() == tmp_path / "sattline-parser" / "project"
+
+
 def test_missing_root_and_empty_tree_are_usage_errors(tmp_path, capsys) -> None:
     assert main(["project", str(tmp_path / "Absent")]) == ExitCode.USAGE
     assert "cannot read" in capsys.readouterr().err
@@ -326,9 +346,12 @@ def test_cache_flags(tmp_path, capsys) -> None:
     _program(tmp_path, "Child", "Base")
     explicit = tmp_path / "explicit-cache"
 
+    default_cache = project_cmd._default_cache_dir()
+    assert default_cache is not None
+
     assert main(["project", str(tmp_path), "--no-cache"]) == ExitCode.OK
     assert "programs: 2" in capsys.readouterr().out
-    assert not project_cmd._default_cache_dir().exists()
+    assert not default_cache.exists()
 
     assert main(["project", str(tmp_path), "--cache-dir", str(explicit), "--workers", "1"]) == ExitCode.OK
     assert "programs: 2" in capsys.readouterr().out
@@ -342,8 +365,10 @@ def test_default_cache_dir_is_the_xdg_cache(tmp_path, capsys, monkeypatch) -> No
 
     assert main(["project", str(tmp_path)]) == ExitCode.OK
     assert "programs: 1" in capsys.readouterr().out
-    assert project_cmd._default_cache_dir() == cache_home / "sattline-parser" / "project"
-    assert any(project_cmd._default_cache_dir().rglob("*"))
+    default_cache = project_cmd._default_cache_dir()
+    assert default_cache == cache_home / "sattline-parser" / "project"
+    assert default_cache is not None
+    assert any(default_cache.rglob("*"))
 
 
 def test_workers_flag_defaults_to_cpu_count_capped(monkeypatch) -> None:

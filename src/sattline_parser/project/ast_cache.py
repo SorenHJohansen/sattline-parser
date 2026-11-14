@@ -279,7 +279,9 @@ class FileASTCache:
         try:
             if marker.read_text(encoding="ascii") == self._identity_text():
                 return self._prune_temporary_files()
-        except OSError:
+        except (OSError, ValueError):
+            # A marker that cannot be decoded is an unusable marker: the bounded
+            # prune below rewrites it.
             pass
         removed = self.prune_stale_entries()
         with contextlib.suppress(OSError):

@@ -19,6 +19,8 @@ from pathlib import Path
 from types import MappingProxyType
 from typing import cast
 
+import regex
+
 from sattline_parser.grammar import constants as const
 from sattline_parser.source_document import GENERATED, SourceDocument
 
@@ -172,6 +174,16 @@ def is_compressed(text: str) -> bool:
 #: Longest body a quoted identifier may have, from the grammar's name regex.
 _QUOTED_NAME_MAX = 20
 
+#: One character the grammar accepts inside an unquoted name. An apostrophe
+#: preceded by one of these belongs to a name such as ``Pump'A``, not to a
+#: quoted identifier, so it must not open an opaque region.
+_NAME_CHAR_RE = regex.compile(f"[{const.GRAMMAR_CHARSET_NAME}]")
+
+
+def _continues_name(text: str, index: int) -> bool:
+    """True when the character before *index* is part of an unquoted name."""
+    return index > 0 and _NAME_CHAR_RE.match(text[index - 1]) is not None
+
 
 def scan_opaque_regions(text: str) -> list[tuple[str, int, int]]:
     """Return ``(kind, start, end)`` for every string ('S') and comment ('C').
@@ -217,6 +229,11 @@ def scan_opaque_regions(text: str) -> list[tuple[str, int, int]]:
             regions.append(("S", index, cursor))
             index = cursor
         elif text[index] == "'":
+            if _continues_name(text, index):
+                # An apostrophe inside an unquoted name is name text, not the
+                # start of a quoted identifier.
+                index += 1
+                continue
             closing = text.find("'", index + 2, index + 2 + _QUOTED_NAME_MAX)
             if closing == -1:
                 index += 1

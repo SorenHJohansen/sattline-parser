@@ -79,7 +79,7 @@ The coverage gates:
 
 | Gate | Minimum | Owner |
 | --- | --- | --- |
-| Line coverage | 100 percent after `pragma: no cover` and configured exclusions | `pyproject.toml` |
+| Line coverage | 100 percent after `pragma: no cover` and configured exclusions | `scripts/check_branch_coverage.py` |
 | Branch coverage | 93 percent | `scripts/check_branch_coverage.py` |
 
 `check_branch_coverage.py` is the authoritative branch gate because coverage's

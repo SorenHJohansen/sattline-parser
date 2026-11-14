@@ -15,7 +15,7 @@ from typing import Literal
 from sattline_parser.models.ast_model import GraphicsBinding, SourceSpan
 from sattline_parser.source_io import read_text_cp1252
 
-from .formats import ALL_GRAPHICS_EXTENSIONS, companion_extensions_for_code
+from .formats import ALL_GRAPHICS_EXTENSIONS, companion_extensions_for_code, find_companion_beside
 from .graphics_bindings import (
     BINDING_LINE_RE,
     parse_graphics_binding_line,
@@ -42,18 +42,13 @@ def resolve_graphics_companion_path(code_path: Path, *, mode: LoadMode) -> Path 
 
     The companion always sits in the same directory as the code file (a
     ``with_suffix`` substitution, never a root-ordered lookup). ``.x`` code
-    resolves only to ``.y``; draft code falls back from ``.g`` to ``.y``; a
-    ``.g`` / ``.y`` input resolves to itself.
+    resolves only to ``.y`` and ``.s`` code only to ``.g``; a ``.g`` / ``.y``
+    input resolves to itself. The stem matches ignoring case, so a companion
+    copied from a case-insensitive filesystem still pairs.
     """
     if code_path.suffix.lower() in ALL_GRAPHICS_EXTENSIONS:
         return code_path
-
-    candidates = companion_extensions_for_code(code_path.suffix, mode)
-    for extension in candidates:
-        candidate = code_path.with_suffix(extension)
-        if candidate.exists():
-            return candidate
-    return None
+    return find_companion_beside(code_path, companion_extensions_for_code(code_path.suffix, mode))
 
 
 def _line_start_offsets(text: str) -> tuple[int, ...]:

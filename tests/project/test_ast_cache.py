@@ -389,6 +389,19 @@ def test_prune_temporary_files_missing_directory(tmp_path: Path) -> None:
     assert cache._prune_temporary_files() == 0
 
 
+def test_startup_prune_survives_an_undecodable_identity_marker(tmp_path: Path) -> None:
+    """A marker whose bytes are not ASCII means "unknown identity", not a crash."""
+    code_path = _write_code(tmp_path)
+    cache = FileASTCache(tmp_path)
+    cache.save(code_path, "draft", _picture(code_path))
+    (cache.cache_dir / ".parser-identity").write_bytes(b"\xff\xfe\x80")
+
+    restarted = FileASTCache(tmp_path)
+
+    assert restarted.load(code_path, "draft") == _picture(code_path)
+    assert (cache.cache_dir / ".parser-identity").read_text(encoding="ascii") == restarted._identity_text()
+
+
 def test_startup_prune_is_skipped_when_identity_marker_matches(tmp_path: Path) -> None:
     code_path = _write_code(tmp_path)
     cache = FileASTCache(tmp_path)

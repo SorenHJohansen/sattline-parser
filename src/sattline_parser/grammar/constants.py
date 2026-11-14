@@ -276,7 +276,7 @@ def _cp1252_name_characters() -> str:
     return "".join(characters)
 
 
-_NAME_CHAR: Final = r"\p{L}\p{Nl}\p{M}\p{Nd}_'" + _cp1252_name_characters() + r"\uFFFD"
+GRAMMAR_CHARSET_NAME: Final = r"\p{L}\p{Nl}\p{M}\p{Nd}_'" + _cp1252_name_characters() + r"\uFFFD"
 _NAME_EXCLUDED_KEYWORDS: Final = (
     GRAMMAR_VALUE_IF,
     GRAMMAR_VALUE_THEN,
@@ -296,10 +296,10 @@ GRAMMAR_REGEX_NAME: Final = (
     r"/(?i:'[^']{1,20}'|"
     r"(?!"
     rf"(?:{_NAME_EXCLUDED})"
-    rf"(?![{_NAME_CHAR}])"
+    rf"(?![{GRAMMAR_CHARSET_NAME}])"
     r")"
-    rf"[{_NAME_CHAR}][{_NAME_CHAR}]{{0,19}}"
-    rf"(?![{_NAME_CHAR}]))/"
+    rf"[{GRAMMAR_CHARSET_NAME}][{GRAMMAR_CHARSET_NAME}]{{0,19}}"
+    rf"(?![{GRAMMAR_CHARSET_NAME}]))/"
 )
 
 # ---------------------------------------------------------------------------

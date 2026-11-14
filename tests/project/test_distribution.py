@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import pickle
 from pathlib import Path
 
 import pytest
@@ -269,3 +270,13 @@ def test_resolve_companion_for_a_companion_input_is_itself(tmp_path: Path) -> No
     path = tmp_path / "Main.q"
     path.write_text(_EMPTY, encoding="utf-8")
     assert resolve_distribution_companion_path(path, mode=LoadMode.DRAFT) == path
+
+
+def test_parse_error_survives_pickling() -> None:
+    error = DistributionParseError("missing 'ExecutingSystems' section", line=4, column=2)
+
+    restored = pickle.loads(pickle.dumps(error))
+
+    assert restored.line == 4
+    assert restored.column == 2
+    assert str(restored) == str(error)

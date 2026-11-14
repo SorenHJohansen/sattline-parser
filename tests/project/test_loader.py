@@ -746,6 +746,65 @@ def test_load_official_body_with_draft_sidecar_is_not_paired(tmp_path: Path) -> 
     assert LoadDiagnosticKind.SIDECAR_FAMILY_MISMATCH in [d.kind for d in project.diagnostics()]
 
 
+def test_load_official_mode_reports_a_draft_sidecar_as_a_family_mismatch(tmp_path: Path) -> None:
+    """The other family is probed at the body prefix, where a mode filter never looks."""
+    _write(tmp_path, "Main.x", _CODE)
+    _write(tmp_path, "Main.l", "")
+
+    project = _load(tmp_path, mode=LoadMode.OFFICIAL)
+
+    assert project.get("Main").format.deps_ext is None
+    kinds = [d.kind for d in project.diagnostics()]
+    assert LoadDiagnosticKind.SIDECAR_FAMILY_MISMATCH in kinds
+    assert LoadDiagnosticKind.SIDECAR_MISSING not in kinds
+
+
+def test_load_pairs_a_companion_whose_name_case_differs(tmp_path: Path) -> None:
+    _write(tmp_path, "PUMP.S", _CODE)
+    (tmp_path / "pump.p").write_text(
+        'DistributionData\n ( Version "Distributiondata version 1.0" )\n'
+        "SourceCodeSystems\n (  )\n"
+        'ExecutingSystems\n ( Controller\n    ( Name "10.0.0.1"\n      Download ShortStopReconfig ) )\n',
+        encoding="utf-8",
+    )
+
+    project = _load(tmp_path, targets=("PUMP",))
+
+    program = project.get("PUMP")
+    assert program.distribution_path is not None
+    assert program.distribution_path.name == "pump.p"
+    assert program.has_executing_system is True
+
+
+def test_parallel_parse_falls_back_when_the_pool_cannot_start_workers(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Workers start on submit, so the failure surfaces from ``map``."""
+    _write(tmp_path, "Lib.s", _CODE)
+    _write(tmp_path, "Main.s", _CODE)
+    _write(tmp_path, "Main.l", "Lib\n")
+
+    class UnstartablePool:
+        def __init__(self, *args: object, **kwargs: object) -> None:
+            pass
+
+        def map(self, *args: object, **kwargs: object) -> object:
+            raise OSError("cannot start a worker process")
+
+        def shutdown(self, *args: object, **kwargs: object) -> None:
+            pass
+
+    def unstartable(max_workers: int) -> UnstartablePool:
+        del max_workers
+        return UnstartablePool()
+
+    monkeypatch.setattr(project_loader, "_process_pool", unstartable)
+    project = _load(tmp_path, workers=2)
+
+    assert tuple(project.programs()) == ("lib", "main")
+    assert not [d for d in project.diagnostics() if d.kind is LoadDiagnosticKind.LOAD_SKIPPED]
+
+
 # --- sidecar pairing invariant ----------------------------------------------
 
 
@@ -964,7 +1023,8 @@ def test_parallel_parse_falls_back_when_a_pool_cannot_be_created(
     assert not [d for d in project.diagnostics() if d.kind is LoadDiagnosticKind.LOAD_SKIPPED]
 
 
-def test_parse_code_file_reads_and_writes_the_ast_cache(tmp_path: Path) -> None:
+def test_parse_code_file_reads_but_never_writes_the_ast_cache(tmp_path: Path) -> None:
+    """A worker reads the cache and leaves every write to the parent."""
     code = _write(tmp_path, "Cached.s", _CODE)
     cache_dir = tmp_path / "cache"
     task = (str(code), LoadMode.DRAFT.value, str(cache_dir))
@@ -974,8 +1034,10 @@ def test_parse_code_file_reads_and_writes_the_ast_cache(tmp_path: Path) -> None:
 
     assert first.ast is not None and first.failure is None
     assert second.ast is not None and second.failure is None
+    assert not first.cached
+    assert not second.cached
     assert second.ast == first.ast
-    assert any(cache_dir.rglob("*"))
+    assert list((cache_dir / "file_ast").glob("*.pickle")) == []
 
 
 def test_parse_code_file_reports_a_parse_failure_as_text(tmp_path: Path) -> None:
@@ -987,16 +1049,19 @@ def test_parse_code_file_reports_a_parse_failure_as_text(tmp_path: Path) -> None
     assert outcome.failure
 
 
-def test_parse_code_file_ignores_a_cache_write_failure(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_parse_code_file_serves_a_warm_entry_without_reparsing(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     code = _write(tmp_path, "Cached.s", _CODE)
+    cache_dir = tmp_path / "cache"
+    project_loader.FileASTCache(cache_dir).save(code, LoadMode.DRAFT.value, project_loader.parse_source_file(code))
 
-    def failing_save(self: object, code_path: Path, mode: str, ast: BasePicture) -> None:
-        raise OSError("disk full")
+    def refuse(*args: object, **kwargs: object) -> object:
+        raise AssertionError("a warm entry must not be reparsed")
 
-    monkeypatch.setattr(project_loader.FileASTCache, "save", failing_save)
-    outcome = project_loader._parse_code_file((str(code), LoadMode.DRAFT.value, str(tmp_path / "cache")))
+    monkeypatch.setattr(project_loader, "parse_source_file", refuse)
+    outcome = project_loader._parse_code_file((str(code), LoadMode.DRAFT.value, str(cache_dir)))
 
     assert outcome.ast is not None
+    assert outcome.cached
 
 
 def test_structural_error_during_assembly_still_fails_a_lenient_load(

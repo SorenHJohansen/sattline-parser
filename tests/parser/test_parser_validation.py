@@ -575,6 +575,22 @@ def test_string_cursor_parameter_accepts_a_const_string_but_checks_the_rest():
     assert diagnostics == ["SL-V047", "SL-V014"]
 
 
+def test_builtin_output_argument_is_checked_against_its_declaration():
+    """An ``out`` argument is a declaration check, not a value check."""
+    bp = _base_picture()
+    bp.localvariables = [
+        _var("Source", "string", init_value=""),
+        _var("Destination", "integer", init_value=0),
+        _var("Status", "integer", init_value=0),
+    ]
+    call = FuncCallStmt(FuncCall(name="CopyString", args=(VarRef("Source"), VarRef("Destination"), VarRef("Status"))))
+    bp.modulecodes = [ModuleCode(equationblocks=[_equation(call)])]
+
+    codes = [d.code.value for d in validate_basepicture(bp)]
+
+    assert "SL-V047" in codes
+
+
 def test_transition_guard_must_be_boolean():
     """A ``WAIT_FOR`` guard follows the same boolean rule as an IF condition."""
     transition = SFCTransition(name="TrCount", condition=VarRef("Count"))
@@ -585,6 +601,7 @@ def test_transition_guard_must_be_boolean():
     diagnostics = [d for d in validate_basepicture(bp) if d.code is DiagnosticCode.CONDITION_NOT_BOOLEAN]
 
     assert [d.code.value for d in diagnostics] == ["SL-V030"]
+    assert "transition guard" in diagnostics[0].message
 
 
 def test_transition_guard_accepts_a_boolean():

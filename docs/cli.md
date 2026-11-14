@@ -1,8 +1,10 @@
 # Command line
 
-The `sattline` command is a read-only, JSON-first wrapper over the library. It
-adds no semantics: every command maps onto a documented library call and emits
-one finding shape. It is designed for agents, scripts, and CI, not for
+The `sattline` command is a JSON-first wrapper over the library. It never
+modifies a source tree and has no `--fix`, no network access and no watch mode,
+but `project` caches parsed ASTs under the user's cache directory unless
+`--no-cache` is given. Every command maps onto a documented library call and
+emits one finding shape. It is designed for agents, scripts, and CI, not for
 interactive editing.
 
 ```bash
@@ -157,15 +159,26 @@ empty list. See [project.md](project.md#distribution-companion).
 
 | Flag | Meaning |
 | --- | --- |
+| `--mode draft\|official` | Which artifacts to resolve. Default `draft` |
 | `--workers N` | Parse bodies in `N` processes. Default `min(8, cpu_count)`; `1` parses in this process |
 | `--cache-dir DIR` | Parser cache directory |
-| `--no-cache` | Bypass the parser caches |
+| `--no-cache` | Bypass the project caches |
+| `--validate invoked\|full\|none` | What to validate. Default `invoked` |
+| `--no-validate` | Alias for `--validate none` |
 
-The caches live under `$XDG_CACHE_HOME/sattline-parser/project` unless
-`--cache-dir` names another private directory. `--no-cache` makes the load
-hermetic: nothing is written and nothing is read. A first load in a warm
-directory writes the cache; every later load of an unchanged tree skips parsing.
-The directory holds parsed ASTs of the loaded sources, so keep it private.
+The project caches live under `$XDG_CACHE_HOME/sattline-parser/project` (or
+`~/.cache/sattline-parser/project`) unless `--cache-dir` names another private
+directory; a relative `XDG_CACHE_HOME` is ignored, and an unknown home directory
+disables the cache. `--no-cache` makes the load hermetic: the project caches
+neither read nor write. The compiled grammar cache under the temporary directory
+is independent of this flag. A first load in an empty directory writes the
+cache; every later load of an unchanged tree skips parsing. The directory holds
+parsed ASTs of the loaded sources, so keep it private.
+
+`--cycles` is gone, and the JSON payload no longer carries a `cycles` key: a
+recursive dependency chain or a self-instantiating module type is a structural
+load error, so the command reports `cannot load project` and exits `1` instead
+of listing cycles.
 
 ### `graphics`
 
