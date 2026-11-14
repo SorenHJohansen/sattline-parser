@@ -69,8 +69,11 @@ baseline.
 - `testpaths = ["tests"]`
 - `timeout = 60`, `timeout_method = "thread"`
 - `--strict-markers`, `--strict-config`
-- coverage on `src` with terminal, XML, and HTML reports
 - markers `slow`, `parser`, `quarantine`
+
+A plain `pytest` run does not collect coverage. `scripts/check_branch_coverage.py`
+runs the suite with branch coverage and writes the JSON report used by the CI
+gates.
 
 The coverage gates:
 
@@ -96,7 +99,7 @@ flowchart TB
 Tier 1 and tier 2 run in `.github/workflows/ci.yml`. Tier 3 runs from
 `.github/workflows/fuzz.yml` and `.clusterfuzzlite/`.
 
-The harness in `src/sattline_parser/fuzz_harness.py` enforces timeouts with a
+The harness in `fuzzing/fuzz_harness.py` enforces timeouts with a
 dedicated worker subprocess:
 
 - the worker parses one input at a time;
@@ -113,11 +116,11 @@ classified separately from internal bugs. A `ValueError` or `TypeError` from
 the transformer is a crash, not ordinary invalid input.
 
 ```bash
-python -c "from sattline_parser.fuzz_harness import run_corpus_regression, assert_no_crashes, assert_no_timeouts; r = run_corpus_regression(); assert_no_crashes(r); assert_no_timeouts(r)"
-python -c "from sattline_parser.fuzz_harness import run_random_fuzz, assert_no_crashes; r = run_random_fuzz(rounds=50); assert_no_crashes(r)"
+python -c "from fuzzing.fuzz_harness import run_corpus_regression, assert_no_crashes, assert_no_timeouts; r = run_corpus_regression(); assert_no_crashes(r); assert_no_timeouts(r)"
+python -c "from fuzzing.fuzz_harness import run_random_fuzz, assert_no_crashes; r = run_random_fuzz(rounds=50); assert_no_crashes(r)"
 ```
 
-`parser_fuzzer.py` and `decode_fuzzer.py` are the Atheris entry points used by
+`fuzzing/parser_fuzzer.py` and `fuzzing/decode_fuzzer.py` are the Atheris entry points used by
 ClusterFuzzLite. The `fuzz` extra installs Atheris, and `dev` never pulls it,
 because Atheris is Linux and FreeBSD only:
 
@@ -176,10 +179,10 @@ A diagram that does not parse fails the job.
 ## Quality commands
 
 ```bash
-ruff check src tests scripts benchmarks
-ruff format --check src tests scripts benchmarks
-pyright src tests benchmarks
-bandit -q -r src -x tests -c pyproject.toml
+ruff check src tests scripts benchmarks fuzzing
+ruff format --check src tests scripts benchmarks fuzzing
+pyright src tests benchmarks fuzzing
+bandit -q -r src fuzzing -x tests -c pyproject.toml
 pip-audit
 pre-commit run --all-files
 ```

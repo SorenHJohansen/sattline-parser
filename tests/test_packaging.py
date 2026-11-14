@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import importlib.metadata
 import importlib.resources
+import importlib.util
 import json
 import re
 import subprocess
@@ -101,6 +102,12 @@ def test_installed_lark_version_satisfies_declared_range() -> None:
 def test_pep561_marker_is_packaged() -> None:
     marker = importlib.resources.files("sattline_parser").joinpath("py.typed")
     assert marker.is_file()
+
+
+def test_fuzz_tooling_is_not_part_of_the_parser_package() -> None:
+    assert importlib.util.find_spec("sattline_parser.fuzz_harness") is None
+    assert importlib.util.find_spec("sattline_parser.parser_fuzzer") is None
+    assert importlib.util.find_spec("sattline_parser.decode_fuzzer") is None
 
 
 def test_console_script_is_registered() -> None:

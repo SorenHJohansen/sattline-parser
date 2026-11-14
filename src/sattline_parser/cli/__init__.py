@@ -47,7 +47,7 @@ class _UsageError(Exception):
 
 
 class _Parser(argparse.ArgumentParser):
-    def error(self, message: str) -> NoReturn:  # pragma: no cover - argparse plumbing
+    def error(self, message: str) -> NoReturn:
         raise _UsageError(message)
 
 
@@ -80,7 +80,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     except CliError as exc:
         print(f"{_PROGRAM}: {exc}", file=sys.stderr)
         return int(ExitCode.USAGE)
-    except KeyboardInterrupt:  # pragma: no cover - interactive only
+    except KeyboardInterrupt:
         print(f"{_PROGRAM}: interrupted", file=sys.stderr)
         return int(ExitCode.USAGE)
     except Exception as exc:  # noqa: BLE001 - the CLI must never leak a traceback by default

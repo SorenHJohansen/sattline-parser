@@ -6,7 +6,7 @@
 CORPUS_SRC="$SRC/sattline-parser/tests/fixtures/corpus"
 
 # Build fuzzers into $OUT from repo-owned source harnesses only.
-for fuzzer in $(find "$SRC/sattline-parser/src" -name '*_fuzzer.py'); do
+for fuzzer in $(find "$SRC/sattline-parser/fuzzing" -name '*_fuzzer.py'); do
   fuzzer_basename=$(basename -s .py "$fuzzer")
   fuzzer_package=${fuzzer_basename}.pkg
 

@@ -56,6 +56,16 @@ def resolve_graphics_companion_path(code_path: Path, *, mode: LoadMode) -> Path 
     return None
 
 
+def _line_start_offsets(text: str) -> tuple[int, ...]:
+    """The absolute character offset where each line starts."""
+    offsets: list[int] = []
+    offset = 0
+    for line in text.splitlines(keepends=True):
+        offsets.append(offset)
+        offset += len(line)
+    return tuple(offsets)
+
+
 def _find_record_end(lines: list[str], start_index: int) -> int | None:
     for line_index in range(start_index + 1, len(lines)):
         if lines[line_index].strip() != _RECORD_TERMINATOR:
@@ -102,7 +112,10 @@ def _parse_picture_display_row(
     *,
     record_index: int,
     line: int,
+    line_start_offset: int | None = None,
 ) -> GraphicsPathRow | None:
+    if line_start_offset is None:
+        line_start_offset = line - 1
     stripped = row_text.strip()
     if not stripped:
         return None
@@ -131,11 +144,22 @@ def _parse_picture_display_row(
             return None
         else:
             row_kind = "variable"
-        binding, _binding_messages = parse_graphics_binding_match(binding_payload, line=line, match=binding_match)
-        if binding is None or binding.kind != "var":
+        payload_offset = row_text.find(binding_payload)
+        binding, _binding_messages = parse_graphics_binding_match(
+            binding_payload,
+            line=line,
+            match=binding_match,
+            line_start_offset=line_start_offset + (payload_offset if payload_offset >= 0 else 0),
+        )
+        if binding is None or binding.kind != "var" or binding.span is None:
             return None
-        column = row_text.find(binding.raw_text)
-        span = SourceSpan(start=0, end=0, line=line, column=(column + 1) if column >= 0 else 1)
+        binding_span = binding.span
+        span = SourceSpan(
+            start=binding_span.start,
+            end=binding_span.end,
+            line=line,
+            column=binding_span.column + (payload_offset if payload_offset >= 0 else 0),
+        )
         return GraphicsPathRow(
             record_index=record_index,
             index_token=index_token,
@@ -149,13 +173,19 @@ def _parse_picture_display_row(
     if literal_path is None:
         return None
     column = row_text.find(literal_path)
+    start = line_start_offset + (column if column >= 0 else 0)
     return GraphicsPathRow(
         record_index=record_index,
         index_token=index_token,
         index_value=index_value,
         kind="literal",
         raw_text=literal_path,
-        span=SourceSpan(start=0, end=0, line=line, column=(column + 1) if column >= 0 else 1),
+        span=SourceSpan(
+            start=start,
+            end=start + len(literal_path),
+            line=line,
+            column=(column + 1) if column >= 0 else 1,
+        ),
     )
 
 
@@ -165,12 +195,21 @@ def _extract_picture_display_record(
     record_index: int,
     record_start_line: int,
     record_end_line: int,
+    line_offsets: tuple[int, ...],
 ) -> GraphicsPictureDisplayRecord:
     path_row_lines = tuple(row_line_index + 1 for row_line_index, _row_line in record_lines[5:-2])
     path_rows = tuple(
         row
         for row_line_index, row_line in record_lines[5:-2]
-        if (row := _parse_picture_display_row(row_line, record_index=record_index, line=row_line_index + 1)) is not None
+        if (
+            row := _parse_picture_display_row(
+                row_line,
+                record_index=record_index,
+                line=row_line_index + 1,
+                line_start_offset=line_offsets[row_line_index],
+            )
+        )
+        is not None
     )
     return GraphicsPictureDisplayRecord(
         record_index=record_index,
@@ -183,6 +222,7 @@ def _extract_picture_display_record(
 
 def _scan_graphics_records(
     lines: list[str],
+    line_offsets: tuple[int, ...],
 ) -> tuple[tuple[GraphicsCompositeRecord, ...], tuple[GraphicsPictureDisplayRecord, ...], list[GraphicsMessage]]:
     composite_records: list[GraphicsCompositeRecord] = []
     picture_display_records: list[GraphicsPictureDisplayRecord] = []
@@ -252,6 +292,7 @@ def _scan_graphics_records(
                 record_index=record_index,
                 record_start_line=line_index + 1,
                 record_end_line=record_end + 1,
+                line_offsets=line_offsets,
             )
         )
         line_index = keep_shape_line_index + 1
@@ -268,14 +309,19 @@ def parse_graphics_text(text: str) -> GraphicsModel:
     are reported as ``GraphicsMessage`` values rather than raised.
     """
     lines = text.splitlines()
+    line_offsets = _line_start_offsets(text)
     messages: list[GraphicsMessage] = []
     bindings: list[GraphicsBinding] = []
     for line_number, line_text in enumerate(lines, start=1):
-        row_bindings, binding_messages = parse_graphics_binding_line(line_text, line=line_number)
+        row_bindings, binding_messages = parse_graphics_binding_line(
+            line_text,
+            line=line_number,
+            line_start_offset=line_offsets[line_number - 1],
+        )
         bindings.extend(row_bindings)
         messages.extend(binding_messages)
 
-    composite_records, picture_display_records, structural_messages = _scan_graphics_records(lines)
+    composite_records, picture_display_records, structural_messages = _scan_graphics_records(lines, line_offsets)
     messages.extend(structural_messages)
     return GraphicsModel(
         messages=tuple(messages),

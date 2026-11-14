@@ -346,6 +346,18 @@ def test_load_without_cache_dir_reparses(tmp_path: Path) -> None:
     assert second == 2
 
 
+def test_load_fails_closed_when_the_cache_root_is_foreign(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    _write(tmp_path, "Main.s", _CODE)
+    cache_dir = tmp_path / "cache"
+    monkeypatch.setattr("sattline_parser.source_io._getuid", lambda: -1)
+
+    project = _load(tmp_path, cache_dir=cache_dir)
+
+    assert "main" in project
+    assert not (cache_dir / "file_lookup_cache.json").exists()
+    assert not (cache_dir / "file_ast").exists()
+
+
 def test_load_ast_cache_reparses_after_source_change(tmp_path: Path) -> None:
     _write(tmp_path, "Main.s", _CODE)
     cache_dir = tmp_path / "cache"

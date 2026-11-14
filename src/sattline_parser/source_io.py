@@ -12,7 +12,8 @@ import dataclasses
 import getpass
 import os
 import sys
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Generator, Iterator
+from contextlib import contextmanager
 from functools import lru_cache
 from hashlib import sha256
 from pathlib import Path
@@ -24,7 +25,12 @@ from lark import __version__ as lark_version
 from lark.exceptions import VisitError
 
 from sattline_parser.models.ast_model import BasePicture
-from sattline_parser.source_document import remap_parse_error, remap_tree_to_original
+from sattline_parser.source_document import (
+    SourceDocument,
+    mark_remapped,
+    remap_parse_error,
+    remap_tree_to_original,
+)
 from sattline_parser.transformer.sl_transformer import SLTransformer
 from sattline_parser.validation import Diagnostic, validate_basepicture
 
@@ -139,7 +145,7 @@ def _source_too_deep_error(node: object | None = None) -> SourceTooDeepError:
     if pos_in_stream is not None:
         # AST spans are already in original coordinates; remapping again would
         # shift a second time.
-        error._sattline_remapped = True  # type: ignore[attr-defined]
+        mark_remapped(error)
     return error
 
 
@@ -155,7 +161,7 @@ def _cache_owner_token() -> str:
     return str(_getuid())
 
 
-def _private_cache_dir(path: Path) -> Path | None:
+def private_cache_dir(path: Path) -> Path | None:
     """Create ``path`` as a private directory, or return ``None``.
 
     The directory is created with mode ``0700`` and reused only when it belongs
@@ -183,7 +189,7 @@ def _parser_cache_dir() -> Path | None:
     permission check disables the cache entirely.
     """
     directory = Path(gettempdir()) / f"{_CACHE_DIR_NAME}-{_cache_owner_token()}" / "lark-cache"
-    return _private_cache_dir(directory)
+    return private_cache_dir(directory)
 
 
 class _ParserProtocol(Protocol):
@@ -223,6 +229,7 @@ def build_lark_parser(
     ``sattline.lark`` places them) and the :class:`SattLineLexer` (structural,
     context-aware ``(* ... *)`` comment handling).
     """
+    cache_path = _parser_cache_path(start=start, propagate_positions=propagate_positions)
     return Lark(
         _resolved_grammar(),
         start=start,
@@ -230,8 +237,9 @@ def build_lark_parser(
         lexer="contextual",
         propagate_positions=propagate_positions,
         regex=True,
-        cache=_parser_cache_path(start=start, propagate_positions=propagate_positions),
-        cache_grammar=True,
+        cache=cache_path,
+        # Lark rejects cache_grammar when no cache path is available.
+        cache_grammar=cache_path is not None,
         # Lark's contextual-lexer plugin hook is private. The `<1.4` pin plus the
         # "Lark Compatibility" CI job that builds against the newest 1.3.x is what
         # keeps that dependency explicit instead of silently drifting.
@@ -453,6 +461,36 @@ def _raise_source_too_deep(
     raise deep_error from exc
 
 
+@contextmanager
+def _stage(
+    stage: str,
+    *,
+    src: str,
+    source_path: Path | None,
+    log_failures: bool,
+    source_document: SourceDocument | None = None,
+    remap: Callable[[Exception], None] | None = None,
+) -> Generator[None, None, None]:
+    """Run one parse stage, mapping recursion and logging failures."""
+    try:
+        yield
+    except Exception as exc:
+        recursion = _recursion_cause(exc)
+        if recursion is not None:
+            _raise_source_too_deep(stage, recursion, src=src, source_path=source_path, log_failures=log_failures)
+        if remap is not None:
+            remap(exc)
+        if log_failures:
+            _log_parser_failure(
+                stage=stage,
+                exc=exc,
+                source_text=src,
+                source_path=source_path,
+                source_document=source_document,
+            )
+        raise
+
+
 def _reject_too_deep_structure(
     root: BasePicture,
     *,
@@ -504,12 +542,8 @@ def parse_source_text(
     This is a pure parse and transform entry point. Use
     :func:`parse_and_validate` to also run strict single-source validation.
     """
-    try:
+    with _stage("decode", src=src, source_path=source_path, log_failures=log_failures):
         source_doc = preprocess_source(src)
-    except Exception as exc:
-        if log_failures:
-            _log_parser_failure(stage="decode", exc=exc, source_text=src, source_path=source_path)
-        raise
     if debug is not None and not source_doc.is_identity():
         debug("Compressed format detected; decoding before parsing")
 
@@ -517,45 +551,30 @@ def parse_source_text(
     active_transformer = transformer if transformer is not None else SLTransformer()
     parser_runner = cast(_ParserProtocol, active_parser)
     provenance = None if source_doc.is_identity() else source_doc.is_decoded_range
-    try:
-        with compact_provenance(provenance):
-            tree = parser_runner.parse(source_doc.normalized_text)
-    except RecursionError as exc:
-        # A custom parser or an unusually low interpreter recursion limit can
-        # still overflow. Report it as invalid input, never as a parser crash.
-        _raise_source_too_deep("parse", exc, src=src, source_path=source_path, log_failures=log_failures)
-    except Exception as exc:
-        remap_parse_error(exc, source_doc)
-        if log_failures:
-            _log_parser_failure(
-                stage="parse",
-                exc=exc,
-                source_text=src,
-                source_path=source_path,
-                source_document=source_doc,
-            )
-        raise
+    with (
+        _stage(
+            "parse",
+            src=src,
+            source_path=source_path,
+            log_failures=log_failures,
+            source_document=source_doc,
+            remap=lambda exc: remap_parse_error(exc, source_doc),
+        ),
+        compact_provenance(provenance),
+    ):
+        tree = parser_runner.parse(source_doc.normalized_text)
 
     # Rewrite every AST-visible position from normalized to original coordinates.
-    try:
+    with _stage("remap", src=src, source_path=source_path, log_failures=log_failures):
         remap_tree_to_original(tree, source_doc)
-    except RecursionError as exc:
-        _raise_source_too_deep("remap", exc, src=src, source_path=source_path, log_failures=log_failures)
 
     if debug is not None:
         debug("Parse OK, transforming with SLTransformer")
 
-    try:
+    with _stage("transform", src=src, source_path=source_path, log_failures=log_failures):
         transformed = active_transformer.transform(tree)
         if not isinstance(transformed, BasePicture):
             raise RuntimeError("Transform result is not BasePicture; check transformer.start()")
-    except Exception as exc:
-        recursion = _recursion_cause(exc)
-        if recursion is not None:
-            _raise_source_too_deep("transform", recursion, src=src, source_path=source_path, log_failures=log_failures)
-        if log_failures:
-            _log_parser_failure(stage="transform", exc=exc, source_text=src, source_path=source_path)
-        raise
 
     _reject_too_deep_structure(transformed, src=src, source_path=source_path, log_failures=log_failures)
 

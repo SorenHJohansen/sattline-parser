@@ -549,3 +549,14 @@ def test_grammar_template_rejects_an_unknown_placeholder():
 
     with pytest.raises(RuntimeError, match="Unknown grammar placeholder"):
         resolved_module._substitute_placeholders("IF: {GRAMMAR_VALUE_TYPO}", {"GRAMMAR_VALUE_IF": "IF"})  # pyright: ignore[reportPrivateUsage]
+
+
+def test_retype_raw_keyword_keeps_a_token_without_positions():
+    from sattline_parser.grammar.sattline_lexer import (  # noqa: PLC0415
+        _retype_raw_keyword,  # pyright: ignore[reportPrivateUsage]
+        compact_provenance,
+    )
+
+    token = Token("IF", "IF")
+    with compact_provenance(lambda _start, _end: True):
+        assert _retype_raw_keyword(token, "IF") == "IF"

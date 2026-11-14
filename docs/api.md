@@ -78,7 +78,7 @@ registry is exported from `sattline_parser.validation`:
 | `RULES` | tuple of every rule, in enum order | `tuple[Rule, ...]` |
 | `RULES_BY_ID`, `RULES_BY_NAME` | case-folded id and name lookups | `dict[str, Rule]` |
 | `find_rule` | `(value)` accepts `SL-V019` or `UNDEFINED_VARIABLE` | `Rule | None` |
-| `Rule` | metadata dataclass with derived `id`, `name`, `status`, `enabled` | value |
+| `Rule` | metadata dataclass with status, and derived `id`, `name`, `enabled` | value |
 | `RuleScope` | `DECLARATIONS`, `CODE`, `SFC`, `MAPPINGS`, `PROJECT` | `StrEnum` |
 | `RuleStatus` | `ACTIVE`, `RETIRED`, `UNIMPLEMENTED` | `StrEnum` |
 
@@ -171,18 +171,10 @@ historical reasons, but the supported import path is `sattline_parser.ast`. See
 These live in `sattline_parser.project` and are re-exported by
 `sattline_parser`, not by `sattline_parser.api`.
 
-## Fuzz exports
+## Fuzz tooling
 
-The fuzz names are lazy attributes on `sattline_parser`:
-
-- `fuzz_harness`
-- `FuzzResult`
-- `assert_no_crashes`
-- `assert_no_timeouts`
-- `collect_corpus_inputs`
-- `fuzz_parse_text`
-- `generate_random_text`
-- `run_random_fuzz`
+The fuzz harness and Atheris targets live under the repository-local `fuzzing/`
+package. They are not part of `sattline_parser` and are not shipped in the wheel.
 - `run_corpus_regression`
 
 They are imported on first access so the fuzz subprocess machinery is not part

@@ -97,7 +97,7 @@ def _retype_raw_keyword(token: Token, token_type: str) -> str:
         return token_type
     start = token.start_pos
     end = token.end_pos
-    if not isinstance(start, int) or not isinstance(end, int):  # pragma: no cover - always set
+    if not isinstance(start, int) or not isinstance(end, int):
         return token_type
     if predicate(start, end):
         return token_type

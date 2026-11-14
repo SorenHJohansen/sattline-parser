@@ -6344,7 +6344,8 @@
           "datatype": "String",
           "direction": "inout",
           "sorting": "NoS",
-          "ownership": "NoO"
+          "ownership": "NoO",
+          "accepts_const_string": true
         }
       ]
     },
@@ -10721,7 +10722,8 @@
           "datatype": "String",
           "direction": "inout",
           "sorting": "NoS",
-          "ownership": "NoO"
+          "ownership": "NoO",
+          "accepts_const_string": true
         },
         {
           "name": "Position",

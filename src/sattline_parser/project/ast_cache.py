@@ -4,18 +4,21 @@ Each parsed ``BasePicture`` is stored in an HMAC-signed pickle envelope keyed by
 code path and source mode. The cache namespace and version belong to
 ``sattline-parser`` (``FILE_AST_CACHE_VERSION``, a distinct file-format magic),
 so a cache written by another tool never cross-reads. The key also includes the
-package version and the resolved grammar fingerprint, so an upgrade that
-changes the AST shape or fixes a transformer cannot serve an old entry. Path,
-mode, and a ``mtime_ns`` + ``size`` stat snapshot are validated before a cached
-AST is trusted; entries outside the parser namespace or built by another
-version/grammar are pruned.
+package version, the resolved grammar fingerprint, and a fingerprint of the
+model and transformer sources, so an upgrade that changes the AST shape or
+fixes a transformer cannot serve an old entry. Path, mode, and a ``mtime_ns`` +
+``size`` stat snapshot are validated before a cached AST is trusted; entries
+outside the parser namespace or built by another version, grammar, or model
+shape are pruned.
 
 The HMAC key lives beside the entries, so the signature only proves that an
 entry was written by whoever could write that directory. It is not a defence
 against a user who can modify the cache directory, and it is not meant to be:
-the directory is created private (mode ``0700``), which is the real boundary.
-Treat a cache directory as private to one user, and never point ``cache_dir``
-at a shared location.
+ownership plus a private (mode ``0700``) directory is the real boundary. The
+cache is disabled (fail closed) when the root or the ``file_ast`` subdirectory
+is not owned by this user, rather than tightening a directory someone else can
+write. Treat a cache directory as private to one user, and never point
+``cache_dir`` at a shared location.
 """
 
 from __future__ import annotations
@@ -27,26 +30,42 @@ import os
 import pickle  # nosec B403 - HMAC-signed pickle envelope, key creation racy/excl guarded
 import secrets
 import time
+from functools import lru_cache
 from pathlib import Path
 from typing import cast
 
 from sattline_parser.__version__ import __version__
 from sattline_parser.grammar.resolved import grammar_fingerprint
 from sattline_parser.models.ast_model import BasePicture
+from sattline_parser.source_io import private_cache_dir
 
 from ._atomic import TEMP_SUFFIX
 from ._atomic import temp_path_for as _temp_path_for
 
-FILE_AST_CACHE_VERSION = 9
+FILE_AST_CACHE_VERSION = 10
 
 _PICKLE_CACHE_MAGIC = b"SATTLINE-PARSER-PICKLE-V1\n"
 _PICKLE_HMAC_KEY_NAME = ".pickle-hmac-key"
 _PICKLE_HMAC_SIZE = 32
 _PICKLE_KEY_DIR_NAME = "file_ast"
 _IDENTITY_MARKER_NAME = ".parser-identity"
+_PACKAGE_ROOT = Path(__file__).resolve().parents[1]
+_CODE_FINGERPRINT_DIRS = ("models", "transformer")
 
-#: The cache holds an HMAC key beside its entries, so it must stay private.
-_CACHE_DIR_MODE = 0o700
+
+@lru_cache(maxsize=1)
+def _code_fingerprint() -> str:
+    """Digest the model and transformer sources that shape a cached AST."""
+    digest = hashlib.sha256()
+    for directory_name in _CODE_FINGERPRINT_DIRS:
+        directory = _PACKAGE_ROOT / directory_name
+        for path in sorted(directory.rglob("*.py")):
+            digest.update(path.relative_to(_PACKAGE_ROOT).as_posix().encode("utf-8"))
+            digest.update(b"\0")
+            digest.update(path.read_bytes())
+            digest.update(b"\0")
+    return digest.hexdigest()
+
 
 #: A temporary file younger than this may belong to a running writer, so startup
 #: cleanup leaves it alone.
@@ -218,14 +237,28 @@ class FileASTCache:
 
     def __init__(self, cache_dir: Path) -> None:
         self.cache_dir = cache_dir / _PICKLE_KEY_DIR_NAME
-        self.cache_dir.mkdir(mode=_CACHE_DIR_MODE, parents=True, exist_ok=True)
-        with contextlib.suppress(OSError):
-            self.cache_dir.chmod(_CACHE_DIR_MODE)
+        self._enabled = False
+        self._startup_pruned_entries = 0
+        # Validate the root before touching the subdirectory. A cache under a
+        # directory owned by another user must never be read, since that user
+        # can plant both the HMAC key and a matching pickle.
+        secure_root = private_cache_dir(cache_dir)
+        if secure_root is None:
+            return
+        self.cache_dir = secure_root / _PICKLE_KEY_DIR_NAME
+        if private_cache_dir(self.cache_dir) is None:
+            return
+        self._enabled = True
         self._startup_pruned_entries = self._initial_prune()
+
+    @property
+    def enabled(self) -> bool:
+        """Whether the cache could establish a private, user-owned directory."""
+        return self._enabled
 
     @staticmethod
     def _identity_text() -> str:
-        return f"{__version__}\n{grammar_fingerprint()}\n"
+        return f"{__version__}\n{grammar_fingerprint()}\n{_code_fingerprint()}\n"
 
     def _initial_prune(self) -> int:
         """Prune fully only when the cache identity changed since last startup."""
@@ -241,6 +274,8 @@ class FileASTCache:
         return removed
 
     def _prune_temporary_files(self) -> int:
+        if not self._enabled:
+            return 0
         removed = 0
         if not self.cache_dir.exists():
             return 0
@@ -258,6 +293,7 @@ class FileASTCache:
         digest.update(mode.encode("utf-8", errors="ignore"))
         digest.update(__version__.encode("ascii"))
         digest.update(grammar_fingerprint().encode("ascii"))
+        digest.update(_code_fingerprint().encode("ascii"))
         return digest.hexdigest()
 
     def _path(self, code_path: Path, mode: str) -> Path:
@@ -268,7 +304,10 @@ class FileASTCache:
 
         ``None`` means either no entry exists or the entry failed validation
         (foreign namespace, wrong version, tampered payload, changed source).
+        A disabled cache (non-private root) always returns ``None``.
         """
+        if not self._enabled:
+            return None
         path = self._path(code_path, mode)
         if not path.exists():
             return None
@@ -287,6 +326,8 @@ class FileASTCache:
             return None
         if meta.get("grammar") != grammar_fingerprint():
             return None
+        if meta.get("code") != _code_fingerprint():
+            return None
         if not _matches_stat_snapshot(code_path, mtime_ns=meta.get("mtime_ns"), size=meta.get("size")):
             return None
         ast = payload_map.get("ast")
@@ -295,6 +336,8 @@ class FileASTCache:
         return ast
 
     def save(self, code_path: Path, mode: str, ast: BasePicture) -> None:
+        if not self._enabled:
+            return
         stat_result = _safe_stat(code_path)
         if stat_result is None:
             return
@@ -305,6 +348,7 @@ class FileASTCache:
                 "mode": mode,
                 "parser_version": __version__,
                 "grammar": grammar_fingerprint(),
+                "code": _code_fingerprint(),
                 "mtime_ns": stat_result.st_mtime_ns,
                 "size": stat_result.st_size,
             },
@@ -315,8 +359,10 @@ class FileASTCache:
     def prune_stale_entries(self) -> int:
         """Remove entries that are not valid current-namespace AST entries.
 
-        Returns the number of entries removed.
+        Returns the number of entries removed. A disabled cache removes nothing.
         """
+        if not self._enabled:
+            return 0
         removed = 0
         directory = self.cache_dir
         if not directory.exists():
@@ -341,6 +387,7 @@ class FileASTCache:
                 and meta is not None
                 and meta.get("parser_version") == __version__
                 and meta.get("grammar") == grammar_fingerprint()
+                and meta.get("code") == _code_fingerprint()
             ):
                 continue
             if _remove_file(path):

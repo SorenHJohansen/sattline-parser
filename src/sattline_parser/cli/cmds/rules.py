@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import argparse
 
-from sattline_parser.validation.rules import RULES, Rule, UnknownRuleError, require_rule
+from sattline_parser.validation.rules import RULES, Rule, RuleStatus, UnknownRuleError, require_rule
 
 from .._errors import CliError
 from .._exit import ExitCode
@@ -43,7 +43,7 @@ def _select(value: str | None, *, include_retired: bool) -> list[Rule]:
             return [require_rule(value)]
         except UnknownRuleError as exc:
             raise CliError(f"{exc} (run 'sattline rules' to list rule ids)") from exc
-    selected = [rule for rule in RULES if include_retired or not rule.retired]
+    selected = [rule for rule in RULES if include_retired or rule.status is not RuleStatus.RETIRED]
     return selected
 
 

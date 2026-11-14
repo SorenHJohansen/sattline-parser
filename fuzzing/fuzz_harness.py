@@ -22,7 +22,7 @@ import threading
 import time
 import typing as t
 
-from .models.ast_model import BasePicture
+from sattline_parser.models.ast_model import BasePicture
 
 _WORKER_HEADER = struct.Struct(">I")
 

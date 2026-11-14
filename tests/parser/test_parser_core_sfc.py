@@ -362,3 +362,18 @@ def test_sfc_mixin_fails_loudly_on_unexpected_modulecode_and_branch_structures()
     # layer_info in equationblock is explicitly ignored, not an error.
     eq = mixin.equationblock(["EqA", (1, 2), (3, 4), 7, Assignment(VarRef("A"), 1)])
     assert eq.name == "EqA"
+
+
+def test_seqtransitionsub_rejects_invalid_item_shapes():
+    mixin = _SFCHarness()
+
+    with pytest.raises(ValueError, match="seqtransitionsub expected"):
+        mixin.seqtransitionsub(
+            [Token("SUBSEQTRANSITION", "SUBSEQTRANSITION"), Token("END", "END"), Token("END", "END")]
+        )
+    with pytest.raises(ValueError, match="seqtransitionsub expected"):
+        mixin.seqtransitionsub(
+            [Token("SUBSEQTRANSITION", "SUBSEQTRANSITION"), "Sub", Token("END", "END"), Token("END", "END")]
+        )
+    with pytest.raises(ValueError, match="seqtransitionsub expected"):
+        mixin.seqtransitionsub([Token("SUBSEQTRANSITION", "SUBSEQTRANSITION")])

@@ -324,3 +324,13 @@ def test_modules_mixin_layout_rejects_malformed_payloads():
         mixin.clip_value([])
     with pytest.raises(ValueError, match="two_layers expected a numeric layer value"):
         mixin.two_layers([])
+
+
+def test_variable_modifier_scan_stops_at_an_unknown_bare_string():
+    from sattline_parser.transformer._module_assembly_mixin import _scan_variable_modifiers  # noqa: PLC0415
+
+    flags, order, index = _scan_variable_modifiers(["NotAModifier"], 0)
+
+    assert not any(flags.values())
+    assert order == ()
+    assert index == 0

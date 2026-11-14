@@ -55,11 +55,18 @@ class BuiltinParameter:
     sorting: BuiltinSorting       # "RS", "WS", "RS/WS", "NoS"
     ownership: BuiltinOwnership   # "RO", "WO", "RO/WO", "NoO"
     optional: bool = False
+    accepts_const_string: bool = False
 ```
 
 Optional parameters are trailing-only. The generator rejects a required
 parameter after an optional one. The validator uses the leading required count
 as a call's minimum arity.
+
+`accepts_const_string` marks a written string parameter that is a cursor rather
+than a data write. `GetStringPos` and `SetStringPos` use it for their first
+parameter, so a Const string is accepted there even though the documented
+direction is `inout`. The flag lives in the catalogue data, not in validator
+code.
 
 `BuiltinFunction` also carries `kind` (`function` or `procedure`), `return_type`,
 `precision_scangroup`, and `typed`. A `typed=False` entry still has an arity.

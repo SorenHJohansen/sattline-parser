@@ -2,12 +2,11 @@
 
 The ``Var`` / ``Expr`` / ``Lit`` binding scanner, literal coercion, and the
 graphics-expression parser: the package's own ``expression`` grammar and
-transformer, with source spans rebased into the companion file.
+transformer, with source spans in companion-file coordinates.
 """
 
 from __future__ import annotations
 
-import dataclasses
 import re
 from functools import lru_cache
 from typing import Any, cast
@@ -55,89 +54,18 @@ def _unwrap_expression_root(node: object) -> object:
     return node
 
 
-def _offset_source_spans(node: object, *, line_offset: int, column_offset: int) -> object:
-    seen: set[int] = set()
+def _expression_prefix(*, line: int, line_start_offset: int, absolute_start: int) -> str:
+    """Padding that makes Lark report positions in the companion file.
 
-    def offset_span(span: object) -> object:
-        if not isinstance(span, SourceSpan):
-            return span
-        return SourceSpan(
-            start=span.start,
-            end=span.end,
-            line=line_offset + span.line - 1,
-            column=(column_offset + span.column - 1) if span.line == 1 else span.column,
-        )
-
-    def visit(current: Any) -> Any:
-        current_id = id(current)
-        if current_id in seen:
-            return current
-        seen.add(current_id)
-        return _offset_source_spans_inner(current, line_offset=line_offset, column_offset=column_offset)
-
-    def _offset_source_spans_inner(current: Any, *, line_offset: int, column_offset: int) -> Any:
-        if isinstance(current, dict):
-            mapping = cast(dict[str, Any], current)
-            raw_span = mapping.get("span")
-            if isinstance(raw_span, SourceSpan):
-                mapping["span"] = offset_span(raw_span)
-            for key, value in mapping.items():
-                if key != "span":
-                    mapping[key] = visit(value)
-            return current  # pyright: ignore[reportUnknownVariableType]
-
-        if isinstance(current, list):
-            for index, value in enumerate(cast(list[Any], current)):
-                cast(list[Any], current)[index] = visit(value)
-            return current  # pyright: ignore[reportUnknownVariableType]
-
-        if isinstance(current, tuple):
-            return tuple(visit(value) for value in cast(tuple[Any, ...], current))
-
-        if isinstance(current, Tree):
-            tree = cast(Tree[Any], current)
-            for index, value in enumerate(cast(list[Any], tree.children)):
-                cast(list[Any], tree.children)[index] = visit(value)
-            return current  # pyright: ignore[reportUnknownVariableType]
-
-        children = getattr(current, "children", None)
-        if isinstance(children, list | tuple):
-            raw_children = cast(list[Any] | tuple[Any, ...], children)
-            rebuilt_children = [visit(value) for value in raw_children]
-            if all(new is old for new, old in zip(rebuilt_children, raw_children, strict=True)):
-                return current
-            try:
-                current.children = rebuilt_children
-            except (AttributeError, TypeError):
-                return current
-            return current
-
-        if dataclasses.is_dataclass(current) and not isinstance(current, type):
-            field_map: dict[str, Any] = {}
-            changed = False
-            for field in dataclasses.fields(current):
-                value = getattr(current, field.name)
-                offset_value = offset_span(value) if field.name == "span" else visit(value)
-                if offset_value is not value:
-                    changed = True
-                field_map[field.name] = offset_value
-            if not changed:
-                return current
-            try:
-                return dataclasses.replace(current, **field_map)
-            except (TypeError, ValueError):
-                # 3.12 raises ValueError for an init=False field, 3.13+ TypeError.
-                return current
-
-        node_dict = getattr(current, "__dict__", None)
-        if isinstance(node_dict, dict):
-            for key, value in cast(dict[str, Any], node_dict).items():
-                cast(dict[str, Any], node_dict)[key] = visit(value)
-            return current
-
-        return current
-
-    return visit(node)
+    The prefix has ``absolute_start`` characters and ``line - 1`` newlines. Its
+    last newline sits where the previous line ended, so the first expression
+    character lands on the requested line, column, and character offset.
+    """
+    newline_count = line - 1
+    first_newline = line_start_offset - newline_count
+    if first_newline < 0 or absolute_start < line_start_offset:
+        raise ValueError("line_start_offset is inconsistent with the requested line")
+    return " " * first_newline + "\n" * newline_count + " " * (absolute_start - line_start_offset)
 
 
 def _coerce_graphics_literal(payload: str) -> object:
@@ -165,7 +93,11 @@ def parse_graphics_binding_match(
     *,
     line: int,
     match: re.Match[str],
+    line_start_offset: int | None = None,
 ) -> tuple[GraphicsBinding | None, tuple[GraphicsMessage, ...]]:
+    if line_start_offset is None:
+        # No file context: assume each preceding line is one character long.
+        line_start_offset = line - 1
     kind = match.group(1).casefold()
     raw_length = int(match.group(3))
     tail = row_text[match.end() :]
@@ -178,7 +110,13 @@ def parse_graphics_binding_match(
         return None, ()
 
     payload_column = match.end() + 1
-    span = SourceSpan(start=0, end=0, line=line, column=payload_column)
+    payload_start = line_start_offset + match.end()
+    span = SourceSpan(
+        start=payload_start,
+        end=payload_start + len(payload),
+        line=line,
+        column=payload_column,
+    )
     if kind == "lit":
         return GraphicsBinding(kind=kind, raw_text=payload, value=_coerce_graphics_literal(payload), span=span), ()
     if kind == "var":
@@ -194,11 +132,18 @@ def parse_graphics_binding_match(
 
     try:
         normalized_payload = _normalize_graphics_expression(payload)
-        parsed = _unwrap_expression_root(
-            SLTransformer().transform(_graphics_expression_parser().parse(normalized_payload))
+        prefixed_payload = (
+            _expression_prefix(
+                line=line,
+                line_start_offset=line_start_offset,
+                absolute_start=payload_start,
+            )
+            + normalized_payload
         )
-        parsed = _offset_source_spans(parsed, line_offset=line, column_offset=payload_column)
-    except (LarkError, RuntimeError, TypeError, ValueError) as exc:
+        parsed = _unwrap_expression_root(
+            SLTransformer().transform(_graphics_expression_parser().parse(prefixed_payload))
+        )
+    except LarkError as exc:
         return (
             GraphicsBinding(kind=kind, raw_text=payload, value=payload, span=span),
             (
@@ -219,12 +164,18 @@ def parse_graphics_binding_line(
     row_text: str,
     *,
     line: int,
+    line_start_offset: int | None = None,
 ) -> tuple[tuple[GraphicsBinding, ...], tuple[GraphicsMessage, ...]]:
     bindings: list[GraphicsBinding] = []
     messages: list[GraphicsMessage] = []
 
     for match in BINDING_LINE_RE.finditer(row_text):
-        binding, binding_messages = parse_graphics_binding_match(row_text, line=line, match=match)
+        binding, binding_messages = parse_graphics_binding_match(
+            row_text,
+            line=line,
+            match=match,
+            line_start_offset=line_start_offset,
+        )
         if binding is not None:
             bindings.append(binding)
         messages.extend(binding_messages)
@@ -235,9 +186,9 @@ def parse_graphics_binding_line(
 __all__: tuple[str, ...] = (
     "BINDING_LINE_RE",
     "_coerce_graphics_literal",
+    "_expression_prefix",
     "_graphics_expression_parser",
     "_normalize_graphics_expression",
-    "_offset_source_spans",
     "_unwrap_expression_root",
     "parse_graphics_binding_line",
     "parse_graphics_binding_match",

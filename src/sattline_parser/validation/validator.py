@@ -30,6 +30,7 @@ from sattline_parser.models.ast_model import (
 from sattline_parser.names import fold_identifier
 from sattline_parser.validation.annotations import check_annotation_tails
 from sattline_parser.validation.code import (
+    ValidationContext,
     collect_program_sfc_names,
     walk_module_code,
 )
@@ -69,6 +70,16 @@ class _ValidationContext:
     type_graph: TypeGraph
     allow_unresolved_external_datatypes: bool
     sfc_names: frozenset[str]
+
+
+def _code_context(scope: Scope, context: _ValidationContext, errors: list[Diagnostic]) -> ValidationContext:
+    return ValidationContext(
+        scope=scope,
+        records=context.records,
+        type_graph=context.type_graph,
+        sfc_names=set(),
+        errors=errors,
+    )
 
 
 def _check_annotation_tails(
@@ -140,10 +151,7 @@ def validate_basepicture(
     for code in bp.modulecodes:
         walk_module_code(
             code,
-            base_scope,
-            context.records,
-            context.type_graph,
-            errors,
+            _code_context(base_scope, context, errors),
             program_sfc_names=context.sfc_names,
         )
     for child in bp.submodules:
@@ -202,10 +210,7 @@ def _walk_moduletype_def(
     for code in moduletype.modulecodes:
         walk_module_code(
             code,
-            scope,
-            context.records,
-            context.type_graph,
-            errors,
+            _code_context(scope, context, errors),
             program_sfc_names=context.sfc_names,
         )
     for child in moduletype.submodules:
@@ -244,10 +249,7 @@ def _walk_definition(
     for code in child.modulecodes:
         walk_module_code(
             code,
-            scope,
-            context.records,
-            context.type_graph,
-            errors,
+            _code_context(scope, context, errors),
             program_sfc_names=context.sfc_names,
         )
     for sub in child.submodules:

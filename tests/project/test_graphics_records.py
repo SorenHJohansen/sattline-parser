@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import pytest
 
+from sattline_parser.models.ast_model import SourceSpan
 from sattline_parser.project import graphics_parsing as parsing
 from sattline_parser.project import parse_graphics_text
 
@@ -43,8 +44,22 @@ def test_picture_display_record_is_extracted() -> None:
         ("1", 1, "variable_invalid", "PathOK"),
         ("2", 2, "variable_invalid", "PathNotOK"),
     ]
-    assert picture.path_rows[0].span.line == 9
-    assert picture.path_rows[1].span.line == 10
+    first_start = _PICTURE_DISPLAY_TEXT.index("PathOK")
+    second_start = _PICTURE_DISPLAY_TEXT.index("PathNotOK")
+    first_column = first_start - _PICTURE_DISPLAY_TEXT.rfind("\n", 0, first_start)
+    second_column = second_start - _PICTURE_DISPLAY_TEXT.rfind("\n", 0, second_start)
+    assert picture.path_rows[0].span == SourceSpan(
+        start=first_start,
+        end=first_start + len("PathOK"),
+        line=9,
+        column=first_column,
+    )
+    assert picture.path_rows[1].span == SourceSpan(
+        start=second_start,
+        end=second_start + len("PathNotOK"),
+        line=10,
+        column=second_column,
+    )
     assert picture.path_row_lines == (9, 10, 11)
 
 
@@ -100,10 +115,18 @@ def test_variable_path_row_is_extracted() -> None:
 
 
 def test_literal_path_row_is_extracted() -> None:
-    model = parse_graphics_text(_record("5", "a", "b", "c", "2", "d", "1 1 scr:face.wmf", "None True", "t", "0", ""))
+    text = _record("5", "a", "b", "c", "2", "d", "1 1 scr:face.wmf", "None True", "t", "0", "")
+    model = parse_graphics_text(text)
 
     picture = model.picture_display_records[0]
     assert [(row.kind, row.index_value, row.raw_text) for row in picture.path_rows] == [("literal", 1, "scr:face.wmf")]
+    start = text.index("scr:face.wmf")
+    assert picture.path_rows[0].span == SourceSpan(
+        start=start,
+        end=start + len("scr:face.wmf"),
+        line=7,
+        column=5,
+    )
 
 
 def test_malformed_path_row_line_is_still_reported_as_a_section_line() -> None:
@@ -139,13 +162,13 @@ def test_malformed_path_rows_are_rejected(row: str, expected: object) -> None:
 
 
 def test_path_row_with_nested_index_and_valid_binding_is_a_variable() -> None:
-    row = parsing._parse_picture_display_row("1 2 Var 1 6 X", record_index=1, line=4)
+    row = parsing._parse_picture_display_row("1 2 Var 1 6 X", record_index=1, line=4, line_start_offset=30)
     assert row is not None
     assert (row.kind, row.index_token, row.index_value, row.raw_text) == ("variable", "1", 1, "X")
 
 
 def test_path_row_with_non_numeric_index_token_keeps_none() -> None:
-    row = parsing._parse_picture_display_row("x 1 Var True 6 X", record_index=1, line=4)
+    row = parsing._parse_picture_display_row("x 1 Var True 6 X", record_index=1, line=4, line_start_offset=30)
     assert row is not None
     assert row.index_value is None
 

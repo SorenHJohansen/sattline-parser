@@ -40,6 +40,7 @@ from sattline_parser.project.ast_cache import (
     _PICKLE_CACHE_MAGIC,
     _PICKLE_HMAC_KEY_NAME,
     _as_data_dict,
+    _code_fingerprint,
     _code_path_key,
     _load_or_create_pickle_hmac_key,
     _load_pickle_payload,
@@ -155,7 +156,7 @@ def test_typed_tail_nodes_survive_a_pickle_round_trip() -> None:
     assert restored.moduledefs[0].span == span
     assert restored.moduledefs[0].graph_objects[0].span == span
     assert restored.moduledefs[0].interact_objects[0].span == span
-    assert FILE_AST_CACHE_VERSION == 9
+    assert FILE_AST_CACHE_VERSION == 10
 
 
 def test_envelope_round_trip() -> None:
@@ -322,7 +323,50 @@ def test_save_pickle_payload_key_failure(tmp_path: Path) -> None:
 def test_load_missing_entry_returns_none(tmp_path: Path) -> None:
     code_path = _write_code(tmp_path)
     cache = FileASTCache(tmp_path)
+    assert cache.enabled
     assert cache.load(code_path, "draft") is None
+
+
+def test_cache_is_disabled_when_the_root_is_not_owned_by_this_user(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    code_path = _write_code(tmp_path)
+    monkeypatch.setattr("sattline_parser.source_io._getuid", lambda: -1)
+
+    cache = FileASTCache(tmp_path / "cache")
+
+    assert not cache.enabled
+    assert not cache.cache_dir.exists()
+    cache.save(code_path, "draft", _picture(code_path))
+    assert cache.load(code_path, "draft") is None
+    assert cache.prune_stale_entries() == 0
+    assert cache._prune_temporary_files() == 0
+    assert cache.drain_startup_pruned_entries() == 0
+
+
+def test_cache_is_disabled_when_the_owned_root_cannot_be_made_private(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    code_path = _write_code(tmp_path)
+    monkeypatch.setattr("sattline_parser.source_io._getuid", lambda: -1)
+    (tmp_path / "cache").mkdir()
+
+    cache = FileASTCache(tmp_path / "cache")
+
+    assert not cache.enabled
+    assert not cache.cache_dir.exists()
+    assert cache.load(code_path, "draft") is None
+
+
+def test_cache_is_disabled_when_the_subdirectory_is_not_a_directory(tmp_path: Path) -> None:
+    cache_root = tmp_path / "cache"
+    cache_root.mkdir()
+    (cache_root / "file_ast").write_text("not a directory", encoding="utf-8")
+
+    cache = FileASTCache(cache_root)
+
+    assert not cache.enabled
+    assert cache.load(_write_code(tmp_path), "draft") is None
 
 
 def test_startup_prune_removes_abandoned_temp_when_identity_matches(tmp_path: Path) -> None:
@@ -387,6 +431,7 @@ def test_load_rejects_version_mismatch(tmp_path: Path) -> None:
                 "mode": "draft",
                 "parser_version": __version__,
                 "grammar": grammar_fingerprint(),
+                "code": _code_fingerprint(),
                 "mtime_ns": stat_result.st_mtime_ns,
                 "size": stat_result.st_size,
             },
@@ -396,7 +441,7 @@ def test_load_rejects_version_mismatch(tmp_path: Path) -> None:
     assert cache.load(code_path, "draft") is None
 
 
-def test_cache_key_includes_package_version_and_grammar(tmp_path: Path) -> None:
+def test_cache_key_includes_package_version_grammar_and_code(tmp_path: Path) -> None:
     code_path = _write_code(tmp_path)
     cache = FileASTCache(tmp_path)
     key = cache._key(code_path, "draft")
@@ -405,11 +450,13 @@ def test_cache_key_includes_package_version_and_grammar(tmp_path: Path) -> None:
         assert cache._key(code_path, "draft") != key
     with patch(f"{_AC_PATH}.grammar_fingerprint", return_value="0" * 64):
         assert cache._key(code_path, "draft") != key
+    with patch(f"{_AC_PATH}._code_fingerprint", return_value="0" * 64):
+        assert cache._key(code_path, "draft") != key
 
 
 @pytest.mark.parametrize(
     ("field", "value"),
-    [("parser_version", "0.0.0"), ("grammar", "0" * 64)],
+    [("parser_version", "0.0.0"), ("grammar", "0" * 64), ("code", "0" * 64)],
 )
 def test_load_rejects_identity_mismatch(tmp_path: Path, field: str, value: str) -> None:
     code_path = _write_code(tmp_path)
@@ -420,6 +467,7 @@ def test_load_rejects_identity_mismatch(tmp_path: Path, field: str, value: str) 
         "mode": "draft",
         "parser_version": __version__,
         "grammar": grammar_fingerprint(),
+        "code": _code_fingerprint(),
         "mtime_ns": stat_result.st_mtime_ns,
         "size": stat_result.st_size,
     }
@@ -450,6 +498,7 @@ def test_load_rejects_meta_and_payload_shape(tmp_path: Path) -> None:
                 "mode": mode,
                 "parser_version": __version__,
                 "grammar": grammar_fingerprint(),
+                "code": _code_fingerprint(),
                 "mtime_ns": stat_result.st_mtime_ns,
                 "size": stat_result.st_size,
             },

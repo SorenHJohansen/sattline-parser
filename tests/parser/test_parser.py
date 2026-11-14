@@ -7,7 +7,7 @@ import pathlib
 
 import pytest
 
-from sattline_parser.fuzz_harness import (
+from fuzzing.fuzz_harness import (
     FuzzResult,
     _is_expected_parse_error,
     assert_no_crashes,
@@ -57,7 +57,7 @@ class TestFuzzParseText:
         assert result.duration_ms >= 0
 
     def test_rejects_malformed_input_gracefully(self):
-        from sattline_parser.fuzz_harness import _is_expected_parse_error  # noqa: PLC0415
+        from fuzzing.fuzz_harness import _is_expected_parse_error  # noqa: PLC0415
 
         source = "PROGRAM @@@@\nENDPROGRAM\n"
         result = fuzz_parse_text(source, input_desc="malformed")
@@ -78,10 +78,10 @@ class TestFuzzParseText:
     def test_timeout_enforced(self, monkeypatch: pytest.MonkeyPatch):
         # A hard timeout must actually kill the worker: a worker that never
         # replies must produce a FuzzTimeoutError, and the harness must resume.
-        from sattline_parser.fuzz_harness import FuzzTimeoutError, fuzz_parse_text  # noqa: PLC0415
+        from fuzzing.fuzz_harness import FuzzTimeoutError, fuzz_parse_text  # noqa: PLC0415
 
         sleeping_worker = "import time\nimport sys\nwhile True:\n    time.sleep(3600)\n"
-        monkeypatch.setattr("sattline_parser.fuzz_harness._WORKER_SOURCE", sleeping_worker)
+        monkeypatch.setattr("fuzzing.fuzz_harness._WORKER_SOURCE", sleeping_worker)
         result = fuzz_parse_text("irrelevant", input_desc="timeout-test", timeout=0.5)
         assert not result.success
         assert isinstance(result.error, FuzzTimeoutError)
@@ -125,7 +125,7 @@ class TestRunCorpusRegression:
         inputs = collect_corpus_inputs(CORPUS_DIR, include_invalid=False, max_files=5)
         results = []
         for file_path, content in inputs:
-            from sattline_parser.fuzz_harness import fuzz_parse_text  # noqa: PLC0415
+            from fuzzing.fuzz_harness import fuzz_parse_text  # noqa: PLC0415
 
             results.append(fuzz_parse_text(content, input_desc=file_path))
         success_count = sum(1 for r in results if r.success)
@@ -135,7 +135,7 @@ class TestRunCorpusRegression:
         inputs = collect_corpus_inputs(CORPUS_DIR, include_valid=False, include_invalid=True, max_files=5)
         results = []
         for file_path, content in inputs:
-            from sattline_parser.fuzz_harness import fuzz_parse_text  # noqa: PLC0415
+            from fuzzing.fuzz_harness import fuzz_parse_text  # noqa: PLC0415
 
             results.append(fuzz_parse_text(content, input_desc=file_path))
         assert all(not r.success for r in results if r.error is not None)
@@ -173,7 +173,7 @@ class TestRunRandomFuzz:
             assert isinstance(result.duration_ms, float)
 
     def test_timeout_protected(self):
-        from sattline_parser.fuzz_harness import FuzzTimeoutError  # noqa: PLC0415
+        from fuzzing.fuzz_harness import FuzzTimeoutError  # noqa: PLC0415
 
         results = run_random_fuzz(rounds=5, text_length=1000, timeout=1.0, seed=789)
         for result in results:
@@ -202,7 +202,7 @@ class TestAssertNoTimeouts:
         assert_no_timeouts(results)
 
     def test_raises_on_timeout(self):
-        from sattline_parser.fuzz_harness import FuzzTimeoutError  # noqa: PLC0415
+        from fuzzing.fuzz_harness import FuzzTimeoutError  # noqa: PLC0415
 
         results = [
             _min_fuzz_result("ok", success=True),

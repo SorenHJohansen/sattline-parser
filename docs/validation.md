@@ -54,6 +54,11 @@ The validator builds one `_ValidationContext`:
   the program, collected once;
 - `allow_unresolved_external_datatypes`: a single-file escape hatch.
 
+Each module-code block then builds a `code.ValidationContext` holding the
+current scope, the shared records and type graph, that block's SFC names, and
+the shared diagnostic list. The code walk passes this one object instead of
+five positional arguments.
+
 The single-file caller may legitimately reference a datatype that lives in
 another file it has not loaded. `allow_unresolved_external_datatypes=True`
 suppresses only unknown-name findings. It does not suppress typo suggestions or
@@ -218,7 +223,8 @@ definitions from a part of the closure that failed to load, so it is not final.
 
 The full code table lives in the rule registry, not in the enum. Every
 `DiagnosticCode` has exactly one `Rule` in `validation/rules.py` with an id, an
-enum name, a scope, a status, a summary, and optional details. The status is
+enum name, a scope, a status, a summary, and optional details. `status` is one
+`RuleStatus` value, so a rule cannot be both retired and unimplemented. It is
 `active` when the validator emits the rule, `retired` when the form was proved
 to load and the check was withdrawn, and `unimplemented` when a code was
 reserved but no check exists yet.

@@ -67,8 +67,7 @@ class Rule:
     code: DiagnosticCode
     summary: str
     scope: RuleScope = RuleScope.DECLARATIONS
-    implemented: bool = True
-    retired: bool = False
+    status: RuleStatus = RuleStatus.ACTIVE
     details: str | None = None
 
     @property
@@ -82,15 +81,6 @@ class Rule:
         return self.code.name
 
     @property
-    def status(self) -> RuleStatus:
-        """Whether the rule is emitted, retired, or reserved."""
-        if self.retired:
-            return RuleStatus.RETIRED
-        if not self.implemented:
-            return RuleStatus.UNIMPLEMENTED
-        return RuleStatus.ACTIVE
-
-    @property
     def enabled(self) -> bool:
         """True when the validator may emit this rule."""
         return self.status is RuleStatus.ACTIVE
@@ -102,7 +92,7 @@ class Rule:
             "name": self.name,
             "scope": self.scope.value,
             "status": self.status.value,
-            "retired": self.retired,
+            "retired": self.status is RuleStatus.RETIRED,
             "summary": self.summary,
             "details": self.details,
         }
@@ -113,18 +103,10 @@ def _rule(
     summary: str,
     *,
     scope: RuleScope,
-    implemented: bool = True,
-    retired: bool = False,
+    status: RuleStatus = RuleStatus.ACTIVE,
     details: str | None = None,
 ) -> Rule:
-    return Rule(
-        code=code,
-        summary=summary,
-        scope=scope,
-        implemented=implemented,
-        retired=retired,
-        details=details,
-    )
+    return Rule(code=code, summary=summary, scope=scope, status=status, details=details)
 
 
 #: Every diagnostic code, in enum order.
@@ -133,21 +115,21 @@ RULES: tuple[Rule, ...] = (
         DiagnosticCode.DUPLICATE_DATATYPE_NAME,
         "A datatype name may be declared twice.",
         scope=RuleScope.DECLARATIONS,
-        retired=True,
+        status=RuleStatus.RETIRED,
         details="A datatype name may be declared twice; the source loads and parses.",
     ),
     _rule(
         DiagnosticCode.DUPLICATE_MODULETYPE_NAME,
         "A module-type name may be declared twice.",
         scope=RuleScope.DECLARATIONS,
-        retired=True,
+        status=RuleStatus.RETIRED,
         details="A module-type name may be declared twice; the source loads and parses.",
     ),
     _rule(
         DiagnosticCode.DUPLICATE_VARIABLE_NAME,
         "A variable name may be declared twice.",
         scope=RuleScope.DECLARATIONS,
-        retired=True,
+        status=RuleStatus.RETIRED,
         details="A variable name may be declared twice; the source loads and parses.",
     ),
     _rule(
@@ -174,35 +156,35 @@ RULES: tuple[Rule, ...] = (
         DiagnosticCode.INIT_VALUE_TYPE_MISMATCH,
         "An initial value must match its variable's datatype.",
         scope=RuleScope.DECLARATIONS,
-        retired=True,
+        status=RuleStatus.RETIRED,
         details="An init value may have a different datatype from its variable; the source loads.",
     ),
     _rule(
         DiagnosticCode.BARE_DURATION_INIT,
         "A duration variable needs a duration literal, not a bare string.",
         scope=RuleScope.DECLARATIONS,
-        retired=True,
+        status=RuleStatus.RETIRED,
         details="A duration variable may be initialized with a bare string; the source loads.",
     ),
     _rule(
         DiagnosticCode.BARE_TIME_INIT,
         "A time variable needs a time literal, not a bare string.",
         scope=RuleScope.DECLARATIONS,
-        retired=True,
+        status=RuleStatus.RETIRED,
         details="A time variable may be initialized with a bare string; the source loads.",
     ),
     _rule(
         DiagnosticCode.MALFORMED_DURATION_LITERAL,
         "A duration literal must be well formed.",
         scope=RuleScope.DECLARATIONS,
-        retired=True,
+        status=RuleStatus.RETIRED,
         details="An invalid duration literal may load; the editor guard is not a parser rule.",
     ),
     _rule(
         DiagnosticCode.MALFORMED_TIME_LITERAL,
         "A time literal must be well formed.",
         scope=RuleScope.DECLARATIONS,
-        retired=True,
+        status=RuleStatus.RETIRED,
         details="An invalid time literal may load; the editor guard is not a parser rule.",
     ),
     _rule(
@@ -254,7 +236,7 @@ RULES: tuple[Rule, ...] = (
         DiagnosticCode.SFC_INIT_STEP_PLACEMENT,
         "A sequence must contain exactly one init step in a valid position.",
         scope=RuleScope.SFC,
-        retired=True,
+        status=RuleStatus.RETIRED,
         details="A sequence may omit or misplace its init step; the source loads.",
     ),
     _rule(
@@ -271,14 +253,14 @@ RULES: tuple[Rule, ...] = (
         DiagnosticCode.DUPLICATE_RECORD_FIELD_NAME,
         "A record may not declare the same field name twice.",
         scope=RuleScope.DECLARATIONS,
-        retired=True,
+        status=RuleStatus.RETIRED,
         details="A record field may be declared twice; the source loads.",
     ),
     _rule(
         DiagnosticCode.BUILTIN_DATATYPE_SHADOWED,
         "A declaration may not reuse a builtin datatype name.",
         scope=RuleScope.DECLARATIONS,
-        retired=True,
+        status=RuleStatus.RETIRED,
         details="A declaration may reuse a builtin datatype name; the source loads.",
     ),
     _rule(
@@ -320,7 +302,7 @@ RULES: tuple[Rule, ...] = (
         DiagnosticCode.RESERVED_NAME_DECLARED,
         "`On` and `Off` may not be declared.",
         scope=RuleScope.DECLARATIONS,
-        retired=True,
+        status=RuleStatus.RETIRED,
         details="The grammar rejects `On`/`Off` at a declaration position, exactly like `True`/`False`; the code stays reserved.",
     ),
     _rule(
@@ -352,7 +334,7 @@ RULES: tuple[Rule, ...] = (
         DiagnosticCode.DATATYPE_TOO_FEW_FIELDS,
         "A DATATYPE declaration must declare at least one field.",
         scope=RuleScope.DECLARATIONS,
-        implemented=False,
+        status=RuleStatus.UNIMPLEMENTED,
         details=_UNIMPLEMENTED_NOTE,
     ),
     _rule(
@@ -364,7 +346,7 @@ RULES: tuple[Rule, ...] = (
         DiagnosticCode.DIVISION_BY_ZERO,
         "Division by a literal zero is rejected.",
         scope=RuleScope.CODE,
-        implemented=False,
+        status=RuleStatus.UNIMPLEMENTED,
         details=_UNIMPLEMENTED_NOTE,
     ),
     _rule(
@@ -416,28 +398,28 @@ RULES: tuple[Rule, ...] = (
         DiagnosticCode.SEQUENCE_TRANSITION_AFTER_TRANSITION,
         "A transition may not directly follow another transition.",
         scope=RuleScope.SFC,
-        implemented=False,
+        status=RuleStatus.UNIMPLEMENTED,
         details=_UNIMPLEMENTED_NOTE,
     ),
     _rule(
         DiagnosticCode.PARALLEL_BRANCH_INCOMPLETE,
         "A parallel branch must contain a complete step sequence.",
         scope=RuleScope.SFC,
-        implemented=False,
+        status=RuleStatus.UNIMPLEMENTED,
         details=_UNIMPLEMENTED_NOTE,
     ),
     _rule(
         DiagnosticCode.SUBSEQTRANSITION_STARTS_WITH_STEP,
         "A SUBSEQTRANSITION body must not start with a step.",
         scope=RuleScope.SFC,
-        implemented=False,
+        status=RuleStatus.UNIMPLEMENTED,
         details=_UNIMPLEMENTED_NOTE,
     ),
     _rule(
         DiagnosticCode.SEQUENCE_REQUIRES_INIT_STEP,
         "A closed sequence must contain an init step.",
         scope=RuleScope.SFC,
-        implemented=False,
+        status=RuleStatus.UNIMPLEMENTED,
         details=_UNIMPLEMENTED_NOTE,
     ),
     _rule(
@@ -463,7 +445,9 @@ RULES_BY_NAME: dict[str, Rule] = {rule.name.casefold(): rule for rule in RULES}
 
 #: Retired rules and the reason they are not enforced. Kept as a mapping for
 #: callers that predate the registry.
-RETIRED_CODES: dict[DiagnosticCode, str] = {rule.code: rule.details or rule.summary for rule in RULES if rule.retired}
+RETIRED_CODES: dict[DiagnosticCode, str] = {
+    rule.code: rule.details or rule.summary for rule in RULES if rule.status is RuleStatus.RETIRED
+}
 
 
 class UnknownRuleError(ValueError):
@@ -509,7 +493,7 @@ def render_markdown_table(*, include_retired: bool = True) -> str:
         "| --- | --- | --- | --- | --- |",
     ]
     for rule in RULES:
-        if rule.retired and not include_retired:
+        if rule.status is RuleStatus.RETIRED and not include_retired:
             continue
         lines.append(f"| `{rule.id}` | `{rule.name}` | {rule.status.value} | {rule.scope.value} | {rule.summary} |")
     return "\n".join(lines)
