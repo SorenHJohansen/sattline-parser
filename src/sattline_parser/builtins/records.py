@@ -2,9 +2,15 @@
 
 Each entry maps a builtin datatype name to its ordered field list. Field
 datatypes are either a :class:`Simple_DataType` or the name of another record
-type. Only the native object handles (``tObject``, ``ArrayObject``,
-``QueueObject``) carry an empty spec: they have no fields at all, which is a
-property of the type rather than a gap in the table.
+type. Three groups carry an empty spec:
+
+* the native object handles (``tObject``, ``ArrayObject``, ``QueueObject``),
+  which have no fields at all, a property of the type rather than a gap;
+* ``ByteRecord``, ``ComliMessage``, and ``PidType``, declared system records
+  that builtin parameters name while no transcribed field table exists.
+
+An empty spec means "declared, shape not modelled". A field access through such
+a type is therefore unknown rather than provably absent, and no rule reports it.
 
 The field tables cover the builtin datatype reference in the SattLine General
 and Graphics User manual and the SattLine I/O and Communication User manual,
@@ -231,6 +237,16 @@ _OPAQUE_BUILTIN_RECORD_NAMES = (
 )
 
 _FIELDLESS_BUILTIN_RECORD_NAMES = ("ArrayObject",)
+
+#: Declared system records whose field table is not part of the transcribed
+#: reference set. Builtin signatures name them (``ComliMessage`` for the COMLI
+#: message procedures, ``ByteRecord`` for their byte payload, ``PidType`` for
+#: ``pid``), so they must be declared datatypes. Their shape stays unknown.
+_UNTRANSCRIBED_BUILTIN_RECORD_NAMES = (
+    "ByteRecord",
+    "ComliMessage",
+    "PidType",
+)
 
 BOOL = _BOOL
 INT = _INT
@@ -962,6 +978,9 @@ for _opaque_name in _OPAQUE_BUILTIN_RECORD_NAMES:
 
 for _fieldless_name in _FIELDLESS_BUILTIN_RECORD_NAMES:
     BUILTIN_RECORD_SPECS[_fieldless_name] = ()
+
+for _untranscribed_name in _UNTRANSCRIBED_BUILTIN_RECORD_NAMES:
+    BUILTIN_RECORD_SPECS[_untranscribed_name] = ()
 
 BUILTIN_DECLARED_DATATYPE_NAMES: tuple[str, ...] = tuple(
     dict.fromkeys([datatype.value for datatype in Simple_DataType] + list(BUILTIN_RECORD_SPECS))

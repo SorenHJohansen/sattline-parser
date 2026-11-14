@@ -1,0 +1,1 @@
+"""Builtin-catalogue test package."""

@@ -140,8 +140,10 @@ class SattLineLexer(ContextualLexer):
         # between concurrent parses.
         comment_depth = 0
         # Compact provenance is fixed for the whole run (``compact_provenance``
-        # wraps the parse), so read it once instead of once per token. A plain
-        # source has none and skips the keyword retype entirely.
+        # wraps the parse), so the presence flag is read once here to skip the
+        # keyword retype entirely for a plain source. The retype helper reads
+        # the predicate again for each candidate token, because the predicate is
+        # context-local and a nested parse may have replaced it.
         retype = _PROVENANCE.get() is not None
         try:
             while True:

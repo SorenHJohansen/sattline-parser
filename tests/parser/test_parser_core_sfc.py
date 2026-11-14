@@ -1,9 +1,31 @@
-# pyright: reportUnknownVariableType=false, reportUnknownMemberType=false, reportUnknownParameterType=false, reportMissingParameterType=false, reportUnknownArgumentType=false, reportCallIssue=false, reportUnknownLambdaType=false, reportUnusedImport=false
-# ruff: noqa: F403, F405
-from sattline_parser.models.ast_model import CodeItem
-from sattline_parser.models.expressions import VarRef
+# pyright: reportOptionalMemberAccess=false, reportOptionalSubscript=false, reportPrivateUsage=false, reportUnknownMemberType=false, reportUnknownVariableType=false
+from types import SimpleNamespace
+from typing import cast
 
-from ._parser_core_test_support import *
+import pytest
+from lark import Token, Tree
+from lark.tree import Meta
+
+from sattline_parser.grammar import constants as parser_const
+from sattline_parser.models.ast_model import (
+    CodeItem,
+    Equation,
+    IntLiteral,
+    Sequence,
+    SFCAlternative,
+    SFCCodeBlocks,
+    SFCFork,
+    SFCParallel,
+    SFCStep,
+    SFCSubsequence,
+    SFCTransition,
+    SFCTransitionSub,
+    SourceSpan,
+)
+from sattline_parser.models.expressions import Assignment, FuncCall, FuncCallStmt, VarRef
+from sattline_parser.transformer._module_shared import CodeBlockPayload
+
+from ._parser_core_test_support import _parse_to_basepicture, _SFCHarness
 
 
 def test_sfc_mixin_builds_modulecode_sequences_and_equations():
@@ -267,11 +289,9 @@ def test_parse_source_text_accepts_unnamed_ordinary_step():
     assert steps[1].code.enter == []
 
 
-def test_sequence_and_equation_layer_info_is_accepted_but_not_modeled():
-    # Layer_ directives after SEQUENCE/OPENSEQUENCE head and EQUATIONBLOCK head
-    # are legal SattLine; the AST has no layer field on these nodes, so the
-    # value is explicitly ignored (never silently misinterpreted as a code
-    # item or coordinate).
+def test_sequence_layer_info_is_modelled_like_equation_layer_info():
+    # Layer_ directives after the SEQUENCE/OPENSEQUENCE head and the
+    # EQUATIONBLOCK head are legal SattLine; both are preserved on the node.
     bp = _parse_to_basepicture(
         '"SyntaxVersion"\n'
         '"OriginalFileDate"\n'
@@ -290,10 +310,13 @@ def test_sequence_and_equation_layer_info_is_accepted_but_not_modeled():
     )
     assert bp.modulecode is not None
     assert bp.modulecode.sequences is not None
-    assert [type(node).__name__ for node in bp.modulecode.sequences[0].code] == ["SFCStep", "SFCTransition"]
+    sequence = bp.modulecode.sequences[0]
+    assert sequence.layer_info == 2
+    assert [type(node).__name__ for node in sequence.code] == ["SFCStep", "SFCTransition"]
     assert bp.modulecode.equationblocks is not None
     equation = bp.modulecode.equationblocks[0]
     assert equation.name == "Calc"
+    assert equation.layer_info == 2
     assert len(equation.code) == 1
     assert isinstance(equation.code[0], Assignment)
 

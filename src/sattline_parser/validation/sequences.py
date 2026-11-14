@@ -25,7 +25,9 @@ The accepted body shapes are::
 These are parse-time rules, reported as ``EngLoopSeqSym Expected``,
 ``EndLoopSeqSym Expected`` or ``Incorrect Syntax``. They are enforced after the
 parse so comments may appear anywhere, and reported as ``SL-V016``,
-``SL-V023``, ``SL-V024``, ``SL-V033`` or ``SL-V036`` accordingly.
+``SL-V023``, ``SL-V024``, ``SL-V033``, ``SL-V036`` or ``SL-V054`` accordingly.
+``SL-V054`` is the SUBSEQTRANSITION-specific form of the alternative-branch
+start rule: the two bodies share a shape but name their own construct.
 
 ``SEQFORK`` occupies no position: it is a suffix of its host step/transition
 and therefore never appears here.
@@ -57,6 +59,12 @@ CLOSED = "closed"
 TRANSITION_BODY = "transition"
 STEP_BODY = "step"
 OPEN = "open"
+
+#: Which construct owns a transition-shaped body. The two share the same
+#: accepted shape but report a construct-specific code when the body opens with
+#: the wrong element.
+ALTERNATIVE_BODY = "alternative"
+SUB_TRANSITION_BODY = "sub-transition"
 
 
 def _position(item: SFCBodyItem) -> str | None:
@@ -131,11 +139,17 @@ def check_sequence_positions(sequences: list[Sequence] | None, errors: list[Diag
         _check_body(sequence.code, OPEN if is_open else CLOSED, errors)
 
 
-def _check_body(items: list[SFCBodyItem], shape: str, errors: list[Diagnostic]) -> None:
+def _check_body(
+    items: list[SFCBodyItem],
+    shape: str,
+    errors: list[Diagnostic],
+    *,
+    transition_construct: str = ALTERNATIVE_BODY,
+) -> None:
     if shape == CLOSED:
         _check_closed(items, errors)
     elif shape == TRANSITION_BODY:
-        _check_transition_body(items, errors)
+        _check_transition_body(items, errors, transition_construct)
     elif shape == OPEN:
         _check_open(items, errors)
     else:
@@ -153,7 +167,7 @@ def _check_nested(items: list[SFCBodyItem], errors: list[Diagnostic]) -> None:
             for branch in item.branches:
                 _check_body(branch, STEP_BODY, errors)
         elif isinstance(item, SFCTransitionSub):
-            _check_body(item.body, TRANSITION_BODY, errors)
+            _check_body(item.body, TRANSITION_BODY, errors, transition_construct=SUB_TRANSITION_BODY)
         elif isinstance(item, SFCSubsequence):
             _check_body(item.body, CLOSED if item.kind == "sequence" else STEP_BODY, errors)
 
@@ -194,7 +208,23 @@ def _check_closed(items: list[SFCBodyItem], errors: list[Diagnostic]) -> None:
         )
 
 
-def _check_transition_body(items: list[SFCBodyItem], errors: list[Diagnostic]) -> None:
+def _transition_body_start(construct: str, position: str, item: SFCBodyItem) -> Diagnostic:
+    """Report a transition-shaped body that does not open with a transition."""
+    found = "a step" if position == STEP else "a nested structure"
+    if construct == SUB_TRANSITION_BODY:
+        return _error(
+            DiagnosticCode.SUBSEQTRANSITION_STARTS_WITH_STEP,
+            f"A SUBSEQTRANSITION body must start with a SEQTRANSITION, not {found}",
+            item,
+        )
+    return _error(
+        DiagnosticCode.SFC_ALTERNATIVE_BRANCH_START,
+        f"Each ALTERNATIVESEQ branch must start with a SEQTRANSITION, not {found}",
+        item,
+    )
+
+
+def _check_transition_body(items: list[SFCBodyItem], errors: list[Diagnostic], construct: str) -> None:
     """``T (S T | M)*``: alternative branches and SUBSEQTRANSITION bodies."""
     elements = _elements(items)
     if not elements:
@@ -207,13 +237,7 @@ def _check_transition_body(items: list[SFCBodyItem], errors: list[Diagnostic]) -
         return
     first, first_item = elements[0]
     if first != TRANSITION:
-        errors.append(
-            _error(
-                DiagnosticCode.SFC_ALTERNATIVE_BRANCH_START,
-                "Each ALTERNATIVESEQ branch must start with a SEQTRANSITION or a nested structure",
-                first_item,
-            )
-        )
+        errors.append(_transition_body_start(construct, first, first_item))
     state = "unit" if first == TRANSITION else ("after_step" if first == STEP else "unit")
     for position, item in elements[1:]:
         if state == "unit":

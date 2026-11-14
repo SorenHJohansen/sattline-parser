@@ -48,6 +48,12 @@ def _string_terminal(match: re.Match[str]) -> str:
     literal = match.group("literal")
     if not any(character.isalpha() for character in literal):
         return match.group(0)
+    # ``\b`` is deliberate: a keyword is a whole word, so the terminal must end
+    # at a non-word character. This is what keeps ``DateCode_1`` a single
+    # identifier instead of the ``DateCode_`` keyword followed by ``1``, and it
+    # is why an adjacent underscore spelling such as ``PRIVATE_MODULEDEFINITION``
+    # is one name rather than two keywords. The language requires a separator
+    # after every keyword; see ``docs/grammar.md``.
     return _as_case_insensitive_terminal(match.group("name"), re.escape(literal) + r"\b")
 
 

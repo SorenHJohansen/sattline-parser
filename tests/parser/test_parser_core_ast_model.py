@@ -1,9 +1,35 @@
-# pyright: reportUnknownVariableType=false, reportUnknownMemberType=false, reportUnknownParameterType=false, reportMissingParameterType=false, reportUnknownArgumentType=false, reportCallIssue=false, reportPrivateUsage=false, reportUnusedImport=false
-# ruff: noqa: F403, F405
+# pyright: reportMissingParameterType=false, reportPrivateUsage=false, reportUnknownArgumentType=false, reportUnknownParameterType=false
 import dataclasses
 from collections.abc import Callable
+from pathlib import Path
+from typing import Any, cast
 
-from ._parser_core_test_support import *
+import pytest
+
+from sattline_parser.api import parse_source_file, parse_source_text
+from sattline_parser.models.ast_model import (
+    BasePicture,
+    DataType,
+    Equation,
+    FloatLiteral,
+    FrameModule,
+    IntLiteral,
+    MappingSource,
+    ModuleCode,
+    ModuleDef,
+    ModuleTypeDef,
+    ModuleTypeInstance,
+    ParameterMapping,
+    Sequence,
+    Simple_DataType,
+    SingleModule,
+    SourceSpan,
+    Variable,
+)
+from sattline_parser.models.clauses import ClippingClause
+from sattline_parser.models.expressions import Assignment, VarRef
+
+from ._parser_core_test_support import _module_header
 
 
 def test_ast_model_helpers_cover_reduce_usage_and_string_formats(monkeypatch: pytest.MonkeyPatch):
@@ -199,3 +225,68 @@ def test_datatype_string_formats_its_variables() -> None:
 
     assert "Variables in datatype" in rendered
     assert "Payload" in rendered
+
+
+_CORPUS = Path(__file__).resolve().parents[1] / "fixtures" / "corpus"
+_HEADER = '"SyntaxVersion"\n"OriginalFileDate"\n"ProgramDate"\n'
+_BASE_HEAD = "BasePicture Invocation (0.0,0.0,0.0,1.0,1.0) : MODULEDEFINITION DateCode_ 1\n"
+_BASE_TAIL = "ModuleDef\nClippingBounds = ( -1.0 , -1.0 ) ( 1.0 , 1.0 )\nENDDEF (*BasePicture*);\n"
+
+
+def test_record_without_a_description_stores_none_not_the_record_keyword() -> None:
+    picture = parse_source_file(_CORPUS / "valid" / "UnCompressedFullGrammar.s")
+
+    record = next(datatype for datatype in picture.datatype_defs if datatype.name == "TestRecord2")
+
+    assert record.description is None
+    assert all(
+        datatype.description is None or isinstance(datatype.description, str) for datatype in picture.datatype_defs
+    )
+
+
+def test_record_with_a_description_stores_the_written_string() -> None:
+    picture = parse_source_file(_CORPUS / "valid" / "UnCompressedFullGrammar.s")
+
+    record = next(datatype for datatype in picture.datatype_defs if datatype.name == "TestRecord")
+
+    assert record.description == '"Description of TestRecord"'
+
+
+def test_frame_module_marker_does_not_leak_into_the_root_datecode() -> None:
+    picture = parse_source_file(_CORPUS / "edge_cases" / "FrameModuleInvocation.s")
+
+    assert picture.datecode == 1
+    assert type(picture.datecode) is int
+
+
+def test_frame_submodule_without_a_datecode_stores_none() -> None:
+    picture = parse_source_text(
+        _HEADER
+        + _BASE_HEAD
+        + (
+            "SUBMODULES\n"
+            "   FrameInst Invocation (0.0,0.0,0.0,1.0,1.0) : MODULEDEFINITION (Frame_Module)\n"
+            "   ModuleDef\n"
+            "   ClippingBounds = ( -1.0 , -1.0 ) ( 1.0 , 1.0 )\n"
+            "   ENDDEF (*FrameInst*);\n"
+        )
+        + _BASE_TAIL
+    )
+
+    frame = picture.submodules[0]
+
+    assert isinstance(frame, FrameModule)
+    assert frame.datecode is None
+
+
+def test_variable_group_does_not_share_a_mutable_init_payload() -> None:
+    picture = parse_source_text(
+        _HEADER + _BASE_HEAD + ('LOCALVARIABLES\n   A, B: time := Time_Value "12:00:00";\n') + _BASE_TAIL
+    )
+
+    first, second = picture.localvariables
+    assert first.init_value == second.init_value == {"Time_Value": "12:00:00"}
+    assert first.init_value is not second.init_value
+
+    cast(dict[str, str | None], first.init_value)["Time_Value"] = "01:00:00"
+    assert second.init_value == {"Time_Value": "12:00:00"}

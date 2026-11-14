@@ -25,10 +25,6 @@ from ._tokens_mixin import TokensMixin
 
 __all__ = [
     "SLTransformer",
-    "_extract_program_name_from_header_lines",
-    "_is_tree",
-    "_iter_tree_children",
-    "_strip_quoted",
     "flatten_items",
     "meta_span",
 ]
@@ -54,9 +50,6 @@ def _strip_quoted(text: str) -> str:
     if len(text) >= 2 and text.startswith('"') and text.endswith('"'):
         return text[1:-1].replace('""', '"').rstrip("\n")
     return text
-
-
-_EXPORTED_HELPERS = (flatten_items, _iter_tree_children, meta_span, _strip_quoted)
 
 
 def _extract_program_name_from_header_lines(tree: TransformerTree) -> str | None:

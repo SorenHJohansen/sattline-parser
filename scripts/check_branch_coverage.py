@@ -13,6 +13,7 @@ Usage: ``python scripts/check_branch_coverage.py``
 from __future__ import annotations
 
 import json
+import os
 import subprocess
 import sys
 from pathlib import Path
@@ -26,6 +27,15 @@ BRANCH_MIN = 93.0
 _REPO_ROOT = Path(__file__).resolve().parents[1]
 _JSON_REPORT = _REPO_ROOT / "coverage-branch.json"
 _XML_REPORT = _REPO_ROOT / "coverage.xml"
+
+#: Variables that can silently narrow or rewrite the run. An exported
+#: ``PYTEST_ADDOPTS="-k foo"`` would let the gate pass on a subset of the suite.
+_SCRUBBED_ENV = ("PYTEST_ADDOPTS", "PYTEST_PLUGINS")
+
+
+def _scrubbed_env() -> dict[str, str]:
+    """The process environment without pytest's ambient overrides."""
+    return {name: value for name, value in os.environ.items() if name not in _SCRUBBED_ENV}
 
 
 def main() -> int:
@@ -46,6 +56,7 @@ def main() -> int:
             "--no-cov-on-fail",
         ],
         cwd=_REPO_ROOT,
+        env=_scrubbed_env(),
     )
     if result.returncode != 0:
         print("branch-coverage run failed (tests errored)", file=sys.stderr)

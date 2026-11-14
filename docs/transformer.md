@@ -63,7 +63,13 @@ class SLTransformer(
 
 `_module_shared.py` holds helpers and types shared by several mixins:
 `flatten_items`, `meta_span`, `tree_children`, `InterimCoords`,
-`TransformerItem`, and `TransformerTree`.
+`TransformerItem`, and `TransformerTree`. It also holds the token-type
+constants the mixins inspect (`OUTVAR_TOKEN`, `INVAR_TOKEN`,
+`STATE_SUFFIX_TOKEN`, `ENDDEF_KW_TOKEN`) and the typed `v_args` passthrough.
+The passthrough keeps each decorated rule method's declared `(meta, items)`
+signature, because Lark's own annotation erases it to `Callable[[object],
+object]` and would hide a wrong argument order or return type from the type
+checker.
 
 ## Dispatch
 
@@ -172,7 +178,14 @@ Arithmetic and comparison are binary: a chain folds left-associatively into
 
 `if_statement` produces an `IfStmt` with a tuple of `(condition, body)` pairs
 and an optional `else_block`. `assignment_statement` produces an `Assignment`.
-A bare `function_call` statement produces a `FuncCallStmt`.
+A bare `function_call` statement produces a `FuncCallStmt`. The `statement`
+funnel returns the concrete `CodeItem` union (`Assignment | FuncCallStmt |
+IfStmt | CodeComment`) and raises on anything else, so a new statement shape
+cannot silently pass through as `Any`.
+
+The additive and multiplicative rules share one left-associative fold, and the
+`OR` and `AND` rules share one n-ary chain builder. Only the operator differs,
+so the two rules in each pair delegate to a single helper.
 
 ## SFC
 
@@ -194,7 +207,8 @@ flowchart LR
 `code_blocks` become `SFCCodeBlocks(enter, active, exit)`. An absent block is
 an empty list, not `None`, because the grammar treats the three blocks as
 independently optional. `seqfork` becomes `SFCFork`, attached to its host step
-or transition.
+or transition. A `Layer_ = <int>` after the `OBJSIZE` pair is stored on
+`Sequence.layer_info`, matching `Equation.layer_info`.
 
 ## Module headers and assembly
 
@@ -219,6 +233,11 @@ assembles the AST:
 - splits a `module_body` into parameters, locals, submodules, `moduledefs`, and
   `modulecodes`;
 - builds `SingleModule`, `FrameModule`, and `ModuleTypeInstance`;
+- marks a `(Frame_Module)` invocation with a marker and excludes booleans from
+  the datecode collectors, so the marker can never be read as a datecode;
+- accepts a record description only when it is a real string, never the
+  `RECORD` keyword token;
+- gives every variable in a group its own copy of a mutable init payload;
 - builds `ModuleTypeDef` for `TYPEDEFINITIONS ... MODULEDEFINITION` blocks;
 - builds `BasePicture` for the root;
 - keeps every legacy repeated `moduledef` block in `moduledefs` and

@@ -2,7 +2,7 @@
 
 The docs set is part of the product. This script keeps it honest:
 
-* every relative Markdown link resolves;
+* every relative Markdown link resolves, including its ``#anchor``;
 * no em dash or en dash is used as punctuation outside a code fence;
 * Mermaid blocks can be extracted for rendering by the Docs workflow.
 
@@ -19,16 +19,20 @@ import re
 import sys
 from pathlib import Path
 
-_ROOT_FILES = ("README.md", "AGENTS.md", "CHANGELOG.md")
+_ROOT_FILES = ("README.md", "AGENTS.md", "CHANGELOG.md", "SECURITY.md")
 _DASHES = ("\u2014", "\u2013")
 _LINK_RE = re.compile(r"\[[^\]]+\]\(([^)]+)\)")
 _MERMAID_RE = re.compile(r"```mermaid\n(.*?)```", re.DOTALL)
+_HEADING_RE = re.compile(r"^#{1,6}\s+(.*)$", re.MULTILINE)
+_LINK_TEXT_RE = re.compile(r"\[([^\]]+)\]\([^)]*\)")
+_SLUG_STRIP_RE = re.compile(r"[^\w\- ]", re.UNICODE)
 
 
 def _markdown_files(root: Path) -> list[Path]:
     """Every Markdown file the documentation gate owns."""
-    files = sorted((root / "docs").glob("*.md"))
+    files = sorted((root / "docs").rglob("*.md"))
     files.extend(sorted((root / ".opencode").rglob("*.md")))
+    files.extend(sorted((root / "changelog.d").glob("*.md")))
     template = root / ".github" / "pull_request_template.md"
     if template.is_file():
         files.append(template)
@@ -41,15 +45,50 @@ def _without_fences(text: str) -> str:
     return re.sub(r"```.*?```", "", text, flags=re.DOTALL)
 
 
+def _slug(heading: str) -> str:
+    """Approximate the anchor GitHub generates for a heading.
+
+    Inline links keep their text, inline code keeps its content, and every
+    character outside ``[\\w\\- ]`` is dropped before spaces become hyphens.
+    """
+    text = _LINK_TEXT_RE.sub(r"\1", heading.strip())
+    text = text.replace("`", "").lower()
+    text = _SLUG_STRIP_RE.sub("", text)
+    return text.replace(" ", "-")
+
+
+def _anchors(path: Path) -> set[str]:
+    """The anchors GitHub generates for every heading in *path*.
+
+    A repeated heading gets the ``-1``, ``-2`` suffix GitHub appends, so a link
+    to a later duplicate still resolves.
+    """
+    seen: dict[str, int] = {}
+    anchors: set[str] = set()
+    for heading in _HEADING_RE.findall(_without_fences(path.read_text(encoding="utf-8"))):
+        slug = _slug(heading)
+        count = seen.get(slug, 0)
+        anchors.add(slug if count == 0 else f"{slug}-{count}")
+        seen[slug] = count + 1
+    return anchors
+
+
 def _check_links(path: Path, root: Path) -> list[str]:
     errors: list[str] = []
     text = _without_fences(path.read_text(encoding="utf-8"))
     for target in _LINK_RE.findall(text):
-        if target.startswith(("http://", "https://", "mailto:", "#")):
+        if target.startswith(("http://", "https://", "mailto:")):
             continue
-        relative = target.split("#", 1)[0]
-        if relative and not (path.parent / relative).resolve().exists():
-            errors.append(f"{path.relative_to(root)}: missing link target {target}")
+        relative, _, fragment = target.partition("#")
+        if relative:
+            resolved = (path.parent / relative).resolve()
+            if not resolved.exists():
+                errors.append(f"{path.relative_to(root)}: missing link target {target}")
+                continue
+        else:
+            resolved = path
+        if fragment and resolved.suffix == ".md" and resolved.is_file() and fragment not in _anchors(resolved):
+            errors.append(f"{path.relative_to(root)}: missing anchor #{fragment} in {target}")
     return errors
 
 
@@ -75,7 +114,7 @@ def _extract_mermaid(path: Path, destination: Path, root: Path) -> int:
 
 def main(argv: list[str] | None = None) -> int:
     """Run the documentation checks and return a process exit code."""
-    parser = argparse.ArgumentParser(description="Check links, prose punctuation, and Mermaid blocks.")
+    parser = argparse.ArgumentParser(description="Check links, anchors, prose punctuation, and Mermaid blocks.")
     parser.add_argument(
         "--root",
         type=Path,

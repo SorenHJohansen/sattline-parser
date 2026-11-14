@@ -57,6 +57,46 @@ from ._module_shared import (
 SfcBody = list[SFCBodyItem]
 
 
+def _seq_control_flags(tree: TransformerTree) -> tuple[bool, bool]:
+    """Read the optional ``SeqControl``/``SeqTimer`` markers of a sequence."""
+    seqcontrol = False
+    seqtimer = False
+    for child in tree_children(tree):
+        if not isinstance(child, Token):
+            continue
+        # Keyword case is folded by the scanner, so compare folded.
+        spelling = str(child.value).casefold()
+        if spelling == const.GRAMMAR_VALUE_SEQCONTROL.casefold():
+            seqcontrol = True
+        elif spelling == const.GRAMMAR_VALUE_SEQTIMER.casefold():
+            seqtimer = True
+    return seqcontrol, seqtimer
+
+
+def _sequence_code(tree: TransformerTree) -> list[SFCBodyItem]:
+    """Read one ``sequence_body`` tree into SFC body items."""
+    code: list[SFCBodyItem] = []
+    for child in tree_children(tree):
+        if isinstance(child, Token):
+            continue
+        if isinstance(
+            child,
+            (
+                SFCStep,
+                SFCTransition,
+                SFCTransitionSub,
+                SFCAlternative,
+                SFCParallel,
+                SFCSubsequence,
+                CodeComment,
+            ),
+        ):
+            code.append(child)
+        else:
+            raise ValueError(f"sequence unexpected code item: {type(child).__name__}: {child!r}")
+    return code
+
+
 class SFCMixin:
     """Mixin providing SFC (sequence function chart) transformation methods."""
 
@@ -138,7 +178,7 @@ class SFCMixin:
         fork: SFCFork | None = None
         for item in items:
             if isinstance(item, Token):
-                if item.type == "NAME" and name is None:
+                if item.type == const.TOKEN_NAME and name is None:
                     name = str(item)
                 continue
             if isinstance(item, SFCFork):
@@ -171,9 +211,9 @@ class SFCMixin:
         wait_seen = False
         for item in items:
             if isinstance(item, Token):
-                if item.type == "WAIT_FOR":
+                if item.type == const.GRAMMAR_VALUE_WAIT_FOR:
                     wait_seen = True
-                elif item.type == "NAME" and name is None and not wait_seen:
+                elif item.type == const.TOKEN_NAME and name is None and not wait_seen:
                     name = str(item)
                 continue
             if isinstance(item, SFCFork):
@@ -222,7 +262,7 @@ class SFCMixin:
         body: SfcBody | None = None
         for item in items:
             if isinstance(item, Token):
-                if item.type == "NAME" and name is None:
+                if item.type == const.TOKEN_NAME and name is None:
                     name = str(item)
                 continue
             if isinstance(item, str) and name is None:
@@ -278,9 +318,9 @@ class SFCMixin:
         has_break = False
         for item in items:
             if isinstance(item, Token):
-                if item.type == "SEQBREAK":
+                if item.type == const.GRAMMAR_VALUE_SEQBREAK:
                     has_break = True
-                elif item.type == "NAME":
+                elif item.type == const.TOKEN_NAME:
                     targets.append(str(item))
                 continue
             if type(item) is str:
@@ -324,6 +364,7 @@ class SFCMixin:
         seqcontrol = False
         seqtimer = False
         code: list[SFCBodyItem] = []
+        layer_info: int | None = None
         seqtype = const.GRAMMAR_VALUE_SEQUENCE
 
         for item in items:
@@ -332,6 +373,11 @@ class SFCMixin:
                     seqtype = const.GRAMMAR_VALUE_SEQUENCE
                 elif item.type == const.GRAMMAR_VALUE_OPENSEQUENCE:
                     seqtype = const.GRAMMAR_VALUE_OPENSEQUENCE
+                continue
+
+            if isinstance(item, int) and not isinstance(item, bool):
+                if layer_info is None:
+                    layer_info = item
                 continue
 
             if isinstance(item, str) and name is None:
@@ -347,38 +393,11 @@ class SFCMixin:
                 continue
 
             if isinstance(item, Tree) and item.data == const.KEY_SEQ_CONTROL_OPS:
-                tree = cast(TransformerTree, item)
-                for child in tree_children(tree):
-                    if not isinstance(child, Token):
-                        continue
-                    # Keyword case is folded by the scanner, so compare folded.
-                    spelling = str(child.value).casefold()
-                    if spelling == const.GRAMMAR_VALUE_SEQCONTROL.casefold():
-                        seqcontrol = True
-                    elif spelling == const.GRAMMAR_VALUE_SEQTIMER.casefold():
-                        seqtimer = True
+                seqcontrol, seqtimer = _seq_control_flags(cast(TransformerTree, item))
                 continue
 
             if isinstance(item, Tree) and item.data == const.KEY_SEQUENCE_BODY:
-                tree = cast(TransformerTree, item)
-                for child in tree_children(tree):
-                    if isinstance(child, Token):
-                        continue
-                    if isinstance(
-                        child,
-                        (
-                            SFCStep,
-                            SFCTransition,
-                            SFCTransitionSub,
-                            SFCAlternative,
-                            SFCParallel,
-                            SFCSubsequence,
-                            CodeComment,
-                        ),
-                    ):
-                        code.append(child)
-                    else:
-                        raise ValueError(f"sequence unexpected code item: {type(child).__name__}: {child!r}")
+                code = _sequence_code(cast(TransformerTree, item))
 
         if position is None:
             raise ValueError("Position can't be None")
@@ -393,6 +412,7 @@ class SFCMixin:
             seqcontrol=seqcontrol,
             seqtimer=seqtimer,
             code=code,
+            layer_info=layer_info,
         )
 
     def equationblock(self, items: list[TransformerItem]) -> Equation:

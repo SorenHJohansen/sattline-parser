@@ -7,12 +7,15 @@ on:
       - "README.md"
       - "AGENTS.md"
       - "CHANGELOG.md"
+      - "SECURITY.md"
+      - "changelog.d/**"
       - ".opencode/**"
       - ".github/pull_request_template.md"
+      - ".github/mermaid/**"
+      - ".github/mermaid-puppeteer.json"
       - "opencode.json"
       - "scripts/check_docs.py"
       - ".github/workflows/docs.yml"
-      - ".github/mermaid-puppeteer.json"
   push:
     branches:
       - main
@@ -21,12 +24,15 @@ on:
       - "README.md"
       - "AGENTS.md"
       - "CHANGELOG.md"
+      - "SECURITY.md"
+      - "changelog.d/**"
       - ".opencode/**"
       - ".github/pull_request_template.md"
+      - ".github/mermaid/**"
+      - ".github/mermaid-puppeteer.json"
       - "opencode.json"
       - "scripts/check_docs.py"
       - ".github/workflows/docs.yml"
-      - ".github/mermaid-puppeteer.json"
   workflow_dispatch:
 
 concurrency:
@@ -42,28 +48,55 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Set up Python 3.14
         uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: "3.14"
 
+      # The Mermaid CLI is pinned by .github/mermaid/package-lock.json so the
+      # rendered diagrams do not change when a new CLI is published.
+      - name: Set up Node
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: .github/mermaid/package-lock.json
+
+      - name: Install pinned Mermaid CLI
+        working-directory: .github/mermaid
+        run: npm ci --no-audit --no-fund
+
       - name: Validate JSON configuration
         run: |
           python -m json.tool opencode.json >/dev/null
           python -m json.tool .github/mermaid-puppeteer.json >/dev/null
 
-      - name: Check documentation links, prose, and Mermaid extraction
+      - name: Check documentation links, anchors, prose, and Mermaid extraction
         run: python scripts/check_docs.py --mermaid-dir /tmp/sattline-mermaid
 
       - name: Render every Mermaid diagram
         shell: bash
         run: |
           set -euo pipefail
-          for diagram in /tmp/sattline-mermaid/*.mmd; do
-            npx -y @mermaid-js/mermaid-cli@11.17.1 \
+          shopt -s nullglob
+          diagrams=(/tmp/sattline-mermaid/*.mmd)
+          if (( ${#diagrams[@]} == 0 )); then
+            echo "::error::check_docs.py extracted zero Mermaid diagrams; the docs set must contain at least one."
+            exit 1
+          fi
+          mkdir -p /tmp/sattline-mermaid/svg
+          for diagram in "${diagrams[@]}"; do
+            .github/mermaid/node_modules/.bin/mmdc \
               -p .github/mermaid-puppeteer.json \
               -i "$diagram" \
-              -o "${diagram%.mmd}.svg"
+              -o "/tmp/sattline-mermaid/svg/$(basename "${diagram%.mmd}").svg"
           done
+
+      - name: Upload rendered diagrams
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          if-no-files-found: error
+          name: mermaid-svg-${{ github.run_id }}
+          path: /tmp/sattline-mermaid/svg/*.svg

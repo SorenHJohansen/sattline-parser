@@ -7,6 +7,7 @@ the focused test passes, then the wider gates pass.
 
 | Path | Scope |
 | --- | --- |
+| `tests/__init__.py` | Makes `tests` a package, so every module has one stable name (`tests.parser.test_parser`) |
 | `tests/parser/` | Grammar, decoding, provenance, AST, transformer, validation, formatter |
 | `tests/project/` | Discovery, formats, loader, caches, reachability, graphics, distribution, project validation |
 | `tests/cli/` | Every subcommand, exit codes, JSON output, refusal rules |
@@ -16,11 +17,21 @@ the focused test passes, then the wider gates pass.
 | `tests/fixtures/corpus/` | Every fixture is a `.s` source, grouped by expected behaviour |
 | `tests/fixtures/validation/expectations.json` | Golden expectations for validation findings |
 | `tests/conftest.py` | Shared pytest configuration |
+| `tests/*/_support.py` | Helpers shared inside one test directory |
+
+`tests` and every test subdirectory are packages. That keeps module names
+unique, so two files with the same basename in different directories cannot
+collide in `sys.modules`. Helpers shared by several modules in one directory
+live in that directory's `_support.py` (for example
+`tests/project/_support.py`), never in a star-import hub.
 
 `tests/test_packaging.py` lives outside `tests/parser` on purpose. It proves
 that `pytest` (whose `testpaths` is `tests`) runs tests beyond the parser
 directory, that grammar and JSON resources ship in the wheel, and that the
-public API and console script survive installation.
+public API and console script survive installation. It imports the checkout
+through `conftest.py` and pins `PYTHONPATH=src` for any subprocess, so it passes
+whether or not `sattline-parser` is installed in the interpreter. Installed
+artifact evidence belongs to `scripts/smoke_installed.py`.
 
 ## Corpus categories
 
@@ -53,7 +64,6 @@ the `RecursionError` backstop.
 pytest -q                                   # full configured suite
 pytest tests/parser -q                      # parser only
 pytest tests/parser/test_parser_core_grammar.py -q
-pytest -q -m "not slow"                     # skip slow tests
 python scripts/check_branch_coverage.py     # full suite plus both coverage gates
 pytest benchmarks --no-cov -q               # parse, validation, and traversal benchmarks
 pytest benchmarks --no-cov -q --benchmark-json=benchmark.json
@@ -69,11 +79,16 @@ baseline.
 - `testpaths = ["tests"]`
 - `timeout = 60`, `timeout_method = "thread"`
 - `--strict-markers`, `--strict-config`
-- markers `slow`, `parser`, `quarantine`
+
+No custom marker is declared. A marker that no test uses and no workflow
+deselects is a documented behaviour that does not exist, so the former `slow`,
+`parser`, and `quarantine` markers were removed rather than left unenforced.
 
 A plain `pytest` run does not collect coverage. `scripts/check_branch_coverage.py`
 runs the suite with branch coverage and writes the JSON report used by the CI
-gates.
+gates. The script scrubs `PYTEST_ADDOPTS` and `PYTEST_PLUGINS` from the child
+environment, so an exported `-k` or plugin cannot narrow the run and still pass
+the gate.
 
 The coverage gates:
 
@@ -86,6 +101,11 @@ The coverage gates:
 config cannot express separate line and branch fail thresholds. It also prints
 how many executable lines the exclusion rules keep outside the line gate, so
 100 percent is not mistaken for full-source coverage.
+
+The gate runs on one matrix leg only (Python 3.13). Coverage totals depend on
+interpreter bytecode, so gating every leg triples the most expensive job and can
+make the same source pass on one version and fail on another. The 3.12 and 3.14
+legs run a plain `pytest`, which still exercises the whole suite.
 
 ## Fuzzing
 
@@ -118,7 +138,15 @@ the transformer is a crash, not ordinary invalid input.
 ```bash
 python -c "from fuzzing.fuzz_harness import run_corpus_regression, assert_no_crashes, assert_no_timeouts; r = run_corpus_regression(); assert_no_crashes(r); assert_no_timeouts(r)"
 python -c "from fuzzing.fuzz_harness import run_random_fuzz, assert_no_crashes; r = run_random_fuzz(rounds=50); assert_no_crashes(r)"
+python -c "from fuzzing.fuzz_harness import run_random_fuzz, assert_no_crashes; r = run_random_fuzz(rounds=50, seed=20261114); assert_no_crashes(r)"
 ```
+
+The first random command is seedless, which is fine for local exploration. CI
+passes a fixed seed, so a red PR is replayable: each `FuzzResult.input_desc`
+carries its per-round seed (`random:seed=<n>`), and
+`generate_random_text(length, seed=<n>)` reproduces the exact input. A
+successful parse also reports a small `FuzzSummary` (`root_name`, `node_count`)
+instead of a picture the subprocess cannot hand back.
 
 `fuzzing/parser_fuzzer.py` and `fuzzing/decode_fuzzer.py` are the Atheris entry points used by
 ClusterFuzzLite. The `fuzz` extra installs Atheris, and `dev` never pulls it,
@@ -138,34 +166,52 @@ flowchart LR
     PR --> F["fuzz"]
     PR --> S["security"]
     PR --> D["docs"]
+    PR --> P["build-package"]
+    PR --> LC["lark-compat"]
+    PR --> W["windows"]
     L --> L1["ruff check"]
     L --> L2["ruff format --check"]
-    L --> L3["pyright strict"]
+    L --> L3["pyright strict over src, tests, benchmarks, fuzzing, scripts"]
     L --> L4["bandit"]
     L --> L5["pre-commit"]
-    T --> T1["check_branch_coverage.py"]
-    T --> T2["coverage.xml exists"]
+    L --> L6["build_changelog.py --check"]
+    T --> T1["check_branch_coverage.py on 3.13"]
+    T --> T2["plain pytest on 3.12 and 3.14"]
+    T --> T3["coverage.xml exists on 3.13"]
     B --> B1["pytest-benchmark"]
     B --> B2["benchmark.json artifact"]
     F --> F1["corpus regression"]
-    F --> F2["random fuzz smoke"]
+    F --> F2["seeded random fuzz smoke"]
     S --> S1["pip-audit"]
     D --> D1["check_docs.py"]
     D --> D2["render every Mermaid block"]
+    D --> D3["mermaid SVG artifact"]
+    P --> P1["build wheel and sdist"]
+    P --> P2["twine check"]
+    P --> P3["install each artifact and run smoke_installed.py"]
+    LC --> LC1["latest lark below 1.4"]
+    W --> W1["full suite on Windows"]
 ```
 
 `.github/workflows/publish.yml` handles release publication. `.github/workflows/ci.yml`
 runs on pull requests, pushes to `main`, version tags, and manual dispatch.
 `.github/workflows/docs.yml` runs when documentation changes and checks relative
-links, prose punctuation, and every Mermaid block.
+links, anchors, prose punctuation, and every Mermaid block.
+
+Every action is pinned to a commit SHA with a `# vX.Y.Z` comment, so the pinned
+version is readable and a bump is a reviewable one-line change.
 
 ### Docs CI
 
 `scripts/check_docs.py` is the local half of the Docs workflow:
 
-- every relative Markdown link resolves;
+- every relative Markdown link resolves, including its `#anchor`;
 - no em dash or en dash is used as punctuation outside a code fence;
 - Mermaid blocks can be extracted to a directory for rendering.
+
+It owns `docs/**/*.md` (recursively), `.opencode/**/*.md`,
+`changelog.d/*.md`, `README.md`, `AGENTS.md`, `CHANGELOG.md`, `SECURITY.md`, and
+`.github/pull_request_template.md`.
 
 ```bash
 python scripts/check_docs.py
@@ -173,36 +219,55 @@ python scripts/check_docs.py --mermaid-dir /tmp/sattline-mermaid
 ```
 
 The workflow also validates `opencode.json` and the Mermaid puppeteer config as
-JSON, then renders each extracted `.mmd` with `@mermaid-js/mermaid-cli` 11.17.1.
-A diagram that does not parse fails the job.
+JSON. The Mermaid CLI is pinned by `.github/mermaid/package.json` and
+`package-lock.json`, installed with `npm ci`, and the npm download directory is
+cached. Extracting zero diagrams is an explicit failure, not an `mmdc` error,
+and the rendered SVGs are uploaded as an artifact. A diagram that does not parse
+fails the job.
 
 ## Quality commands
 
 ```bash
 ruff check src tests scripts benchmarks fuzzing
 ruff format --check src tests scripts benchmarks fuzzing
-pyright src tests benchmarks fuzzing
+pyright src tests benchmarks fuzzing scripts
 bandit -q -r src fuzzing -x tests -c pyproject.toml
 pip-audit
 pre-commit run --all-files
 ```
 
-`pyproject.toml` sets Pyright to `strict` for `src` and `tests`. Ruff enables
-`E`, `F`, `W`, `I`, `N`, `UP`, `B`, `BLE`, `C4`, `PLC0415`, `PLR0915`, `S101`,
-`SIM`, and `RUF`, with a 120-character line length. `S101` is disabled for
-tests because `assert` is the test mechanism.
+`pyproject.toml` sets Pyright to `strict` for `src`, `tests`, `benchmarks`,
+`fuzzing`, and `scripts`. `src` carries no file-scope suppression. A test file
+may open with a `# pyright: reportX=false` header, but the header must list only
+the rules that file actually needs; the set is recomputed by deleting the header
+and reading the rules Pyright reports. Eight test files that carried a header no
+longer need one. Where a blanket header is still the practical choice (deeply
+dynamic AST assertions), the header is the documented policy rather than a
+hidden exception. Ruff enables `E`, `F`, `W`, `I`, `N`, `UP`, `B`, `BLE`, `C4`,
+`PLC0415`, `PLR0915`, `S101`, `SIM`, and `RUF`, with a 120-character line length.
+`S101` is disabled for tests because `assert` is the test mechanism.
 
 ## Helper scripts
 
 | Script | Purpose |
 | --- | --- |
+| `scripts/build_changelog.py` | Validate fragments, preview `[Unreleased]`, or cut a dated release |
 | `scripts/check_branch_coverage.py` | Run the full suite and enforce both coverage gates |
-| `scripts/check_docs.py` | Check docs links and prose, extract Mermaid blocks |
+| `scripts/check_docs.py` | Check docs links, anchors, and prose, extract Mermaid blocks |
 | `scripts/gen_builtin_catalogue.py` | Generate or check `builtins/catalogue.json` |
+| `scripts/gen_rule_table.py` | Generate or check the validation rule table |
 | `scripts/export_parity_expectations.py` | Export validation expectations |
 | `scripts/profile_parse.py` | Profile the parse path |
 | `scripts/smoke_installed.py` | Smoke-test an installed artifact |
-| `scripts/probe/` | Ad-hoc probes, not part of the suite |
+
+## Packaging
+
+The wheel ships the package, its grammar and JSON resources, and the `py.typed`
+marker. The sdist is the input downstream packagers use, so `MANIFEST.in` adds
+`CHANGELOG.md`, `SECURITY.md`, `docs/`, `changelog.d/`, `tests/`, and the
+`scripts/`, `benchmarks/`, and `fuzzing/` trees the suite imports. The
+`build-package` job builds both artifacts, runs `twine check`, installs each into
+a clean virtualenv, and runs `scripts/smoke_installed.py` against it.
 
 ## Adding a test
 

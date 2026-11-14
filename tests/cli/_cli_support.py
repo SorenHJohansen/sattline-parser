@@ -40,7 +40,7 @@ PARSE_ERROR_SOURCE = (
 )
 
 #: A compact source with an unknown marker: the decoder refuses it.
-DECODE_ERROR_SOURCE = '"Syntax version 2.23, date: 2026-10-28-00:00:00.000 C"\n#ZZ\n'
+DECODE_ERROR_SOURCE = '"Syntax version 2.23, date: 2026-10-28-00:00:00.000 C"\n#00\n'
 
 
 def write_source(directory: Path, name: str, text: str) -> Path:

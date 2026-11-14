@@ -105,7 +105,7 @@ def find_companion_beside(code_path: Path, extensions: Sequence[str]) -> Path | 
     exact: dict[str, Path] = {}
     for extension in wanted:
         candidate = code_path.with_suffix(extension)
-        if candidate.exists():
+        if candidate.is_file():
             exact.setdefault(extension, candidate)
     if exact:
         return next(exact[extension] for extension in wanted if extension in exact)
@@ -118,6 +118,8 @@ def find_companion_beside(code_path: Path, extensions: Sequence[str]) -> Path | 
     for entry in entries:
         extension = entry.suffix.lower()
         if extension not in wanted or entry.stem.casefold() != stem:
+            continue
+        if not entry.is_file():
             continue
         folded.setdefault(extension, entry)
     for extension in wanted:

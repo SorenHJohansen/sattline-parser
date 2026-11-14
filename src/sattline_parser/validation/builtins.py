@@ -1,19 +1,17 @@
 """Builtin function and datatype tables used by the strict validation pass.
 
 The signatures live in :mod:`sattline_parser.builtins`; this module adapts them
-to the validator's arity/write-position view and keeps the datatype-name typo
-helper. Unknown call names are left alone: only calls whose name appears in the
-builtin registry are checked.
+to the validator's arity and parameter view and keeps the datatype-name typo
+helper. The adaptation is cached, so a call site asks once per signature rather
+than rebuilding the view on every checked call.
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
+from functools import cache
 from typing import Final
 
-from sattline_parser.builtins.functions import (
-    BUILTIN_FUNCTIONS as _BUILTIN_FUNCTIONS,
-)
 from sattline_parser.builtins.functions import (
     BuiltinFunction as _BuiltinFunction,
 )
@@ -36,21 +34,21 @@ BUILTIN_DATATYPE_NAMES: Final[frozenset[str]] = frozenset(member.value for membe
 class BuiltinFunction:
     """Validator view of a documented builtin call.
 
-    ``min_args`` / ``max_args`` bound the accepted argument count,
-    ``out_arg_positions`` lists 1-based argument positions that must resolve to
-    a writable variable reference, and ``parameters`` carries the documented
-    direction and datatype for the argument-type rule.
+    ``min_args`` / ``max_args`` bound the accepted argument count and
+    ``parameters`` carries the documented direction and datatype for the
+    argument-type rule. A written position is derived from the parameter
+    direction, so the view carries no second copy of that fact.
     """
 
     name: str
     min_args: int
     max_args: int
-    out_arg_positions: frozenset[int] = frozenset()
     parameters: tuple[BuiltinParameter, ...] = ()
     kind: str = "function"
     return_type: str | None = None
 
 
+@cache
 def _adapt(signature: _BuiltinFunction) -> BuiltinFunction:
     required_args = 0
     for parameter in signature.parameters:
@@ -61,22 +59,12 @@ def _adapt(signature: _BuiltinFunction) -> BuiltinFunction:
         name=signature.name,
         min_args=required_args,
         max_args=signature.arity,
-        out_arg_positions=signature.out_arg_positions,
         parameters=signature.parameters,
         kind=signature.kind,
         return_type=signature.return_type,
     )
 
 
-#: Lower-case canonical name -> signature.
-BUILTIN_FUNCTIONS: Final[dict[str, BuiltinFunction]] = {
-    name: _adapt(signature) for name, signature in _BUILTIN_FUNCTIONS.items()
-}
-
-#: Folded identity key -> signature. Function names are case-insensitive.
-_FOLDED_FUNCTIONS: Final[dict[str, BuiltinFunction]] = {
-    fold_identifier(name): signature for name, signature in BUILTIN_FUNCTIONS.items()
-}
 _FOLDED_DATATYPE_NAMES: Final[dict[str, str]] = {fold_identifier(name): name for name in BUILTIN_DATATYPE_NAMES}
 
 
@@ -98,7 +86,6 @@ def builtin_datatype_typo(datatype: str) -> str | None:
 
 __all__ = [
     "BUILTIN_DATATYPE_NAMES",
-    "BUILTIN_FUNCTIONS",
     "BuiltinFunction",
     "builtin_datatype_typo",
     "builtin_function_signature",

@@ -1,4 +1,4 @@
-# pyright: reportUnknownVariableType=false, reportUnknownMemberType=false, reportUnknownArgumentType=false, reportPrivateUsage=false
+# pyright: reportPrivateUsage=false
 """Fuzz harness smoke tests and corpus regression checks for the SattLine parser."""
 
 from __future__ import annotations
@@ -9,6 +9,7 @@ import pytest
 
 from fuzzing.fuzz_harness import (
     FuzzResult,
+    FuzzSummary,
     _is_expected_parse_error,
     assert_no_crashes,
     assert_no_timeouts,
@@ -31,14 +32,10 @@ def _min_fuzz_result(
     has_error: bool = False,
     duration_ms: float = 100.0,
 ) -> FuzzResult:
-    from sattline_parser.models.ast_model import BasePicture, ModuleHeader  # noqa: PLC0415
-
     return FuzzResult(
         input_desc=input_desc,
         success=success,
-        result=BasePicture(header=ModuleHeader(name="test", invoke_coord=(0.0, 0.0, 0.0, 0.0, 0.0)))
-        if has_result
-        else None,
+        result=FuzzSummary(root_name="BasePicture", node_count=3) if has_result else None,
         error=ValueError("boom") if has_error else None,
         duration_ms=duration_ms,
     )
@@ -46,19 +43,23 @@ def _min_fuzz_result(
 
 class TestFuzzParseText:
     def test_accepts_valid_sattline_program(self):
-        import pathlib  # noqa: PLC0415
-
-        repo_root = pathlib.Path(__file__).resolve().parents[2]
-        corpus_file = repo_root / "tests" / "fixtures" / "corpus" / "valid" / "MinimalProgram.s"
+        corpus_file = CORPUS_DIR / "valid" / "MinimalProgram.s"
         source = corpus_file.read_text(encoding="utf-8")
         result = fuzz_parse_text(source, input_desc="valid-program")
         assert result.success
         assert result.error is None
-        assert result.duration_ms >= 0
+        assert result.duration_ms > 0
+        assert result.result is not None
+        assert result.result.root_name == "BasePicture"
+        assert result.result.node_count > 0
+
+    def test_reports_no_summary_for_invalid_input(self):
+        result = fuzz_parse_text("PROGRAM @@@@\nENDPROGRAM\n", input_desc="malformed")
+        assert not result.success
+        assert result.error is not None
+        assert result.result is None
 
     def test_rejects_malformed_input_gracefully(self):
-        from fuzzing.fuzz_harness import _is_expected_parse_error  # noqa: PLC0415
-
         source = "PROGRAM @@@@\nENDPROGRAM\n"
         result = fuzz_parse_text(source, input_desc="malformed")
         assert not result.success
@@ -69,23 +70,15 @@ class TestFuzzParseText:
         result = fuzz_parse_text("", input_desc="empty")
         assert not result.success
         assert result.error is not None
+        assert _is_expected_parse_error(result.error)
 
     def test_handles_very_long_input(self):
         source = "PROGRAM Long\n" + "x := 1;\n" * 1000 + "ENDPROGRAM\n"
         result = fuzz_parse_text(source, input_desc="long-input", timeout=5.0)
-        assert result.duration_ms >= 0
-
-    def test_timeout_enforced(self, monkeypatch: pytest.MonkeyPatch):
-        # A hard timeout must actually kill the worker: a worker that never
-        # replies must produce a FuzzTimeoutError, and the harness must resume.
-        from fuzzing.fuzz_harness import FuzzTimeoutError, fuzz_parse_text  # noqa: PLC0415
-
-        sleeping_worker = "import time\nimport sys\nwhile True:\n    time.sleep(3600)\n"
-        monkeypatch.setattr("fuzzing.fuzz_harness._WORKER_SOURCE", sleeping_worker)
-        result = fuzz_parse_text("irrelevant", input_desc="timeout-test", timeout=0.5)
         assert not result.success
-        assert isinstance(result.error, FuzzTimeoutError)
-        assert "timed out" in str(result.error)
+        assert result.error is not None
+        assert _is_expected_parse_error(result.error)
+        assert result.duration_ms > 0
 
 
 class TestCollectCorpusInputs:
@@ -123,22 +116,24 @@ class TestRunCorpusRegression:
 
     def test_valid_files_parse_successfully(self):
         inputs = collect_corpus_inputs(CORPUS_DIR, include_invalid=False, max_files=5)
-        results = []
-        for file_path, content in inputs:
-            from fuzzing.fuzz_harness import fuzz_parse_text  # noqa: PLC0415
+        results = [fuzz_parse_text(content, input_desc=file_path) for file_path, content in inputs]
+        failures = [f"{r.input_desc}: {r.error}" for r in results if not r.success]
+        assert failures == []
+        assert len(results) == len(inputs)
 
-            results.append(fuzz_parse_text(content, input_desc=file_path))
-        success_count = sum(1 for r in results if r.success)
-        assert success_count >= len(results) * 0.8
-
-    def test_invalid_files_fail_gracefully(self):
-        inputs = collect_corpus_inputs(CORPUS_DIR, include_valid=False, include_invalid=True, max_files=5)
-        results = []
-        for file_path, content in inputs:
-            from fuzzing.fuzz_harness import fuzz_parse_text  # noqa: PLC0415
-
-            results.append(fuzz_parse_text(content, input_desc=file_path))
-        assert all(not r.success for r in results if r.error is not None)
+    def test_invalid_files_are_classified(self):
+        inputs = collect_corpus_inputs(CORPUS_DIR, include_valid=False, include_invalid=True, max_files=20)
+        results = [fuzz_parse_text(content, input_desc=file_path) for file_path, content in inputs]
+        # An "invalid" fixture may be semantically invalid (it parses, then fails
+        # validation) or syntactically invalid (an expected parse error). What it
+        # may never do is raise an internal error.
+        crashes = [
+            f"{r.input_desc}: {type(r.error).__name__}: {r.error}"
+            for r in results
+            if r.error is not None and not _is_expected_parse_error(r.error)
+        ]
+        assert crashes == []
+        assert all(r.result is not None for r in results if r.success)
 
 
 class TestGenerateRandomText:
@@ -155,13 +150,14 @@ class TestGenerateRandomText:
     def test_generates_different_output_without_seed(self):
         text1 = generate_random_text(length=100)
         text2 = generate_random_text(length=100)
-        assert text1 != text2 or len(text1) == 100
+        assert text1 != text2
 
 
 class TestRunRandomFuzz:
     def test_runs_without_crashes(self):
         results = run_random_fuzz(rounds=20, text_length=50, timeout=2.0, seed=123)
         assert len(results) == 20
+        assert [r.input_desc for r in results[:2]] == ["random:seed=123", "random:seed=124"]
         assert_no_crashes(results)
 
     def test_results_have_correct_structure(self):
@@ -172,12 +168,15 @@ class TestRunRandomFuzz:
             assert isinstance(result.success, bool)
             assert isinstance(result.duration_ms, float)
 
-    def test_timeout_protected(self):
-        from fuzzing.fuzz_harness import FuzzTimeoutError  # noqa: PLC0415
+    def test_seeded_runs_are_replayable(self):
+        first = run_random_fuzz(rounds=3, text_length=40, timeout=2.0, seed=99)
+        second = run_random_fuzz(rounds=3, text_length=40, timeout=2.0, seed=99)
+        assert [(r.input_desc, r.success) for r in first] == [(r.input_desc, r.success) for r in second]
 
+    def test_timeout_protected(self):
         results = run_random_fuzz(rounds=5, text_length=1000, timeout=1.0, seed=789)
-        for result in results:
-            assert result.duration_ms < 2000 or isinstance(result.error, FuzzTimeoutError)
+        assert [r.input_desc for r in results] == [f"random:seed={789 + i}" for i in range(5)]
+        assert all(r.duration_ms < 2000 for r in results)
 
 
 class TestAssertNoCrashes:
@@ -211,34 +210,3 @@ class TestAssertNoTimeouts:
         results[1].error = FuzzTimeoutError("timed out")
         with pytest.raises(AssertionError, match="timeout"):
             assert_no_timeouts(results)
-
-
-class TestCorpusRegressionSmoke:
-    def test_all_valid_corpus_files_parse(self):
-        inputs = collect_corpus_inputs(
-            CORPUS_DIR,
-            include_valid=True,
-            include_invalid=False,
-            include_edge_cases=False,
-            max_files=20,
-        )
-        assert len(inputs) >= 5
-        for file_path, content in inputs:
-            result = fuzz_parse_text(content, input_desc=f"valid:{file_path}")
-            if "valid" in file_path:
-                assert result.success, f"Valid file failed: {file_path}\nError: {result.error}"
-
-    def test_invalid_corpus_files_dont_crash_parser(self):
-        inputs = collect_corpus_inputs(
-            CORPUS_DIR,
-            include_valid=False,
-            include_invalid=True,
-            max_files=20,
-        )
-        for file_path, content in inputs:
-            result = fuzz_parse_text(content, input_desc=f"invalid:{file_path}")
-            # Invalid files should not crash the parser
-            # (they may parse successfully due to lenient parsing)
-            assert result.error is None or _is_expected_parse_error(result.error), (
-                f"Parser crashed on {file_path}: {result.error}"
-            )

@@ -1,5 +1,4 @@
-# pyright: reportUnknownVariableType=false, reportUnknownMemberType=false, reportUnknownArgumentType=false, reportPrivateUsage=false, reportUnusedImport=false, reportMissingParameterType=false, reportUnknownParameterType=false, reportArgumentType=false
-# ruff: noqa: F403, F405
+# pyright: reportArgumentType=false, reportPrivateUsage=false, reportUnknownArgumentType=false
 """Tests for the strict single-source validation pass.
 
 Wires the ``tests/fixtures/corpus/invalid`` fixtures that parse successfully to
@@ -10,8 +9,65 @@ false positives, and covers every branch of the validators with hand-built ASTs.
 
 import pathlib
 
+import pytest
+from lark.exceptions import UnexpectedInput
+
 from sattline_parser import parse_and_validate
-from sattline_parser.models.tails import VarTail
+from sattline_parser import parse_source_text as parser_core_parse_source_text
+from sattline_parser.grammar import constants as const
+from sattline_parser.models.ast_model import (
+    BasePicture,
+    CodeComment,
+    DataType,
+    Equation,
+    FrameModule,
+    GraphObject,
+    InteractObject,
+    MappingSource,
+    ModuleCode,
+    ModuleDef,
+    ModuleHeader,
+    ModuleTypeDef,
+    ModuleTypeInstance,
+    ParameterMapping,
+    Sequence,
+    SFCAlternative,
+    SFCCodeBlocks,
+    SFCFork,
+    SFCParallel,
+    SFCStep,
+    SFCSubsequence,
+    SFCTransition,
+    SFCTransitionSub,
+    Simple_DataType,
+    SingleModule,
+    SourceSpan,
+    Variable,
+)
+from sattline_parser.models.clauses import (
+    AssignClause,
+    ClippingClause,
+    ColourSpec,
+    EnableClause,
+    ModuleArguments,
+    ModuleInViewClause,
+    TailedClause,
+)
+from sattline_parser.models.expressions import (
+    Assignment,
+    BinOp,
+    BoolOp,
+    Compare,
+    FuncCall,
+    FuncCallStmt,
+    IfStmt,
+    NotOp,
+    TernaryOp,
+    UnaryOp,
+    VarRef,
+)
+from sattline_parser.models.tails import LitStringTail, VarTail
+from sattline_parser.names import fold_identifier
 from sattline_parser.preprocessing.compressed import PreprocessError
 from sattline_parser.validation import validate_basepicture
 from sattline_parser.validation.builtins import (
@@ -24,7 +80,7 @@ from sattline_parser.validation.diagnostics import (
     DiagnosticCode,
 )
 from sattline_parser.validation.rules import RETIRED_CODES
-from sattline_parser.validation.symbols import build_scope, resolve_var
+from sattline_parser.validation.symbols import build_scope, lookup_datatype, resolve_var
 from sattline_parser.validation.typing import (
     TypeFamily,
     datatype_family,
@@ -35,7 +91,7 @@ from sattline_parser.validation.typing import (
     operand_types,
 )
 
-from ._parser_core_test_support import *
+from ._parser_core_test_support import _module_header, _repo_path
 
 #: Fixtures for rules the real parser ENFORCES.
 _INVALID_VALIDATION_FIXTURES: dict[str, str] = {
@@ -299,7 +355,11 @@ def test_builtin_table_and_typo_helpers():
     equal_strings = builtin_function_signature("EqualStrings")
     assert equal_strings is not None and equal_strings.min_args == 3 and equal_strings.max_args == 3
     copytime = builtin_function_signature("CopyTime")
-    assert copytime is not None and copytime.out_arg_positions == frozenset({2})
+    assert copytime is not None
+    assert [(parameter.name, parameter.direction) for parameter in copytime.parameters] == [
+        ("Source", "in var"),
+        ("Destination", "out"),
+    ]
     assert builtin_datatype_typo("intege") == "integer"
     assert builtin_datatype_typo("SensorType") is None
     assert builtin_datatype_typo("intege") in BUILTIN_DATATYPE_NAMES
@@ -321,7 +381,7 @@ def test_scope_and_resolution_helpers():
 
 def test_qualification_resolves_record_fields():
     record = DataType(name="Point", description=None, datecode=1, var_list=[_var("X", "real")])
-    records = {"point": record}
+    records = {fold_identifier("Point"): record}
     bp = _base_picture()
     bp.datatype_defs = [record]
     bp.localvariables = [_var("Pos", "Point")]
@@ -613,16 +673,18 @@ def test_transition_guard_accepts_a_boolean():
     assert [d for d in validate_basepicture(bp) if d.code is DiagnosticCode.CONDITION_NOT_BOOLEAN] == []
 
 
-def test_builtin_record_field_access_resolves_without_undefined_finding():
-    bp = _base_picture()
-    bp.localvariables = [
-        _var("AsyncOperation1", "AsyncOperation"),
-        _var("Sink", "integer", init_value=0),
-    ]
-    assignment = Assignment(VarRef("Sink"), VarRef("AsyncOperation1.Status"), span=None)
-    bp.modulecodes = [ModuleCode(equationblocks=[_equation(assignment)])]
-    codes = {d.code.value for d in validate_basepicture(bp)}
-    assert "SL-V019" not in codes
+def test_builtin_record_field_access_carries_the_declared_field_type():
+    """A builtin record field resolves to its declared type, not just to silence.
+
+    ``AsyncOperation.Status`` is an integer field, so assigning it to an integer
+    target is clean and assigning it to a boolean target is a type mismatch.
+    """
+    bp = _typed_bp(
+        [_var("AsyncOperation1", "AsyncOperation"), _var("Count", "integer"), _var("Flag", "boolean")],
+        Assignment(VarRef("Count"), VarRef("AsyncOperation1.Status"), span=None),
+        Assignment(VarRef("Flag"), VarRef("AsyncOperation1.Status"), span=None),
+    )
+    assert [d.code.value for d in validate_basepicture(bp)] == ["SL-V029"]
 
 
 def test_unresolved_field_on_opaque_or_builtin_record_stays_silent():
@@ -1060,12 +1122,301 @@ def test_param_transfer_compatibilities_clean():
                 _transfer("Gain", "Counter"),  # integer => real: numeric widening
                 _transfer("SharedBias", None, global_=True),  # GLOBAL source: unresolved
                 _transfer("Ghost", "MissingVar"),  # source variable not declared: skip
-                _transfer("AbsentParam", "SpeedRef"),  # unknown target param: skip
             ],
         )
     ]
     diagnostics = validate_basepicture(bp)
     assert diagnostics == ()
+
+
+def test_param_mapping_absent_target_is_reported_on_a_moduletype_instance():
+    """A mapping that names no declared parameter is the rule's headline case."""
+    moduletype = ModuleTypeDef(name="T", moduleparameters=[_var("Gain", "real")])
+    bp = _base_picture()
+    bp.localvariables = [_var("SpeedRef", "real")]
+    bp.moduletype_defs = [moduletype]
+    bp.submodules = [
+        ModuleTypeInstance(
+            header=_module_header("Inst"),
+            moduletype_name="T",
+            parametermappings=[_transfer("AbsentParam", "SpeedRef")],
+        )
+    ]
+    diagnostics = validate_basepicture(bp)
+    assert [d.code.value for d in diagnostics] == ["SL-V048"]
+    assert "AbsentParam" in diagnostics[0].message
+
+
+def _single_module(
+    name: str,
+    parameters: list[Variable],
+    mappings: list[ParameterMapping] | None = None,
+) -> SingleModule:
+    return SingleModule(
+        header=_module_header(name),
+        moduleparameters=parameters,
+        parametermappings=mappings or [],
+    )
+
+
+def test_single_module_parameter_mappings_are_checked():
+    """A plain submodule declaration carries the same mapping contract as a type."""
+    child = _single_module("Child", [_var("EnableFlag", "boolean")], [_transfer("EnableFlag", "Counter")])
+    bp = _base_picture()
+    bp.localvariables = [_var("Counter", "integer")]
+    bp.submodules = [child]
+
+    diagnostics = validate_basepicture(bp)
+
+    assert [d.code.value for d in diagnostics] == ["SL-V027"]
+    assert "Child" in diagnostics[0].message
+
+
+def test_single_module_duplicate_mapping_target_is_reported():
+    child = _single_module(
+        "Child",
+        [_var("Gain", "real")],
+        [_transfer("Gain", "SpeedRef"), _transfer("gain", "SpeedRef")],
+    )
+    bp = _base_picture()
+    bp.localvariables = [_var("SpeedRef", "real")]
+    bp.submodules = [child]
+
+    assert [d.code.value for d in validate_basepicture(bp)] == ["SL-V049"]
+
+
+def test_single_module_unknown_mapping_target_is_reported():
+    child = _single_module("Child", [_var("Gain", "real")], [_transfer("Absent", "SpeedRef")])
+    bp = _base_picture()
+    bp.localvariables = [_var("SpeedRef", "real")]
+    bp.submodules = [child]
+
+    diagnostics = validate_basepicture(bp)
+
+    assert [d.code.value for d in diagnostics] == ["SL-V048"]
+    assert "Absent" in diagnostics[0].message
+
+
+def test_moduletype_definition_parameter_mappings_are_checked():
+    """A module-type definition's own transfers resolve in the file scope."""
+    moduletype = ModuleTypeDef(
+        name="Controller",
+        moduleparameters=[_var("EnableFlag", "boolean")],
+        parametermappings=[_transfer("EnableFlag", "CounterValue")],
+    )
+    bp = _base_picture()
+    bp.localvariables = [_var("CounterValue", "integer")]
+    bp.moduletype_defs = [moduletype]
+
+    diagnostics = validate_basepicture(bp)
+
+    assert [d.code.value for d in diagnostics] == ["SL-V027"]
+    assert "Module type Controller" in diagnostics[0].message
+
+
+def test_unknown_moduletype_still_reports_duplicate_mapping_targets():
+    """An unknown type hides the formals, not the purely local duplicate rule."""
+    bp = _base_picture()
+    bp.localvariables = [_var("SpeedRef", "real")]
+    bp.submodules = [
+        ModuleTypeInstance(
+            header=_module_header("Inst"),
+            moduletype_name="NotLoaded",
+            parametermappings=[_transfer("Gain", "SpeedRef"), _transfer("Gain", "SpeedRef")],
+        )
+    ]
+
+    assert [d.code.value for d in validate_basepicture(bp)] == ["SL-V058", "SL-V049"]
+
+
+def test_unknown_moduletype_name_reports_a_span_and_can_be_suppressed():
+    header = ModuleHeader(name="Inst", invoke_coord=(0.0, 0.0, 0.0, 1.0, 1.0), declaration_span=SourceSpan(3, 7, 1, 4))
+    bp = _base_picture()
+    bp.submodules = [ModuleTypeInstance(header=header, moduletype_name="NotLoaded")]
+
+    diagnostics = validate_basepicture(bp)
+
+    assert [d.code.value for d in diagnostics] == ["SL-V058"]
+    assert "NotLoaded" in diagnostics[0].message
+    assert diagnostics[0].span == SourceSpan(3, 7, 1, 4)
+    assert validate_basepicture(bp, allow_unresolved_external_datatypes=True) == ()
+
+
+def test_frame_module_identifiers_are_checked_like_a_single_module():
+    frame = FrameModule(
+        header=_module_header("Frame"),
+        moduleparameters=[_var("ModuleDef", "integer")],
+        localvariables=[_var("A" * 21, "integer")],
+        modulecodes=[ModuleCode(equationblocks=[_equation(name="X" * 21)])],
+    )
+    bp = _base_picture()
+    bp.submodules = [frame]
+
+    codes = [d.code.value for d in validate_basepicture(bp)]
+
+    assert codes.count("SL-V038") == 2
+    assert codes.count("SL-V039") == 1
+
+
+def test_local_datatype_wins_over_an_external_definition_of_the_same_name():
+    """A file's own definition decides its own types, as docs/validation.md says."""
+    local_integer = DataType(name="Reading", description=None, datecode=1, var_list=[_var("Field", "integer")])
+    external_boolean = DataType(name="Reading", description=None, datecode=2, var_list=[_var("Field", "boolean")])
+
+    file_integer = _typed_bp(
+        [_var("Rec", "Reading")],
+        Assignment(VarRef("Rec.Field"), 1),
+        datatypes=[local_integer],
+    )
+    assert [d.code.value for d in validate_basepicture(file_integer, external_datatypes=[external_boolean])] == []
+
+    # The other direction proves precedence: the file's boolean field wins, so
+    # the same integer assignment is now a mismatch.
+    file_boolean = _typed_bp(
+        [_var("Rec", "Reading")],
+        Assignment(VarRef("Rec.Field"), 1),
+        datatypes=[external_boolean],
+    )
+    assert [d.code.value for d in validate_basepicture(file_boolean, external_datatypes=[local_integer])] == ["SL-V029"]
+
+
+def test_const_propagates_through_a_dotted_write_target():
+    record = DataType(name="Rec", description=None, datecode=1, var_list=[_var("Field", "integer")])
+    bp = _typed_bp(
+        [_var("Rec", "Rec", const=True), _var("Mirror", "integer"), _var("Status", "integer")],
+        Assignment(VarRef("Rec.Field"), 1),
+        FuncCallStmt(FuncCall(name="CopyVariable", args=(VarRef("Mirror"), VarRef("Rec.Field"), VarRef("Status")))),
+        datatypes=[record],
+    )
+
+    diagnostics = [d for d in validate_basepicture(bp) if d.code is DiagnosticCode.WRITE_TO_CONST_VARIABLE]
+
+    assert len(diagnostics) == 2
+    assert all("Rec.Field" in d.message for d in diagnostics)
+
+
+def test_every_definition_of_a_duplicated_datatype_name_is_validated():
+    bp = _base_picture()
+    bp.datatype_defs = [
+        DataType(name="Rec", description=None, datecode=1, var_list=[_var("Bad", "NoSuchType")]),
+        DataType(name="Rec", description=None, datecode=2, var_list=[_var("Fine", "integer")]),
+    ]
+
+    diagnostics = [d for d in validate_basepicture(bp) if d.code is DiagnosticCode.UNKNOWN_DATATYPE_NAME]
+
+    assert [d.code.value for d in diagnostics] == ["SL-V020"]
+    assert "NoSuchType" in diagnostics[0].message
+
+
+def test_subseqtransition_starting_with_a_step_reports_its_own_code():
+    """A leading step in a SUBSEQTRANSITION is SL-V054, not the branch code."""
+    step = SFCStep(kind="init", name="Init", code=SFCCodeBlocks())
+    sub = SFCTransitionSub(
+        name="TSub",
+        body=[
+            SFCStep(kind="step", name="Inner", code=SFCCodeBlocks()),
+            SFCTransition(name="TrInner", condition=True),
+        ],
+    )
+    bp = _base_picture()
+    bp.modulecodes = [ModuleCode(sequences=[_sequence(step, SFCTransition(name="TrDone", condition=True), sub)])]
+
+    diagnostics = [d for d in validate_basepicture(bp) if d.code is DiagnosticCode.SUBSEQTRANSITION_STARTS_WITH_STEP]
+
+    assert [d.code.value for d in diagnostics] == ["SL-V054"]
+    assert "SUBSEQTRANSITION" in diagnostics[0].message
+    assert "ALTERNATIVESEQ" not in diagnostics[0].message
+
+
+def test_alternative_branch_starting_with_a_step_keeps_the_branch_code():
+    bp = _base_picture()
+    bp.modulecodes = [
+        ModuleCode(
+            sequences=[
+                _sequence(
+                    SFCStep(kind="init", name="Init", code=SFCCodeBlocks()),
+                    SFCAlternative(
+                        branches=[[SFCStep(kind="step", name="Bad", code=SFCCodeBlocks())]],
+                    ),
+                )
+            ]
+        )
+    ]
+
+    diagnostics = [d for d in validate_basepicture(bp) if d.code is DiagnosticCode.SFC_ALTERNATIVE_BRANCH_START]
+
+    assert [d.code.value for d in diagnostics] == ["SL-V023"]
+    assert "ALTERNATIVESEQ" in diagnostics[0].message
+
+
+def test_datatype_lookup_has_no_unicode_casefold_fallback():
+    record = DataType(name="strasse", description=None, datecode=1, var_list=[])
+    records = {fold_identifier("strasse"): record}
+
+    assert lookup_datatype(records, "strasse") is record
+    # Full Unicode case folding would equate these two names; SattLine does not.
+    assert lookup_datatype(records, "Straße") is None
+
+
+def test_signature_only_system_records_declare_and_type_their_builtin_arguments():
+    """The COMLI and PID parameter types resolve instead of reporting SL-V020."""
+    bp = _base_picture()
+    bp.localvariables = [
+        _var("Mess", "ComliMessage"),
+        _var("Data", "ByteRecord"),
+        _var("PidPar", "PidType"),
+        _var("Signal", "AnalogSignalIn"),
+        _var("Output", "AnalogSignalOut"),
+    ]
+    bp.modulecodes = [
+        ModuleCode(
+            equationblocks=[
+                _equation(
+                    FuncCallStmt(FuncCall(name="getreceivedcomlidata", args=(VarRef("Mess"), VarRef("Data")))),
+                    FuncCallStmt(
+                        FuncCall(name="pid", args=(VarRef("PidPar"), 1.0, VarRef("Signal"), VarRef("Output")))
+                    ),
+                )
+            ]
+        )
+    ]
+
+    assert validate_basepicture(bp) == ()
+
+
+def test_anytype_is_exempt_from_the_condition_and_ternary_rules():
+    bp = _typed_bp(
+        [_var("AnyVar", "AnyType"), _var("Count", "integer"), _var("Flag", "boolean")],
+        IfStmt(branches=((VarRef("AnyVar"), (Assignment(VarRef("Flag"), True),)),), else_block=None),
+        Assignment(VarRef("Count"), TernaryOp(branches=((True, VarRef("AnyVar")),), else_expr=VarRef("Count"))),
+    )
+
+    codes = [d.code.value for d in validate_basepicture(bp)]
+
+    assert "SL-V030" not in codes
+    assert "SL-V044" not in codes
+
+
+def test_anytype_is_exempt_from_the_enable_tail_rule():
+    bp = _base_picture()
+    bp.localvariables = [_var("AnyVar", "AnyType")]
+    bp.moduledefs = [
+        ModuleDef(
+            graph_objects=[
+                GraphObject("RectangleObject", properties={"enable_tail": VarRef("AnyVar")}),
+            ]
+        )
+    ]
+
+    assert [d.code.value for d in validate_basepicture(bp) if d.code is DiagnosticCode.CONDITION_NOT_BOOLEAN] == []
+
+
+def test_validator_signature_view_is_cached_and_has_no_write_position_copy():
+    first = builtin_function_signature("CopyTime")
+    second = builtin_function_signature("copytime")
+
+    assert first is not None and first is second
+    assert [(p.name, p.direction) for p in first.parameters] == [("Source", "in var"), ("Destination", "out")]
 
 
 def test_diagnostic_model_defaults():
@@ -1119,9 +1470,24 @@ def test_operand_rule_allows_temporal_against_numeric_literal_only():
         Assignment(VarRef("Sink"), Compare(VarRef("DurFull"), "==", VarRef("DurFull"))),
         Assignment(VarRef("Sink"), Compare(VarRef("Stamp"), ">", VarRef("DurFull"))),
     )
-    # Both operands of each comparison are temporal, and the rule reports once
-    # per offending operand, so two comparisons yield four diagnostics.
+    # Both operands of each comparison are temporal and each offending operand
+    # gets its own finding, so two comparisons yield four diagnostics.
     assert [d.code.value for d in validate_basepicture(temporal_side)] == ["SL-V028"] * 4
+
+
+def test_operand_diagnostics_point_at_each_operand_not_the_whole_comparison():
+    """Each operand finding carries its own span and names its operand."""
+    _bp, diagnostics = parse_and_validate(_raw(_corpus("invalid/TemporalVsTemporalCompare.s")))
+    operand_findings = [d for d in diagnostics if d.code is DiagnosticCode.OPERAND_NOT_NUMERIC]
+
+    assert len(operand_findings) == 12
+    first_comparison = operand_findings[:2]
+    spans = [d.span for d in first_comparison]
+    assert all(span is not None for span in spans)
+    assert spans[0] != spans[1]
+    assert [span.column for span in spans if span is not None] == [14, 25]
+    assert "ZeroDur" in first_comparison[0].message
+    assert "ZeroFull" in first_comparison[1].message
 
 
 def test_operand_rule_allows_boolean_equality():

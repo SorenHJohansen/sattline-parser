@@ -16,8 +16,11 @@ Use it for ordinary tree work::
             print(event.relation, event.node.name)
 
 ``walk`` is node-only. Literal values are leaves; the walker does not emit
-them. ``NodeVisitor`` is the subclassing form, and ``WalkEvent`` carries the
-relation and ancestry of each visited node.
+them. ``iter_literal_leaves`` reads the literal values a node holds, and
+``LiteralLeaf`` describes one. ``NodeVisitor`` is the subclassing form, and
+``WalkEvent`` carries the relation and ancestry of each visited node.
+``tail_list`` is the default factory for tail-bearing fields, and
+``is_expression_tail`` is the shared predicate for a computed ``Tail``.
 """
 
 from __future__ import annotations

@@ -15,6 +15,7 @@ from sattline_parser.models.expressions import (
     Assignment,
     BinOp,
     BoolOp,
+    CodeComment,
     Compare,
     FuncCall,
     FuncCallStmt,
@@ -27,12 +28,9 @@ from sattline_parser.models.expressions import (
 )
 from sattline_parser.models.tails import LitStringTail, Tail, VarTail
 
-from ._module_shared import meta_span, v_args
+from ._module_shared import OUTVAR_TOKEN, meta_span, v_args
 
 __all__ = ["ExpressionsMixin", "_ExpressionsMixin"]
-
-#: Terminal type of the ``OutVar_`` prefix; ``InVar_`` is the default.
-_OUTVAR_TOKEN = "OUTVAR_PREFIX"  # nosec B105 - grammar token literal, not a credential
 
 type BoundValue = str | bool | int | float | LitStringTail
 
@@ -43,7 +41,7 @@ def _bound_tail(items: list[object], span: SourceSpan | None = None) -> VarTail:
     value: BoundValue | None = None
     for item in items:
         if isinstance(item, Token):
-            if item.type == _OUTVAR_TOKEN:
+            if item.type == OUTVAR_TOKEN:
                 direction = "out"
             continue
         if value is None and isinstance(item, (str, bool, int, float, LitStringTail)):
@@ -59,6 +57,26 @@ def _passthrough(items: list[object], rule: str) -> object:
         if not isinstance(item, Token):
             return item
     raise ValueError(f"{rule} expected a non-Token child; got: {items!r}")
+
+
+def _boolean_chain(items: list[Any], meta: Any, op: Literal["OR", "AND"]) -> SLExpression:
+    """Build one n-ary ``BoolOp``, or pass a single expression through."""
+    exprs = [it for it in items if not isinstance(it, Token)]
+    if len(exprs) == 1:
+        return cast(SLExpression, exprs[0])
+    return BoolOp(op=op, operands=tuple(exprs), span=meta_span(meta))
+
+
+def _fold_binary(items: list[Any], meta: Any) -> SLExpression | None:
+    """Fold an additive or multiplicative chain left-associatively into ``BinOp``."""
+    values = [it for it in items if it is not None and not isinstance(it, Token)]
+    operators = [str(it) for it in items if isinstance(it, Token)]
+    if len(values) <= 1:
+        return values[0] if values else None
+    result = values[0]
+    for op, rhs in zip(operators, values[1:], strict=False):
+        result = BinOp(left=result, op=op, right=rhs, span=meta_span(meta))
+    return result
 
 
 class _ExpressionsMixin:
@@ -121,18 +139,12 @@ class _ExpressionsMixin:
     @v_args(meta=True)
     def or_expression(self, meta: Any, items: list[Any]) -> SLExpression:
         """Grammar or_expression -> BoolOp("OR", ...) | single expression."""
-        exprs = [it for it in items if not isinstance(it, Token)]
-        if len(exprs) == 1:
-            return exprs[0]
-        return BoolOp(op="OR", operands=tuple(exprs), span=meta_span(meta))
+        return _boolean_chain(items, meta, "OR")
 
     @v_args(meta=True)
     def and_expression(self, meta: Any, items: list[Any]) -> SLExpression:
         """Grammar and_expression -> BoolOp("AND", ...) | single expression."""
-        exprs = [it for it in items if not isinstance(it, Token)]
-        if len(exprs) == 1:
-            return exprs[0]
-        return BoolOp(op="AND", operands=tuple(exprs), span=meta_span(meta))
+        return _boolean_chain(items, meta, "AND")
 
     @v_args(meta=True)
     def not_expression(self, meta: Any, items: list[Any]) -> SLExpression:
@@ -163,26 +175,12 @@ class _ExpressionsMixin:
     @v_args(meta=True)
     def additive_expression(self, meta: Any, items: list[Any]) -> SLExpression | None:
         """Grammar additive_expression -> BinOp (left-associative) | single expression."""
-        values = [it for it in items if it is not None and not isinstance(it, Token)]
-        operators = [str(it) for it in items if isinstance(it, Token)]
-        if len(values) <= 1:
-            return values[0] if values else None
-        result = values[0]
-        for op, rhs in zip(operators, values[1:], strict=False):
-            result = BinOp(left=result, op=op, right=rhs, span=meta_span(meta))
-        return result
+        return _fold_binary(items, meta)
 
     @v_args(meta=True)
     def multiplicative_expression(self, meta: Any, items: list[Any]) -> SLExpression | None:
         """Grammar multiplicative_expression -> BinOp (left-associative) | single expression."""
-        values = [it for it in items if it is not None and not isinstance(it, Token)]
-        operators = [str(it) for it in items if isinstance(it, Token)]
-        if len(values) <= 1:
-            return values[0] if values else None
-        result = values[0]
-        for op, rhs in zip(operators, values[1:], strict=False):
-            result = BinOp(left=result, op=op, right=rhs, span=meta_span(meta))
-        return result
+        return _fold_binary(items, meta)
 
     @v_args(meta=True)
     def unary_expression(self, meta: Any, items: list[Any]) -> SLExpression:
@@ -303,14 +301,18 @@ class _ExpressionsMixin:
         return IfStmt(branches=tuple(branches), else_block=else_block, span=meta_span(meta))
 
     @v_args(meta=True)
-    def statement(self, meta: Any, items: list[Any]) -> Any:
-        """Grammar statement -> unwrapped Assignment | FuncCallStmt | IfStmt | CodeComment."""
+    def statement(self, meta: Any, items: list[Any]) -> CodeItem:
+        """Grammar statement -> Assignment | FuncCallStmt | IfStmt | CodeComment."""
         for it in items:
-            if not isinstance(it, Token):
-                # Wrap bare FuncCall in FuncCallStmt
-                if isinstance(it, FuncCall):
-                    return FuncCallStmt(call=it, span=meta_span(meta))
+            if isinstance(it, Token):
+                continue
+            # Wrap a bare FuncCall in FuncCallStmt; everything else is already
+            # a code item.
+            if isinstance(it, FuncCall):
+                return FuncCallStmt(call=it, span=meta_span(meta))
+            if isinstance(it, (Assignment, FuncCallStmt, IfStmt, CodeComment)):
                 return it
+            raise ValueError(f"statement expected a code item; got: {type(it).__name__}: {it!r}")
         types = ", ".join(type(x).__name__ for x in items)
         raise ValueError(
             f"statement expected a non-Token child "

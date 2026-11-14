@@ -7,12 +7,13 @@ validation findings.
 
 ``SattLineProject.load`` resolves targets across ordered roots, reads dependency
 sidecars, loads dependencies first, parses ``.g`` / ``.y`` graphics and ``.p`` /
-``.q`` distribution companions, and (with ``validate=FULL``) runs the
-single-file validator against the definitions visible
+``.q`` distribution companions, and (with ``validate=INVOKED``, the default)
+runs the single-file validator against the definitions visible
 from already-loaded dependencies. The loader records library and origin
-provenance, marks external-dependent findings tentative when a non-strict load
-skips part of the closure, reports definition datecode conflicts, and rejects
-recursive dependency sidecars and recursive module-type instantiation.
+provenance, marks a finding tentative when the definition it needs may have come
+from a dependency a non-strict load skipped, reports definition datecode
+conflicts, and rejects recursive dependency sidecars and recursive module-type
+instantiation.
 """
 
 from __future__ import annotations

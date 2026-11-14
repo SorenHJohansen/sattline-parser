@@ -1,10 +1,7 @@
 from __future__ import annotations
 
 import textwrap
-from collections.abc import Callable
 from typing import TYPE_CHECKING
-
-from ..formatting.formatter import format_expr, format_list, format_optional, format_seq_nodes
 
 if TYPE_CHECKING:
     from .ast_model import (
@@ -12,6 +9,7 @@ if TYPE_CHECKING:
         CodeComment,
         CodeItem,
         DataType,
+        Equation,
         FrameModule,
         GraphObject,
         InteractObject,
@@ -20,15 +18,12 @@ if TYPE_CHECKING:
         ModuleTypeDef,
         ModuleTypeInstance,
         ParameterMapping,
+        Sequence,
         SFCBodyItem,
         SingleModule,
         Variable,
     )
 
-type FormatExprFn = Callable[..., str]
-type FormatListFn = Callable[..., str]
-type FormatOptionalFn = Callable[..., str]
-type FormatSeqNodesFn = Callable[..., str]
 #: Values a variable init or parameter-mapping source can hold: a literal, a
 #: boolean, or a parsed ``time_value`` dictionary.
 type InitValue = bool | int | float | str | dict[str, str | None]
@@ -82,7 +77,42 @@ def moduletype_def_list() -> list[ModuleTypeDef]:
     return []
 
 
+def render_datatype(datatype: DataType) -> str:
+    from ..formatting.formatter import format_list  # noqa: PLC0415
+
+    lines = [
+        f"Name       : {datatype.name!r}",
+        f"Description: {datatype.description!r}",
+        f"Datecode   : {datatype.datecode!r}",
+        f"OriginFile : {datatype.origin_file!r}",
+        f"OriginLib  : {datatype.origin_lib!r}",
+        f"Variables in datatype   : {format_list(datatype.var_list)}",
+    ]
+    return "Datatype{\n" + textwrap.indent("\n".join(lines), "    ") + "}"
+
+
+def render_sequence(sequence: Sequence) -> str:
+    from ..formatting.formatter import format_list  # noqa: PLC0415
+
+    return (
+        f"Sequence(name={sequence.name}, pos={sequence.position}, "
+        f"type={sequence.type}, control={sequence.seqcontrol}, timer={sequence.seqtimer},\n"
+        f"    code={format_list(sequence.code)})"
+    )
+
+
+def render_equation(equation: Equation) -> str:
+    from ..formatting.formatter import format_list  # noqa: PLC0415
+
+    return f"Equation(name={equation.name}, pos={equation.position},\n    code={format_list(equation.code)})"
+
+
 def render_module_code(module_code: ModuleCode) -> str:
+    # Imported at call time: ``formatting`` imports the model expression nodes,
+    # so a module-level import here would make the model and formatting layers
+    # mutually dependent. These renderers only run from ``__str__``.
+    from ..formatting.formatter import format_expr, format_seq_nodes  # noqa: PLC0415
+
     seq_lines: list[str] = []
     if module_code.sequences:
         for sequence in module_code.sequences:
@@ -114,6 +144,8 @@ def render_module_code(module_code: ModuleCode) -> str:
 
 
 def render_single_module(module: SingleModule) -> str:
+    from ..formatting.formatter import format_list, format_optional  # noqa: PLC0415
+
     lines = [
         f"Name            : {module.header.name!r}",
         f"Enable          : {module.header.enable}",
@@ -131,6 +163,8 @@ def render_single_module(module: SingleModule) -> str:
 
 
 def render_frame_module(module: FrameModule) -> str:
+    from ..formatting.formatter import format_list, format_optional  # noqa: PLC0415
+
     lines = [
         f"Name         : {module.header.name!r}",
         f"Enable       : {module.header.enable}",
@@ -145,6 +179,8 @@ def render_frame_module(module: FrameModule) -> str:
 
 
 def render_moduletype_instance(instance: ModuleTypeInstance) -> str:
+    from ..formatting.formatter import format_list  # noqa: PLC0415
+
     lines = [
         f"Name             : {instance.header.name!r}",
         f"Enable           : {instance.header.enable}",
@@ -157,6 +193,8 @@ def render_moduletype_instance(instance: ModuleTypeInstance) -> str:
 
 
 def render_moduletype_def(moduletype: ModuleTypeDef) -> str:
+    from ..formatting.formatter import format_list, format_optional  # noqa: PLC0415
+
     lines = [
         f"Name            : {moduletype.name!r}",
         f"Datecode        : {moduletype.datecode!r}",
@@ -174,6 +212,8 @@ def render_moduletype_def(moduletype: ModuleTypeDef) -> str:
 
 
 def render_base_picture(base_picture: BasePicture) -> str:
+    from ..formatting.formatter import format_list  # noqa: PLC0415
+
     lines = [
         f"Name: {base_picture.name!r}\n"
         f"Position: {base_picture.position!r}\n\n"

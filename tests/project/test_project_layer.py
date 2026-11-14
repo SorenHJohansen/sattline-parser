@@ -30,6 +30,8 @@ from sattline_parser.project import (
     SattLineProject,
 )
 
+from ._support import write_file
+
 _SMALL_PROGRAM = (
     '"SyntaxVersion"\n'
     '"OriginalFileDate"\n'
@@ -126,7 +128,7 @@ def test_project_dependencies_and_dependents() -> None:
     project = SattLineProject._from_programs({"A": a, "B": b})
     assert project.dependencies_of("A") == ("B",)
     assert project.dependencies_of("a") == ("B",)
-    assert project.dependents_of("b") == ("a",)
+    assert project.dependents_of("b") == ("A",)
     assert project.dependents_of("A") == ()
 
 
@@ -151,17 +153,10 @@ def test_dependency_graph_standalone() -> None:
     assert graph.dependents_of("other") == ()
 
 
-def _write(root: Path, rel: str, content: str = "") -> Path:
-    p = root / rel
-    p.parent.mkdir(parents=True, exist_ok=True)
-    p.write_text(content, encoding="utf-8")
-    return p
-
-
 def test_project_load_wires_discovery_and_dependencies(tmp_path: Path) -> None:
-    _write(tmp_path, "Main.s", _SMALL_PROGRAM)
-    _write(tmp_path, "Main.l", "Lib\n")
-    _write(tmp_path, "Lib.s", _SMALL_PROGRAM)
+    write_file(tmp_path, "Main.s", _SMALL_PROGRAM)
+    write_file(tmp_path, "Main.l", "Lib\n")
+    write_file(tmp_path, "Lib.s", _SMALL_PROGRAM)
     project = SattLineProject.load([tmp_path], LoadMode.DRAFT, ["Main"])
     assert project.get("Main").dependencies == ("Lib",)
     assert project.get("Lib").name == "Lib"
@@ -169,7 +164,7 @@ def test_project_load_wires_discovery_and_dependencies(tmp_path: Path) -> None:
 
 
 def test_project_load_accepts_cache_dir(tmp_path: Path) -> None:
-    _write(tmp_path, "Main.s", _SMALL_PROGRAM)
+    write_file(tmp_path, "Main.s", _SMALL_PROGRAM)
     cache_dir = tmp_path / "cache"
     project = SattLineProject.load([tmp_path], LoadMode.DRAFT, ["Main"], cache_dir=cache_dir)
     assert project.get("Main").name == "Main"

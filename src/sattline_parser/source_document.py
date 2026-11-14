@@ -118,26 +118,43 @@ def _line_starts(text: str) -> tuple[int, ...]:
 class SourceDocument:
     """Original text, normalized text, and the mapping between the two.
 
-    ``char_map`` maps each character offset of ``normalized_text`` to the
+    :attr:`char_map` maps each character offset of ``normalized_text`` to the
     corresponding offset in ``original_text``, or :data:`GENERATED` when the
-    character was produced by the preprocessor (inserted/generated text).
+    character was produced by the preprocessor (inserted/generated text). It is
+    ``None`` when no map was materialized, which is what an identity document
+    carries. A document whose normalized text differs from its original text
+    must supply a map; omitting one would silently claim the two texts have the
+    same offsets.
     """
 
-    __slots__ = ("_char_map", "_is_identity", "_line_starts", "normalized_text", "original_text")
+    __slots__ = ("_char_map", "_line_starts", "normalized_text", "original_text")
 
     def __init__(
         self,
         original_text: str,
         normalized_text: str,
-        char_map: tuple[int, ...] | None,
+        char_map: tuple[int, ...] | None = None,
     ) -> None:
         if char_map is not None and len(char_map) != len(normalized_text):
             raise ValueError("char_map length must match normalized_text length")
+        if char_map is None and normalized_text != original_text:
+            raise ValueError("char_map is required when normalized_text differs from original_text")
         self.original_text = original_text
         self.normalized_text = normalized_text
         self._char_map = char_map
-        self._line_starts = _line_starts(original_text)
-        self._is_identity = original_text == normalized_text
+        # The line index is only needed when a position is rendered, so it is
+        # built on first use. Most parses never ask for a line and column.
+        self._line_starts: tuple[int, ...] | None = None
+
+    @property
+    def char_map(self) -> tuple[int, ...] | None:
+        """Read-only per-character map, or ``None`` for an identity document.
+
+        Each entry is a real original offset (``>= 0``) or :data:`GENERATED`.
+        The map is never mutated after construction, so the property hands out
+        the stored tuple instead of a copy.
+        """
+        return self._char_map
 
     @classmethod
     def identity(cls, text: str) -> SourceDocument:
@@ -154,8 +171,16 @@ class SourceDocument:
         return cls(text, text, None)
 
     def is_identity(self) -> bool:
-        """True when no preprocessing took place (original == normalized)."""
-        return self._is_identity
+        """True when no per-character map exists (nothing was decoded)."""
+        return self._char_map is None
+
+    def _line_index(self) -> tuple[int, ...]:
+        """The cached offset of every line start in the original text."""
+        starts = self._line_starts
+        if starts is None:
+            starts = _line_starts(self.original_text)
+            self._line_starts = starts
+        return starts
 
     def map_position(self, norm_offset: int) -> int | None:
         """Map a normalized offset to an original offset.
@@ -211,7 +236,10 @@ class SourceDocument:
                 boundary = self.map_position(norm_start)
                 pos = 0 if boundary is None else boundary
                 return pos, pos
-            return norm_start, norm_end
+            limit = len(self.original_text)
+            start = min(max(norm_start, 0), limit)
+            end = min(max(norm_end, start), limit)
+            return start, end
         if norm_start >= norm_end:
             boundary = self.map_position(norm_start)
             pos = 0 if boundary is None else boundary
@@ -245,9 +273,10 @@ class SourceDocument:
             orig_offset = 0
         if orig_offset > len(self.original_text):
             orig_offset = len(self.original_text)
-        index = bisect_right(self._line_starts, orig_offset) - 1
+        line_starts = self._line_index()
+        index = bisect_right(line_starts, orig_offset) - 1
         line = index + 1
-        column = orig_offset - self._line_starts[index] + 1
+        column = orig_offset - line_starts[index] + 1
         return line, column
 
     def is_decoded_range(self, norm_start: int, norm_end: int) -> bool:
@@ -275,8 +304,10 @@ def _remap_span(target: Token | Meta, doc: SourceDocument) -> bool:
     end_pos = getattr(target, "end_pos", None)
     if not isinstance(start_pos, int) or not isinstance(end_pos, int):
         return False
-    # ``map_range`` never refuses a range; a node whose ends do not lie in the
-    # normalized text keeps its recorded span rather than being nudged to 0.
+    # ``map_position`` refuses only a negative offset. A position past the end of
+    # the normalized text is clamped to the end boundary, so a node whose ends
+    # are out of range keeps a meaningful clamped span instead of being nudged
+    # to 0 or left in normalized coordinates.
     if doc.map_position(start_pos) is None or doc.map_position(end_pos - 1) is None:
         return False
     mapped_start, mapped_end = doc.map_range(start_pos, end_pos)

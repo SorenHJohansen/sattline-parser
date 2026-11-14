@@ -14,7 +14,13 @@ from unittest.mock import patch
 import pytest
 
 from sattline_parser.api import parse_source_file
-from sattline_parser.models.ast_model import BasePicture
+from sattline_parser.models.ast_model import (
+    BasePicture,
+    FrameModule,
+    ModuleHeader,
+    ModuleTypeInstance,
+    SingleModule,
+)
 from sattline_parser.project import (
     ArtifactLoadError,
     DependencyCycleError,
@@ -22,12 +28,16 @@ from sattline_parser.project import (
     DependencyParseError,
     LoadMode,
     ProjectLoadError,
+    ProjectLookup,
     SattLineProject,
+    StructuralProjectError,
     read_dependency_names,
 )
 from sattline_parser.project import loader as project_loader
 from sattline_parser.project.ast_cache import FileASTCache, source_snapshot
 from sattline_parser.project.models import LoadDiagnosticKind, SidecarState
+
+from ._support import write_file
 
 _CODE = """"Syntax version 2.23, date: 2026-04-23-12:00:00.000 N"
 "Original file date: ---"
@@ -62,13 +72,6 @@ t
 """
 
 _GFX_UNTERMINATED = " 4\n some\n none\n"
-
-
-def _write(root: Path, rel: str, content: str = "") -> Path:
-    p = root / rel
-    p.parent.mkdir(parents=True, exist_ok=True)
-    p.write_text(content, encoding="utf-8")
-    return p
 
 
 def _load(
@@ -151,7 +154,7 @@ def test_read_dependency_names_trim_and_ignore_blanks(tmp_path: Path) -> None:
 
 
 def test_load_resolves_single_target(tmp_path: Path) -> None:
-    _write(tmp_path, "Main.s", _CODE)
+    write_file(tmp_path, "Main.s", _CODE)
     project = _load(tmp_path)
     program = project.get("Main")
     assert program.name == "Main"
@@ -166,19 +169,19 @@ def test_load_resolves_single_target(tmp_path: Path) -> None:
 
 
 def test_load_resolves_multiple_targets(tmp_path: Path) -> None:
-    _write(tmp_path, "A.s", _CODE)
-    _write(tmp_path, "B.s", _CODE)
+    write_file(tmp_path, "A.s", _CODE)
+    write_file(tmp_path, "B.s", _CODE)
     project = _load(tmp_path, targets=("A", "B"))
     assert ("a" in project) and ("b" in project)
     assert len(project.programs()) == 2
 
 
 def test_load_recursive_dependencies(tmp_path: Path) -> None:
-    _write(tmp_path, "Main.s", _CODE)
-    _write(tmp_path, "Main.l", "Lib1\nLib2\n")
-    _write(tmp_path, "Lib1.s", _CODE)
-    _write(tmp_path, "Lib1.l", "Lib2\n")
-    _write(tmp_path, "Lib2.s", _CODE)
+    write_file(tmp_path, "Main.s", _CODE)
+    write_file(tmp_path, "Main.l", "Lib1\nLib2\n")
+    write_file(tmp_path, "Lib1.s", _CODE)
+    write_file(tmp_path, "Lib1.l", "Lib2\n")
+    write_file(tmp_path, "Lib2.s", _CODE)
     project = _load(tmp_path)
     assert project.dependencies_of("Main") == ("Lib1", "Lib2")
     assert project.dependencies_of("Lib1") == ("Lib2",)
@@ -187,23 +190,25 @@ def test_load_recursive_dependencies(tmp_path: Path) -> None:
 
 
 def test_load_diamond_dependency_loads_once(tmp_path: Path) -> None:
-    _write(tmp_path, "Main.s", _CODE)
-    _write(tmp_path, "Main.l", "A\nB\n")
-    _write(tmp_path, "A.s", _CODE)
-    _write(tmp_path, "A.l", "C\n")
-    _write(tmp_path, "B.s", _CODE)
-    _write(tmp_path, "B.l", "C\n")
-    _write(tmp_path, "C.s", _CODE)
+    write_file(tmp_path, "Main.s", _CODE)
+    write_file(tmp_path, "Main.l", "A\nB\n")
+    write_file(tmp_path, "A.s", _CODE)
+    write_file(tmp_path, "A.l", "C\n")
+    write_file(tmp_path, "B.s", _CODE)
+    write_file(tmp_path, "B.l", "C\n")
+    write_file(tmp_path, "C.s", _CODE)
     project = _load(tmp_path)
     assert len(project.programs()) == 4
-    assert project.dependents_of("C") == ("a", "b")
+    # Dependents are spelled the way each dependent declares itself, matching
+    # ``dependencies_of``.
+    assert project.dependents_of("C") == ("A", "B")
     assert project.graph().nodes == ("a", "b", "c", "main")
 
 
 def test_load_duplicate_dependency_loads_once(tmp_path: Path) -> None:
-    _write(tmp_path, "Main.s", _CODE)
-    _write(tmp_path, "Main.l", "Lib\nLib\n")
-    _write(tmp_path, "Lib.s", _CODE)
+    write_file(tmp_path, "Main.s", _CODE)
+    write_file(tmp_path, "Main.l", "Lib\nLib\n")
+    write_file(tmp_path, "Lib.s", _CODE)
     project = _load(tmp_path)
     assert len(project.programs()) == 2
     assert project.dependencies_of("Main") == ("Lib", "Lib")
@@ -211,16 +216,16 @@ def test_load_duplicate_dependency_loads_once(tmp_path: Path) -> None:
 
 
 def test_load_cycle_is_an_error_not_an_edge(tmp_path: Path) -> None:
-    _write(tmp_path, "A.s", _CODE)
-    _write(tmp_path, "A.l", "B\n")
-    _write(tmp_path, "B.s", _CODE)
-    _write(tmp_path, "B.l", "A\n")
+    write_file(tmp_path, "A.s", _CODE)
+    write_file(tmp_path, "A.l", "B\n")
+    write_file(tmp_path, "B.s", _CODE)
+    write_file(tmp_path, "B.l", "A\n")
     with pytest.raises(DependencyCycleError):
         _load(tmp_path, targets=("A",))
 
 
 def test_load_targets_canonicalized_by_case(tmp_path: Path) -> None:
-    _write(tmp_path, "Main.s", _CODE)
+    write_file(tmp_path, "Main.s", _CODE)
     project = _load(tmp_path, targets=("Main", "MAIN"))
     assert len(project.programs()) == 1
     assert project.get("mAiN").name == "Main"
@@ -229,16 +234,16 @@ def test_load_targets_canonicalized_by_case(tmp_path: Path) -> None:
 def test_load_resolves_dependencies_across_roots(tmp_path: Path) -> None:
     consumer = tmp_path / "consumer"
     library = tmp_path / "library"
-    _write(consumer, "Client.s", _CODE)
-    _write(consumer, "Client.l", "LibA\n")
-    _write(library, "LibA.s", _CODE)
-    _write(library, "LibA.l", "LibB\n")
-    _write(consumer, "LibB.s", _CODE)
-    _write(consumer, "LibB.l", "ConsumerSide\n")
-    _write(library, "LibB.s", _CODE)
-    _write(library, "LibB.l", "LibrarySide\n")
-    _write(consumer, "ConsumerSide.s", _CODE)
-    _write(library, "LibrarySide.s", _CODE)
+    write_file(consumer, "Client.s", _CODE)
+    write_file(consumer, "Client.l", "LibA\n")
+    write_file(library, "LibA.s", _CODE)
+    write_file(library, "LibA.l", "LibB\n")
+    write_file(consumer, "LibB.s", _CODE)
+    write_file(consumer, "LibB.l", "ConsumerSide\n")
+    write_file(library, "LibB.s", _CODE)
+    write_file(library, "LibB.l", "LibrarySide\n")
+    write_file(consumer, "ConsumerSide.s", _CODE)
+    write_file(library, "LibrarySide.s", _CODE)
 
     project = SattLineProject.load([consumer, library], LoadMode.DRAFT, ["Client"])
 
@@ -249,8 +254,8 @@ def test_load_resolves_dependencies_across_roots(tmp_path: Path) -> None:
 
 
 def test_load_missing_dependency_strict_raises(tmp_path: Path) -> None:
-    _write(tmp_path, "Main.s", _CODE)
-    _write(tmp_path, "Main.l", "Ghost\n")
+    write_file(tmp_path, "Main.s", _CODE)
+    write_file(tmp_path, "Main.l", "Ghost\n")
     with pytest.raises(DependencyNotFoundError) as exc_info:
         _load(tmp_path)
     assert exc_info.value.program == "Main"
@@ -258,7 +263,7 @@ def test_load_missing_dependency_strict_raises(tmp_path: Path) -> None:
 
 
 def test_load_missing_target_raises_without_dependency(tmp_path: Path) -> None:
-    _write(tmp_path, "Other.s", _CODE)
+    write_file(tmp_path, "Other.s", _CODE)
     with pytest.raises(DependencyNotFoundError) as exc_info:
         _load(tmp_path, targets=("Ghost",))
     assert exc_info.value.program == "Ghost"
@@ -266,7 +271,7 @@ def test_load_missing_target_raises_without_dependency(tmp_path: Path) -> None:
 
 
 def test_load_target_parse_failure_raises_artifact_error(tmp_path: Path) -> None:
-    _write(tmp_path, "Main.s", _BROKEN)
+    write_file(tmp_path, "Main.s", _BROKEN)
     with pytest.raises(ArtifactLoadError) as exc_info:
         _load(tmp_path)
     assert exc_info.value.program == "Main"
@@ -274,9 +279,9 @@ def test_load_target_parse_failure_raises_artifact_error(tmp_path: Path) -> None
 
 
 def test_load_dependency_parse_failure_raises_dependency_error(tmp_path: Path) -> None:
-    _write(tmp_path, "Main.s", _CODE)
-    _write(tmp_path, "Main.l", "Broken\n")
-    _write(tmp_path, "Broken.s", _BROKEN)
+    write_file(tmp_path, "Main.s", _CODE)
+    write_file(tmp_path, "Main.l", "Broken\n")
+    write_file(tmp_path, "Broken.s", _BROKEN)
     with pytest.raises(DependencyParseError) as exc_info:
         _load(tmp_path)
     assert exc_info.value.program == "Main"
@@ -284,7 +289,7 @@ def test_load_dependency_parse_failure_raises_dependency_error(tmp_path: Path) -
 
 
 def test_load_unreadable_deps_file_raises(tmp_path: Path) -> None:
-    _write(tmp_path, "Main.s", _CODE)
+    write_file(tmp_path, "Main.s", _CODE)
     (tmp_path / "Main.l").mkdir(exist_ok=True)
     with pytest.raises(DependencyParseError) as exc_info:
         _load(tmp_path)
@@ -293,9 +298,9 @@ def test_load_unreadable_deps_file_raises(tmp_path: Path) -> None:
 
 
 def test_load_strict_false_skips_missing_dependency(tmp_path: Path) -> None:
-    _write(tmp_path, "Main.s", _CODE)
-    _write(tmp_path, "Main.l", "Ghost\n")
-    _write(tmp_path, "Ok.s", _CODE)
+    write_file(tmp_path, "Main.s", _CODE)
+    write_file(tmp_path, "Main.l", "Ghost\n")
+    write_file(tmp_path, "Ok.s", _CODE)
     project = _load(tmp_path, targets=("Ok", "Main"), strict=False)
     assert "ok" in project and "main" in project
     assert "ghost" not in project
@@ -307,10 +312,10 @@ def test_load_strict_false_skips_missing_dependency(tmp_path: Path) -> None:
 
 
 def test_load_strict_false_skips_broken_code(tmp_path: Path) -> None:
-    _write(tmp_path, "Main.s", _CODE)
-    _write(tmp_path, "Main.l", "Broken\n")
-    _write(tmp_path, "Broken.s", _BROKEN)
-    _write(tmp_path, "Ok.s", _CODE)
+    write_file(tmp_path, "Main.s", _CODE)
+    write_file(tmp_path, "Main.l", "Broken\n")
+    write_file(tmp_path, "Broken.s", _BROKEN)
+    write_file(tmp_path, "Ok.s", _CODE)
     project = _load(tmp_path, targets=("Ok", "Main"), strict=False)
     assert "ok" in project and "main" in project
     assert "broken" not in project
@@ -320,18 +325,20 @@ def test_load_strict_false_skips_broken_code(tmp_path: Path) -> None:
 
 
 def test_load_draft_fallback_extensions(tmp_path: Path) -> None:
-    _write(tmp_path, "Main.x", _CODE)
-    _write(tmp_path, "Main.z", "Lib\n")
-    _write(tmp_path, "Lib.x", _CODE)
+    write_file(tmp_path, "Main.x", _CODE)
+    write_file(tmp_path, "Main.z", "Lib\n")
+    write_file(tmp_path, "Lib.x", _CODE)
     project = _load(tmp_path)
     assert project.get("Main").format.code_ext == ".x"
     assert project.get("Main").format.deps_ext == ".z"
-    assert project.get("Main").format.mode is LoadMode.DRAFT
+    # The resolved body's suffix decides the artifact family, so a draft load
+    # that fell back to an official body reports the official family.
+    assert project.get("Main").format.mode is LoadMode.OFFICIAL
 
 
 def test_load_arbitrary_graphics_companion_does_not_raise(tmp_path: Path) -> None:
-    _write(tmp_path, "Main.s", _CODE)
-    _write(tmp_path, "Main.g", "GRAPHICS")
+    write_file(tmp_path, "Main.s", _CODE)
+    write_file(tmp_path, "Main.g", "GRAPHICS")
     project = _load(tmp_path)
     program = project.programs()["main"]
     assert program.graphics is not None
@@ -339,13 +346,13 @@ def test_load_arbitrary_graphics_companion_does_not_raise(tmp_path: Path) -> Non
 
 
 def test_load_empty_targets(tmp_path: Path) -> None:
-    _write(tmp_path, "Main.s", _CODE)
+    write_file(tmp_path, "Main.s", _CODE)
     project = _load(tmp_path, targets=())
     assert len(project.programs()) == 0
 
 
 def test_load_debug_callback(tmp_path: Path) -> None:
-    _write(tmp_path, "Main.s", _CODE)
+    write_file(tmp_path, "Main.s", _CODE)
     debug: list[str] = []
     _load(tmp_path, debug=debug)
     assert any("Visiting: Main" in line for line in debug)
@@ -359,9 +366,9 @@ def _spy_on_parse(call_count: list[int]) -> Generator[None]:
 
 
 def test_load_ast_cache_reuses_parsed_programs(tmp_path: Path) -> None:
-    _write(tmp_path, "Main.s", _CODE)
-    _write(tmp_path, "Main.l", "Lib\n")
-    _write(tmp_path, "Lib.s", _CODE)
+    write_file(tmp_path, "Main.s", _CODE)
+    write_file(tmp_path, "Main.l", "Lib\n")
+    write_file(tmp_path, "Lib.s", _CODE)
     cache_dir = tmp_path / "cache"
     call_count: list[int] = []
     with _spy_on_parse(call_count):
@@ -379,7 +386,7 @@ def test_load_ast_cache_reuses_parsed_programs(tmp_path: Path) -> None:
 
 
 def test_load_without_cache_dir_reparses(tmp_path: Path) -> None:
-    _write(tmp_path, "Main.s", _CODE)
+    write_file(tmp_path, "Main.s", _CODE)
     call_count: list[int] = []
     with _spy_on_parse(call_count):
         _load(tmp_path)
@@ -392,7 +399,7 @@ def test_load_without_cache_dir_reparses(tmp_path: Path) -> None:
 
 
 def test_load_fails_closed_when_the_cache_root_is_foreign(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
-    _write(tmp_path, "Main.s", _CODE)
+    write_file(tmp_path, "Main.s", _CODE)
     cache_dir = tmp_path / "cache"
     monkeypatch.setattr("sattline_parser.source_io._getuid", lambda: -1)
 
@@ -404,13 +411,13 @@ def test_load_fails_closed_when_the_cache_root_is_foreign(monkeypatch: pytest.Mo
 
 
 def test_load_ast_cache_reparses_after_source_change(tmp_path: Path) -> None:
-    _write(tmp_path, "Main.s", _CODE)
+    write_file(tmp_path, "Main.s", _CODE)
     cache_dir = tmp_path / "cache"
     call_count: list[int] = []
     with _spy_on_parse(call_count):
         first = _load(tmp_path, cache_dir=cache_dir)
         assert len(call_count) == 1
-        _write(tmp_path, "Main.s", _CODE + "\n")
+        write_file(tmp_path, "Main.s", _CODE + "\n")
         second = _load(tmp_path, cache_dir=cache_dir)
 
     assert "main" in first and "main" in second
@@ -421,8 +428,8 @@ def test_load_ast_cache_reparses_after_source_change(tmp_path: Path) -> None:
 
 
 def test_load_parses_graphics_companion(tmp_path: Path) -> None:
-    _write(tmp_path, "Main.s", _CODE)
-    _write(tmp_path, "Main.g", _GFX)
+    write_file(tmp_path, "Main.s", _CODE)
+    write_file(tmp_path, "Main.g", _GFX)
 
     program = _load(tmp_path).programs()["main"]
 
@@ -438,8 +445,8 @@ def test_load_parses_graphics_companion(tmp_path: Path) -> None:
 
 
 def test_load_draft_body_does_not_use_official_graphics(tmp_path: Path) -> None:
-    _write(tmp_path, "Main.s", _CODE)
-    _write(tmp_path, "Main.y", _GFX)
+    write_file(tmp_path, "Main.s", _CODE)
+    write_file(tmp_path, "Main.y", _GFX)
 
     program = _load(tmp_path).programs()["main"]
 
@@ -448,7 +455,7 @@ def test_load_draft_body_does_not_use_official_graphics(tmp_path: Path) -> None:
 
 
 def test_load_without_graphics_companion(tmp_path: Path) -> None:
-    _write(tmp_path, "Main.s", _CODE)
+    write_file(tmp_path, "Main.s", _CODE)
 
     program = _load(tmp_path).programs()["main"]
 
@@ -457,8 +464,8 @@ def test_load_without_graphics_companion(tmp_path: Path) -> None:
 
 
 def test_load_official_mode_ignores_draft_graphics(tmp_path: Path) -> None:
-    _write(tmp_path, "Main.x", _CODE)
-    _write(tmp_path, "Main.g", _GFX)
+    write_file(tmp_path, "Main.x", _CODE)
+    write_file(tmp_path, "Main.g", _GFX)
 
     program = _load(tmp_path, mode=LoadMode.OFFICIAL).programs()["main"]
 
@@ -467,8 +474,8 @@ def test_load_official_mode_ignores_draft_graphics(tmp_path: Path) -> None:
 
 
 def test_load_official_mode_uses_official_graphics(tmp_path: Path) -> None:
-    _write(tmp_path, "Main.x", _CODE)
-    _write(tmp_path, "Main.y", _GFX)
+    write_file(tmp_path, "Main.x", _CODE)
+    write_file(tmp_path, "Main.y", _GFX)
 
     program = _load(tmp_path, mode=LoadMode.OFFICIAL).programs()["main"]
 
@@ -477,9 +484,9 @@ def test_load_official_mode_uses_official_graphics(tmp_path: Path) -> None:
 
 
 def test_load_x_code_only_accepts_official_graphics(tmp_path: Path) -> None:
-    _write(tmp_path, "Main.x", _CODE)
-    _write(tmp_path, "Main.g", _GFX)
-    _write(tmp_path, "Main.y", _GFX)
+    write_file(tmp_path, "Main.x", _CODE)
+    write_file(tmp_path, "Main.g", _GFX)
+    write_file(tmp_path, "Main.y", _GFX)
 
     program = _load(tmp_path).programs()["main"]
 
@@ -487,34 +494,36 @@ def test_load_x_code_only_accepts_official_graphics(tmp_path: Path) -> None:
     assert program.graphics is not None
 
 
-def test_load_graphics_read_failure_strict_raises(tmp_path: Path) -> None:
-    _write(tmp_path, "Main.s", _CODE)
+def test_a_directory_named_like_a_graphics_companion_is_not_a_companion(tmp_path: Path) -> None:
+    """Only a regular file can be a companion; a directory is not one."""
+    write_file(tmp_path, "Main.s", _CODE)
     (tmp_path / "Main.g").mkdir()
 
-    with pytest.raises(ArtifactLoadError):
-        _load(tmp_path)
+    program = _load(tmp_path).programs()["main"]
+
+    assert program.graphics is None
+    assert program.format.graphics_ext is None
 
 
-def test_load_graphics_read_failure_non_strict_skips(tmp_path: Path) -> None:
-    _write(tmp_path, "Main.s", _CODE)
+def test_a_directory_named_like_a_graphics_companion_is_not_a_companion_when_lenient(tmp_path: Path) -> None:
+    write_file(tmp_path, "Main.s", _CODE)
     (tmp_path / "Main.g").mkdir()
 
     project = _load(tmp_path, strict=False)
 
-    assert "main" not in project
+    assert "main" in project
+    assert project.get("Main").graphics is None
 
 
-def test_load_dependency_graphics_read_failure_raises_dependency_parse_error(tmp_path: Path) -> None:
-    _write(tmp_path, "Main.l", "Lib\n")
-    _write(tmp_path, "Main.s", _CODE)
-    _write(tmp_path, "Lib.s", _CODE)
+def test_a_directory_named_like_a_dependency_graphics_companion_is_not_a_companion(tmp_path: Path) -> None:
+    write_file(tmp_path, "Main.l", "Lib\n")
+    write_file(tmp_path, "Main.s", _CODE)
+    write_file(tmp_path, "Lib.s", _CODE)
     (tmp_path / "Lib.g").mkdir()
 
-    with pytest.raises(DependencyParseError) as exc_info:
-        _load(tmp_path)
+    project = _load(tmp_path)
 
-    assert exc_info.value.program == "Main"
-    assert exc_info.value.dependency == "Lib"
+    assert project.get("Lib").graphics is None
 
 
 # --- distribution companion wiring ---------------------------------------------
@@ -536,8 +545,8 @@ _DISTRIBUTION_EMPTY = (
 
 
 def test_load_parses_distribution_companion(tmp_path: Path) -> None:
-    _write(tmp_path, "Main.s", _CODE)
-    _write(tmp_path, "Main.p", _DISTRIBUTION)
+    write_file(tmp_path, "Main.s", _CODE)
+    write_file(tmp_path, "Main.p", _DISTRIBUTION)
 
     program = _load(tmp_path).programs()["main"]
 
@@ -551,8 +560,8 @@ def test_load_parses_distribution_companion(tmp_path: Path) -> None:
 
 
 def test_load_empty_executing_systems_is_false(tmp_path: Path) -> None:
-    _write(tmp_path, "Main.s", _CODE)
-    _write(tmp_path, "Main.p", _DISTRIBUTION_EMPTY)
+    write_file(tmp_path, "Main.s", _CODE)
+    write_file(tmp_path, "Main.p", _DISTRIBUTION_EMPTY)
 
     program = _load(tmp_path).programs()["main"]
 
@@ -560,7 +569,7 @@ def test_load_empty_executing_systems_is_false(tmp_path: Path) -> None:
 
 
 def test_load_without_distribution_companion_is_unknown(tmp_path: Path) -> None:
-    _write(tmp_path, "Main.s", _CODE)
+    write_file(tmp_path, "Main.s", _CODE)
 
     program = _load(tmp_path).programs()["main"]
 
@@ -571,8 +580,8 @@ def test_load_without_distribution_companion_is_unknown(tmp_path: Path) -> None:
 
 
 def test_load_draft_body_does_not_use_official_distribution(tmp_path: Path) -> None:
-    _write(tmp_path, "Main.s", _CODE)
-    _write(tmp_path, "Main.q", _DISTRIBUTION)
+    write_file(tmp_path, "Main.s", _CODE)
+    write_file(tmp_path, "Main.q", _DISTRIBUTION)
 
     program = _load(tmp_path).programs()["main"]
 
@@ -581,8 +590,8 @@ def test_load_draft_body_does_not_use_official_distribution(tmp_path: Path) -> N
 
 
 def test_load_official_mode_ignores_draft_distribution(tmp_path: Path) -> None:
-    _write(tmp_path, "Main.x", _CODE)
-    _write(tmp_path, "Main.p", _DISTRIBUTION)
+    write_file(tmp_path, "Main.x", _CODE)
+    write_file(tmp_path, "Main.p", _DISTRIBUTION)
 
     program = _load(tmp_path, mode=LoadMode.OFFICIAL).programs()["main"]
 
@@ -591,9 +600,9 @@ def test_load_official_mode_ignores_draft_distribution(tmp_path: Path) -> None:
 
 
 def test_load_x_code_only_accepts_official_distribution(tmp_path: Path) -> None:
-    _write(tmp_path, "Main.x", _CODE)
-    _write(tmp_path, "Main.p", _DISTRIBUTION)
-    _write(tmp_path, "Main.q", _DISTRIBUTION)
+    write_file(tmp_path, "Main.x", _CODE)
+    write_file(tmp_path, "Main.p", _DISTRIBUTION)
+    write_file(tmp_path, "Main.q", _DISTRIBUTION)
 
     program = _load(tmp_path).programs()["main"]
 
@@ -601,7 +610,7 @@ def test_load_x_code_only_accepts_official_distribution(tmp_path: Path) -> None:
 
 
 def test_load_distribution_decode_failure_strict_raises(tmp_path: Path) -> None:
-    _write(tmp_path, "Main.s", _CODE)
+    write_file(tmp_path, "Main.s", _CODE)
     (tmp_path / "Main.p").write_bytes(b"\x81\n")
 
     with pytest.raises(ArtifactLoadError) as exc_info:
@@ -611,8 +620,8 @@ def test_load_distribution_decode_failure_strict_raises(tmp_path: Path) -> None:
 
 
 def test_load_malformed_distribution_strict_raises(tmp_path: Path) -> None:
-    _write(tmp_path, "Main.s", _CODE)
-    _write(tmp_path, "Main.p", "not a distribution companion\n")
+    write_file(tmp_path, "Main.s", _CODE)
+    write_file(tmp_path, "Main.p", "not a distribution companion\n")
 
     with pytest.raises(ArtifactLoadError) as exc_info:
         _load(tmp_path)
@@ -622,9 +631,9 @@ def test_load_malformed_distribution_strict_raises(tmp_path: Path) -> None:
 
 
 def test_load_malformed_distribution_non_strict_skips(tmp_path: Path) -> None:
-    _write(tmp_path, "Main.s", _CODE)
-    _write(tmp_path, "Main.p", "not a distribution companion\n")
-    _write(tmp_path, "Ok.s", _CODE)
+    write_file(tmp_path, "Main.s", _CODE)
+    write_file(tmp_path, "Main.p", "not a distribution companion\n")
+    write_file(tmp_path, "Ok.s", _CODE)
 
     project = _load(tmp_path, targets=("Ok", "Main"), strict=False)
 
@@ -635,10 +644,10 @@ def test_load_malformed_distribution_non_strict_skips(tmp_path: Path) -> None:
 
 
 def test_load_dependency_distribution_failure_raises_dependency_parse_error(tmp_path: Path) -> None:
-    _write(tmp_path, "Main.l", "Lib\n")
-    _write(tmp_path, "Main.s", _CODE)
-    _write(tmp_path, "Lib.s", _CODE)
-    _write(tmp_path, "Lib.p", "not a distribution companion\n")
+    write_file(tmp_path, "Main.l", "Lib\n")
+    write_file(tmp_path, "Main.s", _CODE)
+    write_file(tmp_path, "Lib.s", _CODE)
+    write_file(tmp_path, "Lib.p", "not a distribution companion\n")
 
     with pytest.raises(DependencyParseError) as exc_info:
         _load(tmp_path)
@@ -649,13 +658,13 @@ def test_load_dependency_distribution_failure_raises_dependency_parse_error(tmp_
 
 def test_load_distribution_is_read_even_with_a_warm_ast_cache(tmp_path: Path) -> None:
     cache_dir = tmp_path / "cache"
-    _write(tmp_path, "Main.s", _CODE)
-    _write(tmp_path, "Main.p", _DISTRIBUTION_EMPTY)
+    write_file(tmp_path, "Main.s", _CODE)
+    write_file(tmp_path, "Main.p", _DISTRIBUTION_EMPTY)
 
     first = _load(tmp_path, cache_dir=cache_dir).programs()["main"]
     assert first.has_executing_system is False
 
-    _write(tmp_path, "Main.p", _DISTRIBUTION)
+    write_file(tmp_path, "Main.p", _DISTRIBUTION)
     second = _load(tmp_path, cache_dir=cache_dir).programs()["main"]
 
     assert second.has_executing_system is True
@@ -663,11 +672,11 @@ def test_load_distribution_is_read_even_with_a_warm_ast_cache(tmp_path: Path) ->
 
 def test_load_distribution_companion_appearing_later_is_seen(tmp_path: Path) -> None:
     cache_dir = tmp_path / "cache"
-    _write(tmp_path, "Main.s", _CODE)
+    write_file(tmp_path, "Main.s", _CODE)
 
     assert _load(tmp_path, cache_dir=cache_dir).programs()["main"].has_executing_system is None
 
-    _write(tmp_path, "Main.p", _DISTRIBUTION)
+    write_file(tmp_path, "Main.p", _DISTRIBUTION)
     assert _load(tmp_path, cache_dir=cache_dir).programs()["main"].has_executing_system is True
 
 
@@ -705,8 +714,8 @@ def _companion_text(kind: str) -> str:
 def test_load_pairs_only_within_the_body_family(
     tmp_path: Path, body: str, companion: str, kind: str, expected_ext: str
 ) -> None:
-    _write(tmp_path, body, _CODE)
-    _write(tmp_path, companion, _companion_text(kind))
+    write_file(tmp_path, body, _CODE)
+    write_file(tmp_path, companion, _companion_text(kind))
 
     program = _load(tmp_path).programs()["main"]
 
@@ -716,8 +725,8 @@ def test_load_pairs_only_within_the_body_family(
 
 @pytest.mark.parametrize(("body", "companion", "kind"), _MISMATCH_CASES)
 def test_load_never_pairs_across_artifact_families(tmp_path: Path, body: str, companion: str, kind: str) -> None:
-    _write(tmp_path, body, _CODE)
-    _write(tmp_path, companion, _companion_text(kind))
+    write_file(tmp_path, body, _CODE)
+    write_file(tmp_path, companion, _companion_text(kind))
 
     program = _load(tmp_path).programs()["main"]
 
@@ -725,8 +734,8 @@ def test_load_never_pairs_across_artifact_families(tmp_path: Path, body: str, co
 
 
 def test_load_reports_a_same_directory_family_mismatch(tmp_path: Path) -> None:
-    _write(tmp_path, "Main.s", _CODE)
-    _write(tmp_path, "Main.z", "")
+    write_file(tmp_path, "Main.s", _CODE)
+    write_file(tmp_path, "Main.z", "")
 
     project = _load(tmp_path)
 
@@ -737,8 +746,8 @@ def test_load_reports_a_same_directory_family_mismatch(tmp_path: Path) -> None:
 
 
 def test_load_official_body_with_draft_sidecar_is_not_paired(tmp_path: Path) -> None:
-    _write(tmp_path, "Main.x", _CODE)
-    _write(tmp_path, "Main.l", "")
+    write_file(tmp_path, "Main.x", _CODE)
+    write_file(tmp_path, "Main.l", "")
 
     project = _load(tmp_path)
 
@@ -748,8 +757,8 @@ def test_load_official_body_with_draft_sidecar_is_not_paired(tmp_path: Path) -> 
 
 def test_load_official_mode_reports_a_draft_sidecar_as_a_family_mismatch(tmp_path: Path) -> None:
     """The other family is probed at the body prefix, where a mode filter never looks."""
-    _write(tmp_path, "Main.x", _CODE)
-    _write(tmp_path, "Main.l", "")
+    write_file(tmp_path, "Main.x", _CODE)
+    write_file(tmp_path, "Main.l", "")
 
     project = _load(tmp_path, mode=LoadMode.OFFICIAL)
 
@@ -760,7 +769,7 @@ def test_load_official_mode_reports_a_draft_sidecar_as_a_family_mismatch(tmp_pat
 
 
 def test_load_pairs_a_companion_whose_name_case_differs(tmp_path: Path) -> None:
-    _write(tmp_path, "PUMP.S", _CODE)
+    write_file(tmp_path, "PUMP.S", _CODE)
     (tmp_path / "pump.p").write_text(
         'DistributionData\n ( Version "Distributiondata version 1.0" )\n'
         "SourceCodeSystems\n (  )\n"
@@ -780,9 +789,9 @@ def test_parallel_parse_falls_back_when_the_pool_cannot_start_workers(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """Workers start on submit, so the failure surfaces from ``map``."""
-    _write(tmp_path, "Lib.s", _CODE)
-    _write(tmp_path, "Main.s", _CODE)
-    _write(tmp_path, "Main.l", "Lib\n")
+    write_file(tmp_path, "Lib.s", _CODE)
+    write_file(tmp_path, "Main.s", _CODE)
+    write_file(tmp_path, "Main.l", "Lib\n")
 
     class UnstartablePool:
         def __init__(self, *args: object, **kwargs: object) -> None:
@@ -809,7 +818,7 @@ def test_parallel_parse_falls_back_when_the_pool_cannot_start_workers(
 
 
 def test_load_dependency_sidecar_decode_failure_raises(tmp_path: Path) -> None:
-    _write(tmp_path, "Main.s", _CODE)
+    write_file(tmp_path, "Main.s", _CODE)
     (tmp_path / "Main.l").write_bytes(b"Lib \x81\n")
 
     with pytest.raises(DependencyParseError) as exc_info:
@@ -820,9 +829,9 @@ def test_load_dependency_sidecar_decode_failure_raises(tmp_path: Path) -> None:
 
 
 def test_load_dependency_sidecar_decode_failure_non_strict_skips(tmp_path: Path) -> None:
-    _write(tmp_path, "Main.s", _CODE)
+    write_file(tmp_path, "Main.s", _CODE)
     (tmp_path / "Main.l").write_bytes(b"Lib \x81\n")
-    _write(tmp_path, "Ok.s", _CODE)
+    write_file(tmp_path, "Ok.s", _CODE)
 
     project = _load(tmp_path, targets=("Ok", "Main"), strict=False)
 
@@ -833,7 +842,7 @@ def test_load_dependency_sidecar_decode_failure_non_strict_skips(tmp_path: Path)
 
 
 def test_load_graphics_decode_failure_strict_raises(tmp_path: Path) -> None:
-    _write(tmp_path, "Main.s", _CODE)
+    write_file(tmp_path, "Main.s", _CODE)
     (tmp_path / "Main.g").write_bytes(b"\x81 graphics\n")
 
     with pytest.raises(ArtifactLoadError):
@@ -841,7 +850,7 @@ def test_load_graphics_decode_failure_strict_raises(tmp_path: Path) -> None:
 
 
 def test_load_graphics_decode_failure_non_strict_skips(tmp_path: Path) -> None:
-    _write(tmp_path, "Main.s", _CODE)
+    write_file(tmp_path, "Main.s", _CODE)
     (tmp_path / "Main.g").write_bytes(b"\x81 graphics\n")
 
     project = _load(tmp_path, strict=False)
@@ -850,9 +859,9 @@ def test_load_graphics_decode_failure_non_strict_skips(tmp_path: Path) -> None:
 
 
 def test_load_dependency_graphics_decode_failure_raises_dependency_parse_error(tmp_path: Path) -> None:
-    _write(tmp_path, "Main.l", "Lib\n")
-    _write(tmp_path, "Main.s", _CODE)
-    _write(tmp_path, "Lib.s", _CODE)
+    write_file(tmp_path, "Main.l", "Lib\n")
+    write_file(tmp_path, "Main.s", _CODE)
+    write_file(tmp_path, "Lib.s", _CODE)
     (tmp_path / "Lib.g").write_bytes(b"\x81 graphics\n")
 
     with pytest.raises(DependencyParseError) as exc_info:
@@ -863,7 +872,7 @@ def test_load_dependency_graphics_decode_failure_raises_dependency_parse_error(t
 
 
 def test_load_survives_a_cache_write_failure(tmp_path: Path) -> None:
-    _write(tmp_path, "Main.s", _CODE)
+    write_file(tmp_path, "Main.s", _CODE)
 
     with patch.object(project_loader.FileASTCache, "save", side_effect=OSError("boom")):
         project = _load(tmp_path, cache_dir=tmp_path / "cache")
@@ -882,11 +891,11 @@ def test_sidecar_is_not_paired_across_prefixes(tmp_path: Path) -> None:
     """
     consumer = tmp_path / "consumer"
     other = tmp_path / "other"
-    _write(consumer, "Main.s", _CODE)
-    _write(consumer, "Lib.s", _CODE)
+    write_file(consumer, "Main.s", _CODE)
+    write_file(consumer, "Lib.s", _CODE)
     other.mkdir()
-    _write(other, "Lib.l", "OtherSide\n")
-    _write(other, "OtherSide.s", _CODE)
+    write_file(other, "Lib.l", "OtherSide\n")
+    write_file(other, "OtherSide.s", _CODE)
 
     project = SattLineProject.load([consumer, other], LoadMode.DRAFT, ["Main", "Lib"])
 
@@ -899,7 +908,7 @@ def test_sidecar_is_not_paired_across_prefixes(tmp_path: Path) -> None:
 
 
 def test_missing_sidecar_is_reported_not_invented(tmp_path: Path) -> None:
-    _write(tmp_path, "Main.s", _CODE)
+    write_file(tmp_path, "Main.s", _CODE)
 
     project = SattLineProject.load([tmp_path], LoadMode.DRAFT, ["Main"])
 
@@ -912,7 +921,7 @@ def test_missing_sidecar_is_reported_not_invented(tmp_path: Path) -> None:
 
 
 def test_empty_sidecar_is_distinct_from_absent(tmp_path: Path) -> None:
-    _write(tmp_path, "Main.s", _CODE)
+    write_file(tmp_path, "Main.s", _CODE)
     (tmp_path / "Main.l").write_text("\n\n", encoding="cp1252")
 
     project = SattLineProject.load([tmp_path], LoadMode.DRAFT, ["Main"])
@@ -924,10 +933,10 @@ def test_empty_sidecar_is_distinct_from_absent(tmp_path: Path) -> None:
 
 
 def test_dependency_cycle_is_rejected_before_the_graph_is_returned(tmp_path: Path) -> None:
-    _write(tmp_path, "A.s", _CODE)
-    _write(tmp_path, "A.l", "B\n")
-    _write(tmp_path, "B.s", _CODE)
-    _write(tmp_path, "B.l", "A\n")
+    write_file(tmp_path, "A.s", _CODE)
+    write_file(tmp_path, "A.l", "B\n")
+    write_file(tmp_path, "B.s", _CODE)
+    write_file(tmp_path, "B.l", "A\n")
 
     with pytest.raises(DependencyCycleError) as excinfo:
         SattLineProject.load([tmp_path], LoadMode.DRAFT, ["A"])
@@ -943,10 +952,10 @@ def test_first_body_match_wins_not_the_newest_datecode(tmp_path: Path) -> None:
     """
     first = tmp_path / "first"
     second = tmp_path / "second"
-    _write(first, "Lib.s", _CODE.replace("DateCode_ 1", "DateCode_ 10"))
-    _write(first, "Lib.l", "")
-    _write(second, "Lib.s", _CODE.replace("DateCode_ 1", "DateCode_ 9999"))
-    _write(second, "Lib.l", "")
+    write_file(first, "Lib.s", _CODE.replace("DateCode_ 1", "DateCode_ 10"))
+    write_file(first, "Lib.l", "")
+    write_file(second, "Lib.s", _CODE.replace("DateCode_ 1", "DateCode_ 9999"))
+    write_file(second, "Lib.l", "")
 
     project = SattLineProject.load([first, second], LoadMode.DRAFT, ["Lib"])
 
@@ -956,11 +965,11 @@ def test_first_body_match_wins_not_the_newest_datecode(tmp_path: Path) -> None:
 
 
 def test_load_parses_bodies_in_parallel_with_identical_results(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    _write(tmp_path, "Base.s", _CODE)
-    _write(tmp_path, "Child.s", _CODE)
-    _write(tmp_path, "Child.l", "Base\n")
-    _write(tmp_path, "Leaf.s", _CODE)
-    _write(tmp_path, "Leaf.l", "Child\n")
+    write_file(tmp_path, "Base.s", _CODE)
+    write_file(tmp_path, "Child.s", _CODE)
+    write_file(tmp_path, "Child.l", "Base\n")
+    write_file(tmp_path, "Leaf.s", _CODE)
+    write_file(tmp_path, "Leaf.l", "Child\n")
 
     serial = _load(tmp_path, targets=("Leaf",), workers=1)
     dispatched = _record_dispatched(monkeypatch)
@@ -988,11 +997,11 @@ def test_a_broken_body_fails_or_skips_the_same_way_in_parallel(
     broken_is_target: bool,
     expected: type[ProjectLoadError] | None,
 ) -> None:
-    _write(tmp_path, "Good.s", _CODE)
-    _write(tmp_path, "Good.l", "Broken\n")
-    _write(tmp_path, "Target.s", _CODE)
-    _write(tmp_path, "Target.l", "Good\n")
-    _write(tmp_path, "Broken.s", _BROKEN)
+    write_file(tmp_path, "Good.s", _CODE)
+    write_file(tmp_path, "Good.l", "Broken\n")
+    write_file(tmp_path, "Target.s", _CODE)
+    write_file(tmp_path, "Target.l", "Good\n")
+    write_file(tmp_path, "Broken.s", _BROKEN)
 
     targets = ("Broken",) if broken_is_target else ("Target",)
     if expected is not None:
@@ -1009,9 +1018,9 @@ def test_a_broken_body_fails_or_skips_the_same_way_in_parallel(
 def test_parallel_parse_falls_back_when_a_pool_cannot_be_created(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    _write(tmp_path, "Lib.s", _CODE)
-    _write(tmp_path, "Main.s", _CODE)
-    _write(tmp_path, "Main.l", "Lib\n")
+    write_file(tmp_path, "Lib.s", _CODE)
+    write_file(tmp_path, "Main.s", _CODE)
+    write_file(tmp_path, "Main.l", "Lib\n")
 
     def unavailable(max_workers: int) -> object:
         raise OSError(f"cannot start {max_workers} workers here")
@@ -1025,7 +1034,7 @@ def test_parallel_parse_falls_back_when_a_pool_cannot_be_created(
 
 def test_parse_code_file_reads_but_never_writes_the_ast_cache(tmp_path: Path) -> None:
     """A worker reads the cache and leaves every write to the parent."""
-    code = _write(tmp_path, "Cached.s", _CODE)
+    code = write_file(tmp_path, "Cached.s", _CODE)
     cache_dir = tmp_path / "cache"
     task = (str(code), LoadMode.DRAFT.value, str(cache_dir))
 
@@ -1041,7 +1050,7 @@ def test_parse_code_file_reads_but_never_writes_the_ast_cache(tmp_path: Path) ->
 
 
 def test_parse_code_file_reports_a_parse_failure_as_text(tmp_path: Path) -> None:
-    code = _write(tmp_path, "Broken.s", _BROKEN)
+    code = write_file(tmp_path, "Broken.s", _BROKEN)
 
     outcome = project_loader._parse_code_file((str(code), LoadMode.DRAFT.value, None))
 
@@ -1050,7 +1059,7 @@ def test_parse_code_file_reports_a_parse_failure_as_text(tmp_path: Path) -> None
 
 
 def test_parse_code_file_serves_a_warm_entry_without_reparsing(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    code = _write(tmp_path, "Cached.s", _CODE)
+    code = write_file(tmp_path, "Cached.s", _CODE)
     cache_dir = tmp_path / "cache"
     project_loader.FileASTCache(cache_dir).save(code, LoadMode.DRAFT.value, project_loader.parse_source_file(code))
 
@@ -1068,8 +1077,8 @@ def test_structural_error_during_assembly_still_fails_a_lenient_load(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """A cycle is structural: no strictness setting may downgrade it to a skip."""
-    _write(tmp_path, "Main.s", _CODE)
-    _write(tmp_path, "Main.g", _GFX)
+    write_file(tmp_path, "Main.s", _CODE)
+    write_file(tmp_path, "Main.g", _GFX)
 
     def structural(*args: object, **kwargs: object) -> object:
         raise DependencyCycleError(("main", "main"))
@@ -1082,14 +1091,14 @@ def test_structural_error_during_assembly_still_fails_a_lenient_load(
 @pytest.mark.parametrize("workers", [1, 3])
 def test_a_shared_dependency_is_parsed_once(tmp_path: Path, workers: int, monkeypatch: pytest.MonkeyPatch) -> None:
     """A diamond parses the shared body once, whatever the worker count."""
-    _write(tmp_path, "Base.s", _CODE)
-    _write(tmp_path, "Left.s", _CODE)
-    _write(tmp_path, "Left.l", "Base\n")
-    _write(tmp_path, "Right.s", _CODE)
+    write_file(tmp_path, "Base.s", _CODE)
+    write_file(tmp_path, "Left.s", _CODE)
+    write_file(tmp_path, "Left.l", "Base\n")
+    write_file(tmp_path, "Right.s", _CODE)
     # Same identity as Left's dependency, spelled differently.
-    _write(tmp_path, "Right.l", "base\n")
-    _write(tmp_path, "Top.s", _CODE)
-    _write(tmp_path, "Top.l", "Left\nRight\n")
+    write_file(tmp_path, "Right.l", "base\n")
+    write_file(tmp_path, "Top.s", _CODE)
+    write_file(tmp_path, "Top.l", "Left\nRight\n")
 
     dispatched = _record_dispatched(monkeypatch) if workers > 1 else []
     project = _load(tmp_path, targets=("Top",), workers=workers)
@@ -1115,9 +1124,9 @@ def test_start_method_never_forks_a_threaded_process(methods: list[str], threade
 
 
 def test_a_daemonic_parent_parses_in_process(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    _write(tmp_path, "Lib.s", _CODE)
-    _write(tmp_path, "Main.s", _CODE)
-    _write(tmp_path, "Main.l", "Lib\n")
+    write_file(tmp_path, "Lib.s", _CODE)
+    write_file(tmp_path, "Main.s", _CODE)
+    write_file(tmp_path, "Main.l", "Lib\n")
 
     def daemonic() -> object:
         return SimpleNamespace(daemon=True)
@@ -1131,7 +1140,7 @@ def test_a_daemonic_parent_parses_in_process(tmp_path: Path, monkeypatch: pytest
 
 
 def test_parse_code_file_returns_a_cached_body_without_parsing(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    code = _write(tmp_path, "Cached.s", _CODE)
+    code = write_file(tmp_path, "Cached.s", _CODE)
     cache_dir = tmp_path / "cache"
     FileASTCache(cache_dir).save(code, LoadMode.DRAFT.value, parse_source_file(code))
 
@@ -1165,9 +1174,9 @@ def _failing_pool(max_workers: int) -> _FailingPool:
 
 
 def test_a_dead_worker_pool_falls_back_to_this_process(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    _write(tmp_path, "Lib.s", _CODE)
-    _write(tmp_path, "Main.s", _CODE)
-    _write(tmp_path, "Main.l", "Lib\n")
+    write_file(tmp_path, "Lib.s", _CODE)
+    write_file(tmp_path, "Main.s", _CODE)
+    write_file(tmp_path, "Main.l", "Lib\n")
 
     monkeypatch.setattr(project_loader, "_process_pool", _failing_pool)
     events: list[str] = []
@@ -1178,9 +1187,9 @@ def test_a_dead_worker_pool_falls_back_to_this_process(tmp_path: Path, monkeypat
 
 
 def test_a_cache_write_failure_does_not_fail_a_parallel_load(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    _write(tmp_path, "Lib.s", _CODE)
-    _write(tmp_path, "Main.s", _CODE)
-    _write(tmp_path, "Main.l", "Lib\n")
+    write_file(tmp_path, "Lib.s", _CODE)
+    write_file(tmp_path, "Main.s", _CODE)
+    write_file(tmp_path, "Main.l", "Lib\n")
 
     def failing_save(
         self: object,
@@ -1204,9 +1213,9 @@ def test_a_parallel_save_records_the_snapshot_the_worker_parsed(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """The parent must store the revision the worker read, not a later stat."""
-    _write(tmp_path, "Lib.s", _CODE)
-    _write(tmp_path, "Main.s", _CODE)
-    _write(tmp_path, "Main.l", "Lib\n")
+    write_file(tmp_path, "Lib.s", _CODE)
+    write_file(tmp_path, "Main.s", _CODE)
+    write_file(tmp_path, "Main.l", "Lib\n")
     seen: list[tuple[int, int] | None] = []
     real_save = FileASTCache.save
 
@@ -1228,9 +1237,9 @@ def test_a_parallel_save_records_the_snapshot_the_worker_parsed(
 
 
 def test_a_warm_parallel_load_does_not_rewrite_cached_bodies(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    _write(tmp_path, "Lib.s", _CODE)
-    _write(tmp_path, "Main.s", _CODE)
-    _write(tmp_path, "Main.l", "Lib\n")
+    write_file(tmp_path, "Lib.s", _CODE)
+    write_file(tmp_path, "Main.s", _CODE)
+    write_file(tmp_path, "Main.l", "Lib\n")
     cache_dir = tmp_path / "cache"
     _load(tmp_path, cache_dir=cache_dir)
     saves: list[Path] = []
@@ -1253,7 +1262,7 @@ def test_a_warm_parallel_load_does_not_rewrite_cached_bodies(tmp_path: Path, mon
 
 
 def test_a_body_that_changes_during_the_parse_is_not_cached(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
-    _write(tmp_path, "Main.s", _CODE)
+    write_file(tmp_path, "Main.s", _CODE)
 
     def stale_snapshot(_path: Path) -> tuple[int, int]:
         return (0, 0)
@@ -1296,9 +1305,9 @@ def _interrupted_pool(max_workers: int) -> _InterruptedPool:
 def test_an_interrupted_parallel_load_cancels_the_queued_bodies(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    _write(tmp_path, "Lib.s", _CODE)
-    _write(tmp_path, "Main.s", _CODE)
-    _write(tmp_path, "Main.l", "Lib\n")
+    write_file(tmp_path, "Lib.s", _CODE)
+    write_file(tmp_path, "Main.s", _CODE)
+    write_file(tmp_path, "Main.l", "Lib\n")
 
     _SHUTDOWNS.clear()
     monkeypatch.setattr(project_loader, "_process_pool", _interrupted_pool)
@@ -1310,7 +1319,7 @@ def test_an_interrupted_parallel_load_cancels_the_queued_bodies(
 
 
 def test_a_loader_resolves_one_load(tmp_path: Path) -> None:
-    _write(tmp_path, "Main.s", _CODE)
+    write_file(tmp_path, "Main.s", _CODE)
     loader = project_loader.ProjectLoader(
         roots=[tmp_path],
         mode=LoadMode.DRAFT,
@@ -1322,3 +1331,246 @@ def test_a_loader_resolves_one_load(tmp_path: Path) -> None:
 
     with pytest.raises(RuntimeError, match="construct another loader"):
         loader.resolve(["Main"])
+
+
+# --- resolved identity and target-set ownership -------------------------------
+
+_HEADER = """\"Syntax version 2.23, date: 2026-04-23-12:00:00.000 N\"
+\"Original file date: ---\"
+\"Program date: 2026-04-23-12:00:00.000, name: {name}\"
+"""
+
+
+def _source(name: str, *, typedefs: str = "", locals_block: str = "") -> str:
+    return (
+        _HEADER.format(name=name)
+        + f"""
+BasePicture Invocation
+   ( 0.0 , 0.0 , 0.0 , 1.0 , 1.0
+    ) : MODULEDEFINITION DateCode_ 1
+{typedefs}{locals_block}
+ModuleDef
+ClippingBounds = ( -1.0 , -1.0 ) ( 1.0 , 1.0 )
+ENDDEF (*BasePicture*);
+"""
+    )
+
+
+_RECORD_TYPE = (
+    "TYPEDEFINITIONS\n   SharedType = RECORD DateCode_ 1\n      Value: integer := 0;\n   ENDDEF (*SharedType*);\n"
+)
+
+
+def _two_roots_with_a_shared_unit(tmp_path: Path) -> tuple[Path, Path]:
+    """Two roots, each with its own ``Util`` body, and one consumer per root."""
+    first = tmp_path / "r1"
+    second = tmp_path / "r2"
+    write_file(first, "Util.s", _source("Util", typedefs=_RECORD_TYPE))
+    write_file(second, "Util.s", _source("Util"))
+    for root, name in ((first, "Main1"), (second, "Main2")):
+        write_file(
+            root,
+            f"{name}.s",
+            _source(name, locals_block="LOCALVARIABLES\n   Sensor: SharedType;\n"),
+        )
+        write_file(root, f"{name}.l", "Util\n")
+    return first, second
+
+
+def test_a_same_named_unit_in_two_roots_is_not_served_to_the_other_requester(tmp_path: Path) -> None:
+    """Each requester is validated against the body its own lookup resolved."""
+    first, second = _two_roots_with_a_shared_unit(tmp_path)
+
+    project = SattLineProject.load([first, second], LoadMode.DRAFT, ["Main1", "Main2"], strict=False)
+
+    assert set(project.programs()) == {"main1", "main2", "util"}
+    # Main1's Util declares SharedType; Main2's does not.
+    assert project.get("Main1").diagnostics == ()
+    assert [diagnostic.code.value for diagnostic in project.get("Main2").diagnostics] == ["SL-V020"]
+
+
+@pytest.mark.parametrize("targets", [("Main1", "Main2"), ("Main2", "Main1")])
+def test_a_shared_unit_name_conflict_is_reported_whatever_the_target_order(
+    tmp_path: Path, targets: tuple[str, str]
+) -> None:
+    first, second = _two_roots_with_a_shared_unit(tmp_path)
+
+    project = SattLineProject.load([first, second], LoadMode.DRAFT, targets, strict=False)
+
+    conflicts = [d for d in project.diagnostics() if d.kind is LoadDiagnosticKind.NAME_RESOLUTION_CONFLICT]
+    assert len(conflicts) == 1
+    assert str((first / "Util.s").resolve()) in conflicts[0].detail
+    assert str((second / "Util.s").resolve()) in conflicts[0].detail
+    # The registry exposes the body the first requester resolved.
+    expected_base = first.resolve() if targets[0] == "Main1" else second.resolve()
+    assert project.get("Util").resolved_base == expected_base
+
+
+def _datecode_moduletype(datecode: int) -> str:
+    return (
+        "TYPEDEFINITIONS\n"
+        f"   ControllerType = MODULEDEFINITION DateCode_ {datecode}\n"
+        "   MODULEPARAMETERS\n"
+        "      Setpoint: real := 0.0;\n"
+        "   ModuleDef\n"
+        "   ClippingBounds = ( -1.0 , -1.0 ) ( 1.0 , 1.0 )\n"
+        "   ENDDEF (*ControllerType*);\n"
+    )
+
+
+@pytest.mark.parametrize("targets", [("Dep", "Main"), ("Main", "Dep")])
+def test_a_target_reached_as_a_dependency_still_reports_its_datecode_conflict(
+    tmp_path: Path, targets: tuple[str, str]
+) -> None:
+    """Ownership comes from the target set, not from discovery order."""
+    write_file(tmp_path, "Base.s", _source("Base", typedefs=_datecode_moduletype(1)))
+    write_file(tmp_path, "Dep.s", _source("Dep", typedefs=_datecode_moduletype(2)))
+    write_file(tmp_path, "Dep.l", "Base\n")
+    write_file(tmp_path, "Main.s", _source("Main"))
+
+    project = SattLineProject.load([tmp_path], LoadMode.DRAFT, targets)
+
+    conflicts = [d.code.value for d in project.get("Dep").diagnostics]
+    assert conflicts == ["SL-V057"]
+
+
+def test_one_missing_dependency_is_reported_once_with_every_requester(tmp_path: Path) -> None:
+    """A failed discovery is cached, and its one row names every parent."""
+    for name in ("A", "B"):
+        write_file(tmp_path, f"{name}.s", _source(name))
+        write_file(tmp_path, f"{name}.l", "Ghost\n")
+
+    project = SattLineProject.load([tmp_path], LoadMode.DRAFT, ["A", "B"], strict=False)
+
+    skipped = [d for d in project.diagnostics() if d.kind is LoadDiagnosticKind.LOAD_SKIPPED]
+    assert [d.program for d in skipped] == ["Ghost"]
+    assert "requested by A, B" in skipped[0].detail
+
+
+def test_an_oversize_distribution_companion_is_a_load_error(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    write_file(tmp_path, "Main.s", _CODE)
+    write_file(tmp_path, "Main.p", _DISTRIBUTION)
+    monkeypatch.setattr("sattline_parser.project.distribution.MAX_DISTRIBUTION_COMPANION_BYTES", 4)
+
+    with pytest.raises(ArtifactLoadError) as exc_info:
+        _load(tmp_path)
+
+    assert "byte limit" in str(exc_info.value)
+
+
+def test_an_oversize_graphics_companion_is_a_load_error(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    write_file(tmp_path, "Main.s", _CODE)
+    write_file(tmp_path, "Main.g", _GFX)
+    monkeypatch.setattr("sattline_parser.project.graphics_parsing.MAX_GRAPHICS_COMPANION_BYTES", 4)
+
+    with pytest.raises(ArtifactLoadError) as exc_info:
+        _load(tmp_path)
+
+    assert "byte limit" in str(exc_info.value)
+
+
+def test_an_oversize_dependency_companion_is_a_dependency_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    write_file(tmp_path, "Main.s", _CODE)
+    write_file(tmp_path, "Main.l", "Lib\n")
+    write_file(tmp_path, "Lib.s", _CODE)
+    write_file(tmp_path, "Lib.p", _DISTRIBUTION)
+    monkeypatch.setattr("sattline_parser.project.distribution.MAX_DISTRIBUTION_COMPANION_BYTES", 4)
+
+    with pytest.raises(DependencyParseError) as exc_info:
+        _load(tmp_path)
+
+    assert exc_info.value.dependency == "Lib"
+
+
+def test_a_failed_discovery_is_negative_cached(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A name that resolves nowhere is looked up once, not once per requester."""
+    for name in ("A", "B"):
+        write_file(tmp_path, f"{name}.s", _source(name))
+        write_file(tmp_path, f"{name}.l", "Ghost\n")
+    calls: list[str] = []
+    real = ProjectLookup.find_code_with_base
+
+    def counting(
+        self: ProjectLookup,
+        name: str,
+        *,
+        requester_dir: Path | None = None,
+    ) -> tuple[Path, Path] | None:
+        calls.append(name)
+        return real(self, name, requester_dir=requester_dir)
+
+    monkeypatch.setattr(ProjectLookup, "find_code_with_base", counting)
+
+    SattLineProject.load([tmp_path], LoadMode.DRAFT, ["A", "B"], strict=False)
+
+    assert calls.count("Ghost") == 1
+
+
+def test_diagnose_keeps_the_list_and_the_set_in_step(tmp_path: Path) -> None:
+    loader = project_loader.ProjectLoader(
+        roots=[tmp_path],
+        mode=LoadMode.DRAFT,
+        strict=True,
+        debug=None,
+        cache_dir=None,
+    )
+    loader._diagnose(LoadDiagnosticKind.SIDECAR_MISSING, "A", "same detail")
+    loader._diagnose(LoadDiagnosticKind.SIDECAR_MISSING, "A", "same detail")
+
+    assert len(loader.diagnostics) == 1
+    assert len(loader._diagnostic_set) == 1
+
+
+def test_plan_key_falls_back_to_the_raw_path_when_resolve_fails(monkeypatch: pytest.MonkeyPatch) -> None:
+    def _raise(_path: Path) -> Path:
+        raise OSError("boom")
+
+    monkeypatch.setattr(Path, "resolve", _raise)
+
+    assert project_loader._plan_key(Path("/missing/Prog.s")) == "/missing/Prog.s"
+
+
+def test_iter_moduletype_instances_reaches_nested_submodules() -> None:
+    instance = ModuleTypeInstance(
+        header=ModuleHeader(name="Call", invoke_coord=(0.0, 0.0, 0.0, 1.0, 1.0)),
+        moduletype_name="ChildType",
+    )
+    nested = SingleModule(
+        header=ModuleHeader(name="Nested", invoke_coord=(0.0, 0.0, 0.0, 1.0, 1.0)),
+        submodules=[instance],
+    )
+    frame = FrameModule(
+        header=ModuleHeader(name="Frame", invoke_coord=(0.0, 0.0, 0.0, 1.0, 1.0)),
+        submodules=[nested],
+    )
+    code = BasePicture(
+        header=ModuleHeader(name="Root", invoke_coord=(0.0, 0.0, 0.0, 1.0, 1.0)),
+        submodules=[frame],
+    )
+
+    assert list(project_loader._iter_moduletype_instances(code)) == [instance]
+
+
+def test_a_structural_error_escapes_even_a_lenient_load(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    write_file(tmp_path, "Main.s", _CODE)
+
+    def _raise(*_args: object, **_kwargs: object) -> object:
+        raise StructuralProjectError("Main", "structural")
+
+    monkeypatch.setattr(project_loader.ProjectLoader, "_resolve_artifact", _raise)
+
+    with pytest.raises(StructuralProjectError, match="structural"):
+        _load(tmp_path, strict=False)
+
+
+def test_a_repeated_missing_dependency_is_recorded_once(tmp_path: Path) -> None:
+    write_file(tmp_path, "Main.s", _CODE)
+    write_file(tmp_path, "Main.l", "Ghost\nGhost\n")
+
+    project = _load(tmp_path, strict=False)
+
+    skipped = [d for d in project.diagnostics() if d.kind is LoadDiagnosticKind.LOAD_SKIPPED]
+    assert len(skipped) == 1
+    assert "Ghost" in skipped[0].detail

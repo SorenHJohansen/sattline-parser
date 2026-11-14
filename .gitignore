@@ -25,8 +25,14 @@ benchmark.json
 .venv/
 venv/
 
+# Docs workflow tooling
+.github/mermaid/node_modules/
+
 # Tooling
 .mise.toml
 
 # Windows NTFS alternate data streams
 *:Zone.Identifier
+
+# Local review artifacts (kept out of the public tree)
+reviews/

@@ -1,5 +1,4 @@
-# pyright: reportUnknownVariableType=false, reportUnknownMemberType=false, reportUnknownParameterType=false, reportMissingParameterType=false, reportUnknownArgumentType=false, reportUnknownLambdaType=false, reportArgumentType=false, reportPrivateUsage=false, reportUnusedImport=false, reportTypedDictNotRequiredAccess=false
-# ruff: noqa: F403, F405
+# pyright: reportPrivateUsage=false
 """Fixture-corpus regression tests.
 
 Each fixture documents one real SattLine feature or edge case (see the header
@@ -8,7 +7,18 @@ tests assert the AST semantics the fixture is meant to preserve, so a fixture
 is not just "parses without throwing".
 """
 
-from ._parser_core_test_support import *
+from typing import Any, cast
+
+import pytest
+from lark.exceptions import UnexpectedInput
+
+from sattline_parser import parse_source_text as parser_core_parse_source_text
+from sattline_parser.models.ast_model import BasePicture, CodeComment, SFCStep, SFCTransition
+from sattline_parser.models.clauses import AssignClause, EnableClause
+from sattline_parser.models.expressions import Compare, VarRef
+from sattline_parser.models.tails import VarTail
+
+from ._parser_core_test_support import _repo_path
 
 
 def _load_fixture(name: str, subdir: str = "valid") -> BasePicture:

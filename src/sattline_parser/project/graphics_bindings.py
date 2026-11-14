@@ -22,6 +22,11 @@ from sattline_parser.transformer.sl_transformer import SLTransformer
 from .models import GraphicsMessage
 
 BINDING_LINE_RE = re.compile(r"(?<!\S)(Var|Expr|Lit)\s+(\S+)\s+(-?\d+)\s+")
+#: Failures a graphics expression may raise. They are the same shape the source
+#: parser treats as a failed parse: a grammar error, a runaway recursion, or a
+#: transformer value/type/index error. All of them become a ``GraphicsMessage``
+#: on the binding, so scanning a companion never raises for its content.
+_EXPRESSION_FAILURES = (LarkError, RecursionError, ValueError, TypeError, IndexError)
 _GRAPHICS_EXPR_KEYWORDS = {
     "and": "AND",
     "or": "OR",
@@ -183,7 +188,7 @@ def parse_graphics_binding_match(
             SLTransformer().transform(_graphics_expression_parser().parse(normalized_payload))
         )
         parsed = _rebase_expression_spans(parsed, line=line, column=payload_column, start=payload_start)
-    except (LarkError, RecursionError) as exc:
+    except _EXPRESSION_FAILURES as exc:
         return (
             GraphicsBinding(kind=kind, raw_text=payload, value=payload, span=span),
             (

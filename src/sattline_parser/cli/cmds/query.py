@@ -13,7 +13,7 @@ from sattline_parser.preprocessing import PreprocessError
 from .._ast_walk import QUERY_KINDS, QueryRow, iter_rows
 from .._exit import ExitCode
 from .._findings import finding_from_parse_error
-from .._io import read_source
+from .._io import display_path, read_source
 from .._json import SCHEMA_PREFIX, dumps
 from ._common import add_output_flags, add_source_flags, emit_findings, positive_int, reject_companion
 
@@ -45,23 +45,26 @@ def register(subparsers: argparse._SubParsersAction[argparse.ArgumentParser]) ->
 
 
 def run(args: argparse.Namespace) -> int:
-    reject_companion(args.path)
+    reject_companion(args.path, stdin_name=args.stdin_name)
     source = read_source(args.path, name=args.stdin_name)
     name, text = source.name, source.text
     absolute = args.path_style == "absolute"
+    file = display_path(name, absolute=absolute)
     try:
         picture = parse_source_text(text, log_failures=False)
     except (UnexpectedInput, PreprocessError) as exc:
         finding = finding_from_parse_error(exc, text, file=name, absolute_paths=absolute)
-        emit_findings([finding], args=args, schema="query", extra={"file": name})
+        emit_findings([finding], args=args, schema="query", extra={"file": file})
         return int(ExitCode.FINDINGS)
     rows = _collect(picture, args, name=name)
-    _emit(rows, args=args, file=name)
+    _emit(rows, args=args, file=file)
     return int(ExitCode.OK if rows else ExitCode.FINDINGS)
 
 
 def _collect(picture: object, args: argparse.Namespace, *, name: str) -> list[QueryRow]:
-    kinds = QUERY_KINDS if args.what == "definitions" else (args.what,)
+    # ``definitions`` is the historical spelling of ``symbols``: one declaration
+    # row per symbol, never a reference, writer, or caller row.
+    kinds = ("symbols",) if args.what == "definitions" else (args.what,)
     rows: list[QueryRow] = []
     for row in iter_rows(picture, kinds=kinds, name=args.subject, module=args.module):  # pyright: ignore[reportArgumentType]
         rows.append(row)

@@ -9,6 +9,7 @@ from typing import TYPE_CHECKING, Any, Protocol, TypeGuard
 if TYPE_CHECKING:
     from ..models._ast_model_support import InitValue
     from ..models.ast_model import CodeItem
+from ..models.ast_model import Variable
 from ..models.expressions import (
     Assignment,
     BinOp,
@@ -25,6 +26,10 @@ from ..models.expressions import (
 
 _DEFAULT_INDENT = "    "
 
+#: Source spelling of the ``:Old`` / ``:New`` reference suffixes. ``VarRef``
+#: stores the folded form, so the formatter maps it back to the written form.
+_STATE_SPELLINGS = {"old": "Old", "new": "New"}
+
 __all__ = ["format_expr", "format_list", "format_optional", "format_seq_nodes"]
 
 
@@ -39,11 +44,16 @@ class _VariableLike(Protocol):
 
 
 def _is_variable_like(value: object) -> TypeGuard[_VariableLike]:
-    # Imported lazily: models.ast_model depends on this formatter module via
-    # _ast_model_support, so a module-level import would create a cycle.
-    from ..models.ast_model import Variable  # noqa: PLC0415
-
     return isinstance(value, Variable)
+
+
+def _quote_string(value: str) -> str:
+    """Render a string literal the way the source spells it.
+
+    SattLine quotes strings with ``"`` and escapes an inner quote by doubling
+    it, so the rendered text parses back to the same value.
+    """
+    return '"' + value.replace('"', '""') + '"'
 
 
 def format_list(
@@ -118,7 +128,8 @@ def format_expr(expr: object, indent: str = _DEFAULT_INDENT) -> str:
 
     # New typed nodes take priority over legacy tuple/dict forms
     if isinstance(expr, VarRef):
-        return expr.name if not expr.state else f"{expr.name}:{expr.state}"
+        state = None if expr.state is None else _STATE_SPELLINGS.get(expr.state, expr.state)
+        return expr.name if state is None else f"{expr.name}:{state}"
 
     if isinstance(expr, Assignment):
         return f"{format_expr(expr.target, indent)} = {format_expr(expr.value, indent)}"
@@ -159,7 +170,7 @@ def format_expr(expr: object, indent: str = _DEFAULT_INDENT) -> str:
         )
 
     if isinstance(expr, (int, float, bool, str)):
-        return repr(expr) if isinstance(expr, str) else str(expr)
+        return _quote_string(expr) if isinstance(expr, str) else str(expr)
 
     # Unhandled nodes fall back to ``str``: the formatter also accepts the
     # legacy tuple/dict expression forms, so an unknown object is rendered
@@ -225,9 +236,11 @@ def format_seq_nodes(nodes: list[Any], indent: str = _DEFAULT_INDENT) -> str:
             _fmt_branches("Parallel", "EndParallel", node.branches)
 
         elif isinstance(node, ast_model.SFCSubsequence):
-            label = "Substep" if node.kind == "substep" else "Subsequence"
+            is_substep = node.kind == "substep"
+            label = "Substep" if is_substep else "Subsequence"
+            footer = "EndSubstep" if is_substep else "EndSubsequence"
             name_suffix = f" {node.name}" if node.name else ""
-            _fmt_body(f"{label}{name_suffix}:", "EndSubsequence", node.body)
+            _fmt_body(f"{label}{name_suffix}:", footer, node.body)
 
         elif isinstance(node, ast_model.SFCTransitionSub):
             name_suffix = f" {node.name}" if node.name else ""

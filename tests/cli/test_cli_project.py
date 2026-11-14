@@ -1,4 +1,4 @@
-# pyright: reportUnknownVariableType=false, reportUnknownMemberType=false, reportUnknownParameterType=false, reportMissingParameterType=false, reportUnknownArgumentType=false, reportUnknownLambdaType=false, reportArgumentType=false, reportPrivateUsage=false, reportUnusedImport=false, reportCallIssue=false
+# pyright: reportMissingParameterType=false, reportPrivateUsage=false, reportUnknownArgumentType=false, reportUnknownMemberType=false, reportUnknownParameterType=false, reportUnknownVariableType=false
 """``sattline project``: programs, artifacts, dependency graph and cycles."""
 
 from __future__ import annotations
@@ -378,3 +378,23 @@ def test_workers_flag_defaults_to_cpu_count_capped(monkeypatch) -> None:
     assert project_cmd._default_workers() == project_cmd._MAX_DEFAULT_WORKERS
     monkeypatch.setattr(project_cmd.os, "cpu_count", lambda: None)
     assert project_cmd._default_workers() == 1
+
+
+def test_two_roots_with_a_shared_unit_name_report_the_conflict(tmp_path, capsys) -> None:
+    """The CLI surfaces the ambiguity instead of hiding the second body."""
+    first = tmp_path / "r1"
+    second = tmp_path / "r2"
+    first.mkdir()
+    second.mkdir()
+    _program(first, "Util")
+    _program(second, "Util")
+    _program(first, "Main1", "Util")
+    _program(second, "Main2", "Util")
+
+    assert main(["project", str(first), str(second), "--json"]) == ExitCode.OK
+
+    payload = json.loads(capsys.readouterr().out)
+    kinds = [row["kind"] for row in payload["diagnostics"]]
+    assert "name-resolution-conflict" in kinds
+    conflict = next(row for row in payload["diagnostics"] if row["kind"] == "name-resolution-conflict")
+    assert "Util" in conflict["detail"]

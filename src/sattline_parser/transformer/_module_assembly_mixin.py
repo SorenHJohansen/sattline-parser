@@ -2,11 +2,13 @@
 
 from __future__ import annotations
 
+from copy import deepcopy
 from typing import Any, Literal, cast
 
 from lark import Token, Tree
 
 from sattline_parser.grammar import constants as const
+from sattline_parser.models._ast_model_support import InitValue
 from sattline_parser.models.ast_model import (
     BasePicture,
     CodeComment,
@@ -37,6 +39,7 @@ from ._module_shared import (
     tree_children,
     v_args,
 )
+from ._tokens_mixin import DEFAULT_INIT
 
 _VARIABLE_MODIFIER_KEYWORDS: dict[str, str] = {
     const.GRAMMAR_VALUE_CONST_KW: "const",
@@ -117,7 +120,7 @@ class ModuleAssemblyMixin:
                 trailing_comments.append(it)
             elif isinstance(it, GroupConnInfo):
                 scan_group_info = it
-            elif isinstance(it, int):
+            elif isinstance(it, int) and not isinstance(it, bool) and datecode is None:
                 datecode = it
             elif isinstance(it, Tree):
                 tree = cast(TransformerTree, it)
@@ -163,7 +166,6 @@ class ModuleAssemblyMixin:
         param_mappings: list[ParameterMapping] = []
         scan_group_info: GroupConnInfo | None = None
         trailing_comments: list[CodeComment] = []
-        datecode: int | None = None
         is_frame_module = any(it is True for it in items)
 
         for item in flatten_items(items):
@@ -171,7 +173,7 @@ class ModuleAssemblyMixin:
                 header = item
             elif isinstance(item, CodeComment):
                 trailing_comments.append(item)
-            elif isinstance(item, int) and datecode is None:
+            elif isinstance(item, int) and not isinstance(item, bool) and datecode is None:
                 datecode = item
             elif isinstance(item, ModuleDef):
                 moduledefs.append(item)
@@ -221,7 +223,11 @@ class ModuleAssemblyMixin:
         )
 
     def frame_module(self, _items: list[TransformerItem]) -> Literal[True]:
-        """Grammar frame_module -> True marker for frame module."""
+        """Grammar frame_module -> marker that selects a ``FrameModule``.
+
+        The marker is a bare ``True``. The datecode collectors exclude booleans
+        explicitly, so it can never be stored as a datecode.
+        """
         return True
 
     def invocation_module_type(self, items: list[TransformerItem]) -> ModuleTypeInstance:
@@ -262,7 +268,7 @@ class ModuleAssemblyMixin:
                     parts.append(child.value)
                 elif child.type == const.KEY_DOT:
                     parts.append(".")
-                elif child.type == "STATE_SUFFIX":
+                elif child.type == const.KEY_STATE_SUFFIX:
                     state = child.value[1:].strip().lower()
             elif isinstance(child, str):
                 parts.append(child)
@@ -287,7 +293,7 @@ class ModuleAssemblyMixin:
         is_private = False
 
         for it in flatten_items(items):
-            if isinstance(it, Token) and it.type == "ENDDEF_KW":
+            if isinstance(it, Token) and it.type == const.KEY_ENDDEF_KW:
                 seen_enddef = True
                 continue
             if isinstance(it, CodeComment):
@@ -471,8 +477,6 @@ class ModuleAssemblyMixin:
 
     def variable_group(self, items: list[TransformerItem]) -> list[Variable]:
         """Grammar variable_group -> list of Variables with common datatype and modifiers."""
-        from sattline_parser.transformer._tokens_mixin import DEFAULT_INIT  # noqa: PLC0415
-
         items = [x for x in items if x is not None]
 
         var_items: list[tuple[str, str | None, SourceSpan | None]] = []
@@ -509,11 +513,17 @@ class ModuleAssemblyMixin:
             else:
                 init_value = init_raw
 
-        resolved_init_value: Any | None = None if init_value is DEFAULT_INIT else init_value
+        resolved_init_value: InitValue | None = None if init_value is DEFAULT_INIT else cast(InitValue, init_value)
         has_explicit_default: bool = init_value is DEFAULT_INIT
 
         variables: list[Variable] = []
         for name, desc, declaration_span in var_items:
+            # A group shares one written init payload. Rebuild a mutable payload
+            # per variable so mutating one variable's value cannot change its
+            # siblings.
+            variable_init = (
+                deepcopy(resolved_init_value) if isinstance(resolved_init_value, dict) else resolved_init_value
+            )
             variables.append(
                 Variable(
                     name=name,
@@ -523,7 +533,7 @@ class ModuleAssemblyMixin:
                     state=modifier_flags["state"],
                     opsave=modifier_flags["opsave"],
                     secure=modifier_flags["secure"],
-                    init_value=resolved_init_value,
+                    init_value=variable_init,
                     has_explicit_default=has_explicit_default,
                     description=desc,
                     declaration_span=declaration_span,
@@ -579,12 +589,16 @@ class ModuleAssemblyMixin:
         for item in items:
             if isinstance(item, CodeComment):
                 trailing_comments.append(item)
+            elif isinstance(item, Token):
+                # Grammar keywords such as RECORD_KW subclass ``str``; they are
+                # spelling, never the record's description.
+                continue
             elif isinstance(item, str):
                 if name is None:
                     name = item
                 elif description is None:
                     description = item
-            elif isinstance(item, int) and datecode is None:
+            elif isinstance(item, int) and not isinstance(item, bool) and datecode is None:
                 datecode = item
             elif isinstance(item, Tree) and item.data == const.TREE_TAG_VAR_LIST:
                 fields = [child for child in tree_children(cast(TransformerTree, item)) if isinstance(child, Variable)]

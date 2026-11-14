@@ -1,7 +1,6 @@
-# pyright: reportUnknownVariableType=false, reportUnknownMemberType=false, reportUnknownArgumentType=false, reportPrivateUsage=false, reportUnusedImport=false, reportUnknownParameterType=false, reportArgumentType=false, reportTypedDictNotRequiredAccess=false
+# pyright: reportArgumentType=false, reportPrivateUsage=false, reportTypedDictNotRequiredAccess=false, reportUnknownArgumentType=false, reportUnknownLambdaType=false, reportUnknownMemberType=false
 """Edge-case behaviour tests for parser-core internals and error paths."""
 
-# pyright: reportUnknownParameterType=false, reportMissingParameterType=false, reportUnknownLambdaType=false, reportArgumentType=false, reportCallIssue=false
 import importlib
 import pickle
 import runpy
@@ -18,6 +17,7 @@ from lark.tree import Meta
 
 from fuzzing import fuzz_harness as fuzzharness
 from sattline_parser import errors as parser_errors
+from sattline_parser import parse_source_text as parser_core_parse_source_text
 from sattline_parser import source_io as parser_api
 from sattline_parser.grammar import constants as const
 from sattline_parser.models.ast_model import (
@@ -53,7 +53,7 @@ from sattline_parser.transformer._module_shared import (  # used below
 from sattline_parser.transformer._sfc_mixin import SFCMixin
 from sattline_parser.transformer._tokens_mixin import TokensMixin
 
-from ._parser_core_test_support import _GraphicsHarness, _repo_path, _SFCHarness, parser_core_parse_source_text
+from ._parser_core_test_support import _GraphicsHarness, _repo_path, _SFCHarness
 
 # ---- Package __getattr__ / __dir__ ----
 
@@ -362,7 +362,7 @@ def test_decode_fuzzer_absorbs_only_expected_preprocess_errors() -> None:
     from fuzzing import decode_fuzzer  # noqa: PLC0415
 
     # Unknown marker -> PreprocessError -> absorbed, no crash.
-    decode_fuzzer.test_one_input(b"#XX")
+    decode_fuzzer.test_one_input(b"#00")
     # Plain text -> no error.
     decode_fuzzer.test_one_input(b"just text")
 
@@ -636,7 +636,7 @@ def test_parse_source_text_log_failures_disabled_paths() -> None:
         parser_api.parse_source_text("garbage input", log_failures=False)
     # Decode-error path with logging disabled.
     with pytest.raises(ValueError):
-        parser_api.parse_source_text("#ZZ", log_failures=False)
+        parser_api.parse_source_text("#00", log_failures=False)
 
     # Transform-error path with logging disabled.
     class _BrokenTransformer:

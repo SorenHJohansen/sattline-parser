@@ -95,17 +95,21 @@ that spelling; the catalogue carries `equalstrings` as the canonical key and
 The tables cover the builtin datatype reference in the public manuals and the
 datatype declarations a system configuration ships.
 
-Only three entries carry an empty spec: `tObject`, `ArrayObject`, and
-`QueueObject`. They are native object handles with no addressable fields, so an
-empty spec there is the complete answer rather than a missing one. Every other
-name has its declared fields.
+An empty spec means "declared, shape not modelled". Six names carry one:
+`tObject`, `ArrayObject`, and `QueueObject` are native object handles with no
+addressable fields, so the empty spec is the complete answer. `ByteRecord`,
+`ComliMessage`, and `PidType` are declared system records that builtin
+signatures name while no transcribed field table exists. The name is still a
+declared datatype, so `SL-V020` stays silent and an argument of that type
+matches its parameter. A field access through such a type is unknown rather than
+provably absent, so no rule reports it.
 
 ## How validation uses the facts
 
 ```mermaid
 flowchart TB
-    F["builtins/functions.py<br/>documented signature"] --> A["validation/builtins.py<br/>_adapt"]
-    A --> V["BuiltinFunction<br/>min_args, max_args, out_arg_positions, parameters"]
+    F["builtins/functions.py<br/>documented signature"] --> A["validation/builtins.py<br/>_adapt, cached"]
+    A --> V["BuiltinFunction<br/>min_args, max_args, parameters"]
     V --> R1["arity check"]
     V --> R2["output argument must be writable"]
     V --> R3["argument type compatibility"]
@@ -118,14 +122,17 @@ The validator adapts the documented signature into:
 
 - `min_args`: the count of leading required parameters;
 - `max_args`: the total parameter count;
-- `out_arg_positions`: 1-based positions that must resolve to a writable
-  variable reference;
 - `parameters`: the documented direction and datatype, used by the argument
-  type rule.
+  direction and argument type rules.
 
-Unknown call names are left alone. Only calls whose name appears in the
-registry are checked, because an unknown name may be a user function defined
-elsewhere.
+The adaptation is cached per documented signature. A written position is derived
+from the parameter direction, so the validator view keeps no second copy of it.
+
+An unknown call name has no signature, so the arity, argument-direction, and
+argument-datatype rules are skipped: the callee may be a user function defined
+elsewhere. One rule still applies to every call, known or unknown: a string
+literal in an argument position is rejected (`SL-V015`), because the parser does
+not evidence that the callee accepts a value there.
 
 `builtin_datatype_typo` suggests a builtin datatype name when a custom datatype
 string is within a bounded edit distance of exactly one builtin. It never fires
@@ -162,8 +169,15 @@ for an exact match, which is already normalized to `Simple_DataType` by
    behaviour.
 6. Update this document if the counts or the provenance rules change.
 
+The generator rejects a parameter or return datatype that is not a scalar, a
+declared builtin record, or `AnyType`. A signature cannot name a type the
+validator would never resolve, which is how a name such as `ComliMessage` has to
+be declared before a signature may use it.
+
 For a record type, add its ordered field list to `records.py` and add a test
-that resolves at least one dotted path through it.
+that resolves at least one dotted path through it. A declared system record whose
+field table is not transcribed gets an empty spec instead, which keeps the name
+declared while leaving field resolution unknown.
 
 ## Tests that pin builtins
 

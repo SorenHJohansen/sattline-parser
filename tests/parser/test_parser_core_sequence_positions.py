@@ -1,4 +1,3 @@
-# pyright: reportUnusedImport=false
 """Sequence position rules (S/T/M productions) at parse+validate level.
 
 Each rejected shape below is one the real tool refuses. The test body states
@@ -204,7 +203,7 @@ def test_sub_transition_body_is_transition_led() -> None:
         + _STEP.format(n=3)
         + _TRANSITION.format(n=3)
     )
-    assert DiagnosticCode.SFC_ALTERNATIVE_BRANCH_START.value in _codes(body)
+    assert DiagnosticCode.SUBSEQTRANSITION_STARTS_WITH_STEP.value in _codes(body)
 
 
 def test_a_clean_sequence_reports_nothing() -> None:

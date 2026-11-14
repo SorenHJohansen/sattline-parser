@@ -1,6 +1,21 @@
-# pyright: reportUnknownVariableType=false, reportPrivateUsage=false, reportUnusedImport=false
-# ruff: noqa: F403, F405
-from ._parser_core_test_support import *
+# pyright: reportPrivateUsage=false
+from types import SimpleNamespace
+
+import pytest
+from lark import Token, Tree
+
+from sattline_parser.grammar import constants as parser_const
+from sattline_parser.models.ast_model import BasePicture, SourceSpan
+from sattline_parser.transformer._module_shared import flatten_items, meta_span
+from sattline_parser.transformer.sl_transformer import (
+    SLTransformer,
+    _extract_program_name_from_header_lines,
+    _is_tree,
+    _iter_tree_children,
+    _strip_quoted,
+)
+
+from ._parser_core_test_support import _module_header
 
 
 def test_sl_transformer_top_level_helpers_cover_header_quote_and_tree_iteration_edges():
@@ -16,11 +31,11 @@ def test_sl_transformer_top_level_helpers_cover_header_quote_and_tree_iteration_
         ["beta", Tree(parser_const.TREE_TAG_BASE_MODULE_BODY, ["gamma"])],
     )
 
-    assert _sl_meta_span(SimpleNamespace(line=9, column=3, start_pos=40, end_pos=50)) == SourceSpan(
+    assert meta_span(SimpleNamespace(line=9, column=3, start_pos=40, end_pos=50)) == SourceSpan(
         start=40, end=50, line=9, column=3
     )
-    assert _sl_meta_span(SimpleNamespace(line=9, column=3)) is None
-    assert _sl_meta_span(SimpleNamespace(line=None, column=3)) is None
+    assert meta_span(SimpleNamespace(line=9, column=3)) is None
+    assert meta_span(SimpleNamespace(line=None, column=3)) is None
     assert _extract_program_name_from_header_lines(header_lines) == "UnitProgram"
     assert (
         _extract_program_name_from_header_lines(
@@ -35,9 +50,9 @@ def test_sl_transformer_top_level_helpers_cover_header_quote_and_tree_iteration_
     assert _extract_program_name_from_header_lines(spaced_header_lines) == "Spaced Program"
     assert _strip_quoted('"He said ""Hi""\n"') == 'He said "Hi"'
     assert _strip_quoted("plain-text") == "plain-text"
-    assert _sl_is_tree(nested_tree) is True
-    assert _sl_is_tree("not-a-tree") is False
-    assert list(_sl_flatten_items(["alpha", ["delta"], nested_tree])) == ["alpha", "delta", "beta", "gamma"]
+    assert _is_tree(nested_tree) is True
+    assert _is_tree("not-a-tree") is False
+    assert list(flatten_items(["alpha", ["delta"], nested_tree])) == ["alpha", "delta", "beta", "gamma"]
     assert list(_iter_tree_children(Tree("wrapper", ["alpha", "beta"]))) == ["alpha", "beta"]
     assert list(_iter_tree_children("not-a-tree")) == []
 

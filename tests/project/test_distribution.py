@@ -1,4 +1,3 @@
-# pyright: reportPrivateUsage=false
 """Distribution companion parsing (``project/distribution.py``)."""
 
 from __future__ import annotations
@@ -280,3 +279,13 @@ def test_parse_error_survives_pickling() -> None:
     assert restored.line == 4
     assert restored.column == 2
     assert str(restored) == str(error)
+
+
+def test_parse_distribution_file_rejects_an_oversize_companion(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A companion is a small config blob; a huge one is a parse error, not a read."""
+    path = tmp_path / "Main.p"
+    path.write_text(_EMPTY, encoding="utf-8")
+    monkeypatch.setattr("sattline_parser.project.distribution.MAX_DISTRIBUTION_COMPANION_BYTES", 4)
+
+    with pytest.raises(DistributionParseError, match="byte limit"):
+        parse_distribution_file(path)

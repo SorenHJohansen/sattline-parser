@@ -3,12 +3,13 @@
 The `sattline` command is a JSON-first wrapper over the library. It never
 modifies a source tree and has no `--fix`, no network access and no watch mode,
 but `project` caches parsed ASTs under the user's cache directory unless
-`--no-cache` is given. Every command maps onto a documented library call and
-emits one finding shape. It is designed for agents, scripts, and CI, not for
-interactive editing.
+`--no-cache` is given. Every command maps onto a documented library call, and
+the source commands report problems in one finding shape. It is designed for
+agents, scripts, and CI, not for interactive editing.
 
 ```bash
 sattline <command> [options]
+sattline --debug <command> [options]
 python -m sattline_parser <command> [options]
 ```
 
@@ -44,7 +45,9 @@ flowchart TB
 | `3` | Internal error (a bug) |
 
 Agents branch on exit codes, not on prose. A traceback is printed only under
-`--debug`.
+`--debug`. `--debug` is a top-level flag, so it comes before the command:
+`sattline --debug check program.s`. After the command name it is an unknown
+option and exits `2`.
 
 ## Commands
 
@@ -84,6 +87,7 @@ report. See [`rules`](#rules) for the registry.
 sattline parse M.s
 sattline parse M.s --tree --depth 3
 sattline parse M.s --json
+sattline parse M.s --json --compact
 ```
 
 The default output is a structural summary: program name, encoding, and counts
@@ -91,21 +95,23 @@ of module types, submodules, local variables, sequences, equation blocks, graph
 objects, and interact objects. `--tree` emits the AST as JSON, bounded by
 `--depth` (default 5). At the limit a composite value is replaced by a
 placeholder such as `<ModuleDef>` or `<12 items>`, so nothing silently
-disappears.
+disappears. `--compact` prints JSON on one line instead of indented.
 
 ### `query`
 
 ```bash
 sattline query M.s --what writers --name Counter
 sattline query M.s --what symbols --module StartMaster/Changelog
-sattline query M.s --what sequences --json
+sattline query M.s --what sequences --json --limit 5
 ```
 
-`--what` accepts `definitions` (an alias for all symbol kinds), `symbols`,
-`references`, `writers`, `callers`, `graph-objects`, `interact-objects`, and
-`sequences`. Filters are case-insensitive: `--name` matches a row name,
-`--module` matches a slash-separated module path. A query with no rows exits
-`1`, because "nothing found" is a finding for a caller that expected a hit.
+`--what` accepts `symbols`, `references`, `writers`, `callers`,
+`graph-objects`, `interact-objects`, and `sequences`, plus `definitions`, which
+is an alias for `symbols` and returns declaration rows only. Filters are
+case-insensitive: `--name` matches a row name, `--module` matches a
+slash-separated module path, and `--limit N` stops after `N` rows. A query with
+no rows exits `1`, because "nothing found" is a finding for a caller that
+expected a hit.
 
 `references` includes variable uses in header, graphics, interact, and
 module-layout annotation tails. A bare bound `InVar_`/`OutVar_` name is reported
@@ -147,9 +153,15 @@ sattline project programs/ libs/ --validate full --fail-on error
 A root is a library directory: the loader indexes artifacts directly inside it.
 When `--targets` is omitted, every source directly under each root is a target.
 `--lenient` is the CLI spelling of `strict=False`. A recursive `.l`/`.z`
-dependency or a module type that instantiates itself is a structural load
-error: the command reports `cannot load project` with the cycle path and exits
-`1`, even under `--lenient`.
+dependency (`DependencyCycleError`) or a module type that instantiates itself
+(`ModuleTypeCycleError`) is a structural load error: the command reports
+`cannot load project` with the cycle path and exits `1`, even under `--lenient`
+and `--fail-on none`, because the tree could not be loaded at all.
+
+Under `--lenient` a program that could not be loaded becomes a `load-skipped`
+diagnostic and the rest of the tree still reports. A skipped program fails the
+run by default; `--fail-on none` reports it without failing, like any other
+finding.
 
 Each program row reports `distribution` (the resolved companion extension or
 `null`), `has_executing_system` (`true`, `false`, or `null` when no companion was
@@ -160,11 +172,14 @@ empty list. See [project.md](project.md#distribution-companion).
 | Flag | Meaning |
 | --- | --- |
 | `--mode draft\|official` | Which artifacts to resolve. Default `draft` |
+| `--targets A,B` | Only load these program names. Default: every source under the roots |
 | `--workers N` | Parse bodies in `N` processes. Default `min(8, cpu_count)`; `1` parses in this process |
 | `--cache-dir DIR` | Parser cache directory |
 | `--no-cache` | Bypass the project caches |
+| `--lenient` | Continue past unreadable artifacts (`strict=False`) |
 | `--validate invoked\|full\|none` | What to validate. Default `invoked` |
 | `--no-validate` | Alias for `--validate none` |
+| `--fail-on none\|error` | Whether a skipped program or a validation finding fails the run. Default `error` |
 
 The project caches live under `$XDG_CACHE_HOME/sattline-parser/project` (or
 `~/.cache/sattline-parser/project`) unless `--cache-dir` names another private
@@ -188,8 +203,11 @@ sattline graphics drawing.y --json
 ```
 
 Refuses a `.s`/`.x` source. Conversely, `check`, `parse`, `query`, `decode`, and
-`diff` refuse a `.g`/`.y` graphics companion and a `.p`/`.q`
-distribution companion, so a companion is never reported as broken source.
+`diff` refuse a `.g`/`.y` graphics companion and a `.p`/`.q` distribution
+companion, so a companion is never reported as broken source. The refusal uses
+the name that identifies the input: the path itself, or `--stdin-name` when the
+input is `-`, so `sattline check --stdin-name x.g -` is refused exactly like a
+`.g` path.
 
 ### `decode`
 
@@ -245,55 +263,95 @@ compatibility before parsing output.
 | --- | --- |
 | (none) | Human-readable text |
 | `--json` | One JSON document |
-| `--jsonl` | One JSON object per line, then a summary object |
+| `--jsonl` | Command-specific stream, described below |
 
 `--json` and `--jsonl` are mutually exclusive. Findings are never printed as a
 second document alongside a JSON payload: they ride inside the same object.
 
+`--jsonl` does not mean the same thing in every command, because a command that
+reports one unit has nothing to stream:
+
+| Command | `--jsonl` output |
+| --- | --- |
+| `check` | One finding object per line, then a summary object |
+| `rules` | One rule object per line, then a summary object |
+| `query` | One row object per line, with no summary object |
+| `parse` | One compact summary document |
+| `project` | One compact document |
+| `graphics` | One compact document |
+| `diff` | One compact document |
+| `corpus` | One compact document |
+| `decode` | Not accepted; use `--report` or `--json` |
+| `version` | Not accepted; use `--json` |
+
 ## The finding shape
 
-Every problem, whether a parse error, a decode error, or a validator
-diagnostic, becomes one `Finding`:
+`check`, `parse`, `query`, and `graphics` report a problem as one `Finding`:
 
 ```json
 {
   "severity": "error",
-  "message": "unexpected end of file; expected ';'",
-  "rule": "PARSE_ERROR",
+  "message": "Reference to undefined variable 'Counter'",
+  "rule": "UNDEFINED_VARIABLE",
   "file": "program.s",
   "line": 12,
   "column": 20,
   "start": 345,
-  "end": 346,
-  "hint": "the unit ends before a required ';'; the last construct is incomplete",
-  "source_line": "ENDDEF (*BasePicture*)"
+  "end": 354,
+  "hint": null,
+  "source_line": "   Total = Counter + 1;"
 }
 ```
 
 | Field | Meaning |
 | --- | --- |
-| `severity` | `error` for parse, decode, project, and validation findings; `warning` for graphics scan messages |
+| `severity` | `error` for parse, decode, project-load, and validation findings; `warning` for graphics scan messages |
 | `message` | A sentence about the source |
 | `rule` | Machine-only id: `PARSE_ERROR`, `DECODE_ERROR`, `PROJECT_LOAD_ERROR`, `GRAPHICS_SCAN`, a `DiagnosticCode` enum name such as `UNDEFINED_VARIABLE` (`SL-V019` is its id), or a corpus read error |
 | `file` | Display path |
-| `line`, `column` | One-based location in the original source |
-| `start`, `end` | Zero-based character range in the original source |
+| `line`, `column` | One-based location in the original source, or `null` when the failure has no position, as with a decode error |
+| `start`, `end` | Zero-based character range in the original source, or `null` when no range is known, as with a parse error or a decode error |
 | `hint` | Actionable sentence, when one is known |
-| `source_line` | The original source line at `line` |
+| `source_line` | The original source line at `line`, or `null` |
 
 A rule id is never printed as prose. It exists for baselines, filters, and
 diffs.
+
+`sattline project --json` does not use `Finding`. Its payload carries:
+
+| Key | Shape |
+| --- | --- |
+| `programs` | One row per loaded artifact: `name`, `code`, `graphics`, `deps`, `distribution`, `sidecar`, `dependencies`, `source`, `library`, `resolved_base`, `has_executing_system`, `executing_systems` |
+| `edges` | `{"from": dependent, "to": dependency}` over casefolded names |
+| `diagnostics` | One row per non-fatal load condition: `kind` (`sidecar-missing`, `sidecar-elsewhere`, `sidecar-empty`, `sidecar-family-mismatch`, or `load-skipped`), `program`, `detail`, `path` |
+| `validation` | One row per diagnostic: `program`, `code` (`SL-V###`), `message`, `line`, `column`, `tentative` |
+| `findings` | Present only when the tree could not be loaded at all: one `Finding` with rule `PROJECT_LOAD_ERROR` |
+
+A validation row has no `severity`, because every row it carries is an error.
+`line` and `column` are `null` when the diagnostic has no span, and `tentative`
+marks a finding that depends on a dependency that failed to load.
+
+`sattline diff` reports `FindingDelta` rows instead: `rule`, `message`, and
+`count`, split into `findings.added` and `findings.removed`, plus
+`counts.changed`.
 
 ## Shared flags
 
 | Flag | Applies to | Meaning |
 | --- | --- | --- |
-| `--stdin-name PATH` | source commands | Required when reading `-`, so findings are attributable |
-| `--paths given\|absolute` | source commands | How to render paths |
+| `--debug` | top level | Print a traceback for internal errors. It comes before the command |
+| `--stdin-name PATH` | source commands | Required when reading `-`, so findings are attributable; a companion suffix here is refused like a companion path |
+| `--paths given\|absolute` | source commands | How to render paths, in findings and in the document-level `file` key. Default `given` |
 | `--rule RULE` | `check` | Filter by rule id or enum name, repeatable; synthetic ids such as `PARSE_ERROR` are accepted |
 | `--max-findings N` | `check` | Limit printed findings; the exit code still reflects all of them |
+| `--limit N` | `query` | Stop after `N` rows |
 | `--fail-on none\|error` | `check`, `project`, `corpus` | Which findings make the exit code `1` (`never` is accepted as an alias) |
+| `--compact` | `parse` | Emit JSON on one line |
 | `--depth N` | `parse --tree`, `project --of` | Bound output or traversal |
+
+"Source commands" means `check`, `parse`, `query`, `graphics`, `decode`, and
+`diff`: the commands that read a source unit or a companion through the same
+input layer.
 
 ## JSON schemas
 
@@ -324,7 +382,9 @@ public change and must be called out in the changelog.
 - stdin is read as bytes and requires `--stdin-name`;
 - a decode failure becomes `CliError` and exit `2`;
 - marker-compressed text is left as written so provenance stays anchored to the
-  original source.
+  original source;
+- `--paths absolute` resolves the display path, in findings and in the
+  document-level `file` key.
 
 ## Tests that pin the CLI
 
@@ -334,8 +394,9 @@ public change and must be called out in the changelog.
 | `tests/cli/test_cli_check.py` | Finding shape and filters |
 | `tests/cli/test_cli_parse.py` | Summary and tree output |
 | `tests/cli/test_cli_query.py` | Query kinds and filters |
+| `tests/cli/test_cli_rules.py` | Rule registry listing and lookup |
 | `tests/cli/test_cli_project.py` | Project output and graph |
-| `tests/cli/test_cli_project_validation.py` | Validation scope output |
+| `tests/cli/test_cli_project_validation.py` | Validation scope output and `--fail-on` |
 | `tests/cli/test_cli_graphics.py` | Companion output and refusal |
 | `tests/cli/test_cli_decode_diff_corpus.py` | Decode, diff, and corpus |
 | `tests/cli/test_cli_coded.py` | Coded input through the CLI |

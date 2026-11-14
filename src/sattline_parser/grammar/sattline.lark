@@ -300,7 +300,8 @@ combutproc_tail: layer_info
 | outline_colour
 | fill_colour
 
-// All other interactors (ComBut_, OptBut_, ProcedureInteract, and any free-form NAME types)
+// All other interactors (ComBut_, OptBut_, CheckBox_, TextBox_, MenuInteract,
+// SimpleInteract): each is a fixed keyword, never a free-form name.
 interact_simple_item: interact_type_simple origo_size_pair+ interact_body_seq
 interact_type_simple: COMBUT | OPTBUT | CHECKBOX | TEXTBOX | MENUINTERACT | SIMPLEINTERACT
 interact_body_seq: (comments | interact_body)+

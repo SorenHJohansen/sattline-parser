@@ -1,8 +1,13 @@
-# pyright: reportUnknownVariableType=false, reportUnknownMemberType=false, reportUnknownArgumentType=false, reportPrivateUsage=false, reportUnusedImport=false, reportArgumentType=false
-# ruff: noqa: F403, F405
-from sattline_parser.transformer._comments_mixin import build_code_comment, code_comments_from_run
+# pyright: reportArgumentType=false, reportUnknownArgumentType=false, reportUnknownMemberType=false
+import pytest
+from lark import Token, Tree
+from lark.exceptions import UnexpectedInput
 
-from ._parser_core_test_support import *
+from sattline_parser import parse_source_text as parser_core_parse_source_text
+from sattline_parser.api import create_parser
+from sattline_parser.models.ast_model import CodeComment, SingleModule, SourceSpan
+from sattline_parser.models.expressions import Assignment
+from sattline_parser.transformer._comments_mixin import build_code_comment, code_comments_from_run
 
 
 def test_comment_run_helpers_build_code_comments():

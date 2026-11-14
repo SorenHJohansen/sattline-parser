@@ -1,6 +1,30 @@
-# pyright: reportUnknownVariableType=false, reportPrivateUsage=false, reportUnusedImport=false, reportCallIssue=false
-# ruff: noqa: F403, F405
-from ._parser_core_test_support import *
+# pyright: reportOptionalIterable=false, reportOptionalMemberAccess=false, reportOptionalSubscript=false, reportPrivateUsage=false, reportTypedDictNotRequiredAccess=false, reportUnknownMemberType=false, reportUnknownVariableType=false
+from types import SimpleNamespace
+
+import pytest
+from lark import Token
+from lark.tree import Meta
+
+from sattline_parser.grammar import constants as parser_const
+from sattline_parser.models.ast_model import CodeComment, FloatLiteral, IntLiteral, SourceSpan
+from sattline_parser.models.clauses import AssignClause
+from sattline_parser.models.expressions import (
+    Assignment,
+    BinOp,
+    BoolOp,
+    Compare,
+    FuncCall,
+    FuncCallStmt,
+    IfStmt,
+    NotOp,
+    TernaryOp,
+    UnaryOp,
+    VarRef,
+)
+from sattline_parser.models.tails import LitStringTail, VarTail
+from sattline_parser.transformer._tokens_mixin import DEFAULT_INIT
+
+from ._parser_core_test_support import _ExpressionsHarness, _parse_to_basepicture, _repo_path, _TokensHarness
 
 _META = SimpleNamespace(line=1, column=1, start_pos=10, end_pos=20, end_line=1, end_column=11)
 _SPAN = SourceSpan(start=10, end=20, line=1, column=1)
@@ -195,7 +219,8 @@ def test_expressions_mixin_builds_statements_calls_and_conditionals():
         else_block=(CodeComment("(* stmt3 *)"),),
         span=_SPAN,
     )
-    assert mixin.statement(_META, [Token("IGNORED", "?"), "assignment"]) == "assignment"
+    assignment = Assignment(VarRef("Counter"), IntLiteral(1), span=_SPAN)
+    assert mixin.statement(_META, [Token("IGNORED", "?"), assignment]) is assignment
     assert mixin.statement(_META, [Token("IGNORED", "?"), FuncCall("Fn", ("arg",))]) == FuncCallStmt(
         FuncCall("Fn", ("arg",)), span=_SPAN
     )
@@ -318,3 +343,11 @@ def test_interact_plain_value_accepts_on_off() -> None:
     body = bp.moduledef.interact_objects[0].properties[parser_const.KEY_BODY]
     values = {entry.name: entry.value for entry in body if isinstance(entry, AssignClause)}
     assert values == {"Value": True, "Other": False}
+
+
+def test_statement_rejects_a_child_that_is_not_a_code_item() -> None:
+    """A grammar change that routes an unexpected node here fails loudly."""
+    mixin = _ExpressionsHarness()
+
+    with pytest.raises(ValueError, match="statement expected a code item"):
+        mixin.statement(_META, [object()])

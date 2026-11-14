@@ -1,5 +1,4 @@
-# pyright: reportUnknownVariableType=false, reportUnknownMemberType=false, reportUnknownParameterType=false, reportMissingParameterType=false, reportUnknownArgumentType=false, reportCallIssue=false, reportPrivateUsage=false, reportUnusedImport=false, reportAttributeAccessIssue=false, reportOptionalSubscript=false, reportOptionalMemberAccess=false, reportOptionalOperand=false
-# ruff: noqa: F403, F405
+# pyright: reportAttributeAccessIssue=false, reportOptionalMemberAccess=false, reportOptionalOperand=false, reportOptionalSubscript=false, reportUnknownMemberType=false, reportUnknownVariableType=false
 """Source-provenance tests.
 
 Verify that preprocessing, parsing, AST spans, and diagnostics all refer to the
@@ -7,9 +6,19 @@ ORIGINAL source, including for compressed input. Each end-to-end test checks
 ``original -> preprocess -> parse -> AST node -> span -> slice original source``.
 """
 
-from sattline_parser.source_document import is_remapped
+from pathlib import Path
+from typing import LiteralString
 
-from ._parser_core_test_support import *
+import pytest
+from lark.exceptions import UnexpectedEOF, UnexpectedInput
+
+from sattline_parser import parse_source_text as parser_core_parse_source_text
+from sattline_parser import source_io as parser_api
+from sattline_parser.api import create_parser, parse_source_file
+from sattline_parser.models.ast_model import BasePicture, CodeComment
+from sattline_parser.models.expressions import Assignment
+from sattline_parser.preprocessing import preprocess_source
+from sattline_parser.source_document import SourceDocument, is_remapped
 
 
 def _compress(text: str, targets: list[str] | None = None) -> str:
@@ -89,9 +98,55 @@ def test_source_document_identity_maps_positions_exactly():
     assert doc.line_col(6) == (2, 1)
 
 
+def test_source_document_identity_map_range_is_clamped_to_the_original_text():
+    doc = SourceDocument.identity("hello")
+    assert doc.map_range(-3, 99) == (0, 5)
+    assert doc.map_range(3, 99) == (3, 5)
+    assert doc.map_range(99, 99) == (5, 5)
+
+
+def test_source_document_char_map_is_a_read_only_property():
+    document = preprocess_source(_COMPRESSED)
+    char_map = document.char_map
+    assert isinstance(char_map, tuple)
+    assert len(char_map) == len(document.normalized_text)
+    assert char_map is document._char_map  # type: ignore[attr-defined]
+    assert SourceDocument.identity("plain").char_map is None
+
+
+def test_source_document_is_importable_from_the_preprocessing_package():
+    from sattline_parser import preprocessing  # noqa: PLC0415
+
+    assert "SourceDocument" in preprocessing.__all__
+    assert preprocessing.SourceDocument is SourceDocument
+
+
+def test_source_document_is_identity_keys_on_the_map_not_on_the_text():
+    # A caller-supplied identity map over unchanged text is a real map: the
+    # remap must run, because the document cannot know the map is the identity.
+    mapped = SourceDocument("abc", "abc", (0, 1, 2))
+    assert mapped.is_identity() is False
+    assert SourceDocument("abc", "abc", None).is_identity() is True
+
+
+def test_source_document_builds_its_line_index_on_first_use():
+    doc = SourceDocument.identity("a\nb")
+    assert doc._line_starts is None  # type: ignore[attr-defined]
+    assert doc.line_col(2) == (2, 1)
+    assert doc._line_starts == (0, 2)  # type: ignore[attr-defined]
+    assert doc.line_col(2) == (2, 1)
+
+
 def test_source_document_rejects_mismatched_char_map():
     with pytest.raises(ValueError, match="char_map length"):
         SourceDocument("abc", "ab", (0, 1, 2))
+
+
+def test_source_document_requires_a_map_when_the_texts_differ():
+    with pytest.raises(ValueError, match="char_map is required"):
+        SourceDocument("abc", "abd")
+    # Equal texts default to the identity document.
+    assert SourceDocument("abc", "abc").is_identity() is True
 
 
 def test_source_document_derives_line_and_column_from_original_text():
@@ -152,8 +207,10 @@ def test_preprocess_source_decodes_compressed_text_and_roundtrips():
 def test_decode_compressed_marks_unknown_marker_as_error_not_space():
     from sattline_parser.preprocessing.compressed import PreprocessError  # noqa: PLC0415
 
-    with pytest.raises(PreprocessError, match=r"Unknown compressed marker '#XX'"):
-        preprocess_source("#XX")
+    # `#00` is a well-formed compact code that the scanner table does not
+    # define, so it must be reported rather than replaced by whitespace.
+    with pytest.raises(PreprocessError, match=r"Unknown compressed marker '#00'"):
+        preprocess_source("#00")
 
 
 def test_decode_compressed_never_rewrites_string_content():
@@ -169,7 +226,7 @@ def test_decode_compressed_never_rewrites_string_content():
     assert "#71" in doc.normalized_text
     # No unknown marker error may surface for markers inside strings/comments.
     with pytest.raises(PreprocessError):
-        preprocess_source(_compress(source) + " #XX")  # a REAL unknown marker outside regions still errors
+        preprocess_source(_compress(source) + " #00")  # a REAL unknown marker outside regions still errors
 
 
 def test_decode_compressed_protects_nested_comments_and_escaped_quotes():
@@ -260,7 +317,7 @@ def test_parse_compressed_source_unknown_marker_raises_clear_error():
     from sattline_parser.preprocessing.compressed import PreprocessError  # noqa: PLC0415
 
     with pytest.raises(PreprocessError, match="Unknown compressed marker"):
-        parser_core_parse_source_text(_COMPRESSED.replace("#85", "#ZZ"))
+        parser_core_parse_source_text(_COMPRESSED.replace("#85", "#00"))
 
 
 def test_parse_source_file_and_parse_source_text_have_consistent_provenance(tmp_path: Path):

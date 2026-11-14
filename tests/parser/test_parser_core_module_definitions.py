@@ -1,6 +1,41 @@
-# pyright: reportUnknownVariableType=false, reportUnknownMemberType=false, reportUnknownParameterType=false, reportMissingParameterType=false, reportUnknownArgumentType=false, reportCallIssue=false, reportPrivateUsage=false, reportUnusedImport=false, reportTypedDictNotRequiredAccess=false
-# ruff: noqa: F403, F405
-from ._parser_core_test_support import *
+# pyright: reportAttributeAccessIssue=false, reportPrivateUsage=false, reportUnknownMemberType=false
+from types import SimpleNamespace
+
+import pytest
+from lark import Token, Tree
+from lark.tree import Meta
+
+from sattline_parser import parse_source_text as parser_core_parse_source_text
+from sattline_parser.grammar import constants as parser_const
+from sattline_parser.models.ast_model import (
+    FrameModule,
+    GraphObject,
+    InteractObject,
+    MappingSource,
+    ModuleCode,
+    ModuleDef,
+    ModuleTypeInstance,
+    ParameterMapping,
+    SingleModule,
+    SourceSpan,
+    Variable,
+)
+from sattline_parser.models.clauses import (
+    ClippingClause,
+    Grid,
+    ModuleArguments,
+    ModuleMarker,
+    ModuleOptions,
+    SeqLayers,
+    TwoLayers,
+    Zoomable,
+    ZoomLimits,
+)
+from sattline_parser.models.expressions import VarRef
+from sattline_parser.models.tails import VarTail
+from sattline_parser.transformer._module_shared import CoordTail, GroupConnInfo, InterimCoords
+
+from ._parser_core_test_support import _module_header, _ModulesHarness
 
 
 def test_modules_mixin_definition_trees_keep_only_supported_children():

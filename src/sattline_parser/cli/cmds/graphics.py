@@ -9,7 +9,7 @@ from sattline_parser.project import GraphicsModel, parse_graphics_text
 
 from .._exit import ExitCode
 from .._findings import GRAPHICS_SCAN_RULE, Finding
-from .._io import read_source
+from .._io import display_path, read_source
 from .._json import SCHEMA_PREFIX, dumps
 from ._common import add_output_flags, add_source_flags, emit_findings, finding_fields, require_companion
 
@@ -28,8 +28,9 @@ def register(subparsers: argparse._SubParsersAction[argparse.ArgumentParser]) ->
 
 def run(args: argparse.Namespace) -> int:
     model, name = _load_model(args)
-    findings = _findings(model, name=name)
-    _emit_document(model, args=args, name=name, findings=findings)
+    file = display_path(name, absolute=args.path_style == "absolute")
+    findings = _findings(model, name=file)
+    _emit_document(model, args=args, name=file, findings=findings)
     return int(ExitCode.FINDINGS if any(finding.is_error for finding in findings) else ExitCode.OK)
 
 

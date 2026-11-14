@@ -36,7 +36,7 @@ from sattline_parser.validation.code import ValidationContext, walk_expression
 from sattline_parser.validation.diagnostics import Diagnostic, DiagnosticCode
 from sattline_parser.validation.symbols import Scope
 from sattline_parser.validation.type_graph import TypeGraph
-from sattline_parser.validation.typing import infer_expr_type, is_boolean
+from sattline_parser.validation.typing import infer_expr_type, is_anytype_datatype, is_boolean
 
 __all__ = ["check_annotation_tails"]
 
@@ -130,9 +130,13 @@ def _check_enable_condition(
     type_graph: TypeGraph,
     errors: list[Diagnostic],
 ) -> None:
-    """An ``Enable_`` expression tail must be boolean (SL-V030)."""
+    """An ``Enable_`` expression tail must be boolean (SL-V030).
+
+    ``AnyType`` is exempt, matching the condition, assignment, operand, logical,
+    and builtin-argument rules.
+    """
     inferred = infer_expr_type(tail, scope, records, type_graph)
-    if inferred is not None and not is_boolean(inferred):
+    if inferred is not None and not is_boolean(inferred) and not is_anytype_datatype(inferred):
         errors.append(
             Diagnostic(
                 code=DiagnosticCode.CONDITION_NOT_BOOLEAN,

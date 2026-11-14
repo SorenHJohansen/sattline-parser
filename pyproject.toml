@@ -59,7 +59,6 @@ dev = [
     "bandit>=1.8.0",
     "pip-audit>=2.8.0",
     "twine>=5.1.1",
-    "vulture>=2.11",
     "pre-commit>=4.0",
 ]
 
@@ -75,11 +74,6 @@ timeout_method = "thread"
 addopts = [
     "--strict-markers",
     "--strict-config",
-]
-markers = [
-    "slow: marks tests as slow (deselect with '-m \"not slow\"')",
-    "parser: marks tests related to parser functionality",
-    "quarantine: marks flaky tests that should be skipped in CI",
 ]
 
 [tool.coverage.run]
@@ -98,6 +92,9 @@ fail_under = 100
 [tool.ruff]
 line-length = 120
 target-version = "py312"
+# Markdown is documentation. `ruff format` would rewrite fenced examples and
+# collapse the aligned comments the docs use deliberately, so keep it out.
+extend-exclude = ["*.md"]
 
 [tool.ruff.lint]
 select = [
@@ -133,7 +130,7 @@ ignore = [
 max-statements = 50
 
 [tool.pyright]
-include = ["src", "tests", "benchmarks", "fuzzing"]
+include = ["src", "tests", "benchmarks", "fuzzing", "scripts"]
 typeCheckingMode = "strict"
 pythonVersion = "3.12"
 venvPath = "."

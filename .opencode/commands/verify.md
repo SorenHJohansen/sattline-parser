@@ -11,7 +11,7 @@ exists, otherwise use `uv run`.
 1. Run the smallest focused test that covers the change.
 2. Run `ruff check src tests scripts benchmarks fuzzing`.
 3. Run `ruff format --check src tests scripts benchmarks fuzzing`.
-4. Run `pyright src tests benchmarks fuzzing`.
+4. Run `pyright src tests benchmarks fuzzing scripts`.
 5. Run `bandit -q -r src fuzzing -x tests -c pyproject.toml`.
 6. Run `scripts/check_branch_coverage.py`. This runs the full suite and both
    coverage gates.

@@ -22,10 +22,16 @@ from sattline_parser.models.clauses import (
 )
 from sattline_parser.models.tails import ClipValue, CoordinateClipping, LitStringTail, Tail, VarTail
 
-from ._module_shared import CoordTail, InterimCoords, TransformerItem, coord_pair, meta_span, v_args
-
-_OUTVAR_TOKEN = "OUTVAR_PREFIX"  # nosec B105 - grammar token literal, not a credential
-_PREFIX_TOKENS = ("INVAR_PREFIX", _OUTVAR_TOKEN)
+from ._module_shared import (
+    OUTVAR_TOKEN,
+    PREFIX_TOKENS,
+    CoordTail,
+    InterimCoords,
+    TransformerItem,
+    coord_pair,
+    meta_span,
+    v_args,
+)
 
 
 def _module_options(items: list[TransformerItem]) -> ModuleOptions:
@@ -113,9 +119,9 @@ class ModuleLayoutMixin:
         value: object | None = None
         for item in items:
             if isinstance(item, Token):
-                if item.type == _OUTVAR_TOKEN:
+                if item.type == OUTVAR_TOKEN:
                     direction = "out"
-                if item.type in _PREFIX_TOKENS:
+                if item.type in PREFIX_TOKENS:
                     saw_prefix = True
                 continue
             if value is None:

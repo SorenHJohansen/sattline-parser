@@ -14,7 +14,7 @@ never pull the other library's definition into the invoked set.
 from __future__ import annotations
 
 from collections import deque
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 
 from sattline_parser.models.ast_model import (
     FrameModule,
@@ -67,30 +67,40 @@ def visible_program_keys(
 def invoked_moduletypes(
     programs: Mapping[str, SattLineProgram],
     targets: Iterable[str],
+    *,
+    closure_of: Callable[[str], frozenset[str]] | None = None,
 ) -> dict[str, set[str]]:
     """Map each program key to the module-type names reached from ``targets``.
 
     ``programs`` is the loader registry: program key to an object with ``code``
-    (a :class:`BasePicture`). A target contributes every module type in its own
-    file and every library module type its submodules invoke. Those library
-    definitions contribute their own nested invocations, transitively.
+    (a :class:`BasePicture`). ``targets`` are program keys. A target contributes
+    every module type in its own file and every library module type its
+    submodules invoke. Those library definitions contribute their own nested
+    invocations, transitively.
+
+    ``closure_of`` answers "which program keys can this key see" and defaults to
+    walking the declared dependency names. The loader passes its resolved
+    dependency keys instead, because one name may resolve to different bodies
+    for different requesters.
     """
     index: dict[str, list[tuple[str, ModuleTypeDef]]] = {}
     closures: dict[str, frozenset[str]] = {}
     for key, program in programs.items():
-        closures[key] = visible_program_keys(programs, key, program.dependencies)
+        if closure_of is not None:
+            closures[key] = closure_of(key)
+        else:
+            closures[key] = visible_program_keys(programs, key, program.dependencies)
         for moduletype in program.code.moduletype_defs:
             index.setdefault(moduletype.name.casefold(), []).append((key, moduletype))
 
     pending: deque[tuple[str, str]] = deque()
     for target in targets:
-        key = target.casefold()
-        program = programs.get(key)
+        program = programs.get(target)
         if program is None:
             continue
-        pending.extend((reference, key) for reference in iter_moduletype_refs(program.code.submodules))
+        pending.extend((reference, target) for reference in iter_moduletype_refs(program.code.submodules))
         for moduletype in program.code.moduletype_defs:
-            pending.extend((reference, key) for reference in iter_moduletype_refs(moduletype.submodules))
+            pending.extend((reference, target) for reference in iter_moduletype_refs(moduletype.submodules))
 
     reachable: dict[str, set[str]] = {}
     seen: set[tuple[str, str]] = set()

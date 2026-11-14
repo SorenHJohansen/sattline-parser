@@ -33,7 +33,13 @@ from .formats import (
 )
 from .models import DistributionData, DistributionTarget, LoadMode
 
+#: A distribution companion is a small configuration blob, not data. A larger
+#: file is refused before it is read, so a pathological companion cannot become
+#: a memory vector.
+MAX_DISTRIBUTION_COMPANION_BYTES = 1 << 20
+
 __all__ = [
+    "MAX_DISTRIBUTION_COMPANION_BYTES",
     "DistributionParseError",
     "parse_distribution_file",
     "parse_distribution_text",
@@ -344,7 +350,18 @@ def parse_distribution_text(text: str) -> DistributionData:
 
 
 def parse_distribution_file(path: Path) -> DistributionData:
-    """Parse the distribution companion at *path*."""
+    """Parse the distribution companion at *path*.
+
+    A companion larger than :data:`MAX_DISTRIBUTION_COMPANION_BYTES` is reported
+    as a parse error instead of being read into memory.
+    """
+    size = path.stat().st_size
+    if size > MAX_DISTRIBUTION_COMPANION_BYTES:
+        raise DistributionParseError(
+            f"companion is {size} bytes, over the {MAX_DISTRIBUTION_COMPANION_BYTES} byte limit",
+            line=1,
+            column=1,
+        )
     return parse_distribution_text(read_text_cp1252(path))
 
 

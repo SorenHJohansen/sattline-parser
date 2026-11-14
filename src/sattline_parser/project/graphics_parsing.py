@@ -36,6 +36,21 @@ _RECORD_TERMINATOR = "0"
 _COMPOSITE_RECORD_FAMILIES = frozenset({"1", "2", "4", "5"})
 _KEEP_SHAPE_VALUES = frozenset({"t", "f"})
 
+#: A graphics companion is a small serialized blob, not a data store. A larger
+#: file is refused before it is read, so a pathological companion cannot become
+#: a memory vector.
+MAX_GRAPHICS_COMPANION_BYTES = 4 << 20
+
+
+class GraphicsParseError(ValueError):
+    """A graphics companion file cannot be read as a companion.
+
+    Content problems inside a readable companion stay ``GraphicsMessage``
+    values. This error is for a file-level refusal, such as one larger than
+    :data:`MAX_GRAPHICS_COMPANION_BYTES`, which the loader reports as a load
+    failure rather than a partially scanned model.
+    """
+
 
 def resolve_graphics_companion_path(code_path: Path, *, mode: LoadMode) -> Path | None:
     """Resolve the graphics companion file for ``code_path``.
@@ -331,10 +346,21 @@ def parse_graphics_file(file_path: Path) -> GraphicsModel:
 
     ``OSError`` and ``UnicodeError`` propagate to the caller (the loader maps
     them onto load errors); unreadable binding content becomes a
-    ``GraphicsMessage``.
+    ``GraphicsMessage``. A companion larger than
+    :data:`MAX_GRAPHICS_COMPANION_BYTES` raises :class:`GraphicsParseError`,
+    which the loader also maps onto a load error.
     """
+    size = file_path.stat().st_size
+    if size > MAX_GRAPHICS_COMPANION_BYTES:
+        raise GraphicsParseError(f"companion is {size} bytes, over the {MAX_GRAPHICS_COMPANION_BYTES} byte limit")
     text = read_text_cp1252(file_path)
     return parse_graphics_text(text)
 
 
-__all__ = ["parse_graphics_file", "parse_graphics_text", "resolve_graphics_companion_path"]
+__all__ = [
+    "MAX_GRAPHICS_COMPANION_BYTES",
+    "GraphicsParseError",
+    "parse_graphics_file",
+    "parse_graphics_text",
+    "resolve_graphics_companion_path",
+]

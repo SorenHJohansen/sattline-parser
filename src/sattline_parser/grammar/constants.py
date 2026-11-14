@@ -57,6 +57,8 @@ KEY_NAME: Final = "name"
 KEY_DOT: Final = "DOT"
 KEY_STRING: Final = "STRING"
 KEY_SIGNED_INT: Final = "SIGNED_INT"
+KEY_STATE_SUFFIX: Final = "STATE_SUFFIX"
+KEY_ENDDEF_KW: Final = "ENDDEF_KW"
 KEY_SL_DATECODE: Final = "SL_DATECODE"
 KEY_PLUS: Final = "PLUS"
 KEY_MINUS: Final = "MINUS"
@@ -228,12 +230,9 @@ GRAMMAR_VALUE_OLD: Final = "Old"
 # Grammar regex fragments
 # ---------------------------------------------------------------------------
 
-#: The numeric and string literals. They do not spell a keyword, so they are
-#: written directly.
-GRAMMAR_REGEX_SIGNED_INT: Final = r"/[+-]?\d+/"
-GRAMMAR_REGEX_SIGNED_INT_NOTAIL: Final = r"/[+-]?\d+(?![\d.])(?!(?:[ \t\r\n]*:))/"
-GRAMMAR_REGEX_REAL: Final = r"/[+-]?(?:\d+\.\d+(?:[eE][+-]?\d+)?|\d+[eE][+-]?\d+)/"
-GRAMMAR_REGEX_REAL_NOTAIL: Final = r"/[+-]?(?:\d+\.\d+(?:[eE][+-]?\d+)?|\d+[eE][+-]?\d+)(?![ \t\r\n]*:)/"
+#: The string literals. They do not spell a keyword, so they are written
+#: directly. The numeric literals are defined after ``GRAMMAR_CHARSET_NAME``
+#: because their sign guard reuses it.
 GRAMMAR_REGEX_STRING: Final = r"/\"([^\n\"]|\"\")*\"/"
 GRAMMAR_REGEX_STRING_NOTAIL: Final = r"/\"([^\n\"]|\"\")*\"(?![ \t\r\n]*:)/"
 GRAMMAR_REGEX_STRING_CRLF: Final = r"/\"([^\"\n]|\"\")*\n/"
@@ -300,6 +299,31 @@ GRAMMAR_REGEX_NAME: Final = (
     r")"
     rf"[{GRAMMAR_CHARSET_NAME}][{GRAMMAR_CHARSET_NAME}]{{0,19}}"
     rf"(?![{GRAMMAR_CHARSET_NAME}]))/"
+)
+
+#: The numeric literals. They do not spell a keyword, so they are written
+#: directly.
+#:
+#: A literal may carry a leading sign only where a literal may start: the
+#: negative lookbehind rejects a sign directly after a character that ends an
+#: operand (a name character, a digit, ``)``, ``"`` or ``]``), so ``1+2``,
+#: ``1-2`` and ``A-1`` lex as a binary operator plus a literal instead of
+#: swallowing the operator into a second literal. The group is optional, so an
+#: unsigned literal is never blocked by its surroundings. A sign at the start of
+#: a literal (``= -5``, ``( -1.0``, ``* -2``, ``COORD -1.0``, ``InVar_ -1.0``)
+#: still matches, and the sign inside an exponent (``1e-3``) belongs to the same
+#: match. Signed coordinates and layout values therefore keep working while an
+#: expression-level sign reaches ``unary_expression``.
+#:
+#: A space between the operator and the next literal (``1 +2``) is still read as
+#: a signed literal, because a value list such as ``-2.33 -3.12`` separates two
+#: literals with nothing but whitespace and must keep both of them.
+_NUMERIC_SIGN_BLOCKERS: Final = rf'(?:(?<![{GRAMMAR_CHARSET_NAME})"\]])[+-])?'
+GRAMMAR_REGEX_SIGNED_INT: Final = rf"/{_NUMERIC_SIGN_BLOCKERS}\d+/"
+GRAMMAR_REGEX_SIGNED_INT_NOTAIL: Final = rf"/{_NUMERIC_SIGN_BLOCKERS}\d+(?![\d.])(?!(?:[ \t\r\n]*:))/"
+GRAMMAR_REGEX_REAL: Final = rf"/{_NUMERIC_SIGN_BLOCKERS}(?:\d+\.\d+(?:[eE][+-]?\d+)?|\d+[eE][+-]?\d+)/"
+GRAMMAR_REGEX_REAL_NOTAIL: Final = (
+    rf"/{_NUMERIC_SIGN_BLOCKERS}(?:\d+\.\d+(?:[eE][+-]?\d+)?|\d+[eE][+-]?\d+)(?![ \t\r\n]*:)/"
 )
 
 # ---------------------------------------------------------------------------

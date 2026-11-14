@@ -1,6 +1,8 @@
-# pyright: reportUnknownParameterType=false, reportMissingParameterType=false, reportUnknownLambdaType=false, reportArgumentType=false
+# pyright: reportUnknownLambdaType=false
+from pathlib import Path
 from types import SimpleNamespace
 
+from sattline_parser import parse_source_file, parse_source_text
 from sattline_parser.formatting import formatter
 from sattline_parser.models import ast_model
 from sattline_parser.models.ast_model import IntLiteral
@@ -8,6 +10,7 @@ from sattline_parser.models.expressions import (
     Assignment,
     BinOp,
     BoolOp,
+    CodeComment,
     Compare,
     FuncCall,
     FuncCallStmt,
@@ -17,6 +20,31 @@ from sattline_parser.models.expressions import (
     UnaryOp,
     VarRef,
 )
+
+_CORPUS = Path(__file__).resolve().parents[1] / "fixtures" / "corpus" / "valid"
+
+_PROGRAM_TEMPLATE = """\"SyntaxVersion\"
+\"OriginalFileDate\"
+\"ProgramDate\"
+BasePicture Invocation (0.0,0.0,0.0,1.0,1.0) : MODULEDEFINITION DateCode_ 1
+ModuleDef
+ClippingBounds = ( -1.0 , -1.0 ) ( 1.0 , 1.0 )
+ModuleCode
+EQUATIONBLOCK Main COORD 0.0, 0.0 OBJSIZE 1.0, 1.0 :
+{body}
+ENDDEF (*BasePicture*);
+"""
+
+
+def _round_trip(code: list[object]) -> list[object]:
+    """Format statements, parse them back, and return the parsed code list."""
+    body = "\n".join(formatter.format_expr(item) for item in code)
+    picture = parse_source_text(_PROGRAM_TEMPLATE.format(body=body))
+    module_code = picture.modulecode
+    assert module_code is not None
+    equationblocks = module_code.equationblocks
+    assert equationblocks is not None
+    return list(equationblocks[0].code)
 
 
 def test_format_list_handles_empty_and_inline_rendering():
@@ -45,7 +73,7 @@ def test_format_optional_and_literal_expression_rendering():
     assert formatter.format_optional(5) == "5"
 
     assert formatter.format_expr(VarRef("MyVar")) == "MyVar"
-    assert formatter.format_expr("Text") == "'Text'"
+    assert formatter.format_expr("Text") == '"Text"'
     assert formatter.format_expr(True) == "True"
 
 
@@ -76,13 +104,13 @@ def test_format_expr_handles_statements_and_operators():
     assert "ELSE" in rendered_if
     assert "ENDIF" in rendered_if
     assert "THEN" in rendered_ternary
-    assert "'A' OR" in rendered_or
-    assert "'A' AND" in rendered_and
-    assert rendered_not == "NOT('A')"
-    assert rendered_compare == "'A' > 1"
+    assert '"A" OR' in rendered_or
+    assert '"A" AND' in rendered_and
+    assert rendered_not == 'NOT("A")'
+    assert rendered_compare == '"A" > 1'
     assert rendered_add == "(1 + 2)"
     assert rendered_mul == "(2 * 3)"
-    assert rendered_call == "Fn(1, 'x')"
+    assert rendered_call == 'Fn(1, "x")'
     assert rendered_fallback.startswith("('unknown-op', 1)")
 
 
@@ -141,11 +169,13 @@ def test_format_seq_nodes_renders_all_node_types():
     assert "Transition T2" in rendered
     assert "Fork to Z Break" in rendered
     assert "Substep:" in rendered
+    assert "EndSubstep" in rendered
 
 
 def test_format_expr_handles_new_typed_expression_nodes():
     assert formatter.format_expr(VarRef("Pump.State")) == "Pump.State"
-    assert formatter.format_expr(VarRef("X", state="old")) == "X:old"
+    assert formatter.format_expr(VarRef("X", state="old")) == "X:Old"
+    assert formatter.format_expr(VarRef("X", state="new")) == "X:New"
     assert formatter.format_expr(Assignment(VarRef("A"), 1)) == "A = 1"
     assert formatter.format_expr(FuncCallStmt(FuncCall("Reset", ()))) == "Reset()"
     assert formatter.format_expr(BoolOp("OR", (VarRef("A"), VarRef("B")))) == "A OR \nB"
@@ -165,3 +195,39 @@ def test_format_expr_handles_new_typed_expression_nodes():
     )
     rendered_if = formatter.format_expr(if_stmt)
     assert "IF Cond" in rendered_if and "THEN" in rendered_if and "ELSE" in rendered_if
+
+
+def test_formatted_control_flow_parses_back_to_the_same_tree() -> None:
+    picture = parse_source_file(_CORPUS / "ControlFlow.s")
+    module_code = picture.modulecode
+    assert module_code is not None
+    equationblocks = module_code.equationblocks
+    assert equationblocks is not None
+    equation = equationblocks[0]
+
+    assert _round_trip(list(equation.code)) == list(equation.code)
+
+
+def test_formatted_state_suffix_round_trips() -> None:
+    assert formatter.format_expr(VarRef("X", state="old")) == "X:Old"
+
+    code = _round_trip([Assignment(VarRef("X", state="old"), 1)])
+
+    assert code == [Assignment(VarRef("X", state="old"), 1)]
+
+
+def test_formatted_string_literal_round_trips() -> None:
+    text = 'say "hi"'
+    assert formatter.format_expr(text) == '"say ""hi"""'
+
+    code = _round_trip([Assignment(VarRef("Message"), text)])
+
+    assert code == [Assignment(VarRef("Message"), text)]
+
+
+def test_formatted_comment_round_trips() -> None:
+    comment = CodeComment("(* kept *)")
+
+    code = _round_trip([comment])
+
+    assert code == [comment]

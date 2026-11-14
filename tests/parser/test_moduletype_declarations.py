@@ -1,8 +1,6 @@
-# pyright: reportUnknownVariableType=false, reportUnknownMemberType=false
-
 """Module-type declaration parsing through comments and ``PRIVATE_`` markers."""
 
-from ._parser_core_test_support import parser_core_parse_source_text
+from sattline_parser import parse_source_text as parser_core_parse_source_text
 
 _MD = "MODULEDEFINITION"
 

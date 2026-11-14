@@ -1,4 +1,3 @@
-# pyright: reportUnknownMemberType=false, reportUnknownVariableType=false, reportUnknownArgumentType=false
 """Tests for the ``changelog.d`` fragment assembler."""
 
 from __future__ import annotations

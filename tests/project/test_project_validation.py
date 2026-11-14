@@ -20,6 +20,8 @@ from sattline_parser.project._cycles import cycle_key, dependency_cycles, first_
 from sattline_parser.project.loader import ProjectLoader
 from sattline_parser.project.models import SattLineProgram
 
+from ._support import write_file
+
 _HEADER = """\"Syntax version 2.23, date: 2026-04-23-12:00:00.000 N\"
 \"Original file date: ---\"
 \"Program date: 2026-04-23-12:00:00.000, name: {name}\"
@@ -47,13 +49,6 @@ ENDDEF (*BasePicture*);
     )
 
 
-def _write(root: Path, rel: str, content: str) -> Path:
-    path = root / rel
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(content, encoding="utf-8")
-    return path
-
-
 def _load(root: Path, target: str, **kwargs: object) -> SattLineProject:
     return SattLineProject.load(
         [root],
@@ -66,7 +61,7 @@ def _load(root: Path, target: str, **kwargs: object) -> SattLineProject:
 def test_load_populates_library_resolved_base_and_origin(tmp_path: Path) -> None:
     root = tmp_path / "libs"
     root.mkdir()
-    _write(root, "Main.s", _source("Main"))
+    write_file(root, "Main.s", _source("Main"))
     project = _load(root, "Main")
     program = project.get("Main")
     assert program.library == "libs"
@@ -79,7 +74,7 @@ def test_load_populates_library_resolved_base_and_origin(tmp_path: Path) -> None
 def test_load_reports_local_validation_findings(tmp_path: Path) -> None:
     root = tmp_path / "libs"
     root.mkdir()
-    _write(root, "Main.s", _source("Main", locals_block="LOCALVARIABLES\n   Bad: NotAType;\n"))
+    write_file(root, "Main.s", _source("Main", locals_block="LOCALVARIABLES\n   Bad: NotAType;\n"))
     program = _load(root, "Main").get("Main")
     assert [diagnostic.code.value for diagnostic in program.diagnostics] == ["SL-V020"]
     assert program.diagnostics[0].tentative is False
@@ -88,7 +83,7 @@ def test_load_reports_local_validation_findings(tmp_path: Path) -> None:
 def test_load_with_validation_none_reports_nothing(tmp_path: Path) -> None:
     root = tmp_path / "libs"
     root.mkdir()
-    _write(root, "Main.s", _source("Main", locals_block="LOCALVARIABLES\n   Bad: NotAType;\n"))
+    write_file(root, "Main.s", _source("Main", locals_block="LOCALVARIABLES\n   Bad: NotAType;\n"))
     program = _load(root, "Main", validate=LoadValidation.NONE).get("Main")
     assert program.diagnostics == ()
 
@@ -96,7 +91,7 @@ def test_load_with_validation_none_reports_nothing(tmp_path: Path) -> None:
 def test_external_datatypes_are_visible_to_dependents(tmp_path: Path) -> None:
     root = tmp_path / "libs"
     root.mkdir()
-    _write(
+    write_file(
         root,
         "Dep.s",
         _source(
@@ -111,8 +106,8 @@ def test_external_datatypes_are_visible_to_dependents(tmp_path: Path) -> None:
             ),
         ),
     )
-    _write(root, "Main.s", _source("Main", locals_block="LOCALVARIABLES\n   Sensor: SensorType;\n"))
-    _write(root, "Main.l", "Dep\n")
+    write_file(root, "Main.s", _source("Main", locals_block="LOCALVARIABLES\n   Sensor: SensorType;\n"))
+    write_file(root, "Main.l", "Dep\n")
     program = _load(root, "Main").get("Main")
     assert program.diagnostics == ()
 
@@ -130,7 +125,7 @@ def test_instance_may_omit_every_parameter_mapping(tmp_path: Path) -> None:
         "   ENDDEF (*ControllerType*);\n"
     )
     body = "SUBMODULES\n   Child Invocation ( 0.1 , 0.1 , 0.0 , 0.4 , 0.4 ) : ControllerType;\n"
-    _write(root, "Main.s", _source("Main", typedefs=moduletype, body=body))
+    write_file(root, "Main.s", _source("Main", typedefs=moduletype, body=body))
     program = _load(root, "Main").get("Main")
     assert program.diagnostics == ()
 
@@ -148,14 +143,14 @@ def test_external_typedef_parameter_mapping_target_is_checked(tmp_path: Path) ->
         "   ClippingBounds = ( -1.0 , -1.0 ) ( 1.0 , 1.0 )\n"
         "   ENDDEF (*ChildType*);\n"
     )
-    _write(root, "Dep.s", _source("Dep", typedefs=records + moduletype))
+    write_file(root, "Dep.s", _source("Dep", typedefs=records + moduletype))
     body = (
         "SUBMODULES\n"
         "   Child Invocation ( 0.1 , 0.1 , 0.0 , 0.4 , 0.4 ) : ChildType (\n"
         '      Param.Value => "not an integer");\n'
     )
-    _write(root, "Main.s", _source("Main", body=body))
-    _write(root, "Main.l", "Dep\n")
+    write_file(root, "Main.s", _source("Main", body=body))
+    write_file(root, "Main.l", "Dep\n")
     diagnostics = _load(root, "Main").get("Main").diagnostics
     assert [diagnostic.code.value for diagnostic in diagnostics] == ["SL-V050"]
     assert "Param.Value" in diagnostics[0].message
@@ -170,9 +165,9 @@ def test_external_record_fields_belong_to_the_defining_program(tmp_path: Path) -
         "      BadField: MissingFieldType := 0;\n"
         "   ENDDEF (*BrokenRecord*);\n"
     )
-    _write(root, "Dep.s", _source("Dep", typedefs=broken_record))
-    _write(root, "Main.s", _source("Main", locals_block="LOCALVARIABLES\n   Sensor: BrokenRecord;\n"))
-    _write(root, "Main.l", "Dep\n")
+    write_file(root, "Dep.s", _source("Dep", typedefs=broken_record))
+    write_file(root, "Main.s", _source("Main", locals_block="LOCALVARIABLES\n   Sensor: BrokenRecord;\n"))
+    write_file(root, "Main.l", "Dep\n")
     # Ownership of an external field finding is a FULL-mode property: INVOKED
     # limits a dependency to its invoked module types, and Dep contributes a
     # record datatype only.
@@ -191,8 +186,8 @@ def test_visible_definitions_come_from_the_dependency_closure(tmp_path: Path) ->
     hidden_type = (
         "TYPEDEFINITIONS\n   HiddenType = RECORD DateCode_ 1\n      Value: integer := 0;\n   ENDDEF (*HiddenType*);\n"
     )
-    _write(root, "Other.s", _source("Other", typedefs=hidden_type))
-    _write(root, "Main.s", _source("Main", locals_block="LOCALVARIABLES\n   Value: HiddenType;\n"))
+    write_file(root, "Other.s", _source("Other", typedefs=hidden_type))
+    write_file(root, "Main.s", _source("Main", locals_block="LOCALVARIABLES\n   Value: HiddenType;\n"))
     project = SattLineProject.load([root], mode=LoadMode.DRAFT, targets=("Other", "Main"), strict=False)
     assert project.get("Other").diagnostics == ()
     assert [diagnostic.code.value for diagnostic in project.get("Main").diagnostics] == ["SL-V020"]
@@ -247,10 +242,10 @@ def test_invoked_validation_limits_dependencies_to_used_moduletypes(tmp_path: Pa
         "   Used Invocation ( 0.1 , 0.1 , 0.0 , 0.4 , 0.4 ) : UsedType;\n"
         "   UsedAgain Invocation ( 0.6 , 0.1 , 0.0 , 0.4 , 0.4 ) : UsedType;\n"
     )
-    _write(root, "Lib.s", _source("Lib", typedefs=library_types))
-    _write(root, "Other.s", _source("Other", typedefs=other_types))
-    _write(root, "Main.s", _source("Main", typedefs=own_type, body=body))
-    _write(root, "Main.l", "Lib\nOther\n")
+    write_file(root, "Lib.s", _source("Lib", typedefs=library_types))
+    write_file(root, "Other.s", _source("Other", typedefs=other_types))
+    write_file(root, "Main.s", _source("Main", typedefs=own_type, body=body))
+    write_file(root, "Main.l", "Lib\nOther\n")
 
     full = _load(root, "Main", validate=LoadValidation.FULL)
     full_library = " ".join(d.message for d in full.get("Lib").diagnostics)
@@ -271,8 +266,8 @@ def test_invoked_validation_limits_dependencies_to_used_moduletypes(tmp_path: Pa
 def test_missing_dependency_marks_external_findings_tentative(tmp_path: Path) -> None:
     root = tmp_path / "libs"
     root.mkdir()
-    _write(root, "Main.s", _source("Main", locals_block="LOCALVARIABLES\n   Bad: NotAType;\n"))
-    _write(root, "Main.l", "Missing\n")
+    write_file(root, "Main.s", _source("Main", locals_block="LOCALVARIABLES\n   Bad: NotAType;\n"))
+    write_file(root, "Main.l", "Missing\n")
     project = _load(root, "Main", strict=False)
     program = project.get("Main")
     assert [diagnostic.code.value for diagnostic in program.diagnostics] == ["SL-V020"]
@@ -300,9 +295,9 @@ def test_datecode_conflict_is_reported_on_the_later_program(tmp_path: Path) -> N
         "   ClippingBounds = ( -1.0 , -1.0 ) ( 1.0 , 1.0 )\n"
         "   ENDDEF (*ControllerType*);\n"
     )
-    _write(root, "Dep.s", _source("Dep", typedefs=moduletype.format(datecode=1)))
-    _write(root, "Main.s", _source("Main", typedefs=moduletype.format(datecode=2)))
-    _write(root, "Main.l", "Dep\n")
+    write_file(root, "Dep.s", _source("Dep", typedefs=moduletype.format(datecode=1)))
+    write_file(root, "Main.s", _source("Main", typedefs=moduletype.format(datecode=2)))
+    write_file(root, "Main.l", "Dep\n")
     program = _load(root, "Main").get("Main")
     conflicts = [diagnostic for diagnostic in program.diagnostics if diagnostic.code.value == "SL-V057"]
     assert len(conflicts) == 1
@@ -327,10 +322,10 @@ def test_datecode_conflict_names_only_the_differing_version(tmp_path: Path) -> N
         "   ClippingBounds = ( -1.0 , -1.0 ) ( 1.0 , 1.0 )\n"
         "   ENDDEF (*ControllerType*);\n"
     )
-    _write(root, "First.s", _source("First", typedefs=moduletype.format(datecode=1)))
-    _write(root, "Second.s", _source("Second", typedefs=moduletype.format(datecode=2)))
-    _write(root, "Main.s", _source("Main", typedefs=moduletype.format(datecode=1)))
-    _write(root, "Main.l", "First\nSecond\n")
+    write_file(root, "First.s", _source("First", typedefs=moduletype.format(datecode=1)))
+    write_file(root, "Second.s", _source("Second", typedefs=moduletype.format(datecode=2)))
+    write_file(root, "Main.s", _source("Main", typedefs=moduletype.format(datecode=1)))
+    write_file(root, "Main.l", "First\nSecond\n")
 
     program = _load(root, "Main").get("Main")
 
@@ -351,9 +346,9 @@ def test_a_duplicate_datecode_is_not_a_conflict(tmp_path: Path) -> None:
         "   ENDDEF\n"
         "    (*SensorType*);\n"
     )
-    _write(root, "Dep.s", _source("Dep", typedefs=datatype))
-    _write(root, "Main.s", _source("Main", typedefs=datatype))
-    _write(root, "Main.l", "Dep\n")
+    write_file(root, "Dep.s", _source("Dep", typedefs=datatype))
+    write_file(root, "Main.s", _source("Main", typedefs=datatype))
+    write_file(root, "Main.l", "Dep\n")
 
     program = _load(root, "Main").get("Main")
 
@@ -379,12 +374,12 @@ def test_invoked_validation_stays_inside_the_referencing_closure(tmp_path: Path)
         "   ClippingBounds = ( -1.0 , -1.0 ) ( 1.0 , 1.0 )\n"
         "   ENDDEF (*SharedType*);\n"
     )
-    _write(root, "A.s", _source("A", typedefs=shared.format(local="BadInA")))
-    _write(root, "B.s", _source("B", typedefs=shared.format(local="BadInB")))
-    _write(root, "Main.s", _source("Main", body=body))
-    _write(root, "Main.l", "A\n")
-    _write(root, "Other.s", _source("Other"))
-    _write(root, "Other.l", "B\n")
+    write_file(root, "A.s", _source("A", typedefs=shared.format(local="BadInA")))
+    write_file(root, "B.s", _source("B", typedefs=shared.format(local="BadInB")))
+    write_file(root, "Main.s", _source("Main", body=body))
+    write_file(root, "Main.l", "A\n")
+    write_file(root, "Other.s", _source("Other"))
+    write_file(root, "Other.l", "B\n")
 
     project = SattLineProject.load(
         [root],
@@ -415,10 +410,10 @@ def test_datecode_conflicts_only_cover_the_program_closure(tmp_path: Path) -> No
         "   ClippingBounds = ( -1.0 , -1.0 ) ( 1.0 , 1.0 )\n"
         "   ENDDEF (*ControllerType*);\n"
     )
-    _write(root, "Unrelated.s", _source("Unrelated", typedefs=moduletype.format(datecode=1)))
-    _write(root, "Dep.s", _source("Dep", typedefs=moduletype.format(datecode=2)))
-    _write(root, "Main.s", _source("Main", typedefs=moduletype.format(datecode=3)))
-    _write(root, "Main.l", "Dep\n")
+    write_file(root, "Unrelated.s", _source("Unrelated", typedefs=moduletype.format(datecode=1)))
+    write_file(root, "Dep.s", _source("Dep", typedefs=moduletype.format(datecode=2)))
+    write_file(root, "Main.s", _source("Main", typedefs=moduletype.format(datecode=3)))
+    write_file(root, "Main.l", "Dep\n")
 
     # Both targets are loaded into one project; neither may see the other.
     project = SattLineProject.load(
@@ -438,10 +433,10 @@ def test_datecode_conflicts_only_cover_the_program_closure(tmp_path: Path) -> No
 def test_dependency_cycle_is_rejected(tmp_path: Path) -> None:
     root = tmp_path / "libs"
     root.mkdir()
-    _write(root, "A.s", _source("A"))
-    _write(root, "B.s", _source("B"))
-    _write(root, "A.l", "B\n")
-    _write(root, "B.l", "A\n")
+    write_file(root, "A.s", _source("A"))
+    write_file(root, "B.s", _source("B"))
+    write_file(root, "A.l", "B\n")
+    write_file(root, "B.l", "A\n")
     with pytest.raises(DependencyCycleError) as excinfo:
         _load(root, "A")
     assert excinfo.value.cycle == ("a", "b", "a")
@@ -451,12 +446,12 @@ def test_dependency_cycle_is_rejected(tmp_path: Path) -> None:
 def test_dependency_cycle_is_canonical_for_a_three_node_cycle(tmp_path: Path) -> None:
     root = tmp_path / "libs"
     root.mkdir()
-    _write(root, "A.s", _source("A"))
-    _write(root, "B.s", _source("B"))
-    _write(root, "C.s", _source("C"))
-    _write(root, "A.l", "B\n")
-    _write(root, "B.l", "C\n")
-    _write(root, "C.l", "A\n")
+    write_file(root, "A.s", _source("A"))
+    write_file(root, "B.s", _source("B"))
+    write_file(root, "C.s", _source("C"))
+    write_file(root, "A.l", "B\n")
+    write_file(root, "B.l", "C\n")
+    write_file(root, "C.l", "A\n")
     with pytest.raises(DependencyCycleError) as excinfo:
         _load(root, "B")
     assert excinfo.value.cycle == ("a", "b", "c", "a")
@@ -465,10 +460,10 @@ def test_dependency_cycle_is_canonical_for_a_three_node_cycle(tmp_path: Path) ->
 def test_dependency_cycle_is_structural_even_when_a_source_is_unparseable(tmp_path: Path) -> None:
     root = tmp_path / "libs"
     root.mkdir()
-    _write(root, "A.s", "not SattLine\n")
-    _write(root, "B.s", "not SattLine\n")
-    _write(root, "A.l", "B\n")
-    _write(root, "B.l", "A\n")
+    write_file(root, "A.s", "not SattLine\n")
+    write_file(root, "B.s", "not SattLine\n")
+    write_file(root, "A.l", "B\n")
+    write_file(root, "B.l", "A\n")
 
     with pytest.raises(DependencyCycleError):
         SattLineProject.load(
@@ -483,10 +478,10 @@ def test_dependency_cycle_is_structural_even_when_a_source_is_unparseable(tmp_pa
 def test_official_sidecar_cycle_is_rejected(tmp_path: Path) -> None:
     root = tmp_path / "libs"
     root.mkdir()
-    _write(root, "A.x", _source("A"))
-    _write(root, "B.x", _source("B"))
-    _write(root, "A.z", "B\n")
-    _write(root, "B.z", "A\n")
+    write_file(root, "A.x", _source("A"))
+    write_file(root, "B.x", _source("B"))
+    write_file(root, "A.z", "B\n")
+    write_file(root, "B.z", "A\n")
     with pytest.raises(DependencyCycleError):
         SattLineProject.load([root], mode=LoadMode.OFFICIAL, targets=("A",))
 
@@ -519,7 +514,7 @@ def test_moduletype_that_instantiates_itself_is_rejected(tmp_path: Path) -> None
     root = tmp_path / "libs"
     root.mkdir()
     typedefs = _typedefinitions(_moduletype("LoopType", instantiates="LoopType"))
-    _write(root, "Main.s", _source("Main", typedefs=typedefs))
+    write_file(root, "Main.s", _source("Main", typedefs=typedefs))
     with pytest.raises(ModuleTypeCycleError) as excinfo:
         _load(root, "Main")
     assert excinfo.value.cycle == ("LoopType", "LoopType")
@@ -533,7 +528,7 @@ def test_mutually_recursive_moduletypes_are_rejected(tmp_path: Path) -> None:
         _moduletype("AType", instantiates="BType"),
         _moduletype("BType", instantiates="AType"),
     )
-    _write(root, "Main.s", _source("Main", typedefs=typedefs))
+    write_file(root, "Main.s", _source("Main", typedefs=typedefs))
     with pytest.raises(ModuleTypeCycleError) as excinfo:
         _load(root, "Main")
     assert excinfo.value.cycle == ("AType", "BType", "AType")
@@ -542,17 +537,17 @@ def test_mutually_recursive_moduletypes_are_rejected(tmp_path: Path) -> None:
 def test_moduletype_cycle_across_programs_is_rejected(tmp_path: Path) -> None:
     root = tmp_path / "libs"
     root.mkdir()
-    _write(
+    write_file(
         root,
         "A.s",
         _source("A", typedefs=_typedefinitions(_moduletype("AType", instantiates="BType"))),
     )
-    _write(
+    write_file(
         root,
         "B.s",
         _source("B", typedefs=_typedefinitions(_moduletype("BType", instantiates="AType"))),
     )
-    _write(root, "A.l", "B\n")
+    write_file(root, "A.l", "B\n")
     with pytest.raises(ModuleTypeCycleError) as excinfo:
         _load(root, "A")
     assert excinfo.value.cycle == ("AType", "BType", "AType")
@@ -563,7 +558,7 @@ def test_moduletype_cycle_is_structural_in_a_lenient_load(tmp_path: Path) -> Non
     root = tmp_path / "libs"
     root.mkdir()
     typedefs = _typedefinitions(_moduletype("LoopType", instantiates="LoopType"))
-    _write(root, "Main.s", _source("Main", typedefs=typedefs))
+    write_file(root, "Main.s", _source("Main", typedefs=typedefs))
     with pytest.raises(ModuleTypeCycleError):
         _load(root, "Main", strict=False)
 
@@ -571,10 +566,10 @@ def test_moduletype_cycle_is_structural_in_a_lenient_load(tmp_path: Path) -> Non
 def test_uninvoked_recursive_moduletype_in_a_dependency_is_rejected(tmp_path: Path) -> None:
     root = tmp_path / "libs"
     root.mkdir()
-    _write(root, "Main.s", _source("Main"))
+    write_file(root, "Main.s", _source("Main"))
     typedefs = _typedefinitions(_moduletype("LoopType", instantiates="LoopType"))
-    _write(root, "Dep.s", _source("Dep", typedefs=typedefs))
-    _write(root, "Main.l", "Dep\n")
+    write_file(root, "Dep.s", _source("Dep", typedefs=typedefs))
+    write_file(root, "Main.l", "Dep\n")
     with pytest.raises(ModuleTypeCycleError):
         _load(root, "Main")
 
@@ -586,7 +581,7 @@ def test_acyclic_moduletype_instances_load(tmp_path: Path) -> None:
         _moduletype("Outer", instantiates="Inner"),
         _moduletype("Inner"),
     )
-    _write(root, "Main.s", _source("Main", typedefs=typedefs))
+    write_file(root, "Main.s", _source("Main", typedefs=typedefs))
     project = _load(root, "Main")
     assert tuple(project.programs()) == ("main",)
     assert project.cycles() == ()
@@ -605,8 +600,8 @@ def test_same_type_names_in_unrelated_closures_are_not_a_cycle(tmp_path: Path) -
         _moduletype("BType", instantiates="AType"),
         _moduletype("AType"),
     )
-    _write(left, "Left.s", _source("Left", typedefs=left_types))
-    _write(right, "Right.s", _source("Right", typedefs=right_types))
+    write_file(left, "Left.s", _source("Left", typedefs=left_types))
+    write_file(right, "Right.s", _source("Right", typedefs=right_types))
 
     project = SattLineProject.load([left, right], mode=LoadMode.DRAFT, targets=("Left", "Right"))
 
@@ -625,10 +620,10 @@ def test_same_type_names_in_unrelated_closures_are_not_a_cycle_under_one_consume
         _moduletype("BType", instantiates="AType"),
         _moduletype("AType"),
     )
-    _write(root, "Left.s", _source("Left", typedefs=left_types))
-    _write(root, "Right.s", _source("Right", typedefs=right_types))
-    _write(root, "Main.s", _source("Main"))
-    _write(root, "Main.l", "Left\nRight\n")
+    write_file(root, "Left.s", _source("Left", typedefs=left_types))
+    write_file(root, "Right.s", _source("Right", typedefs=right_types))
+    write_file(root, "Main.s", _source("Main"))
+    write_file(root, "Main.l", "Left\nRight\n")
 
     project = _load(root, "Main")
 
@@ -644,9 +639,9 @@ def test_a_library_may_shadow_a_dependency_type_name(tmp_path: Path) -> None:
         _moduletype("Motor"),
     )
     ext_types = _typedefinitions(_moduletype("Motor", instantiates="Valve"))
-    _write(root, "Base.s", _source("Base", typedefs=base_types))
-    _write(root, "Ext.s", _source("Ext", typedefs=ext_types))
-    _write(root, "Ext.l", "Base\n")
+    write_file(root, "Base.s", _source("Base", typedefs=base_types))
+    write_file(root, "Ext.s", _source("Ext", typedefs=ext_types))
+    write_file(root, "Ext.l", "Base\n")
 
     project = _load(root, "Ext")
 
@@ -715,8 +710,8 @@ def test_libraries_reports_every_resolving_root(tmp_path: Path) -> None:
     second = tmp_path / "lib_b"
     first.mkdir()
     second.mkdir()
-    _write(first, "A.s", _source("A"))
-    _write(second, "B.s", _source("B"))
+    write_file(first, "A.s", _source("A"))
+    write_file(second, "B.s", _source("B"))
     project = SattLineProject.load([first, second], mode=LoadMode.DRAFT, targets=("A", "B"))
     assert project.libraries() == ("lib_a", "lib_b")
 
@@ -732,9 +727,9 @@ def test_datatype_datecode_conflict_is_reported(tmp_path: Path) -> None:
         "   ENDDEF\n"
         "    (*SensorType*);\n"
     )
-    _write(root, "Dep.s", _source("Dep", typedefs=datatype.format(datecode=1)))
-    _write(root, "Main.s", _source("Main", typedefs=datatype.format(datecode=2)))
-    _write(root, "Main.l", "Dep\n")
+    write_file(root, "Dep.s", _source("Dep", typedefs=datatype.format(datecode=1)))
+    write_file(root, "Main.s", _source("Main", typedefs=datatype.format(datecode=2)))
+    write_file(root, "Main.l", "Dep\n")
     program = _load(root, "Main").get("Main")
     conflicts = [diagnostic for diagnostic in program.diagnostics if diagnostic.code.value == "SL-V057"]
     assert len(conflicts) == 1
@@ -747,6 +742,7 @@ def test_registry_post_order_assertion_catches_a_consumer_first(tmp_path: Path) 
     dependency = parse_source_text(_source("B"))
     loader._registry["a"] = SattLineProgram(name="A", code=consumer, dependencies=("B",))
     loader._registry["b"] = SattLineProgram(name="B", code=dependency)
+    loader._resolved_dependencies["a"] = ("b",)
     with pytest.raises(RuntimeError, match="not in post-order"):
         loader._assert_registry_post_order()
 
@@ -765,3 +761,171 @@ def test_cycles_report_no_cycle_for_a_dag() -> None:
     b = SattLineProgram(name="B", code=code)
     project = SattLineProject._from_programs({"A": a, "B": b})
     assert project.cycles() == ()
+
+
+# --- per-finding tentativeness (VAL-11) ---------------------------------------
+
+_LOCAL_CHILD = (
+    "TYPEDEFINITIONS\n"
+    "   ChildType = MODULEDEFINITION DateCode_ 1\n"
+    "   MODULEPARAMETERS\n"
+    "      {parameter}\n"
+    "   ModuleDef\n"
+    "   ClippingBounds = ( -1.0 , -1.0 ) ( 1.0 , 1.0 )\n"
+    "   ENDDEF (*ChildType*);\n"
+)
+
+
+def test_a_local_parameter_transfer_mismatch_stays_final_with_a_skipped_dependency(tmp_path: Path) -> None:
+    """A purely local mismatch does not depend on the missing dependency."""
+    root = tmp_path / "libs"
+    root.mkdir()
+    typedefs = _LOCAL_CHILD.format(parameter="EnableFlag: boolean := False;")
+    body = (
+        "SUBMODULES\n"
+        "   Child Invocation ( 0.1 , 0.1 , 0.0 , 0.4 , 0.4 ) : ChildType (\n"
+        "      EnableFlag => CounterValue);\n"
+    )
+    write_file(
+        root,
+        "Main.s",
+        _source(
+            "Main",
+            typedefs=typedefs,
+            locals_block="LOCALVARIABLES\n   CounterValue: integer := 0;\n",
+            body=body,
+        ),
+    )
+    write_file(root, "Main.l", "Ghost\n")
+
+    program = _load(root, "Main", strict=False).get("Main")
+
+    assert [diagnostic.code.value for diagnostic in program.diagnostics] == ["SL-V027"]
+    assert program.diagnostics[0].tentative is False
+
+
+def test_a_local_mapping_target_finding_stays_final_with_a_skipped_dependency(tmp_path: Path) -> None:
+    root = tmp_path / "libs"
+    root.mkdir()
+    typedefs = _LOCAL_CHILD.format(parameter="Param: integer := 0;")
+    body = "SUBMODULES\n   Child Invocation ( 0.1 , 0.1 , 0.0 , 0.4 , 0.4 ) : ChildType (\n      Param.Field => 1);\n"
+    write_file(root, "Main.s", _source("Main", typedefs=typedefs, body=body))
+    write_file(root, "Main.l", "Ghost\n")
+
+    program = _load(root, "Main", strict=False).get("Main")
+
+    assert [diagnostic.code.value for diagnostic in program.diagnostics] == ["SL-V048"]
+    assert program.diagnostics[0].tentative is False
+
+
+def test_an_unknown_moduletype_stays_tentative_with_a_skipped_dependency(tmp_path: Path) -> None:
+    """The missing definition may live in the dependency that was skipped."""
+    root = tmp_path / "libs"
+    root.mkdir()
+    body = "SUBMODULES\n   Child Invocation ( 0.1 , 0.1 , 0.0 , 0.4 , 0.4 ) : GhostType;\n"
+    write_file(root, "Main.s", _source("Main", body=body))
+    write_file(root, "Main.l", "Ghost\n")
+
+    program = _load(root, "Main", strict=False).get("Main")
+
+    assert [diagnostic.code.value for diagnostic in program.diagnostics] == ["SL-V058"]
+    assert program.diagnostics[0].tentative is True
+
+
+def test_a_mapping_through_a_loaded_dependency_stays_final(tmp_path: Path) -> None:
+    """A loaded dependency's module type is fully known, so the finding is final."""
+    root = tmp_path / "libs"
+    root.mkdir()
+    records = "TYPEDEFINITIONS\n   RecType = RECORD DateCode_ 1\n      Value: integer := 0;\n   ENDDEF (*RecType*);\n"
+    moduletype = (
+        "TYPEDEFINITIONS\n"
+        "   ChildType = MODULEDEFINITION DateCode_ 1\n"
+        "   MODULEPARAMETERS\n"
+        "      Param: RecType;\n"
+        "   ModuleDef\n"
+        "   ClippingBounds = ( -1.0 , -1.0 ) ( 1.0 , 1.0 )\n"
+        "   ENDDEF (*ChildType*);\n"
+    )
+    write_file(root, "Dep.s", _source("Dep", typedefs=records + moduletype))
+    body = (
+        "SUBMODULES\n"
+        "   Child Invocation ( 0.1 , 0.1 , 0.0 , 0.4 , 0.4 ) : ChildType (\n"
+        '      Param.Value => "not an integer");\n'
+    )
+    write_file(root, "Main.s", _source("Main", body=body))
+    write_file(root, "Main.l", "Dep\n")
+
+    program = _load(root, "Main").get("Main")
+
+    assert [diagnostic.code.value for diagnostic in program.diagnostics] == ["SL-V050"]
+    assert program.diagnostics[0].tentative is False
+
+
+def test_a_mapping_against_a_datatype_from_a_skipped_dependency_is_tentative(tmp_path: Path) -> None:
+    """The parameter datatype came from the dependency that did not load."""
+    root = tmp_path / "libs"
+    root.mkdir()
+    typedefs = _LOCAL_CHILD.format(parameter="Param: DepRec;")
+    body = "SUBMODULES\n   Child Invocation ( 0.1 , 0.1 , 0.0 , 0.4 , 0.4 ) : ChildType (\n      Param => 5);\n"
+    write_file(root, "Main.s", _source("Main", typedefs=typedefs, body=body))
+    write_file(root, "Main.l", "Ghost\n")
+
+    program = _load(root, "Main", strict=False).get("Main")
+
+    codes = [diagnostic.code.value for diagnostic in program.diagnostics]
+    assert "SL-V050" in codes
+    assert all(diagnostic.tentative for diagnostic in program.diagnostics)
+
+
+def test_a_mapping_through_an_incomplete_dependency_moduletype_is_tentative(tmp_path: Path) -> None:
+    """The invoked module type itself came from a dependency that is incomplete."""
+    root = tmp_path / "libs"
+    root.mkdir()
+    childtype = (
+        "TYPEDEFINITIONS\n"
+        "   ChildType = MODULEDEFINITION DateCode_ 1\n"
+        "   MODULEPARAMETERS\n"
+        "      Param: integer := 0;\n"
+        "   ModuleDef\n"
+        "   ClippingBounds = ( -1.0 , -1.0 ) ( 1.0 , 1.0 )\n"
+        "   ENDDEF (*ChildType*);\n"
+    )
+    body = "SUBMODULES\n   Child Invocation ( 0.1 , 0.1 , 0.0 , 0.4 , 0.4 ) : ChildType (\n      Param.Field => 1);\n"
+    write_file(root, "Dep.s", _source("Dep", typedefs=childtype))
+    write_file(root, "Dep.l", "GhostInner\n")
+    write_file(root, "Main.s", _source("Main", body=body))
+    write_file(root, "Main.l", "Dep\nGhost\n")
+
+    program = _load(root, "Main", strict=False).get("Main")
+
+    assert [diagnostic.code.value for diagnostic in program.diagnostics] == ["SL-V048"]
+    assert program.diagnostics[0].tentative is True
+
+
+def test_a_mapping_against_an_incomplete_dependency_datatype_is_tentative(tmp_path: Path) -> None:
+    """The module type is complete, but its parameter datatype came from a dependency that is not."""
+    root = tmp_path / "libs"
+    root.mkdir()
+    childtype = (
+        "TYPEDEFINITIONS\n"
+        "   ChildType = MODULEDEFINITION DateCode_ 1\n"
+        "   MODULEPARAMETERS\n"
+        "      Param: SharedRec;\n"
+        "   ModuleDef\n"
+        "   ClippingBounds = ( -1.0 , -1.0 ) ( 1.0 , 1.0 )\n"
+        "   ENDDEF (*ChildType*);\n"
+    )
+    shared = (
+        "TYPEDEFINITIONS\n   SharedRec = RECORD DateCode_ 1\n      Value: integer := 0;\n   ENDDEF (*SharedRec*);\n"
+    )
+    body = "SUBMODULES\n   Child Invocation ( 0.1 , 0.1 , 0.0 , 0.4 , 0.4 ) : ChildType (\n      Param.Field => 1);\n"
+    write_file(root, "Complete.s", _source("Complete", typedefs=childtype))
+    write_file(root, "Shared.s", _source("Shared", typedefs=shared))
+    write_file(root, "Shared.l", "GhostInner\n")
+    write_file(root, "Main.s", _source("Main", body=body))
+    write_file(root, "Main.l", "Complete\nShared\nGhost\n")
+
+    program = _load(root, "Main", strict=False).get("Main")
+
+    assert [diagnostic.code.value for diagnostic in program.diagnostics] == ["SL-V048"]
+    assert program.diagnostics[0].tentative is True

@@ -81,7 +81,6 @@ flowchart TB
     TRANSFORMER --> FORMATTING
     MODELS --> GRAMMAR
     MODELS --> NAMES
-    MODELS --> FORMATTING
     PREPROCESS --> SOURCE_DOC
     PREPROCESS --> GRAMMAR
     PREPROCESS --> NAMES
@@ -101,11 +100,16 @@ The important import-direction rules:
 - `types.py` is a façade over the pure type facts in `validation/typing.py`.
   Expression typing that needs a validation scope stays in the validation
   layer, not in the public module.
-- `formatting/` renders AST values. It imports `models/`, and the model support
-  layer uses it for `__str__`, so the public rendering helpers are the same code
-  path as model display.
+- `formatting/` renders AST values. It imports `models/`, and the model
+  `__str__` renderers call it at display time, so `models/` has no module-level
+  import edge into `formatting/`. The downward-only rule therefore holds, and
+  the public rendering helpers are still the same code path as model display.
 - `cli/` imports the public API and the project layer, and duplicates no parse
   or validation behaviour.
+- `sattline_parser.constants` is the top-level re-export of
+  `grammar.constants`, the public vocabulary for grammar keywords, token types,
+  and property-map keys. Consumers that need a spelling import it from there
+  rather than from a transformer or model module.
 
 ## Module map
 
@@ -125,7 +129,7 @@ The important import-direction rules:
 | `src/sattline_parser/transformer/` | `SLTransformer` and responsibility mixins | You change tree construction |
 | `src/sattline_parser/validation/` | Strict single-source rules, scopes, typing | You add a rule |
 | `src/sattline_parser/builtins/` | Generated function catalogue and record specs | You change builtin facts |
-| `src/sattline_parser/formatting/` | `__str__` and public expression rendering for AST nodes | You change rendered output |
+| `src/sattline_parser/formatting/` | `__str__` and public expression rendering for AST nodes, called by the model renderers at display time | You change rendered output |
 | `src/sattline_parser/project/` | Discovery, formats, loading, graphics, distribution, caches | You change project behaviour |
 | `src/sattline_parser/cli/` | The `sattline` command | You change the interface |
 | `fuzzing/fuzz_harness.py` | Hard-timeout fuzzing and corpus regression | You change fuzzing |

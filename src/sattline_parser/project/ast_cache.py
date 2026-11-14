@@ -5,11 +5,12 @@ code path and source mode. The cache namespace and version belong to
 ``sattline-parser`` (``FILE_AST_CACHE_VERSION``, a distinct file-format magic),
 so a cache written by another tool never cross-reads. The key also includes the
 package version, the resolved grammar fingerprint, and a fingerprint of the
-model and transformer sources, so an upgrade that changes the AST shape or
-fixes a transformer cannot serve an old entry. Path, mode, and a ``mtime_ns`` +
-``size`` stat snapshot are validated before a cached AST is trusted; entries
-outside the parser namespace or built by another version, grammar, or model
-shape are pruned.
+sources that shape a parsed AST (the models, the transformer, and the decoding,
+provenance, and name-folding modules), so an upgrade that changes the AST shape,
+fixes a transformer, or changes decoding cannot serve an old entry. Path, mode,
+and a ``mtime_ns`` + ``size`` stat snapshot are validated before a cached AST is
+trusted; entries outside the parser namespace or built by another version,
+grammar, or model shape are pruned.
 
 The HMAC key lives beside the entries, so the signature only proves that an
 entry was written by whoever could write that directory. It is not a defence
@@ -29,7 +30,6 @@ import hmac
 import os
 import pickle  # nosec B403 - HMAC-signed pickle envelope, key creation racy/excl guarded
 import secrets
-import time
 from functools import lru_cache
 from pathlib import Path
 from typing import cast
@@ -40,6 +40,7 @@ from sattline_parser.models.ast_model import BasePicture
 from sattline_parser.source_io import private_cache_dir
 
 from ._atomic import TEMP_SUFFIX
+from ._atomic import temp_file_is_abandoned as _temp_file_is_abandoned
 from ._atomic import temp_path_for as _temp_path_for
 
 FILE_AST_CACHE_VERSION = 10
@@ -50,16 +51,32 @@ _PICKLE_HMAC_SIZE = 32
 _PICKLE_KEY_DIR_NAME = "file_ast"
 _IDENTITY_MARKER_NAME = ".parser-identity"
 _PACKAGE_ROOT = Path(__file__).resolve().parents[1]
-_CODE_FINGERPRINT_DIRS = ("models", "transformer")
+#: Sources whose bytes shape a cached AST: the AST models and the transformer
+#: that builds them, the decoding pipeline that produces the source they are
+#: parsed from, and the identifier fold table every name goes through. A fix in
+#: any of them invalidates a cached body through the key, so no version bump is
+#: needed for a change that only touches these modules.
+_CODE_FINGERPRINT_SOURCES = (
+    "models",
+    "transformer",
+    "source_io.py",
+    "source_document.py",
+    "names.py",
+)
+
+#: The cache is an optimisation, not a store: past this many entries the oldest
+#: are dropped so a long-lived cache directory stays bounded.
+MAX_AST_CACHE_ENTRIES = 1024
 
 
 @lru_cache(maxsize=1)
 def _code_fingerprint() -> str:
-    """Digest the model and transformer sources that shape a cached AST."""
+    """Digest the sources that shape a cached AST."""
     digest = hashlib.sha256()
-    for directory_name in _CODE_FINGERPRINT_DIRS:
-        directory = _PACKAGE_ROOT / directory_name
-        for path in sorted(directory.rglob("*.py")):
+    for source_name in _CODE_FINGERPRINT_SOURCES:
+        source = _PACKAGE_ROOT / source_name
+        paths = sorted(source.rglob("*.py")) if source.is_dir() else [source]
+        for path in paths:
             digest.update(path.relative_to(_PACKAGE_ROOT).as_posix().encode("utf-8"))
             digest.update(b"\0")
             digest.update(path.read_bytes())
@@ -67,10 +84,8 @@ def _code_fingerprint() -> str:
     return digest.hexdigest()
 
 
-#: A temporary file younger than this may belong to a running writer, so startup
-#: cleanup leaves it alone.
-_TEMP_FILE_MAX_AGE_SECONDS = 3600.0
-
+#: Payload shapes a signed entry may fail to decode into. They are a miss, never
+#: an exception: a tampered or truncated entry must not fail a load.
 _ALLOWED_PICKLE_LOADER_ERRORS = (
     pickle.UnpicklingError,
     AttributeError,
@@ -97,14 +112,6 @@ def _safe_stat(path: Path) -> os.stat_result | None:
         return None
 
 
-def _temp_file_is_abandoned(path: Path) -> bool:
-    """True when a temporary file is old enough that no writer can still own it."""
-    stat_result = _safe_stat(path)
-    if stat_result is None:
-        return True
-    return time.time() - stat_result.st_mtime >= _TEMP_FILE_MAX_AGE_SECONDS
-
-
 def _as_data_dict(value: object) -> dict[object, object] | None:
     if not isinstance(value, dict):
         return None
@@ -118,6 +125,19 @@ def _matches_stat_snapshot(path: Path, *, mtime_ns: object, size: object) -> boo
     if stat_result is None:
         return False
     return stat_result.st_mtime_ns == mtime_ns and stat_result.st_size == size
+
+
+def _stored_source_exists(meta: dict[object, object]) -> bool:
+    """Whether the source path an entry was parsed from still exists.
+
+    A rename, a branch switch, or a deleted temporary checkout leaves the entry
+    behind with a matching fingerprint, so existence is part of staleness: an
+    entry for a file nobody can reach can never be served again.
+    """
+    stored_path = meta.get("path")
+    if not isinstance(stored_path, str) or not stored_path:
+        return False
+    return Path(stored_path).exists()
 
 
 def source_snapshot(path: Path) -> tuple[int, int] | None:
@@ -208,7 +228,10 @@ def _load_pickle_payload(path: Path) -> object | None:
     signature, pickled_payload = _read_signed_pickle_envelope(payload_bytes)
     if signature is None:
         return None
-    key = _load_or_create_pickle_hmac_key(path.parent)
+    # A read never creates the key. The documented invariant is that the key is
+    # created by the single writing process, so a missing key means the entry
+    # cannot be verified: a miss, not a reason to write a new key under a reader.
+    key = _read_pickle_hmac_key(_pickle_hmac_key_path(path.parent))
     if key is None:
         return None
     expected_signature = hmac.new(key, pickled_payload, hashlib.sha256).hexdigest()
@@ -274,11 +297,11 @@ class FileASTCache:
         return f"{__version__}\n{grammar_fingerprint()}\n{_code_fingerprint()}\n"
 
     def _initial_prune(self) -> int:
-        """Prune fully only when the cache identity changed since last startup."""
+        """Prune fully when the identity changed, otherwise only bound the count."""
         marker = self.cache_dir / _IDENTITY_MARKER_NAME
         try:
             if marker.read_text(encoding="ascii") == self._identity_text():
-                return self._prune_temporary_files()
+                return self._prune_temporary_files() + self._enforce_entry_cap()
         except (OSError, ValueError):
             # A marker that cannot be decoded is an unusable marker: the bounded
             # prune below rewrites it.
@@ -301,10 +324,34 @@ class FileASTCache:
                 removed += 1
         return removed
 
+    def _enforce_entry_cap(self) -> int:
+        """Drop the oldest entries past :data:`MAX_AST_CACHE_ENTRIES`.
+
+        Only the file names and their mtimes are read, so the cap can run on
+        every startup without unpickling the whole cache.
+        """
+        if not self._enabled or not self.cache_dir.exists():
+            return 0
+        entries: list[tuple[int, str, Path]] = []
+        for path in self.cache_dir.iterdir():
+            if not path.is_file() or not path.name.endswith(".pickle"):
+                continue
+            stat_result = _safe_stat(path)
+            if stat_result is None:
+                continue
+            entries.append((stat_result.st_mtime_ns, path.name, path))
+        excess = len(entries) - MAX_AST_CACHE_ENTRIES
+        if excess <= 0:
+            return 0
+        entries.sort()
+        return sum(1 for _, _, path in entries[:excess] if _remove_file(path))
+
     @staticmethod
     def _key(code_path: Path, mode: str) -> str:
         digest = hashlib.sha256()
-        digest.update(_code_path_key(code_path).encode("utf-8", errors="ignore"))
+        # ``os.fsencode`` keeps two non-UTF-8 names distinct, where a lossy
+        # UTF-8 encode with ``errors="ignore"`` would collide them.
+        digest.update(os.fsencode(_code_path_key(code_path)))
         digest.update(mode.encode("utf-8", errors="ignore"))
         digest.update(__version__.encode("ascii"))
         digest.update(grammar_fingerprint().encode("ascii"))
@@ -391,7 +438,11 @@ class FileASTCache:
     def prune_stale_entries(self) -> int:
         """Remove entries that are not valid current-namespace AST entries.
 
-        Returns the number of entries removed. A disabled cache removes nothing.
+        An entry is stale when its envelope, version, parser identity, grammar,
+        or code fingerprint no longer matches, when its source path no longer
+        exists, or when it is one of the oldest entries past
+        :data:`MAX_AST_CACHE_ENTRIES`. Returns the number of entries removed. A
+        disabled cache removes nothing.
         """
         if not self._enabled:
             return 0
@@ -420,10 +471,12 @@ class FileASTCache:
                 and meta.get("parser_version") == __version__
                 and meta.get("grammar") == grammar_fingerprint()
                 and meta.get("code") == _code_fingerprint()
+                and _stored_source_exists(meta)
             ):
                 continue
             if _remove_file(path):
                 removed += 1
+        removed += self._enforce_entry_cap()
         with contextlib.suppress(OSError):
             (directory / _IDENTITY_MARKER_NAME).write_text(self._identity_text(), encoding="ascii")
         return removed
@@ -435,4 +488,4 @@ class FileASTCache:
         return removed
 
 
-__all__ = ["FILE_AST_CACHE_VERSION", "FileASTCache"]
+__all__ = ["FILE_AST_CACHE_VERSION", "MAX_AST_CACHE_ENTRIES", "FileASTCache"]

@@ -45,6 +45,10 @@ policy are documented in the README.
   pool that cannot start, parses in the calling process instead of failing the
   load.
 
+- **`SourceDocument.char_map`.** The provenance object exposes its per-character
+  map as a read-only `char_map` property (`None` for an identity document), and
+  `SourceDocument` is importable from `sattline_parser.preprocessing`.
+
 ### Changed
 
 - **Artifact families no longer mix.** The resolved code body's extension now
@@ -114,6 +118,27 @@ policy are documented in the README.
   `Rule.retired`, and their constructor arguments, are removed; read
   `Rule.status` (`ACTIVE`, `RETIRED`, `UNIMPLEMENTED`) instead. `to_json()`
   keeps the derived `retired` boolean, so a JSON consumer needs no change.
+
+- **AST surface.** `FlagClause.extra` and `BasePicture.graphics_file` are
+  removed, the underscore helpers are out of `sl_transformer.__all__`, and
+  `iter_literal_leaves` now also reads scalar `leaf` fields and property-map
+  values. It is re-exported from `sattline_parser.models` together with
+  `LiteralLeaf`.
+
+- **Formatting matches source spelling.** States render `:Old` and `:New`,
+  strings render with double quotes and doubled inner quotes, and a
+  `SUBSEQSTEP` body closes with `EndSubstep`, so formatted statements parse
+  again.
+
+- **Keyword separators are explicit.** An underscore-suffixed keyword such as
+  `DateCode_` or `PRIVATE_` must be separated from the identifier that follows
+  it. `DateCode_1` remains a single identifier, and the grammar doc states the
+  rule.
+
+- **Retired rules and identifier resolution.** `DATATYPE_TOO_FEW_FIELDS` and
+  `SEQUENCE_REQUIRES_INIT_STEP` are retired because the corpus shows the
+  constructs are legal. Datatype lookup no longer falls back to `casefold`, so
+  identifiers SattLine treats as distinct stay distinct.
 
 ### Removed
 
@@ -241,6 +266,74 @@ policy are documented in the README.
   rejects a non-reference argument (`SL-V014`) and a wrong datatype (`SL-V047`).
   An SFC transition guard is now checked like an IF condition, so
   `WAIT_FOR 123` reports `SL-V030`.
+
+- **Record descriptions and frame datecodes.** A record without a description
+  now reports `None` instead of the `RECORD` keyword token, and a frame module
+  datecode is an `int` or `None` instead of `True`. Both values previously
+  survived into the AST cache, so a cached tree could carry the wrong type.
+
+- **Declared builtin record types.** `ComliMessage`, `ByteRecord`, and
+  `PidType` are declared, so sources that use them validate and calls to the
+  builtins that take them can satisfy the argument-type rule. The catalogue
+  generator now rejects any datatype that is not a scalar, a declared record,
+  or `AnyType`.
+
+- **CLI contract fixes.** `--what definitions` returns symbols only, `--paths
+  absolute` applies to every path in every command that accepts it, `--fail-on
+  none` exits 0 for load skips, and companion content on stdin is refused like a
+  companion path.
+
+- **Unspaced binary operators.** `X = 1+2` and `X = 1-2` now parse like their
+  spaced forms. A numeric literal only takes its sign when the sign starts an
+  operand, so the operator is no longer swallowed by the literal.
+
+- **Bounded, fresh project caches.** The AST cache drops entries whose source is
+  gone, caps its entry count, and fingerprints `source_io.py`,
+  `source_document.py`, and `names.py`, so a decoding or folding fix invalidates
+  older trees. The lookup cache prunes abandoned temp files and caps entries,
+  and a cache read never creates the signing key.
+
+- **Companion safety and family reporting.** A companion must be a regular file,
+  an oversized `.p`, `.q`, `.g`, or `.y` companion is refused instead of read,
+  a graphics expression failure stays a `GraphicsMessage`, and
+  `ProgramFormat.mode` reports the family of the body that was loaded.
+
+- **Dependency containment.** A dependency name containing `/`, `\`, or `..`, or
+  resolving outside its base, is refused, and companion lookup requires a
+  regular file. A deleted body is reported as missing rather than as a parse
+  failure.
+
+- **Same-named units in different roots.** The loader keys plans by resolved
+  path, so a second root's `Util.s` is no longer served the first root's body.
+  When one folded name resolves to two bodies, a `NAME_RESOLUTION_CONFLICT`
+  diagnostic names both, and datecode conflicts no longer depend on the order
+  of the requested targets.
+
+- **Tentative findings are per finding.** A purely local diagnostic is no
+  longer marked tentative because an unrelated dependency failed to load. Only
+  a finding whose resolved module type or datatype came from an incomplete
+  dependency is tentative.
+
+- **Source decoding and error details.** A UTF-8 BOM is stripped before
+  decoding, `ParseErrorDetails.source_line` follows the same `\n` line
+  numbering as `line` and `column`, an unterminated nested comment is refused,
+  and expected-token labels no longer leak internal `_NOTAIL` terminal names.
+
+- **Distinct, construct-specific diagnostics.** Each comparison operand finding
+  carries its own span and names the operand, `SL-V058` is tested and scoped to
+  the validator that emits it, and a `SUBSEQTRANSITION` body that opens with a
+  step reports `SL-V054` rather than an alternative-branch code.
+
+- **Parameter mappings on every construct.** Mappings on `SingleModule` and
+  `ModuleTypeDef` are checked like those on a module-type instance, and
+  `SL-V048` now reports a mapping target that is not a declared parameter. An
+  unknown module type still reports duplicate mapping targets.
+
+- **Validation scope fixes.** Frame modules are checked like single modules,
+  a local definition wins over an external one of the same name, `Const`
+  propagates through dotted writes and builtin output arguments, `AnyType` is
+  accepted in conditions and ternary branches, and every definition of a
+  duplicated datatype name is validated.
 
 ## [2026.11.4] - 2026-11-05
 

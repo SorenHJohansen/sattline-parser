@@ -199,7 +199,7 @@ RULES: tuple[Rule, ...] = (
     ),
     _rule(
         DiagnosticCode.STRING_LITERAL_CALL_ARGUMENT,
-        "A string literal may not stand in a call argument position that requires a reference.",
+        "A string literal is not accepted in a call argument position.",
         scope=RuleScope.CODE,
     ),
     _rule(
@@ -334,8 +334,10 @@ RULES: tuple[Rule, ...] = (
         DiagnosticCode.DATATYPE_TOO_FEW_FIELDS,
         "A DATATYPE declaration must declare at least one field.",
         scope=RuleScope.DECLARATIONS,
-        status=RuleStatus.UNIMPLEMENTED,
-        details=_UNIMPLEMENTED_NOTE,
+        status=RuleStatus.RETIRED,
+        details=(
+            "A record may declare zero fields; edge_cases/EmptyRecordType.s loads and parses with an empty field list."
+        ),
     ),
     _rule(
         DiagnosticCode.COMPARE_INCOMPATIBLE_OPERANDS,
@@ -410,17 +412,18 @@ RULES: tuple[Rule, ...] = (
     ),
     _rule(
         DiagnosticCode.SUBSEQTRANSITION_STARTS_WITH_STEP,
-        "A SUBSEQTRANSITION body must not start with a step.",
+        "A SUBSEQTRANSITION body must start with a SEQTRANSITION.",
         scope=RuleScope.SFC,
-        status=RuleStatus.UNIMPLEMENTED,
-        details=_UNIMPLEMENTED_NOTE,
     ),
     _rule(
         DiagnosticCode.SEQUENCE_REQUIRES_INIT_STEP,
         "A closed sequence must contain an init step.",
         scope=RuleScope.SFC,
-        status=RuleStatus.UNIMPLEMENTED,
-        details=_UNIMPLEMENTED_NOTE,
+        status=RuleStatus.RETIRED,
+        details=(
+            "A closed sequence may omit its init step; edge_cases/LegacySequenceNoInitStep.s "
+            "loads, parses, and validates clean."
+        ),
     ),
     _rule(
         DiagnosticCode.SEQUENCE_AMBIGUOUS_FORK_TARGET,
@@ -435,7 +438,7 @@ RULES: tuple[Rule, ...] = (
     _rule(
         DiagnosticCode.UNKNOWN_MODULETYPE_NAME,
         "A module-type instance must name a declared type or one visible from a loaded dependency.",
-        scope=RuleScope.PROJECT,
+        scope=RuleScope.MAPPINGS,
     ),
 )
 

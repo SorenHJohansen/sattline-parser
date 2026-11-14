@@ -9,7 +9,7 @@ from sattline_parser.preprocessing import PreprocessError, is_compressed, prepro
 
 from .._errors import CliError
 from .._exit import ExitCode
-from .._io import read_source
+from .._io import display_path, read_source
 from .._json import SCHEMA_PREFIX, dumps
 from ._common import add_source_flags, reject_companion
 
@@ -29,7 +29,7 @@ def register(subparsers: argparse._SubParsersAction[argparse.ArgumentParser]) ->
 
 
 def run(args: argparse.Namespace) -> int:
-    reject_companion(args.path)
+    reject_companion(args.path, stdin_name=args.stdin_name)
     source = read_source(args.path, name=args.stdin_name)
     try:
         document = preprocess_source(source.text)
@@ -37,7 +37,7 @@ def run(args: argparse.Namespace) -> int:
         raise CliError(f"{source.name}: {exc}") from exc
     report = {
         "schema": f"{SCHEMA_PREFIX}.decode",
-        "file": source.name,
+        "file": display_path(source.name, absolute=args.path_style == "absolute"),
         "coded": source.coded or (is_compressed(source.text) and not document.is_identity()),
         "original_length": source.original_length,
         "decoded_length": len(document.normalized_text),

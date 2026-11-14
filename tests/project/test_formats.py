@@ -151,3 +151,28 @@ def test_body_mode_derives_the_family_from_a_body_suffix() -> None:
 
 def test_find_companion_beside_returns_none_when_the_directory_cannot_be_read(tmp_path: Path) -> None:
     assert find_companion_beside(tmp_path / "absent" / "Main.s", (".g",)) is None
+
+
+def test_find_companion_beside_ignores_a_directory_with_the_companion_name(tmp_path: Path) -> None:
+    body = tmp_path / "Main.s"
+    body.write_text("", encoding="utf-8")
+    (tmp_path / "Main.p").mkdir()
+
+    assert find_companion_beside(body, (".p",)) is None
+
+
+def test_find_companion_beside_ignores_a_folded_directory(tmp_path: Path) -> None:
+    body = tmp_path / "MAIN.s"
+    body.write_text("", encoding="utf-8")
+    (tmp_path / "main.p").mkdir()
+
+    assert find_companion_beside(body, (".p",)) is None
+
+
+def test_find_companion_beside_pairs_a_regular_file_with_a_folded_name(tmp_path: Path) -> None:
+    body = tmp_path / "MAIN.s"
+    body.write_text("", encoding="utf-8")
+    companion = tmp_path / "main.p"
+    companion.write_text("", encoding="utf-8")
+
+    assert find_companion_beside(body, (".p",)) == companion

@@ -1,4 +1,3 @@
-# pyright: reportPrivateUsage=false
 """Unit tests for graphics companion parsing (``project/graphics_*``)."""
 
 from __future__ import annotations
@@ -20,6 +19,7 @@ from sattline_parser.project import (
     resolve_graphics_companion_path,
 )
 from sattline_parser.project import graphics_bindings as bindings
+from sattline_parser.project.graphics_parsing import GraphicsParseError
 
 
 def test_graphics_binding_is_on_the_project_surface() -> None:
@@ -386,4 +386,34 @@ def test_parse_graphics_file_decode_failure_propagates(tmp_path: Path) -> None:
     path.write_bytes(b"\x81 not cp1252\r\n")
 
     with pytest.raises(UnicodeDecodeError):
+        parse_graphics_file(path)
+
+
+@pytest.mark.parametrize("error", [ValueError("bad value"), TypeError("bad type"), IndexError("bad index")])
+def test_parse_graphics_text_turns_transformer_failures_into_warnings(
+    monkeypatch: pytest.MonkeyPatch, error: Exception
+) -> None:
+    """A transformer defect on one binding is a message, not an escaped traceback."""
+
+    class FailingTransformer:
+        def transform(self, tree: Tree[Any]) -> object:
+            del tree
+            raise error
+
+    monkeypatch.setattr(bindings, "SLTransformer", lambda: FailingTransformer())
+
+    model = parse_graphics_text(" Expr  True  15 not ZoomableVar\r\n")
+
+    assert len(model.bindings) == 1
+    assert isinstance(model.bindings[0].value, str)
+    assert len(model.warnings) == 1
+    assert model.errors == ()
+
+
+def test_parse_graphics_file_rejects_an_oversize_companion(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    path = tmp_path / "Test.g"
+    path.write_bytes(b"x" * 32)
+    monkeypatch.setattr("sattline_parser.project.graphics_parsing.MAX_GRAPHICS_COMPANION_BYTES", 4)
+
+    with pytest.raises(GraphicsParseError, match="byte limit"):
         parse_graphics_file(path)

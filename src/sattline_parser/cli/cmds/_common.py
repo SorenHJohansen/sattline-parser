@@ -38,13 +38,19 @@ __all__ = [
 #: mislabels an existing one.
 
 
-def reject_companion(target: str) -> None:
-    """Refuse a companion file before it is mis-reported as broken source."""
-    suffix = Path(target).suffix.lower()
+def reject_companion(target: str, *, stdin_name: str | None = None) -> None:
+    """Refuse a companion before it is mis-reported as broken source.
+
+    The name that decides the artifact family is the path itself, or
+    ``--stdin-name`` when the input is stdin, so piped companion content is
+    refused exactly like a companion path.
+    """
+    name = stdin_name if target == "-" and stdin_name is not None else target
+    suffix = Path(name).suffix.lower()
     if suffix in ALL_DISTRIBUTION_EXTENSIONS:
-        raise CliError(f"{target} is a distribution companion ({suffix}); this command reads SattLine source units")
+        raise CliError(f"{name} is a distribution companion ({suffix}); this command reads SattLine source units")
     if suffix in ALL_GRAPHICS_EXTENSIONS:
-        raise CliError(f"{target} is a graphics companion ({suffix}); this command reads SattLine source units")
+        raise CliError(f"{name} is a graphics companion ({suffix}); this command reads SattLine source units")
 
 
 def require_companion(target: str) -> None:
@@ -117,7 +123,7 @@ def add_source_flags(parser: argparse.ArgumentParser) -> None:
         dest="path_style",
         choices=("given", "absolute"),
         default="given",
-        help="how to render source paths in findings (default: as given)",
+        help="how to render source paths in findings and document-level file keys (default: as given)",
     )
 
 

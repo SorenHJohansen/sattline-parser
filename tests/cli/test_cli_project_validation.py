@@ -1,4 +1,4 @@
-# pyright: reportUnknownVariableType=false, reportUnknownMemberType=false, reportUnknownParameterType=false, reportMissingParameterType=false, reportUnknownArgumentType=false, reportArgumentType=false
+# pyright: reportMissingParameterType=false, reportUnknownArgumentType=false, reportUnknownMemberType=false, reportUnknownParameterType=false, reportUnknownVariableType=false
 """``sattline project`` validation reporting and ``--fail-on``."""
 
 from __future__ import annotations
@@ -8,7 +8,7 @@ import json
 from sattline_parser.cli import main
 from sattline_parser.cli._exit import ExitCode
 
-from ._cli_support import CONSECUTIVE_STEPS_SOURCE, write_source
+from ._cli_support import CONSECUTIVE_STEPS_SOURCE, VALID_SOURCE, write_source
 
 
 def test_project_reports_validation_findings_and_fails(tmp_path, capsys) -> None:
@@ -31,6 +31,20 @@ def test_project_fail_on_none_keeps_a_success_exit(tmp_path, capsys) -> None:
 
     payload = json.loads(capsys.readouterr().out)
     assert payload["validation"]
+
+
+def test_project_fail_on_none_ignores_a_skipped_program(tmp_path, capsys) -> None:
+    write_source(tmp_path, "Child.s", VALID_SOURCE.replace("name: Sample", "name: Child"))
+    (tmp_path / "Child.l").write_bytes(b"MissingLib")
+
+    # A skipped program is a finding by default, so the run fails.
+    assert main(["project", str(tmp_path), "--lenient"]) == ExitCode.FINDINGS
+    assert "load-skipped MissingLib" in capsys.readouterr().out
+
+    # Under --fail-on none the omission is still reported but does not fail.
+    assert main(["project", str(tmp_path), "--lenient", "--json", "--fail-on", "none"]) == ExitCode.OK
+    payload = json.loads(capsys.readouterr().out)
+    assert [row["kind"] for row in payload["diagnostics"]] == ["load-skipped"]
 
 
 def test_project_no_validate_skips_validation(tmp_path, capsys) -> None:

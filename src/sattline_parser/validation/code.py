@@ -55,6 +55,7 @@ from sattline_parser.validation.diagnostics import Diagnostic, DiagnosticCode
 from sattline_parser.validation.sequences import check_sequence_positions
 from sattline_parser.validation.symbols import (
     Scope,
+    is_const_reference,
     resolve_var,
 )
 from sattline_parser.validation.type_graph import TypeGraph
@@ -364,9 +365,18 @@ def _check_operands(expr: Compare | BinOp, context: ValidationContext) -> None:
     types (two strings, two records of the same type, numeric pairs), while
     ordering requires numeric operands. Arithmetic requires numeric operands
     on both sides.
+
+    Each offending operand gets its own finding, carrying that operand's span
+    and name. Two operands of the same type are then distinguishable, and the
+    finding points at the operand rather than at the whole expression.
     """
-    left_type = infer_expr_type(expr.left, context.scope, context.records, context.type_graph)
-    right_type = infer_expr_type(expr.right, context.scope, context.records, context.type_graph)
+    left_operand, right_operand = expr.left, expr.right
+    left_type = infer_expr_type(left_operand, context.scope, context.records, context.type_graph)
+    right_type = infer_expr_type(right_operand, context.scope, context.records, context.type_graph)
+    operands: tuple[tuple[SLExpression, str | None], ...] = (
+        (left_operand, left_type),
+        (right_operand, right_type),
+    )
 
     if isinstance(expr, Compare):
         if expr.op in _EQUALITY_COMPARISON_OPERATORS:
@@ -385,15 +395,15 @@ def _check_operands(expr: Compare | BinOp, context: ValidationContext) -> None:
                 and not _temporal_numeric_pair(left_type, right_type)
             )
             if both_temporal:
-                for operand_type in (left_type, right_type):
+                for operand, operand_type in operands:
                     context.errors.append(
                         Diagnostic(
                             code=DiagnosticCode.OPERAND_NOT_NUMERIC,
                             message=(
                                 f"Only integer and real allowed for this operator {expr.op}; "
-                                f"operand is of type {operand_type}"
+                                f"{_describe_operand(operand)} is of type {operand_type}"
                             ),
-                            span=_expression_span(expr),
+                            span=_operand_span(expr, operand),
                         )
                     )
             elif incompatible:
@@ -409,35 +419,48 @@ def _check_operands(expr: Compare | BinOp, context: ValidationContext) -> None:
                 )
             return
 
-        for position, operand_type in enumerate((left_type, right_type)):
+        for position, (operand, operand_type) in enumerate(operands):
             if operand_type is None or is_anytype_datatype(operand_type) or is_numeric(operand_type):
                 continue
-            other_type = (left_type, right_type)[1 - position]
+            other_type = operands[1 - position][1]
             if _temporal_numeric_pair(operand_type, other_type):
                 continue
             context.errors.append(
                 Diagnostic(
                     code=DiagnosticCode.OPERAND_NOT_NUMERIC,
                     message=(
-                        f"Only integer and real allowed for this operator {expr.op}; operand is of type {operand_type}"
+                        f"Only integer and real allowed for this operator {expr.op}; "
+                        f"{_describe_operand(operand)} is of type {operand_type}"
                     ),
-                    span=_expression_span(expr),
+                    span=_operand_span(expr, operand),
                 )
             )
         return
 
-    for operand_type in (left_type, right_type):
+    for operand, operand_type in operands:
         if operand_type is None or is_anytype_datatype(operand_type) or is_numeric(operand_type):
             continue
         context.errors.append(
             Diagnostic(
                 code=DiagnosticCode.OPERAND_NOT_NUMERIC,
                 message=(
-                    f"Only integer and real allowed for this operator {expr.op}; operand is of type {operand_type}"
+                    f"Only integer and real allowed for this operator {expr.op}; "
+                    f"{_describe_operand(operand)} is of type {operand_type}"
                 ),
-                span=_expression_span(expr),
+                span=_operand_span(expr, operand),
             )
         )
+
+
+def _describe_operand(operand: SLExpression) -> str:
+    """Name an operand in a diagnostic sentence, using its source name when it has one."""
+    return f"operand {operand.name!r}" if isinstance(operand, VarRef) else "operand"
+
+
+def _operand_span(expr: Compare | BinOp, operand: SLExpression) -> SourceSpan | None:
+    """Span of one operand, falling back to the enclosing expression."""
+    span = _expression_span(operand)
+    return span if span is not None else _expression_span(expr)
 
 
 def _check_bool_operand(expr: BoolOp | NotOp, context: ValidationContext) -> None:
@@ -472,14 +495,19 @@ def _check_unary_operand(expr: UnaryOp, context: ValidationContext) -> None:
 
 
 def _check_ternary_branches(expr: TernaryOp, context: ValidationContext) -> None:
-    """IF-expression branches must have compatible datatypes."""
+    """IF-expression branches must have compatible datatypes.
+
+    An ``AnyType`` branch proves nothing about the value, so it is left out of
+    the merge instead of making the branch types look incompatible. The same
+    exemption applies to assignment, operand, logical, and condition checks.
+    """
     branch_types = [
         infer_expr_type(value, context.scope, context.records, context.type_graph)
         for _condition, value in expr.branches
     ]
     if expr.else_expr is not None:
         branch_types.append(infer_expr_type(expr.else_expr, context.scope, context.records, context.type_graph))
-    known_types = [datatype for datatype in branch_types if datatype is not None]
+    known_types = [datatype for datatype in branch_types if datatype is not None and not is_anytype_datatype(datatype)]
     if len(known_types) < 2 or merge_compatible_types(known_types) is not None:
         return
     joined = ", ".join(sorted(set(known_types)))
@@ -497,10 +525,11 @@ def _check_condition(condition: SLExpression, context: ValidationContext, *, con
 
     The construct named in the sentence is the IF family by default. An SFC
     transition guard uses the same rule, so its sentence names the guard rather
-    than an IF that is not there.
+    than an IF that is not there. ``AnyType`` is exempt, like every other type
+    rule that sees it.
     """
     condition_type = infer_expr_type(condition, context.scope, context.records, context.type_graph)
-    if condition_type is not None and not is_boolean(condition_type):
+    if condition_type is not None and not is_boolean(condition_type) and not is_anytype_datatype(condition_type):
         context.errors.append(
             Diagnostic(
                 code=DiagnosticCode.CONDITION_NOT_BOOLEAN,
@@ -530,7 +559,7 @@ def _check_assignment(assignment: Assignment, context: ValidationContext) -> Non
                 )
             )
         return
-    if resolved.const:
+    if is_const_reference(assignment.target, context.scope, context.records):
         context.errors.append(
             Diagnostic(
                 code=DiagnosticCode.WRITE_TO_CONST_VARIABLE,
@@ -639,7 +668,11 @@ def _check_call(call: FuncCall, context: ValidationContext) -> None:
         if isinstance(arg, VarRef):
             if is_write:
                 resolved = resolve_var(arg, context.scope, context.records)
-                if resolved is not None and resolved.const and not const_exempt:
+                if (
+                    resolved is not None
+                    and is_const_reference(arg, context.scope, context.records)
+                    and not const_exempt
+                ):
                     context.errors.append(
                         Diagnostic(
                             code=DiagnosticCode.WRITE_TO_CONST_VARIABLE,
