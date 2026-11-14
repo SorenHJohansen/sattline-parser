@@ -71,9 +71,10 @@ This package owns the Lark grammar, the strict single-file syntax behavior, the 
   expected spellings and an actionable hint (`describe_parse_error`)
 - AST models in `sattline_parser.models`
 - `SLTransformer` tree transformer in `sattline_parser.transformer`
-- Read-only `sattline` command line over the parser, project and graphics
-  layers (`check`, `parse`, `query`, `project`, `graphics`, `decode`, `diff`,
-  `corpus`, `version`) with JSON-first output
+- `sattline` command line over the parser, project and graphics layers
+  (`check`, `parse`, `query`, `project`, `graphics`, `decode`, `diff`, `corpus`,
+  `version`) with JSON-first output; it never edits a tree, and `project`
+  caches parsed ASTs unless `--no-cache` is given
 - PEP 561 typed: `py.typed` ships, so downstream type checkers use the inline
   annotations
 - Standalone fuzz harness with hard subprocess timeouts and corpus regression
@@ -413,7 +414,7 @@ actually exercised. Installs use `uv.lock` for reproducibility.
 - `src/sattline_parser/builtins/` : builtin function signatures and record field tables
 - `src/sattline_parser/cli/` : the `sattline` command line (one module per command)
 - `src/sattline_parser/api.py` : public entry points
-- `src/sattline_parser/project/` : project/artifact layer (`SattLineProject`, discovery, resolution, `.g`/`.y` parsing, parser-owned caches)
+- `src/sattline_parser/project/` : project/artifact layer (`SattLineProject`, discovery, resolution, `.g`/`.y` and `.p`/`.q` companion parsing, parser-owned caches)
 - `fuzzing/fuzz_harness.py` : standalone fuzzing
 - `docs/` : architecture and internals documentation
 

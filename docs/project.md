@@ -43,8 +43,10 @@ by the body suffix. See `body_mode`, `deps_extensions_for_code`,
 `companion_extensions_for_code`, and `distribution_extensions_for_code` in
 `project/formats.py`.
 
-There is no "guess the extension" step. Each role has a fixed candidate list,
-and the first candidate that exists wins.
+There is no "guess the extension" step. A companion has exactly one candidate
+extension, and a sidecar has one or two (a draft body falls back to the official
+sidecar). A companion whose stem differs only in case from its body still pairs,
+so a tree copied from a case-insensitive filesystem keeps working.
 
 ## Discovery
 
@@ -186,11 +188,16 @@ because every elementary cycle is reported.
 ## Module-type recursion
 
 A module type that instantiates itself, directly or through other module types,
-has no finite expansion. After the registry is complete, the loader builds the
-instantiation graph over every loaded module type and rejects the first cycle
-with `ModuleTypeCycleError`. The check runs before validation and is not
-governed by `LoadValidation`, so `validate=NONE` and `strict=False` cannot let a
-recursive type through. Unused module types in a loaded dependency are checked
+has no finite expansion. After the registry is complete, for each program the
+loader builds the instantiation graph over the module types that program can
+see and rejects the first cycle with `ModuleTypeCycleError`. A graph node is one
+*definition*, identified by its owning program and folded type name, so two
+libraries that reuse a name are not merged. A reference resolves to the
+referencing file's own definition first, then to any definition in the checked
+program's closure, so a library that shadows a dependency's type name loads.
+
+The check runs before validation and is not governed by `LoadValidation`, so
+`validate=NONE` and `strict=False` cannot let a recursive type through. Unused module types in a loaded dependency are checked
 too, because the type itself is structurally invalid. The search stops at the
 first cycle it finds, so a dense instantiation graph cannot make rejection
 enumerate an exponential number of elementary cycles.
@@ -402,8 +409,10 @@ parse into a load failure.
 code file's directory. It never does a root-ordered lookup:
 
 - `.x` resolves only to `.y`;
-- draft code resolves `.g`, then `.y`;
+- `.s` resolves only to `.g`;
 - a `.g` or `.y` input resolves to itself.
+
+The stem is compared ignoring case, so `Pump.S` pairs with `pump.g`.
 
 The loader parses the companion into `program.graphics`. Structural problems
 become `GraphicsMessage` values, never exceptions. See [graphics.md](graphics.md).
@@ -430,8 +439,10 @@ stateDiagram-v2
 code file's directory, never a root-ordered lookup:
 
 - an `.x` body resolves only to `.q`;
-- a draft body resolves only to `.p`;
+- a `.s` body resolves only to `.p`;
 - a `.p` or `.q` input resolves to itself.
+
+The stem is compared ignoring case, so `Pump.S` pairs with `pump.p`.
 
 The file is a small nested structure of named groups:
 

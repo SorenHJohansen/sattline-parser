@@ -26,7 +26,11 @@ from pathlib import Path
 
 from sattline_parser.source_io import read_text_cp1252
 
-from .formats import ALL_DISTRIBUTION_EXTENSIONS, distribution_extensions_for_code
+from .formats import (
+    ALL_DISTRIBUTION_EXTENSIONS,
+    distribution_extensions_for_code,
+    find_companion_beside,
+)
 from .models import DistributionData, DistributionTarget, LoadMode
 
 __all__ = [
@@ -41,9 +45,18 @@ class DistributionParseError(ValueError):
     """A distribution companion does not match the expected structure."""
 
     def __init__(self, message: str, *, line: int, column: int) -> None:
+        self.message = message
         self.line = line
         self.column = column
         super().__init__(f"{message} at {line}:{column}")
+
+    def __reduce__(self) -> tuple[object, tuple[object, ...]]:
+        """Preserve the position fields across pickling."""
+        return (_rebuild_distribution_error, (self.message, self.line, self.column))
+
+
+def _rebuild_distribution_error(message: str, line: int, column: int) -> DistributionParseError:
+    return DistributionParseError(message, line=line, column=column)
 
 
 @dataclass(frozen=True, slots=True)
@@ -340,14 +353,10 @@ def resolve_distribution_companion_path(code_path: Path, *, mode: LoadMode) -> P
 
     The companion always sits in the same directory as the code file (a
     ``with_suffix`` substitution, never a root-ordered lookup). ``.x`` code
-    resolves only to ``.q``; draft code falls back from ``.p`` to ``.q``; a
-    ``.p`` / ``.q`` input resolves to itself.
+    resolves only to ``.q`` and ``.s`` code only to ``.p``; a ``.p`` / ``.q``
+    input resolves to itself. The stem matches ignoring case, so a companion
+    copied from a case-insensitive filesystem still pairs.
     """
     if code_path.suffix.lower() in ALL_DISTRIBUTION_EXTENSIONS:
         return code_path
-
-    for extension in distribution_extensions_for_code(code_path.suffix, mode):
-        candidate = code_path.with_suffix(extension)
-        if candidate.exists():
-            return candidate
-    return None
+    return find_companion_beside(code_path, distribution_extensions_for_code(code_path.suffix, mode))

@@ -15,7 +15,7 @@ from typing import Any, cast
 from lark import Tree
 from lark.exceptions import LarkError
 
-from sattline_parser.models.ast_model import GraphicsBinding, SourceSpan
+from sattline_parser.models.ast_model import FloatLiteral, GraphicsBinding, IntLiteral, SourceSpan
 from sattline_parser.source_io import build_lark_parser
 from sattline_parser.transformer.sl_transformer import SLTransformer
 
@@ -76,6 +76,16 @@ def _rebase_expression_spans(node: object, *, line: int, column: int, start: int
     def convert(value: object) -> object:
         if isinstance(value, SourceSpan):
             return rebase(value)
+        if isinstance(value, (IntLiteral, FloatLiteral)):
+            # The literal classes are ``int``/``float`` subclasses, so they fall
+            # through every structural branch below and would keep their
+            # expression-local span.
+            literal_span = value.span
+            if literal_span is not None:
+                rebased = rebase(literal_span)
+                if isinstance(value, IntLiteral):
+                    return IntLiteral(int(value), rebased)
+                return FloatLiteral(float(value), rebased)
         if isinstance(value, dict):
             mapping = cast(dict[str, object], value)
             for key, item in mapping.items():
@@ -173,7 +183,7 @@ def parse_graphics_binding_match(
             SLTransformer().transform(_graphics_expression_parser().parse(normalized_payload))
         )
         parsed = _rebase_expression_spans(parsed, line=line, column=payload_column, start=payload_start)
-    except LarkError as exc:
+    except (LarkError, RecursionError) as exc:
         return (
             GraphicsBinding(kind=kind, raw_text=payload, value=payload, span=span),
             (

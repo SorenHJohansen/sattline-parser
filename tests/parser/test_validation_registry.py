@@ -105,7 +105,7 @@ def test_active_rules_have_an_emit_site() -> None:
 
 
 def test_every_rule_status_is_a_known_value() -> None:
-    assert all(rule.status in tuple(RuleStatus) for rule in RULES)
+    assert all(isinstance(rule.status, RuleStatus) for rule in RULES)
 
 
 def test_find_rule_accepts_ids_and_names_case_insensitively() -> None:

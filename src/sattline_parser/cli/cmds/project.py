@@ -34,15 +34,25 @@ Edge = dict[str, str]
 _MAX_DEFAULT_WORKERS = 8
 
 
-def _default_cache_dir() -> Path:
+def _default_cache_dir() -> Path | None:
     """Where a load caches its per-file ASTs when ``--cache-dir`` is not given.
 
     The cache is private to one user and is validated against the source before
     it is trusted, so a default location is what makes a repeated load skip
-    parsing instead of re-reading the tree.
+    parsing instead of re-reading the tree. ``None`` means the cache is off: no
+    home directory is known, or ``XDG_CACHE_HOME`` is relative and would put the
+    cache inside whatever tree the command happens to run in.
     """
     base = os.environ.get("XDG_CACHE_HOME")
-    return (Path(base) if base else Path.home() / ".cache") / "sattline-parser" / "project"
+    if base:
+        candidate = Path(base)
+        return candidate / "sattline-parser" / "project" if candidate.is_absolute() else None
+    try:
+        return Path.home() / ".cache" / "sattline-parser" / "project"
+    except RuntimeError:
+        # No home directory can be determined (an unusual service context), so
+        # run uncached instead of failing the command.
+        return None
 
 
 def register(subparsers: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:  # pyright: ignore[reportPrivateUsage]

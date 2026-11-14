@@ -55,6 +55,7 @@ from .errors import (
     ProjectLoadError,
     StructuralProjectError,
 )
+from .formats import ALL_DEPS_EXTENSIONS, find_companion_beside
 from .graphics_parsing import parse_graphics_file, resolve_graphics_companion_path
 from .lookup_cache import FileLookupCache
 from .models import (
@@ -317,25 +318,18 @@ class ProjectLoader:
     def _assert_no_moduletype_cycles(self) -> None:
         """Reject a module type whose instantiation chain returns to itself.
 
-        Each program is checked against the definitions it can actually see, so
-        two unrelated libraries that happen to reuse a type name are not turned
-        into a cycle. Only the first cycle matters, and a graph can hold
-        exponentially many elementary cycles, so the search stops as soon as it
-        finds one instead of enumerating them.
+        Each program is checked against its visible closure, and a node is one
+        *definition* (owning program plus folded name), so two libraries that
+        reuse a name are two nodes, not one. A reference resolves to the
+        referencing file's own definition first, then to any definition in the
+        checked program's closure, which keeps a library that shadows a
+        dependency's type name from looking recursive. Only the first cycle
+        matters, and a graph can hold exponentially many elementary cycles, so
+        the search stops as soon as it finds one.
         """
         for key, program in self._registry.items():
             visible_keys = self._visible_program_keys(key, program.dependencies)
-            edges: list[tuple[str, str]] = []
-            owners: dict[str, str] = {}
-            labels: dict[str, str] = {}
-            for visible_key in sorted(visible_keys):
-                owner = self._registry[visible_key]
-                for moduletype in owner.code.moduletype_defs:
-                    name = fold_identifier(moduletype.name)
-                    owners.setdefault(name, owner.name)
-                    labels.setdefault(name, moduletype.name)
-                    for reference in iter_moduletype_refs(moduletype.submodules):
-                        edges.append((name, fold_identifier(reference)))
+            edges, labels, owners = _moduletype_edges(self._registry, visible_keys)
             cycle = first_cycle(edges)
             if cycle is not None:
                 display = tuple(labels[node] for node in cycle)
@@ -450,9 +444,12 @@ class ProjectLoader:
             return
         try:
             outcomes = list(pool.map(_parse_code_file, tasks, chunksize=1))
-        except BrokenProcessPool as exc:
-            # A worker died before returning its result. Anything else raised
-            # through ``map`` is a real failure and must reach the caller.
+        except (BrokenProcessPool, OSError) as exc:
+            # ``ProcessPoolExecutor`` starts its workers on the first submit, so
+            # a missing worker start method, a denied fork, or an exhausted
+            # process limit surfaces here rather than from the constructor. A
+            # dead worker is the same story. Parsing is the load, not an
+            # optimisation detail, so fall back to this process.
             pool.shutdown(wait=True, cancel_futures=True)
             self._dbg(f"Worker pool failed ({exc}); parsing in this process")
             for plan in self._plans:
@@ -606,13 +603,18 @@ class ProjectLoader:
         deps_path = self._lookup.find_deps_beside(code_path, name, requester_dir=requester_dir)
         sidecar = SidecarState.ABSENT
         if deps_path is None:
+            # A sidecar in the other family sits at the body's own prefix. Probe
+            # for it directly, because a mode-filtered root-ordered search never
+            # sees the other family and official mode would report a plain miss.
+            same_prefix = find_companion_beside(code_path, sorted(ALL_DEPS_EXTENSIONS))
             stray = self._lookup.find_deps(name, requester_dir=requester_dir)
-            if stray is not None and stray.parent == code_path.parent:
+            if same_prefix is not None:
                 self._diagnose(
                     LoadDiagnosticKind.SIDECAR_FAMILY_MISMATCH,
                     program_name,
-                    f"sidecar {stray.name!r} does not match the artifact family of body {code_path.name!r}; not paired",
-                    stray,
+                    f"sidecar {same_prefix.name!r} does not match the artifact family of body "
+                    f"{code_path.name!r}; not paired",
+                    same_prefix,
                 )
             elif stray is not None:
                 self._diagnose(
@@ -954,6 +956,46 @@ class ProjectLoader:
                 # successful parse into a load failure.
                 self._dbg(f"Cache write failed for {code_path}: {exc}")
         return basepicture
+
+
+def _moduletype_edges(
+    programs: dict[str, SattLineProgram],
+    visible_keys: frozenset[str],
+) -> tuple[list[tuple[str, str]], dict[str, str], dict[str, str]]:
+    """The instantiation edges among the definitions visible from one program.
+
+    A node is one definition, identified by its owning program and folded name,
+    so two programs may each define a type of the same name without becoming a
+    cycle. Returns the edges plus the display name and owning program of every
+    node the cycle report needs.
+    """
+    index: dict[str, list[tuple[str, ModuleTypeDef]]] = {}
+    for visible_key in sorted(visible_keys):
+        for moduletype in programs[visible_key].code.moduletype_defs:
+            index.setdefault(fold_identifier(moduletype.name), []).append((visible_key, moduletype))
+    labels: dict[str, str] = {}
+    owners: dict[str, str] = {}
+    edges: list[tuple[str, str]] = []
+
+    def node_for(owner_key: str, moduletype: ModuleTypeDef) -> str:
+        node = f"{owner_key}\x00{fold_identifier(moduletype.name)}"
+        labels.setdefault(node, moduletype.name)
+        owners.setdefault(node, programs[owner_key].name)
+        return node
+
+    for folded_name in sorted(index):
+        for owner_key, moduletype in index[folded_name]:
+            node = node_for(owner_key, moduletype)
+            for reference in iter_moduletype_refs(moduletype.submodules):
+                folded = fold_identifier(reference)
+                candidates = index.get(folded, ())
+                # A local definition wins, then any visible definition: the
+                # check asks whether this closure's definitions instantiate
+                # themselves, not whether every edge is load-order legal.
+                local = [entry for entry in candidates if entry[0] == owner_key] or candidates
+                for target_key, target in local:
+                    edges.append((node, node_for(target_key, target)))
+    return edges, labels, owners
 
 
 def _set_origin(basepicture: BasePicture, *, file_name: str, library: str) -> None:

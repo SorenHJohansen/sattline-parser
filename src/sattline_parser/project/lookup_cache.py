@@ -100,7 +100,10 @@ class FileLookupCache:
             return
         try:
             payload = _read_json(self.path)
-        except (OSError, json.JSONDecodeError):
+        except (OSError, ValueError):
+            # A truncated file, invalid JSON, or bytes that are not UTF-8 all
+            # mean the same thing: this entry is unusable, so a later write
+            # replaces it.
             return
         data = _as_data_dict(payload)
         if data is None or data.get("version") != LOOKUP_CACHE_VERSION:
@@ -114,7 +117,7 @@ class FileLookupCache:
             return 0
         try:
             payload = _read_json(self.path)
-        except (OSError, json.JSONDecodeError):
+        except (OSError, ValueError):
             return 1 if _remove_file(self.path) else 0
         data = _as_data_dict(payload)
         if data is None or data.get("version") != LOOKUP_CACHE_VERSION:

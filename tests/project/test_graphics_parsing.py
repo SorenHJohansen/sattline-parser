@@ -26,6 +26,21 @@ def test_graphics_binding_is_on_the_project_surface() -> None:
     assert ProjectGraphicsBinding is GraphicsBinding
 
 
+def test_resolve_graphics_companion_path_pairs_ignoring_case(tmp_path: Path) -> None:
+    (tmp_path / "PUMP.S").write_text("", encoding="utf-8")
+    lower = tmp_path / "pump.g"
+    lower.write_text("", encoding="utf-8")
+
+    assert resolve_graphics_companion_path(tmp_path / "PUMP.S", mode=LoadMode.DRAFT) == lower
+
+
+def test_resolve_graphics_companion_path_never_pairs_a_draft_body_with_official_graphics(tmp_path: Path) -> None:
+    (tmp_path / "M.s").write_text("", encoding="utf-8")
+    (tmp_path / "M.y").write_text("", encoding="utf-8")
+
+    assert resolve_graphics_companion_path(tmp_path / "M.s", mode=LoadMode.OFFICIAL) is None
+
+
 def test_resolve_graphics_companion_path_returns_input_for_graphics(tmp_path: Path) -> None:
     g_path = tmp_path / "X.g"
     y_path = tmp_path / "Y.y"
@@ -318,6 +333,35 @@ def test_parse_graphics_text_reports_a_bad_expression_as_a_warning() -> None:
     assert len(model.bindings) == 1
     assert len(model.warnings) == 1
     assert model.errors == ()
+
+
+def test_parse_graphics_text_reports_an_over_deep_expression_as_a_warning() -> None:
+    """A recursion failure becomes a message instead of escaping the parser."""
+    model = parse_graphics_text(" Expr True 99999 " + "not " * 5000 + "x\r\n")
+
+    assert len(model.bindings) == 1
+    assert isinstance(model.bindings[0].value, str)
+    assert len(model.warnings) == 1
+    assert model.errors == ()
+
+
+def test_expression_float_literals_carry_companion_spans() -> None:
+    model = parse_graphics_text("pad\r\n Expr True 11 Level > 5.5\r\n")
+
+    literal = model.bindings[0].value.right  # type: ignore[attr-defined]
+    assert literal.span is not None
+    assert (literal.span.line, literal.span.column) == (2, 23)
+    assert (literal.span.start, literal.span.end) == (27, 30)
+
+
+def test_expression_numeric_literals_carry_companion_spans() -> None:
+    model = parse_graphics_text("pad\r\n Expr True 9 Level > 5\r\n")
+
+    compare = model.bindings[0].value
+    literal = compare.right  # type: ignore[attr-defined]
+    assert literal.span is not None
+    assert (literal.span.line, literal.span.column) == (2, 22)
+    assert (literal.span.start, literal.span.end) == (26, 27)
 
 
 def test_parse_graphics_file_reads_disk(tmp_path: Path) -> None:

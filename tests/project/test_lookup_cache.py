@@ -113,6 +113,14 @@ def test_prunes_corrupted_json_at_startup(tmp_path: Path) -> None:
     assert not (tmp_path / "file_lookup_cache.json").exists()
 
 
+def test_prunes_a_cache_file_that_is_not_utf8(tmp_path: Path) -> None:
+    """An undecodable file is unusable, not a reason to fail the load."""
+    (tmp_path / "file_lookup_cache.json").write_bytes(b"\xff\xfe\x80")
+    cache = FileLookupCache(tmp_path)
+    assert cache.drain_startup_pruned_entries() == 1
+    assert not (tmp_path / "file_lookup_cache.json").exists()
+
+
 def test_load_ignores_corrupt_or_wrong_version_json_direct(tmp_path: Path) -> None:
     cache = FileLookupCache(tmp_path)
     (tmp_path / "file_lookup_cache.json").write_text("{bad", encoding="utf-8")

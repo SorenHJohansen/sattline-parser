@@ -103,6 +103,18 @@ def test_scan_opaque_regions_ignores_an_unterminated_apostrophe():
     assert scan_opaque_regions("A := 1 + 'unterminated") == []
 
 
+def test_scan_opaque_regions_treats_an_apostrophe_inside_a_name_as_name_text():
+    # ``Pump'A`` is one unquoted name, so neither apostrophe opens a region and
+    # the marker between two such names stays visible to the decoder.
+    assert scan_opaque_regions("Pump'A #84 Pump'B") == []
+
+
+def test_compressed_marker_between_apostrophe_names_is_decoded():
+    src = "\"Syntax version 2.23, date: 2026-08-26-11:48:22.200 C\"\nPump'A #84 Pump'B\n"
+
+    assert preprocess_source(src).normalized_text.endswith("Pump'A ModuleCode Pump'B\n")
+
+
 def test_scan_opaque_regions_ends_a_description_at_the_line_break():
     text = 'Value: integer "open description\nMore: integer;'
 

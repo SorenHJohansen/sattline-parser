@@ -335,7 +335,7 @@ def walk_sfc_item(item: SFCBodyItem, context: ValidationContext) -> None:
                 walk_code_item(code_item, context)
     elif isinstance(item, SFCTransition):
         if item.condition is not None:
-            _check_condition(item.condition, context)
+            _check_condition(item.condition, context, construct="transition guard")
             walk_expression(item.condition, context)
     elif isinstance(item, SFCTransitionSub):
         walk_sequence_body(item.body, context)
@@ -492,17 +492,19 @@ def _check_ternary_branches(expr: TernaryOp, context: ValidationContext) -> None
     )
 
 
-def _check_condition(condition: SLExpression, context: ValidationContext) -> None:
-    """An IF / ELSIF / ternary condition must be boolean.
+def _check_condition(condition: SLExpression, context: ValidationContext, *, construct: str = "IF-sentence") -> None:
+    """A condition must be boolean.
 
-    Real message: ``Condition in IF-sentence is not boolean``.
+    The construct named in the sentence is the IF family by default. An SFC
+    transition guard uses the same rule, so its sentence names the guard rather
+    than an IF that is not there.
     """
     condition_type = infer_expr_type(condition, context.scope, context.records, context.type_graph)
     if condition_type is not None and not is_boolean(condition_type):
         context.errors.append(
             Diagnostic(
                 code=DiagnosticCode.CONDITION_NOT_BOOLEAN,
-                message=f"Condition in IF-sentence is not boolean; condition is of type {condition_type}",
+                message=f"Condition in {construct} is not boolean; condition is of type {condition_type}",
                 span=_expression_span(condition),
             )
         )
@@ -649,10 +651,6 @@ def _check_call(call: FuncCall, context: ValidationContext) -> None:
                         )
                     )
                 _check_old_write_target(arg, resolved, context.errors)
-                if not const_exempt:
-                    # A data destination is checked against its declaration,
-                    # not against its value, so it needs no datatype check.
-                    continue
         elif is_write:
             context.errors.append(
                 Diagnostic(

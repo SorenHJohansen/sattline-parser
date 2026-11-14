@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import pickle
 from pathlib import Path
 
 import pytest
@@ -610,6 +611,60 @@ def test_same_type_names_in_unrelated_closures_are_not_a_cycle(tmp_path: Path) -
     project = SattLineProject.load([left, right], mode=LoadMode.DRAFT, targets=("Left", "Right"))
 
     assert set(project.programs()) == {"left", "right"}
+
+
+def test_same_type_names_in_unrelated_closures_are_not_a_cycle_under_one_consumer(tmp_path: Path) -> None:
+    """A build root that pulls both libraries in must not merge their type graphs."""
+    root = tmp_path / "libs"
+    root.mkdir()
+    left_types = _typedefinitions(
+        _moduletype("AType", instantiates="BType"),
+        _moduletype("BType"),
+    )
+    right_types = _typedefinitions(
+        _moduletype("BType", instantiates="AType"),
+        _moduletype("AType"),
+    )
+    _write(root, "Left.s", _source("Left", typedefs=left_types))
+    _write(root, "Right.s", _source("Right", typedefs=right_types))
+    _write(root, "Main.s", _source("Main"))
+    _write(root, "Main.l", "Left\nRight\n")
+
+    project = _load(root, "Main")
+
+    assert set(project.programs()) == {"main", "left", "right"}
+
+
+def test_a_library_may_shadow_a_dependency_type_name(tmp_path: Path) -> None:
+    """A local definition wins, so wrapping a dependency's type is not recursion."""
+    root = tmp_path / "libs"
+    root.mkdir()
+    base_types = _typedefinitions(
+        _moduletype("Valve", instantiates="Motor"),
+        _moduletype("Motor"),
+    )
+    ext_types = _typedefinitions(_moduletype("Motor", instantiates="Valve"))
+    _write(root, "Base.s", _source("Base", typedefs=base_types))
+    _write(root, "Ext.s", _source("Ext", typedefs=ext_types))
+    _write(root, "Ext.l", "Base\n")
+
+    project = _load(root, "Ext")
+
+    assert set(project.programs()) == {"base", "ext"}
+
+
+def test_project_errors_survive_pickling() -> None:
+    """An error raised in a worker must reach the parent with its fields intact."""
+    cycle_error = DependencyCycleError(("a", "b", "a"))
+    moduletype_error = ModuleTypeCycleError("Main", ("AType", "BType", "AType"))
+
+    restored_cycle = pickle.loads(pickle.dumps(cycle_error))
+    restored_moduletype = pickle.loads(pickle.dumps(moduletype_error))
+
+    assert restored_cycle.cycle == ("a", "b", "a")
+    assert str(restored_cycle) == str(cycle_error)
+    assert restored_moduletype.cycle == ("AType", "BType", "AType")
+    assert restored_moduletype.program == "Main"
 
 
 def test_cycle_key_keeps_direction_and_folds_rotation() -> None:
