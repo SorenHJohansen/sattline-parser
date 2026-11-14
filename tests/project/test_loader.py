@@ -14,6 +14,7 @@ from sattline_parser.api import parse_source_file
 from sattline_parser.models.ast_model import BasePicture
 from sattline_parser.project import (
     ArtifactLoadError,
+    DependencyCycleError,
     DependencyNotFoundError,
     DependencyParseError,
     LoadMode,
@@ -164,16 +165,13 @@ def test_load_duplicate_dependency_loads_once(tmp_path: Path) -> None:
     assert project.graph().edges.count(("main", "lib")) == 2
 
 
-def test_load_cycle_is_edge_not_error(tmp_path: Path) -> None:
+def test_load_cycle_is_an_error_not_an_edge(tmp_path: Path) -> None:
     _write(tmp_path, "A.s", _CODE)
     _write(tmp_path, "A.l", "B\n")
     _write(tmp_path, "B.s", _CODE)
     _write(tmp_path, "B.l", "A\n")
-    project = _load(tmp_path, targets=("A",))
-    assert len(project.programs()) == 2
-    assert project.dependencies_of("A") == ("B",)
-    assert project.dependencies_of("B") == ("A",)
-    assert set(project.graph().edges) == {("a", "b"), ("b", "a")}
+    with pytest.raises(DependencyCycleError):
+        _load(tmp_path, targets=("A",))
 
 
 def test_load_targets_canonicalized_by_case(tmp_path: Path) -> None:
@@ -580,17 +578,16 @@ def test_empty_sidecar_is_distinct_from_absent(tmp_path: Path) -> None:
     assert [d.kind for d in project.diagnostics()] == [LoadDiagnosticKind.SIDECAR_EMPTY]
 
 
-def test_dependency_cycle_is_a_diagnostic_not_an_exception(tmp_path: Path) -> None:
+def test_dependency_cycle_is_rejected_before_the_graph_is_returned(tmp_path: Path) -> None:
     _write(tmp_path, "A.s", _CODE)
     _write(tmp_path, "A.l", "B\n")
     _write(tmp_path, "B.s", _CODE)
     _write(tmp_path, "B.l", "A\n")
 
-    project = SattLineProject.load([tmp_path], LoadMode.DRAFT, ["A"])
+    with pytest.raises(DependencyCycleError) as excinfo:
+        SattLineProject.load([tmp_path], LoadMode.DRAFT, ["A"])
 
-    assert set(project.graph().edges) == {("a", "b"), ("b", "a")}
-    kinds = [diagnostic.kind for diagnostic in project.diagnostics()]
-    assert kinds.count(LoadDiagnosticKind.DEPENDENCY_CYCLE) == 1
+    assert excinfo.value.cycle == ("a", "b", "a")
 
 
 def test_first_body_match_wins_not_the_newest_datecode(tmp_path: Path) -> None:

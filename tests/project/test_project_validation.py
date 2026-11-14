@@ -8,7 +8,13 @@ from pathlib import Path
 import pytest
 
 from sattline_parser.api import parse_source_text
-from sattline_parser.project import LoadDiagnosticKind, LoadMode, LoadValidation, SattLineProject
+from sattline_parser.project import (
+    DependencyCycleError,
+    LoadMode,
+    LoadValidation,
+    ModuleTypeCycleError,
+    SattLineProject,
+)
 from sattline_parser.project._cycles import cycle_key, dependency_cycles
 from sattline_parser.project.loader import ProjectLoader
 from sattline_parser.project.models import SattLineProgram
@@ -340,18 +346,20 @@ def test_datecode_conflicts_only_cover_the_program_closure(tmp_path: Path) -> No
     assert "libs/Unrelated.s" not in project.get("Main").diagnostics[0].message
 
 
-def test_cycles_are_returned_as_paths(tmp_path: Path) -> None:
+def test_dependency_cycle_is_rejected(tmp_path: Path) -> None:
     root = tmp_path / "libs"
     root.mkdir()
     _write(root, "A.s", _source("A"))
     _write(root, "B.s", _source("B"))
     _write(root, "A.l", "B\n")
     _write(root, "B.l", "A\n")
-    project = _load(root, "A")
-    assert project.cycles() == (("a", "b", "a"),)
+    with pytest.raises(DependencyCycleError) as excinfo:
+        _load(root, "A")
+    assert excinfo.value.cycle == ("a", "b", "a")
+    assert "dependency cycle: a -> b -> a" in str(excinfo.value)
 
 
-def test_loader_canonicalises_the_cycle_entry_point(tmp_path: Path) -> None:
+def test_dependency_cycle_is_canonical_for_a_three_node_cycle(tmp_path: Path) -> None:
     root = tmp_path / "libs"
     root.mkdir()
     _write(root, "A.s", _source("A"))
@@ -360,26 +368,12 @@ def test_loader_canonicalises_the_cycle_entry_point(tmp_path: Path) -> None:
     _write(root, "A.l", "B\n")
     _write(root, "B.l", "C\n")
     _write(root, "C.l", "A\n")
-    project = _load(root, "B")
-    assert project.cycles() == (("a", "b", "c", "a"),)
+    with pytest.raises(DependencyCycleError) as excinfo:
+        _load(root, "B")
+    assert excinfo.value.cycle == ("a", "b", "c", "a")
 
 
-def test_project_cycles_include_cycles_the_loader_did_not_walk(tmp_path: Path) -> None:
-    root = tmp_path / "libs"
-    root.mkdir()
-    _write(root, "A.s", _source("A"))
-    _write(root, "B.s", _source("B"))
-    _write(root, "C.s", _source("C"))
-    _write(root, "A.l", "B\nC\n")
-    _write(root, "B.l", "A\n")
-    _write(root, "C.l", "B\n")
-
-    project = _load(root, "A")
-
-    assert project.cycles() == (("a", "b", "a"), ("a", "c", "b", "a"))
-
-
-def test_loader_records_one_diagnostic_per_cycle_across_skipped_targets(tmp_path: Path) -> None:
+def test_dependency_cycle_is_structural_even_when_a_source_is_unparseable(tmp_path: Path) -> None:
     root = tmp_path / "libs"
     root.mkdir()
     _write(root, "A.s", "not SattLine\n")
@@ -387,17 +381,147 @@ def test_loader_records_one_diagnostic_per_cycle_across_skipped_targets(tmp_path
     _write(root, "A.l", "B\n")
     _write(root, "B.l", "A\n")
 
-    project = SattLineProject.load(
-        [root],
-        mode=LoadMode.DRAFT,
-        targets=("A", "B"),
-        strict=False,
-        validate=LoadValidation.NONE,
+    with pytest.raises(DependencyCycleError):
+        SattLineProject.load(
+            [root],
+            mode=LoadMode.DRAFT,
+            targets=("A", "B"),
+            strict=False,
+            validate=LoadValidation.NONE,
+        )
+
+
+def test_official_sidecar_cycle_is_rejected(tmp_path: Path) -> None:
+    root = tmp_path / "libs"
+    root.mkdir()
+    _write(root, "A.x", _source("A"))
+    _write(root, "B.x", _source("B"))
+    _write(root, "A.z", "B\n")
+    _write(root, "B.z", "A\n")
+    with pytest.raises(DependencyCycleError):
+        SattLineProject.load([root], mode=LoadMode.OFFICIAL, targets=("A",))
+
+
+def _moduletype(name: str, *, instantiates: str | None = None) -> str:
+    submodules = ""
+    if instantiates is not None:
+        submodules = (
+            "   SUBMODULES\n"
+            "      Child Invocation\n"
+            "         ( 0.0 , 0.0 , 0.0 , 0.4 , 0.4\n"
+            f"          ) : {instantiates};\n"
+        )
+    return (
+        f"   {name} = MODULEDEFINITION DateCode_ 1\n"
+        "   LOCALVARIABLES\n"
+        "      Value: integer := 0;\n"
+        f"{submodules}"
+        "   ModuleDef\n"
+        "   ClippingBounds = ( -1.0 , -1.0 ) ( 1.0 , 1.0 )\n"
+        f"   ENDDEF (*{name}*);\n"
     )
 
-    diagnostics = [d for d in project.diagnostics() if d.kind is LoadDiagnosticKind.DEPENDENCY_CYCLE]
-    assert len(diagnostics) == 1
-    assert project.cycles() == (("a", "b", "a"),)
+
+def _typedefinitions(*moduletypes: str) -> str:
+    return "TYPEDEFINITIONS\n" + "".join(moduletypes)
+
+
+def test_moduletype_that_instantiates_itself_is_rejected(tmp_path: Path) -> None:
+    root = tmp_path / "libs"
+    root.mkdir()
+    typedefs = _typedefinitions(_moduletype("LoopType", instantiates="LoopType"))
+    _write(root, "Main.s", _source("Main", typedefs=typedefs))
+    with pytest.raises(ModuleTypeCycleError) as excinfo:
+        _load(root, "Main")
+    assert excinfo.value.cycle == ("LoopType", "LoopType")
+    assert "module type instantiates itself recursively: LoopType -> LoopType" in str(excinfo.value)
+
+
+def test_mutually_recursive_moduletypes_are_rejected(tmp_path: Path) -> None:
+    root = tmp_path / "libs"
+    root.mkdir()
+    typedefs = _typedefinitions(
+        _moduletype("AType", instantiates="BType"),
+        _moduletype("BType", instantiates="AType"),
+    )
+    _write(root, "Main.s", _source("Main", typedefs=typedefs))
+    with pytest.raises(ModuleTypeCycleError) as excinfo:
+        _load(root, "Main")
+    assert excinfo.value.cycle == ("AType", "BType", "AType")
+
+
+def test_moduletype_cycle_across_programs_is_rejected(tmp_path: Path) -> None:
+    root = tmp_path / "libs"
+    root.mkdir()
+    _write(
+        root,
+        "A.s",
+        _source("A", typedefs=_typedefinitions(_moduletype("AType", instantiates="BType"))),
+    )
+    _write(
+        root,
+        "B.s",
+        _source("B", typedefs=_typedefinitions(_moduletype("BType", instantiates="AType"))),
+    )
+    _write(root, "A.l", "B\n")
+    with pytest.raises(ModuleTypeCycleError) as excinfo:
+        _load(root, "A")
+    assert excinfo.value.cycle == ("AType", "BType", "AType")
+    assert str(excinfo.value).startswith("A: ")
+
+
+def test_moduletype_cycle_is_structural_in_a_lenient_load(tmp_path: Path) -> None:
+    root = tmp_path / "libs"
+    root.mkdir()
+    typedefs = _typedefinitions(_moduletype("LoopType", instantiates="LoopType"))
+    _write(root, "Main.s", _source("Main", typedefs=typedefs))
+    with pytest.raises(ModuleTypeCycleError):
+        _load(root, "Main", strict=False)
+
+
+def test_uninvoked_recursive_moduletype_in_a_dependency_is_rejected(tmp_path: Path) -> None:
+    root = tmp_path / "libs"
+    root.mkdir()
+    _write(root, "Main.s", _source("Main"))
+    typedefs = _typedefinitions(_moduletype("LoopType", instantiates="LoopType"))
+    _write(root, "Dep.s", _source("Dep", typedefs=typedefs))
+    _write(root, "Main.l", "Dep\n")
+    with pytest.raises(ModuleTypeCycleError):
+        _load(root, "Main")
+
+
+def test_acyclic_moduletype_instances_load(tmp_path: Path) -> None:
+    root = tmp_path / "libs"
+    root.mkdir()
+    typedefs = _typedefinitions(
+        _moduletype("Outer", instantiates="Inner"),
+        _moduletype("Inner"),
+    )
+    _write(root, "Main.s", _source("Main", typedefs=typedefs))
+    project = _load(root, "Main")
+    assert tuple(project.programs()) == ("main",)
+    assert project.cycles() == ()
+
+
+def test_same_type_names_in_unrelated_closures_are_not_a_cycle(tmp_path: Path) -> None:
+    left = tmp_path / "left"
+    right = tmp_path / "right"
+    left.mkdir()
+    right.mkdir()
+    left_types = _typedefinitions(
+        _moduletype("AType", instantiates="BType"),
+        _moduletype("BType"),
+    )
+    right_types = _typedefinitions(
+        _moduletype("BType", instantiates="AType"),
+        _moduletype("AType"),
+    )
+    _write(left, "Left.s", _source("Left", typedefs=left_types))
+    _write(right, "Right.s", _source("Right", typedefs=right_types))
+
+    project = SattLineProject.load([left, right], mode=LoadMode.DRAFT, targets=("Left", "Right"))
+
+    assert set(project.programs()) == {"left", "right"}
 
 
 def test_cycle_key_keeps_direction_and_folds_rotation() -> None:

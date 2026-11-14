@@ -139,16 +139,16 @@ no check). The same registry renders the rule table in
 sattline project programs/ libs/ --targets MyProgram --json
 sattline project programs/ libs/ --graph
 sattline project programs/ libs/ --of MyProgram --reverse --depth 2
-sattline project programs/ libs/ --cycles
 sattline project programs/ libs/ --validate full --fail-on error
 ```
 
 A root is a library directory: the loader indexes artifacts directly inside it.
 When `--targets` is omitted, every source directly under each root is a target.
 `--lenient` is the CLI spelling of `strict=False`. `--no-cache` bypasses the
-parser caches; `--cache-dir` points them at a private directory. `--cycles`
-reports every cycle in the project view once as an ordered path; cycles with the
-same members in a different order are distinct.
+parser caches; `--cache-dir` points them at a private directory. A recursive
+`.l`/`.z` dependency or a module type that instantiates itself is a structural
+load error: the command reports `cannot load project` with the cycle path and
+exits `1`, even under `--lenient`.
 
 ### `graphics`
 
@@ -303,7 +303,7 @@ public change and must be called out in the changelog.
 | `tests/cli/test_cli_check.py` | Finding shape and filters |
 | `tests/cli/test_cli_parse.py` | Summary and tree output |
 | `tests/cli/test_cli_query.py` | Query kinds and filters |
-| `tests/cli/test_cli_project.py` | Project output, graph, cycles |
+| `tests/cli/test_cli_project.py` | Project output and graph |
 | `tests/cli/test_cli_project_validation.py` | Validation scope output |
 | `tests/cli/test_cli_graphics.py` | Companion output and refusal |
 | `tests/cli/test_cli_decode_diff_corpus.py` | Decode, diff, and corpus |

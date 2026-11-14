@@ -156,7 +156,6 @@ class LoadDiagnosticKind(StrEnum):
     SIDECAR_MISSING = "sidecar-missing"
     SIDECAR_ELSEWHERE = "sidecar-elsewhere"
     SIDECAR_EMPTY = "sidecar-empty"
-    DEPENDENCY_CYCLE = "dependency-cycle"
     #: A program was left out of a non-strict load because it could not be
     #: resolved or parsed. The load continues, but the omission stays visible.
     LOAD_SKIPPED = "load-skipped"

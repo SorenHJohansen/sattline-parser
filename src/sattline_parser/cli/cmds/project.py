@@ -67,7 +67,6 @@ def register(subparsers: argparse._SubParsersAction[argparse.ArgumentParser]) ->
     parser.add_argument("--of", metavar="NAME", help="restrict the graph to this program")
     parser.add_argument("--reverse", action="store_true", help="follow dependents instead of dependencies")
     parser.add_argument("--depth", type=positive_int, metavar="N", help="limit the graph traversal depth")
-    parser.add_argument("--cycles", action="store_true", help="only print dependency cycles")
     parser.set_defaults(handler=run)
 
 
@@ -85,18 +84,12 @@ def run(args: argparse.Namespace) -> int:
     programs = project.programs()
     load_diagnostics = project.diagnostics()
     validation_rows = _validation_rows(programs)
-    cycles = [list(cycle[:-1]) for cycle in project.cycles()]
     edges = _edges(project, args)
-    if args.cycles:
-        _emit_cycles(cycles, args=args)
-    elif args.graph:
-        _emit_graph(edges, cycles, args=args)
+    if args.graph:
+        _emit_graph(edges, args=args)
     else:
-        _emit_programs(programs, edges, load_diagnostics, validation_rows, cycles, args=args)
-    failing = bool(cycles) or any(
-        diagnostic.kind in {LoadDiagnosticKind.DEPENDENCY_CYCLE, LoadDiagnosticKind.LOAD_SKIPPED}
-        for diagnostic in load_diagnostics
-    )
+        _emit_programs(programs, edges, load_diagnostics, validation_rows, args=args)
+    failing = any(diagnostic.kind is LoadDiagnosticKind.LOAD_SKIPPED for diagnostic in load_diagnostics)
     if _validation_fails(validation_rows, args.fail_on):
         failing = True
     return int(ExitCode.FINDINGS if failing else ExitCode.OK)
@@ -230,7 +223,6 @@ def _emit_programs(
     edges: Sequence[Edge],
     diagnostics: Sequence[LoadDiagnostic],
     validation: Sequence[Mapping[str, object]],
-    cycles: Sequence[list[str]],
     *,
     args: argparse.Namespace,
 ) -> None:
@@ -242,7 +234,6 @@ def _emit_programs(
             "mode": args.mode,
             "programs": rows,
             "edges": list(edges),
-            "cycles": list(cycles),
             "diagnostics": diagnostics_rows,
             "validation": list(validation),
         }
@@ -258,10 +249,6 @@ def _emit_programs(
             f"sidecar={program.sidecar.value} depends on: {dependencies}"
         )
     print(f"edges: {len(edges)}")
-    if cycles:
-        print("cycles:")
-        for cycle in cycles:
-            print(f"  {' -> '.join([*cycle, cycle[0]])}")
     if diagnostics_rows:
         print("diagnostics:")
         for row in diagnostics_rows:
@@ -276,19 +263,10 @@ def _emit_programs(
             print(f"  {row['code']} {row['program']}{location}{tentative}: {row['message']}")
 
 
-def _emit_graph(edges: Sequence[Edge], cycles: Sequence[list[str]], *, args: argparse.Namespace) -> None:
+def _emit_graph(edges: Sequence[Edge], *, args: argparse.Namespace) -> None:
     if args.json or args.jsonl:
-        payload = {"schema": f"{SCHEMA_PREFIX}.project", "edges": list(edges), "cycles": list(cycles)}
+        payload = {"schema": f"{SCHEMA_PREFIX}.project", "edges": list(edges)}
         print(dumps(payload, compact=bool(args.jsonl)))
         return
     for edge in edges:
         print(f"{edge['from']} -> {edge['to']}")
-
-
-def _emit_cycles(cycles: Sequence[list[str]], *, args: argparse.Namespace) -> None:
-    if args.json or args.jsonl:
-        payload = {"schema": f"{SCHEMA_PREFIX}.project", "cycles": list(cycles)}
-        print(dumps(payload, compact=bool(args.jsonl)))
-        return
-    for cycle in cycles:
-        print(" -> ".join([*cycle, cycle[0]]))

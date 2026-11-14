@@ -8,15 +8,17 @@ to the module types that target invokes, transitively.
 
 Post-order is an invariant: the registry is built dependencies-first, so a
 program's diagnostics are computed against a complete prefix of its closure.
-The loader asserts that invariant for acyclic loads. Invoked-scope validation
-runs after the graph is complete because it needs the whole invocation graph.
+The loader asserts that invariant. Invoked-scope validation runs after the graph
+is complete because it needs the whole invocation graph.
 
 ``tentative`` marking is owned here. When a non-strict load skips a dependency,
 every program whose closure includes that dependency gets tentative findings for
 rules that depend on external definitions. Purely local findings stay final.
 
 Strict loading fails fast on missing or unparseable artifacts. Validation
-findings never raise; ``strict`` governs load failures only.
+findings never raise; ``strict`` governs load failures only. Two structural
+errors are not recoverable by either strictness setting: a recursive sidecar
+chain and a module type that instantiates itself.
 """
 
 from __future__ import annotations
@@ -32,10 +34,18 @@ from sattline_parser.source_io import parse_source_file, read_text_cp1252
 from sattline_parser.validation import validate_basepicture
 from sattline_parser.validation.diagnostics import Diagnostic, DiagnosticCode
 
-from ._cycles import canonical_cycle, cycle_key
+from ._cycles import canonical_cycle, dependency_cycles
 from .ast_cache import FileASTCache
 from .discovery import ProjectLookup
-from .errors import ArtifactLoadError, DependencyNotFoundError, DependencyParseError, ProjectLoadError
+from .errors import (
+    ArtifactLoadError,
+    DependencyCycleError,
+    DependencyNotFoundError,
+    DependencyParseError,
+    ModuleTypeCycleError,
+    ProjectLoadError,
+    StructuralProjectError,
+)
 from .graphics_parsing import parse_graphics_file, resolve_graphics_companion_path
 from .lookup_cache import FileLookupCache
 from .models import (
@@ -48,7 +58,7 @@ from .models import (
     SattLineProgram,
     SidecarState,
 )
-from .reachability import invoked_moduletypes
+from .reachability import invoked_moduletypes, iter_moduletype_refs
 
 #: Findings that depend on definitions outside the program itself. They become
 #: tentative when a part of the closure failed to load.
@@ -102,8 +112,6 @@ class ProjectLoader:
         self._registry: dict[str, SattLineProgram] = {}
         self._loading: list[str] = []
         self._diagnostics: list[LoadDiagnostic] = []
-        self._cycles: list[tuple[str, ...]] = []
-        self._cycle_keys: set[tuple[str, ...]] = set()
         self._incomplete: set[str] = set()
         #: name -> datecode -> program keys declaring it. Conflict checks are
         #: scoped to a program's visible closure, so unrelated programs that
@@ -122,11 +130,6 @@ class ProjectLoader:
         """Non-fatal findings recorded during this load, in discovery order."""
         return tuple(self._diagnostics)
 
-    @property
-    def cycles(self) -> tuple[tuple[str, ...], ...]:
-        """Dependency cycle paths recorded during this load, in discovery order."""
-        return tuple(self._cycles)
-
     def _diagnose(self, kind: LoadDiagnosticKind, program: str, detail: str, path: Path | None = None) -> None:
         diagnostic = LoadDiagnostic(kind=kind, program=program, detail=detail, path=path)
         if diagnostic not in self._diagnostics:
@@ -136,14 +139,40 @@ class ProjectLoader:
         try:
             for target in targets:
                 self._visit(target, requester_dir=None, declared_by=None)
-            if not self._cycles:
-                self._assert_registry_post_order()
+            self._assert_registry_post_order()
+            self._assert_no_moduletype_cycles()
             if self._validate is LoadValidation.INVOKED:
                 self._validate_invoked(targets)
             return self._registry
         finally:
             if self._lookup_cache is not None:
                 self._lookup_cache.flush()
+
+    def _assert_no_moduletype_cycles(self) -> None:
+        """Reject a module type whose instantiation chain returns to itself.
+
+        Each program is checked against the definitions it can actually see, so
+        two unrelated libraries that happen to reuse a type name are not turned
+        into a cycle.
+        """
+        for key, program in self._registry.items():
+            visible_keys = self._visible_program_keys(key, program.dependencies)
+            edges: list[tuple[str, str]] = []
+            owners: dict[str, str] = {}
+            labels: dict[str, str] = {}
+            for visible_key in sorted(visible_keys):
+                owner = self._registry[visible_key]
+                for moduletype in owner.code.moduletype_defs:
+                    name = fold_identifier(moduletype.name)
+                    owners.setdefault(name, owner.name)
+                    labels.setdefault(name, moduletype.name)
+                    for reference in iter_moduletype_refs(moduletype.submodules):
+                        edges.append((name, fold_identifier(reference)))
+            cycles = dependency_cycles(edges)
+            if cycles:
+                cycle = cycles[0]
+                display = tuple(labels[node] for node in cycle)
+                raise ModuleTypeCycleError(owners[cycle[0]], display)
 
     def _assert_registry_post_order(self) -> None:
         """Assert that every loaded dependency precedes its consumer."""
@@ -162,22 +191,10 @@ class ProjectLoader:
         if key in self._registry:
             return
         if key in self._loading:
-            # A dependency loop. The loader reports it through its library-error
-            # handling and an operator may continue past it, so it becomes a
-            # diagnostic and the graph keeps the edge. The path is also recorded
-            # as data for consumers that want to display it.
+            # A dependency loop has no finite load order. It is structural, so
+            # neither strictness setting may recover from it.
             start = self._loading.index(key)
-            cycle = canonical_cycle((*self._loading[start:], key))
-            identity = cycle_key(cycle)
-            if identity not in self._cycle_keys:
-                self._cycle_keys.add(identity)
-                self._cycles.append(cycle)
-                self._diagnose(
-                    LoadDiagnosticKind.DEPENDENCY_CYCLE,
-                    declared_by or name,
-                    f"dependency cycle: {' -> '.join(cycle)}",
-                )
-            return
+            raise DependencyCycleError(canonical_cycle((*self._loading[start:], key)))
         self._loading.append(key)
         try:
             self._load_one(name, requester_dir=requester_dir, declared_by=declared_by)
@@ -288,6 +305,8 @@ class ProjectLoader:
                 diagnostics=diagnostics,
             )
             self._registry[key] = program
+        except StructuralProjectError:
+            raise
         except ProjectLoadError as exc:
             if self._strict:
                 raise
