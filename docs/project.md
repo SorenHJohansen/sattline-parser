@@ -77,15 +77,17 @@ and the requester is ignored.
 sequenceDiagram
     autonumber
     participant L as ProjectLoader
-    participant V as _visit
+    participant V as _discover
     participant F as ProjectLookup
-    participant P as parse_source_file
+    participant P as _parse_code_file
     participant VAL as validate_basepicture
 
+    Note over L: phase 1: discover, sequential, I/O only
     L->>V: visit(target, requester_dir=None, declared_by=None)
-    V->>V: already in registry? return
     V->>V: already loading? raise DependencyCycleError
+    V->>V: already planned? return
     V->>V: push key on _loading
+    V->>V: resolve artifact
     V->>F: find_code_with_base(name, requester_dir)
     F-->>V: code_path, resolved_base
     V->>F: find_deps_beside(code_path, name)
@@ -94,16 +96,24 @@ sequenceDiagram
     loop each dependency
         V->>V: visit(dep, requester_dir=sidecar dir, declared_by=name)
     end
-    V->>P: parse_source_file(code_path)
-    P-->>V: BasePicture
-    V->>V: set origin_file and origin_lib
-    V->>V: record datecodes
-    V->>V: resolve and parse graphics companion
-    V->>VAL: validate when scope is INVOKED or FULL
-    VAL-->>V: diagnostics
-    V->>V: store SattLineProgram in registry
-    V->>V: pop _loading
+    V->>V: append a _Plan, so plans come out post-order
+    Note over L: phase 2: parse every planned body
+    L->>P: one task per plan, in workers processes
+    P-->>L: BasePicture, or the text of the failure
+    Note over L: phase 3: assemble, sequential, plan order
+    L->>L: dependency incomplete? mark incomplete
+    L->>L: set origin_file and origin_lib
+    L->>L: record datecodes
+    L->>L: resolve and parse graphics companion
+    L->>VAL: validate when scope is INVOKED or FULL
+    VAL-->>L: diagnostics
+    L->>L: store SattLineProgram in registry
 ```
+
+Discovery resolves paths and reads sidecars; it never parses a body. That split
+is what makes the parse phase parallel: the whole closure is known before any
+parse starts, so a worker needs nothing but a path, and the assembled registry
+does not depend on which worker finished first.
 
 Post-order is an invariant: the registry is built dependencies-first, so a
 program's diagnostics are computed against a complete prefix of its closure.
@@ -270,7 +280,9 @@ just the resolved closure.
 ## Caches
 
 Both caches are opt-in through `cache_dir=`. When it is `None`, the load is
-fully in-memory and hermetic: no disk writes, no shared state.
+fully in-memory and hermetic: no disk writes, no shared state. `sattline
+project` passes a private directory under the user's cache root unless
+`--no-cache` is given, so a repeated load of the same tree skips parsing.
 
 ### Lookup cache
 
@@ -332,6 +344,41 @@ become `GraphicsMessage` values, never exceptions. See [graphics.md](graphics.md
 - The lookup cache skips repeated ordered scans for a stable layout.
 - The AST cache skips re-parsing an unchanged file.
 - `INVOKED` scope avoids validating a library's unused module types.
+
+Measured on a 268-program library tree (315 MB of `.x` bodies, all
+`validate=INVOKED`, one 6-core machine):
+
+| Load | Time |
+| --- | --- |
+| `workers=1`, no cache | 224 s |
+| `workers=6`, no cache | 72 s |
+| `workers=1`, warm AST cache | 75 s |
+| `workers=6`, warm AST cache | 61 s |
+
+Parsing is 99% of a load. Lookup, sidecar reads, graphics companions, and graph
+assembly together are under a second on that tree, which is why `workers` is the
+only lever with a large factor.
+
+### Parallel parsing
+
+`workers` parses bodies in that many processes and defaults to `1`; the CLI
+defaults to `min(8, cpu_count)`. Results do not depend on the worker count:
+discovery fixes the plan order before any parse runs.
+
+- A single-threaded caller forks, so a worker inherits the compiled parser. A
+  caller with other threads gets `forkserver`: forking a threaded process is
+  deprecated in CPython and can inherit a lock another thread held at fork
+  time. That costs each worker one parser build from the on-disk cache, about
+  50 ms and 50 MB.
+- A daemonic process may not start children, so a load called from inside an
+  outer pool parses in that process instead of raising.
+- A worker that meets the AST cache reads and writes it directly, so a warm
+  load does not hand a large pickle back and forth.
+- If a pool cannot be created (a restricted sandbox, a bootstrap failure), the
+  load logs and parses in this process rather than failing.
+- `workers > 1` and a warm cache do not add up: the parent must still receive
+  every AST from a child. Use the cache for repeated loads and `workers` for a
+  cold one.
 
 ## Tests that pin the project layer
 

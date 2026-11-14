@@ -23,7 +23,11 @@ chain and a module type that instantiates itself.
 
 from __future__ import annotations
 
+import contextlib
+import multiprocessing
+import threading
 from collections.abc import Callable, Sequence
+from concurrent.futures import ProcessPoolExecutor
 from dataclasses import dataclass, replace
 from pathlib import Path
 
@@ -102,6 +106,102 @@ class _ResolvedArtifact:
     dependency_requester: Path
 
 
+@dataclass(frozen=True, slots=True)
+class _Plan:
+    """One discovered program, resolved and ready to parse.
+
+    Discovery fills a plan without parsing anything, so the whole closure is
+    known before parse work starts. Assembly consumes plans in plan order,
+    which is post-order: every dependency precedes its consumer.
+    """
+
+    key: str
+    name: str
+    declared_by: str | None
+    artifact: _ResolvedArtifact
+
+
+@dataclass(frozen=True, slots=True)
+class _ParseOutcome:
+    """A parsed body, or the text of the failure that stopped it."""
+
+    ast: BasePicture | None = None
+    failure: str | None = None
+
+
+def _program_name(plan: _Plan) -> str:
+    return plan.declared_by if plan.declared_by is not None else plan.name
+
+
+def _dependency(plan: _Plan) -> str | None:
+    return None if plan.declared_by is None else plan.name
+
+
+def _parse_failure(program_name: str, code_name: str, dependency: str | None) -> ProjectLoadError:
+    """The load error for a body that did not parse."""
+    if dependency is None:
+        return ArtifactLoadError(program_name, f"failed to parse {code_name}")
+    return DependencyParseError(
+        program_name,
+        f"failed to parse dependency {dependency!r}",
+        dependency=dependency,
+    )
+
+
+def _parse_code_file(task: tuple[str, str, str | None]) -> _ParseOutcome:
+    """Parse one code file into an AST.
+
+    Runs in a child process when ``workers`` is greater than one, so it must not
+    touch the loader or its registry. A failure comes back as text: the parent
+    owns the error type and wording, which depend on the dependency edge.
+    """
+    code_text, mode, cache_text = task
+    code_path = Path(code_text)
+    cache = FileASTCache(Path(cache_text)) if cache_text is not None else None
+    if cache is not None:
+        cached = cache.load(code_path, mode)
+        if cached is not None:
+            return _ParseOutcome(ast=cached)
+    try:
+        picture = parse_source_file(code_path)
+    except PARSE_FAILURES as exc:
+        return _ParseOutcome(failure=str(exc) or type(exc).__name__)
+    if cache is not None:
+        with contextlib.suppress(OSError):
+            cache.save(code_path, mode, picture)
+    return _ParseOutcome(ast=picture)
+
+
+def _start_method(methods: Sequence[str], *, threaded: bool) -> str | None:
+    """The pool start method to use, or ``None`` for the platform default.
+
+    A single-threaded process forks: a worker inherits the compiled parser and
+    the caller needs no ``__main__`` guard. Forking a process with other
+    threads is deprecated in CPython and can inherit a lock another thread held
+    at fork time, so a threaded host gets ``forkserver``, and ``spawn`` is the
+    portable fallback.
+    """
+    if threaded:
+        for candidate in ("forkserver", "spawn"):
+            if candidate in methods:
+                return candidate
+    for candidate in ("fork", "forkserver", "spawn"):
+        if candidate in methods:
+            return candidate
+    return None
+
+
+def _pool_allowed() -> bool:
+    """A daemonic process may not start children, so a nested load stays in this one."""
+    return not multiprocessing.current_process().daemon
+
+
+def _process_pool(max_workers: int) -> ProcessPoolExecutor:
+    """A process pool shaped for the current process."""
+    method = _start_method(multiprocessing.get_all_start_methods(), threaded=threading.active_count() > 1)
+    return ProcessPoolExecutor(max_workers=max_workers, mp_context=multiprocessing.get_context(method))
+
+
 class ProjectLoader:
     """Recursive resolver producing the canonical program registry for a load."""
 
@@ -114,6 +214,7 @@ class ProjectLoader:
         debug: Callable[[str], None] | None,
         cache_dir: Path | None,
         validate: LoadValidation = LoadValidation.INVOKED,
+        workers: int = 1,
     ) -> None:
         # The whole cache root has to be private: the AST cache stores pickles,
         # and the lookup cache shares the same directory. Fail closed by
@@ -126,6 +227,12 @@ class ProjectLoader:
         self._strict = strict
         self._debug = debug
         self._validate = validate
+        self._workers = max(1, workers)
+        self._secure_cache_dir = secure_cache_dir
+        #: Discovery order is post-order, so assembly is a single pass.
+        self._plans: list[_Plan] = []
+        self._planned_keys: set[str] = set()
+        self._parsed: dict[str, _ParseOutcome] = {}
         self._registry: dict[str, SattLineProgram] = {}
         #: Insertion-ordered set of program keys currently being loaded.
         self._loading: dict[str, None] = {}
@@ -157,6 +264,8 @@ class ProjectLoader:
         try:
             for target in targets:
                 self._visit(target, requester_dir=None, declared_by=None)
+            self._parse_planned()
+            self._assemble()
             self._assert_registry_post_order()
             self._assert_no_moduletype_cycles()
             if self._validate is LoadValidation.INVOKED:
@@ -206,24 +315,32 @@ class ProjectLoader:
 
     def _visit(self, name: str, *, requester_dir: Path | None, declared_by: str | None) -> None:
         key = name.casefold()
-        if key in self._registry:
-            return
         if key in self._loading:
             # A dependency loop has no finite load order. It is structural, so
             # neither strictness setting may recover from it.
             loading = tuple(self._loading)
             start = loading.index(key)
             raise DependencyCycleError(canonical_cycle((*loading[start:], key)))
+        if key in self._planned_keys:
+            return
         self._loading[key] = None
         try:
-            self._load_one(name, requester_dir=requester_dir, declared_by=declared_by)
+            self._discover(name, requester_dir=requester_dir, declared_by=declared_by)
         finally:
             del self._loading[key]
 
-    def _load_one(self, name: str, *, requester_dir: Path | None, declared_by: str | None) -> None:
+    def _discover(self, name: str, *, requester_dir: Path | None, declared_by: str | None) -> None:
+        """Resolve one program's artifacts and recurse into its dependencies.
+
+        Discovery is path resolution and sidecar reads only: it never parses a
+        body, so the whole closure is known before any parse work starts. The
+        plan is appended after the recursion, which makes ``self._plans`` the
+        post-order sequence the assembly phase needs.
+        """
         program_name = declared_by if declared_by is not None else name
         dependency = None if declared_by is None else name
         key = name.casefold()
+        self._planned_keys.add(key)
         try:
             self._dbg(f"Visiting: {name}")
             artifact = self._resolve_artifact(
@@ -232,46 +349,19 @@ class ProjectLoader:
                 program_name=program_name,
                 dependency=dependency,
             )
-            self._load_dependencies(name, key=key, artifact=artifact)
-
-            basepicture = self._load_ast(artifact.code_path, program_name=program_name, dependency=dependency)
-            _set_origin(basepicture, file_name=artifact.code_path.name, library=artifact.library)
-            diagnostics = self._artifact_diagnostics(
-                basepicture,
-                key=key,
-                artifact=artifact,
-                declared_by=declared_by,
-            )
-            self._remember_definitions(
-                basepicture,
-                library=artifact.library,
-                file_name=artifact.code_path.name,
-                program_key=key,
-            )
-
-            graphics_path, graphics = self._load_companion(
-                artifact.code_path,
-                name=name,
-                program_name=program_name,
-                dependency=dependency,
-            )
-            self._registry[key] = SattLineProgram(
-                name=name,
-                code=basepicture,
-                graphics=graphics,
-                dependencies=artifact.dependencies,
-                format=ProgramFormat(
-                    mode=self._mode,
-                    code_ext=artifact.code_path.suffix.lower(),
-                    graphics_ext=graphics_path.suffix.lower() if graphics_path is not None else None,
-                    deps_ext=artifact.deps_path.suffix.lower() if artifact.deps_path is not None else None,
-                ),
-                source_path=artifact.code_path,
-                deps_path=artifact.deps_path,
-                sidecar=artifact.sidecar,
-                library=artifact.library,
-                resolved_base=artifact.resolved_base,
-                diagnostics=diagnostics,
+            for declared in artifact.dependencies:
+                self._visit(
+                    declared,
+                    requester_dir=artifact.dependency_requester,
+                    declared_by=name,
+                )
+            self._plans.append(
+                _Plan(
+                    key=key,
+                    name=name,
+                    declared_by=declared_by,
+                    artifact=artifact,
+                )
             )
         except StructuralProjectError:
             raise
@@ -282,6 +372,134 @@ class ProjectLoader:
             # be able to tell that a program is missing from the result.
             self._incomplete.add(key)
             self._diagnose(LoadDiagnosticKind.LOAD_SKIPPED, name, f"skipped {name!r}: {exc}")
+
+    def _parse_planned(self) -> None:
+        """Parse every planned body, in parallel when ``workers`` allows it.
+
+        Failures are carried, not raised: strict and non-strict differ in what
+        they do with a failure, and that decision belongs to the assembly phase
+        so both modes see the same error.
+        """
+        if not self._plans:
+            return
+        if self._workers <= 1 or len(self._plans) == 1:
+            for plan in self._plans:
+                self._parsed[plan.key] = self._parse_in_process(plan)
+            return
+        if not _pool_allowed():
+            # A daemonic process cannot start children. Parsing here is slower
+            # but correct, and the caller already owns a pool to run us on.
+            self._dbg("Parsing in this process: a daemonic process cannot start workers")
+            for plan in self._plans:
+                self._parsed[plan.key] = self._parse_in_process(plan)
+            return
+
+        cache_text = None if self._secure_cache_dir is None else str(self._secure_cache_dir)
+        tasks = [(str(plan.artifact.code_path), self._mode.value, cache_text) for plan in self._plans]
+        for plan in self._plans:
+            self._dbg(f"Parsing: {plan.artifact.code_path}")
+        workers = min(self._workers, len(tasks))
+        try:
+            with _process_pool(workers) as pool:
+                outcomes = list(pool.map(_parse_code_file, tasks, chunksize=1))
+        except (OSError, RuntimeError, ValueError) as exc:
+            # A pool cannot always be created (no fork support, a daemonic
+            # parent, a restricted sandbox). Parsing is the load, not an
+            # optimisation detail, so fall back to this process rather than
+            # failing the load.
+            self._dbg(f"Parallel parsing unavailable ({exc}); parsing in this process")
+            for plan in self._plans:
+                self._parsed[plan.key] = self._parse_in_process(plan)
+            return
+        for plan, outcome in zip(self._plans, outcomes, strict=True):
+            self._parsed[plan.key] = outcome
+
+    def _parse_in_process(self, plan: _Plan) -> _ParseOutcome:
+        """Parse one plan through the loader's own cache, parser, and errors."""
+        try:
+            ast = self._load_ast(
+                plan.artifact.code_path,
+                program_name=_program_name(plan),
+                dependency=_dependency(plan),
+            )
+        except ProjectLoadError as exc:
+            return _ParseOutcome(failure=str(exc))
+        return _ParseOutcome(ast=ast)
+
+    def _assemble(self) -> None:
+        """Turn the parsed plans into the canonical registry, in post-order."""
+        for plan in self._plans:
+            self._assemble_one(plan)
+
+    def _assemble_one(self, plan: _Plan) -> None:
+        artifact = plan.artifact
+        if any(dependency.casefold() in self._incomplete for dependency in artifact.dependencies):
+            self._incomplete.add(plan.key)
+
+        outcome = self._parsed[plan.key]
+        basepicture = outcome.ast
+        if basepicture is None:
+            error = _parse_failure(_program_name(plan), artifact.code_path.name, _dependency(plan))
+            if self._strict:
+                raise error from RuntimeError(outcome.failure)
+            self._incomplete.add(plan.key)
+            self._diagnose(LoadDiagnosticKind.LOAD_SKIPPED, plan.name, f"skipped {plan.name!r}: {error}")
+            return
+
+        _set_origin(basepicture, file_name=artifact.code_path.name, library=artifact.library)
+        try:
+            self._assemble_body(plan, basepicture)
+        except StructuralProjectError:
+            raise
+        except ProjectLoadError as exc:
+            if self._strict:
+                raise
+            self._incomplete.add(plan.key)
+            self._diagnose(LoadDiagnosticKind.LOAD_SKIPPED, plan.name, f"skipped {plan.name!r}: {exc}")
+
+    def _assemble_body(self, plan: _Plan, basepicture: BasePicture) -> None:
+        """Attach diagnostics, definitions, and companion, then register."""
+        artifact = plan.artifact
+        name = plan.name
+        program_name = _program_name(plan)
+        dependency = _dependency(plan)
+        diagnostics = self._artifact_diagnostics(
+            basepicture,
+            key=plan.key,
+            artifact=artifact,
+            declared_by=plan.declared_by,
+        )
+        self._remember_definitions(
+            basepicture,
+            library=artifact.library,
+            file_name=artifact.code_path.name,
+            program_key=plan.key,
+        )
+
+        graphics_path, graphics = self._load_companion(
+            artifact.code_path,
+            name=name,
+            program_name=program_name,
+            dependency=dependency,
+        )
+        self._registry[plan.key] = SattLineProgram(
+            name=name,
+            code=basepicture,
+            graphics=graphics,
+            dependencies=artifact.dependencies,
+            format=ProgramFormat(
+                mode=self._mode,
+                code_ext=artifact.code_path.suffix.lower(),
+                graphics_ext=graphics_path.suffix.lower() if graphics_path is not None else None,
+                deps_ext=artifact.deps_path.suffix.lower() if artifact.deps_path is not None else None,
+            ),
+            source_path=artifact.code_path,
+            deps_path=artifact.deps_path,
+            sidecar=artifact.sidecar,
+            library=artifact.library,
+            resolved_base=artifact.resolved_base,
+            diagnostics=diagnostics,
+        )
 
     def _resolve_artifact(
         self,
@@ -341,16 +559,6 @@ class ProjectLoader:
             dependencies=dependencies,
             dependency_requester=dependency_requester,
         )
-
-    def _load_dependencies(self, name: str, *, key: str, artifact: _ResolvedArtifact) -> None:
-        for dependency in artifact.dependencies:
-            self._visit(
-                dependency,
-                requester_dir=artifact.dependency_requester,
-                declared_by=name,
-            )
-        if any(dependency.casefold() in self._incomplete for dependency in artifact.dependencies):
-            self._incomplete.add(key)
 
     def _artifact_diagnostics(
         self,

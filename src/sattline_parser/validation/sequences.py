@@ -63,9 +63,9 @@ def _position(item: SFCBodyItem) -> str | None:
     """Classify a sequence element; ``None`` for comments."""
     if isinstance(item, CodeComment):
         return None
-    if isinstance(item, SFCStep | SFCParallel):
+    if isinstance(item, (SFCStep, SFCParallel)):
         return STEP
-    if isinstance(item, SFCTransition | SFCTransitionSub | SFCAlternative):
+    if isinstance(item, (SFCTransition, SFCTransitionSub, SFCAlternative)):
         return TRANSITION
     # The union is exhausted down to SFCSubsequence here; a sub-step occupies the
     # step position and a plain sub-sequence the structural one.

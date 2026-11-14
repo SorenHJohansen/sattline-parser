@@ -52,13 +52,13 @@ def _split_coordinate_items(items: list[TransformerItem]) -> tuple[list[float], 
             tails.append(item.value)
         elif isinstance(item, CoordinateClipping):
             tails.extend(item.tails)
-        elif isinstance(item, int | float):
+        elif isinstance(item, (int, float)):
             values.append(float(item))
     return values, tails
 
 
 def _float_values(items: list[TransformerItem]) -> list[float]:
-    return [float(item) for item in items if isinstance(item, int | float)]
+    return [float(item) for item in items if isinstance(item, (int, float))]
 
 
 class ModuleLayoutMixin:
@@ -124,7 +124,7 @@ class ModuleLayoutMixin:
             raise ValueError("coord_invar_tail expected connected variable or value")
         if not saw_prefix:
             return CoordTail(cast(Tail, value))
-        if not isinstance(value, str | bool | int | float | LitStringTail):
+        if not isinstance(value, (str, bool, int, float, LitStringTail)):
             raise ValueError(f"coord_invar_tail expected a literal after InVar_/OutVar_; got: {value!r}")
         return CoordTail(VarTail(direction, value, meta_span(meta)))
 
@@ -137,7 +137,7 @@ class ModuleLayoutMixin:
 
     def clip_value_tailed(self, items: list[TransformerItem]) -> ClipValue:
         """Grammar clip_value_tailed -> a numeric value and its coordinate tail."""
-        value = next((float(item) for item in items if isinstance(item, int | float)), None)
+        value = next((float(item) for item in items if isinstance(item, (int, float))), None)
         if value is None:
             raise ValueError("clip_value_tailed expected a REAL value")
         tail = next((item.value for item in items if isinstance(item, CoordTail)), None)
@@ -145,7 +145,7 @@ class ModuleLayoutMixin:
 
     def clip_value_plain(self, items: list[TransformerItem]) -> ClipValue:
         """Grammar clip_value_plain -> a numeric value without a tail."""
-        value = next((float(item) for item in items if isinstance(item, int | float)), None)
+        value = next((float(item) for item in items if isinstance(item, (int, float))), None)
         if value is None:
             raise ValueError("clip_value_plain expected a REAL value")
         return ClipValue(value)
@@ -172,7 +172,7 @@ class ModuleLayoutMixin:
     def seq_layers(self, items: list[TransformerItem]) -> SeqLayers:
         """Grammar seq_layers -> the sequence layer mapping."""
         value = items[-1]
-        if isinstance(value, int | float):
+        if isinstance(value, (int, float)):
             return SeqLayers(float(value))
         if isinstance(value, dict):
             return SeqLayers(cast(dict[str, float], value))
@@ -196,7 +196,7 @@ class ModuleLayoutMixin:
         for value in items:
             if isinstance(value, Token):
                 continue
-            if isinstance(value, int | float | str):
+            if isinstance(value, (int, float, str)):
                 try:
                     nums.append(float(value))
                 except ValueError as exc:

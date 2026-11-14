@@ -6,6 +6,7 @@ from __future__ import annotations
 from collections.abc import Callable, Generator
 from contextlib import contextmanager
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 import pytest
@@ -74,6 +75,7 @@ def _load(
     strict: bool = True,
     cache_dir: Path | None = None,
     debug: list[str] | None = None,
+    workers: int = 1,
 ) -> SattLineProject:
     def _debug(message: str) -> None:
         assert debug is not None
@@ -86,6 +88,7 @@ def _load(
         strict=strict,
         debug=_debug if debug is not None else None,
         cache_dir=cache_dir,
+        workers=workers,
     )
 
 
@@ -620,3 +623,137 @@ def test_first_body_match_wins_not_the_newest_datecode(tmp_path: Path) -> None:
     program = project.get("Lib")
     assert program.source_path == first / "Lib.s"
     assert program.code.datecode == 10
+
+
+def test_load_parses_bodies_in_parallel_with_identical_results(tmp_path: Path) -> None:
+    _write(tmp_path, "Base.s", _CODE)
+    _write(tmp_path, "Child.s", _CODE)
+    _write(tmp_path, "Child.l", "Base\n")
+    _write(tmp_path, "Leaf.s", _CODE)
+    _write(tmp_path, "Leaf.l", "Child\n")
+
+    serial = _load(tmp_path, targets=("Leaf",), workers=1)
+    parallel = _load(tmp_path, targets=("Leaf",), workers=3)
+
+    assert tuple(serial.programs()) == tuple(parallel.programs())
+    assert serial.graph() == parallel.graph()
+    assert list(serial.graph().edges) == list(parallel.graph().edges)
+
+
+def test_parallel_parse_falls_back_when_a_pool_cannot_be_created(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    _write(tmp_path, "Lib.s", _CODE)
+    _write(tmp_path, "Main.s", _CODE)
+    _write(tmp_path, "Main.l", "Lib\n")
+
+    def unavailable(max_workers: int) -> object:
+        raise OSError(f"cannot start {max_workers} workers here")
+
+    monkeypatch.setattr(project_loader, "_process_pool", unavailable)
+    project = _load(tmp_path, workers=2)
+
+    assert tuple(project.programs()) == ("lib", "main")
+    assert not [d for d in project.diagnostics() if d.kind is LoadDiagnosticKind.LOAD_SKIPPED]
+
+
+def test_parse_code_file_reads_and_writes_the_ast_cache(tmp_path: Path) -> None:
+    code = _write(tmp_path, "Cached.s", _CODE)
+    cache_dir = tmp_path / "cache"
+    task = (str(code), LoadMode.DRAFT.value, str(cache_dir))
+
+    first = project_loader._parse_code_file(task)
+    second = project_loader._parse_code_file(task)
+
+    assert first.ast is not None and first.failure is None
+    assert second.ast is not None and second.failure is None
+    assert second.ast == first.ast
+    assert any(cache_dir.rglob("*"))
+
+
+def test_parse_code_file_reports_a_parse_failure_as_text(tmp_path: Path) -> None:
+    code = _write(tmp_path, "Broken.s", _BROKEN)
+
+    outcome = project_loader._parse_code_file((str(code), LoadMode.DRAFT.value, None))
+
+    assert outcome.ast is None
+    assert outcome.failure
+
+
+def test_parse_code_file_ignores_a_cache_write_failure(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    code = _write(tmp_path, "Cached.s", _CODE)
+
+    def failing_save(self: object, code_path: Path, mode: str, ast: BasePicture) -> None:
+        raise OSError("disk full")
+
+    monkeypatch.setattr(project_loader.FileASTCache, "save", failing_save)
+    outcome = project_loader._parse_code_file((str(code), LoadMode.DRAFT.value, str(tmp_path / "cache")))
+
+    assert outcome.ast is not None
+
+
+def test_structural_error_during_assembly_still_fails_a_lenient_load(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A cycle is structural: no strictness setting may downgrade it to a skip."""
+    _write(tmp_path, "Main.s", _CODE)
+    _write(tmp_path, "Main.g", _GFX)
+
+    def structural(*args: object, **kwargs: object) -> object:
+        raise DependencyCycleError(("main", "main"))
+
+    monkeypatch.setattr(project_loader.ProjectLoader, "_load_companion", structural)
+    with pytest.raises(DependencyCycleError):
+        _load(tmp_path, strict=False)
+
+
+@pytest.mark.parametrize("workers", [1, 3])
+def test_a_shared_dependency_is_parsed_once(tmp_path: Path, workers: int) -> None:
+    """A diamond parses the shared body once, whatever the worker count."""
+    _write(tmp_path, "Base.s", _CODE)
+    _write(tmp_path, "Left.s", _CODE)
+    _write(tmp_path, "Left.l", "Base\n")
+    _write(tmp_path, "Right.s", _CODE)
+    # Same identity as Left's dependency, spelled differently.
+    _write(tmp_path, "Right.l", "base\n")
+    _write(tmp_path, "Top.s", _CODE)
+    _write(tmp_path, "Top.l", "Left\nRight\n")
+
+    events: list[str] = []
+    project = _load(tmp_path, targets=("Top",), workers=workers, debug=events)
+
+    assert tuple(project.programs()) == ("base", "left", "right", "top")
+    parses = [event for event in events if event.startswith("Parsing:")]
+    assert len(parses) == len(project.programs())
+    assert sum(1 for event in parses if event.endswith("Base.s")) == 1
+    assert sum(1 for event in parses if event.endswith("Left.s")) == 1
+
+
+@pytest.mark.parametrize(
+    ("methods", "threaded", "expected"),
+    [
+        (["fork", "spawn", "forkserver"], False, "fork"),
+        (["fork", "spawn", "forkserver"], True, "forkserver"),
+        (["fork", "spawn"], True, "spawn"),
+        (["fork"], True, "fork"),
+        ([], False, None),
+    ],
+)
+def test_start_method_never_forks_a_threaded_process(methods: list[str], threaded: bool, expected: str | None) -> None:
+    assert project_loader._start_method(methods, threaded=threaded) == expected
+
+
+def test_a_daemonic_parent_parses_in_process(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    _write(tmp_path, "Lib.s", _CODE)
+    _write(tmp_path, "Main.s", _CODE)
+    _write(tmp_path, "Main.l", "Lib\n")
+
+    def daemonic() -> object:
+        return SimpleNamespace(daemon=True)
+
+    monkeypatch.setattr(project_loader.multiprocessing, "current_process", daemonic)
+    events: list[str] = []
+    project = _load(tmp_path, workers=2, debug=events)
+
+    assert tuple(project.programs()) == ("lib", "main")
+    assert any("daemonic" in event for event in events)

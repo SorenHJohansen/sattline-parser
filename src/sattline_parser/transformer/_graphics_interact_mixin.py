@@ -42,7 +42,7 @@ def _is_coord_pair(value: object) -> TypeGuard[CoordPair]:
     if not isinstance(value, tuple):
         return False
     pair = cast(tuple[object, ...], value)
-    return len(pair) == 2 and all(isinstance(item, int | float) and not isinstance(item, bool) for item in pair)
+    return len(pair) == 2 and all(isinstance(item, (int, float)) and not isinstance(item, bool) for item in pair)
 
 
 def _is_coord_box(value: object) -> TypeGuard[CoordBox]:
@@ -53,7 +53,7 @@ def _is_coord_box(value: object) -> TypeGuard[CoordBox]:
 
 
 def _as_float(value: object) -> float:
-    if isinstance(value, int | float | str):
+    if isinstance(value, (int, float, str)):
         return float(value)
     raise ValueError(f"Expected a numeric coordinate value; got {type(value).__name__}")
 
@@ -68,9 +68,9 @@ def _coords_value(coords: object) -> CoordPair | CoordBox:
 
 def _tails_of(node: object) -> list[Tail]:
     """Collect every tail carried by a clause, coordinate, or nested tree."""
-    if isinstance(node, TailedClause | EnableClause | ModuleInViewClause | AssignClause | FlagClause):
+    if isinstance(node, (TailedClause, EnableClause, ModuleInViewClause, AssignClause, FlagClause)):
         return [node.tail] if node.tail is not None else []
-    if isinstance(node, ColourSpec | CommonProperties):
+    if isinstance(node, (ColourSpec, CommonProperties)):
         return list(node.tails)
     if isinstance(node, InterimCoords):
         return list(node.tails or ())
@@ -381,7 +381,7 @@ class _GraphicsInteractMixin:
 
     def connection_node(self, items: list[TransformerItem]) -> GraphObject:
         """Grammar connection_node -> positioned ConnectionNode graph object."""
-        values = [float(item) for item in items if isinstance(item, int | float) and not isinstance(item, bool)]
+        values = [float(item) for item in items if isinstance(item, (int, float)) and not isinstance(item, bool)]
         if len(values) < 2:
             types = ", ".join(type(x).__name__ for x in items)
             raise ValueError(f"connection_node expected two REAL coordinates; got: {types}")

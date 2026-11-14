@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 
@@ -27,6 +28,21 @@ __all__ = ["register", "run"]
 
 Edge = dict[str, str]
 
+#: Upper bound on the default worker count: past a handful of processes the
+#: load is bounded by memory and IPC rather than by cores.
+_MAX_DEFAULT_WORKERS = 8
+
+
+def _default_cache_dir() -> Path:
+    """Where a load caches its per-file ASTs when ``--cache-dir`` is not given.
+
+    The cache is private to one user and is validated against the source before
+    it is trusted, so a default location is what makes a repeated load skip
+    parsing instead of re-reading the tree.
+    """
+    base = os.environ.get("XDG_CACHE_HOME")
+    return (Path(base) if base else Path.home() / ".cache") / "sattline-parser" / "project"
+
 
 def register(subparsers: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:  # pyright: ignore[reportPrivateUsage]
     parser: argparse.ArgumentParser = subparsers.add_parser(
@@ -45,8 +61,22 @@ def register(subparsers: argparse._SubParsersAction[argparse.ArgumentParser]) ->
         metavar="A,B",
         help="only load these program names (default: every source under the roots)",
     )
-    parser.add_argument("--cache-dir", metavar="DIR", help="parser cache directory")
+    parser.add_argument(
+        "--cache-dir",
+        metavar="DIR",
+        help=f"parser cache directory (default: {_default_cache_dir()})",
+    )
     parser.add_argument("--no-cache", action="store_true", help="bypass the parser caches")
+    parser.add_argument(
+        "--workers",
+        type=positive_int,
+        metavar="N",
+        default=_default_workers(),
+        help=(
+            "parse program bodies in N processes (default: %(default)s, capped at "
+            f"{_MAX_DEFAULT_WORKERS}; 1 parses in this process)"
+        ),
+    )
     parser.add_argument("--lenient", action="store_true", help="continue past unreadable artifacts")
     parser.add_argument(
         "--validate",
@@ -138,9 +168,29 @@ def _load(args: argparse.Namespace) -> SattLineProject:
         mode=mode,
         targets=targets,
         strict=not args.lenient,
-        cache_dir=None if args.no_cache else (Path(args.cache_dir) if args.cache_dir else None),
+        cache_dir=_cache_dir(args),
         validate=LoadValidation.NONE if args.no_validate else LoadValidation(args.validate),
+        workers=args.workers,
     )
+
+
+def _cache_dir(args: argparse.Namespace) -> Path | None:
+    """The cache directory for this load, or ``None`` when caching is off."""
+    if args.no_cache:
+        return None
+    if args.cache_dir:
+        return Path(args.cache_dir)
+    return _default_cache_dir()
+
+
+def _default_workers() -> int:
+    """How many parse processes a load uses when ``--workers`` is not given.
+
+    A project load is parsing: 99% of the time is spent decoding and parsing
+    bodies, which is CPU-bound and independent per file. The cap keeps a very
+    wide machine from paying more in memory than the wall clock it wins.
+    """
+    return max(1, min(_MAX_DEFAULT_WORKERS, os.cpu_count() or 1))
 
 
 def _discover_targets(roots: Sequence[Path], *, mode: LoadMode) -> tuple[str, ...]:

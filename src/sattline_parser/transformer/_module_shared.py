@@ -110,7 +110,7 @@ def float_tuple(raw: object, size: Literal[2, 5]) -> tuple[float, ...] | None:
     if len(raw_values) < size:
         return None
     values = raw_values[:size]
-    if not all(isinstance(value, int | float) for value in values):
+    if not all(isinstance(value, (int, float)) for value in values):
         return None
     return tuple(float(cast(int | float, value)) for value in values)
 

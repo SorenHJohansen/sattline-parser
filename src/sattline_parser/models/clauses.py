@@ -241,7 +241,7 @@ class ModuleOptions:
             return cls(zoomable=True)
         if isinstance(option, Grid):
             return cls(grid=option.spacing)
-        if isinstance(option, int | float):
+        if isinstance(option, (int, float)):
             return cls(grid=float(option))
         return cls()
 

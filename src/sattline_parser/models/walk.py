@@ -457,7 +457,7 @@ class _Ancestors(Sequence[object]):
     def __eq__(self, other: object) -> bool:
         if isinstance(other, _Ancestors):
             return self._as_tuple() == other._as_tuple()
-        if isinstance(other, tuple | list):
+        if isinstance(other, (tuple, list)):
             return self._as_tuple() == tuple(cast("Sequence[object]", other))
         return NotImplemented
 
@@ -534,7 +534,7 @@ def _collect_tail_ids(value: object, into: set[int]) -> None:
     if _is_tail_value(value):
         into.add(id(value))
         return
-    if isinstance(value, list | tuple):
+    if isinstance(value, (list, tuple)):
         for item in cast("Sequence[object]", value):
             _collect_tail_ids(item, into)
         return
@@ -548,7 +548,7 @@ def _descend(field: str, value: object, relation: str, indices: tuple[int, ...])
     if isinstance(value, _NODE_TYPES):
         yield _Child(relation, field, indices, value)
         return
-    if isinstance(value, list | tuple):
+    if isinstance(value, (list, tuple)):
         for index, item in enumerate(cast("Sequence[object]", value)):
             yield from _descend(field, item, f"{relation}[{index}]", (*indices, index))
 
@@ -557,17 +557,17 @@ def _literal_leaves(field: str, value: object, relation: str, indices: tuple[int
     """Yield the literal values reachable through one ``value`` field."""
     if isinstance(value, _NODE_TYPES):
         return
-    if isinstance(value, bool | int | float | str):
+    if isinstance(value, (bool, int, float, str)):
         yield LiteralLeaf(relation, field, indices, value)
         return
-    if isinstance(value, list | tuple):
+    if isinstance(value, (list, tuple)):
         for index, item in enumerate(cast("Sequence[object]", value)):
             yield from _literal_leaves(field, item, f"{relation}[{index}]", (*indices, index))
 
 
 def _unowned_tail_entries(values: object, owned: set[int]) -> Iterator[_Child]:
     """Yield the flat tail entries whose owner did not already emit them."""
-    if not isinstance(values, list | tuple):
+    if not isinstance(values, (list, tuple)):
         return
     for index, value in enumerate(cast("Sequence[object]", values)):
         if id(value) in owned or not isinstance(value, _NODE_TYPES):
@@ -591,7 +591,7 @@ def _property_entries(node: m.GraphObject | m.InteractObject) -> Iterator[_Child
         if isinstance(value, _NODE_TYPES):
             yield _Child(f"properties.{key}", key, (), value)
             continue
-        if isinstance(value, list | tuple):
+        if isinstance(value, (list, tuple)):
             for index, item in enumerate(cast("Sequence[object]", value)):
                 if isinstance(item, _NODE_TYPES):
                     yield _Child(f"properties.{key}[{index}]", key, (index,), item)
@@ -599,7 +599,7 @@ def _property_entries(node: m.GraphObject | m.InteractObject) -> Iterator[_Child
 
 def _iter_child_entries(node: object) -> Iterator[_Child]:
     """Yield the node children of ``node``, with field and index metadata."""
-    if isinstance(node, list | tuple):
+    if isinstance(node, (list, tuple)):
         for index, item in enumerate(cast("Sequence[object]", node)):
             if isinstance(item, _NODE_TYPES):
                 yield _Child(f"[{index}]", None, (index,), item)
@@ -636,7 +636,7 @@ def iter_literal_leaves(node: object) -> Iterator[LiteralLeaf]:
     reach the nodes, and this helper to read the literal values a node holds
     without boxing them.
     """
-    if isinstance(node, list | tuple):
+    if isinstance(node, (list, tuple)):
         for item in cast("Sequence[object]", node):
             if isinstance(item, _NODE_TYPES):
                 yield from iter_literal_leaves(item)
@@ -667,7 +667,7 @@ def walk(
     built deep AST cannot exhaust the Python call stack.
     """
     initial: list[_Child] = []
-    if isinstance(node, list | tuple):
+    if isinstance(node, (list, tuple)):
         for index, item in enumerate(cast("Sequence[object]", node)):
             initial.append(_Child(f"[{index}]", None, (index,), item))
     else:

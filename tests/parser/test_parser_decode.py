@@ -25,7 +25,7 @@ _TOKEN_DATA = _REPO_ROOT / "src" / "sattline_parser" / "preprocessing" / "scanne
 
 def test_scanner_token_table_is_the_scanner_enum() -> None:
     rows = _json.loads(_TOKEN_DATA.read_text(encoding="utf-8"))
-    assert len(rows) == 173
+    assert len(rows) == 174
     # id = ordinal + 8, and the ordinal is encoded as a three-character
     # `#` code over the ASCII run '0'..'?'.
     ids = [row["id"] for row in rows]
@@ -35,6 +35,14 @@ def test_scanner_token_table_is_the_scanner_enum() -> None:
         ordinal = row["id"] - 8
         assert row["code"] == "#" + chr(48 + ordinal // 16) + chr(48 + ordinal % 16)
     assert {row["code"] for row in rows} == set(SCANNER_TOKENS)
+
+
+def test_scanner_token_table_pins_non_zoomable_argument() -> None:
+    # Ordinal 190 sits between Cancel_Variable (189) and LayerLimit_ (191), all
+    # of them graphics/invocation arguments. A coded library invocation spells it
+    # where its uncompressed siblings spell `Non_Zoomable`:
+    #     Invocation ( -0.6 , -0.85 , 0.0 , 0.4 , 0.4 Non_Zoomable ) : Target (
+    assert SCANNER_TOKENS["#;>"] == "Non_Zoomable"
 
 
 def test_scanner_token_table_pins_words_the_old_seed_table_got_wrong() -> None:
