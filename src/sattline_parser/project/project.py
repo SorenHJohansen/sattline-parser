@@ -47,7 +47,6 @@ class SattLineProject:
         mode: LoadMode,
         targets: Sequence[str],
         *,
-        strict: bool = True,
         debug: Callable[[str], None] | None = None,
         cache_dir: Path | None = None,
         validate: LoadValidation = LoadValidation.INVOKED,
@@ -67,10 +66,9 @@ class SattLineProject:
         resolved body each name is visited and parsed exactly once. A name that
         resolves to different bodies for different requesters is reported as a
         ``NAME_RESOLUTION_CONFLICT`` diagnostic, and the registry keeps the
-        first body. A recursive sidecar chain or a module type that instantiates
-        itself is a structural error and always raises. ``strict=True``
-        (default) fails fast on missing or unparseable artifacts;
-        ``strict=False`` skips the failing program and continues.
+        first body. A missing or unparseable artifact fails the whole load, so a
+        project is either complete or not returned. A recursive sidecar chain or
+        a module type that instantiates itself is a structural error too.
 
         ``validate=INVOKED`` (default) validates each target in full while a
         dependency file contributes only the module types the target invokes,
@@ -89,7 +87,6 @@ class SattLineProject:
         loader = ProjectLoader(
             roots=roots,
             mode=mode,
-            strict=strict,
             debug=debug,
             cache_dir=cache_dir,
             validate=validate,
@@ -121,11 +118,10 @@ class SattLineProject:
     def diagnostics(self) -> tuple[LoadDiagnostic, ...]:
         """Non-fatal load findings, in discovery then assembly order.
 
-        Missing, empty, stray, and family-mismatched sidecars, a program a
-        lenient load skipped, and a folded name that resolved to two bodies are
-        conditions the loader reports and an operator may continue past; they
-        are surfaced rather than raised so the default ``strict=True`` contract
-        (missing *bodies* fail) is unchanged.
+        Missing, empty, stray, and family-mismatched sidecars and a folded name
+        that resolved to two bodies are conditions the loader reports and an
+        operator may continue past. They are surfaced rather than raised,
+        because a missing *body* is a load failure and a sidecar is not.
         """
         return self._diagnostics
 

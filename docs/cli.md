@@ -152,16 +152,12 @@ sattline project programs/ libs/ --validate full --fail-on error
 
 A root is a library directory: the loader indexes artifacts directly inside it.
 When `--targets` is omitted, every source directly under each root is a target.
-`--lenient` is the CLI spelling of `strict=False`. A recursive `.l`/`.z`
-dependency (`DependencyCycleError`) or a module type that instantiates itself
-(`ModuleTypeCycleError`) is a structural load error: the command reports
-`cannot load project` with the cycle path and exits `1`, even under `--lenient`
-and `--fail-on none`, because the tree could not be loaded at all.
-
-Under `--lenient` a program that could not be loaded becomes a `load-skipped`
-diagnostic and the rest of the tree still reports. A skipped program fails the
-run by default; `--fail-on none` reports it without failing, like any other
-finding.
+A missing or unparseable artifact is a load failure: the command reports
+`cannot load project` with the underlying error and exits `1`, whatever
+`--fail-on` says. A recursive `.l`/`.z` dependency
+(`DependencyCycleError`) and a module type that instantiates itself
+(`ModuleTypeCycleError`) are load failures too, reported the same way. There is
+no partial project: `--fail-on` governs validation findings only.
 
 Each program row reports `distribution` (the resolved companion extension or
 `null`), `has_executing_system` (`true`, `false`, or `null` when no companion was
@@ -176,10 +172,9 @@ empty list. See [project.md](project.md#distribution-companion).
 | `--workers N` | Parse bodies in `N` processes. Default `min(8, cpu_count)`; `1` parses in this process |
 | `--cache-dir DIR` | Parser cache directory |
 | `--no-cache` | Bypass the project caches |
-| `--lenient` | Continue past unreadable artifacts (`strict=False`) |
 | `--validate invoked\|full\|none` | What to validate. Default `invoked` |
 | `--no-validate` | Alias for `--validate none` |
-| `--fail-on none\|error` | Whether a skipped program or a validation finding fails the run. Default `error` |
+| `--fail-on none\|error` | Whether a validation finding fails the run. Default `error` |
 
 The project caches live under `$XDG_CACHE_HOME/sattline-parser/project` (or
 `~/.cache/sattline-parser/project`) unless `--cache-dir` names another private
@@ -323,13 +318,12 @@ diffs.
 | --- | --- |
 | `programs` | One row per loaded artifact: `name`, `code`, `graphics`, `deps`, `distribution`, `sidecar`, `dependencies`, `source`, `library`, `resolved_base`, `has_executing_system`, `executing_systems` |
 | `edges` | `{"from": dependent, "to": dependency}` over casefolded names |
-| `diagnostics` | One row per non-fatal load condition: `kind` (`sidecar-missing`, `sidecar-elsewhere`, `sidecar-empty`, `sidecar-family-mismatch`, `name-resolution-conflict`, or `load-skipped`), `program`, `detail`, `path` |
-| `validation` | One row per diagnostic: `program`, `code` (`SL-V###`), `message`, `line`, `column`, `tentative` |
+| `diagnostics` | One row per non-fatal load condition: `kind` (`sidecar-missing`, `sidecar-elsewhere`, `sidecar-empty`, `sidecar-family-mismatch`, or `name-resolution-conflict`), `program`, `detail`, `path` |
+| `validation` | One row per diagnostic: `program`, `code` (`SL-V###`), `message`, `line`, `column` |
 | `findings` | Present only when the tree could not be loaded at all: one `Finding` with rule `PROJECT_LOAD_ERROR` |
 
 A validation row has no `severity`, because every row it carries is an error.
-`line` and `column` are `null` when the diagnostic has no span, and `tentative`
-marks a finding that depends on a dependency that failed to load.
+`line` and `column` are `null` when the diagnostic has no span.
 
 `sattline diff` reports `FindingDelta` rows instead: `rule`, `message`, and
 `count`, split into `findings.added` and `findings.removed`, plus

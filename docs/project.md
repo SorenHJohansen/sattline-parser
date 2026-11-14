@@ -140,7 +140,6 @@ sequenceDiagram
         L->>L: parse in this process
     end
     Note over L: phase 3: assemble, sequential, plan order
-    L->>L: dependency incomplete? mark incomplete
     L->>L: set origin_file and origin_lib
     L->>L: record datecodes
     L->>L: resolve and parse graphics companion
@@ -180,12 +179,11 @@ observable orders:
   resolved first. With two targets, `B`'s unreadable sidecar therefore wins over
   `A`'s broken body even when `A` was requested first. Structural errors win
   over everything.
-- **Diagnostics.** `SattLineProject.diagnostics()` reports every discovery
-  finding (a missing or empty sidecar, a sidecar elsewhere, a sidecar from the
-  other artifact family, a body skipped during discovery) before every assembly
-  finding (a body that failed to parse, a graphics or distribution companion
-  that failed to read, a name that resolved to two bodies). Within each group
-  the order is plan order, which is post-order.
+- **Diagnostics.** `SattLineProject.diagnostics()` reports only the non-fatal
+  load conditions: a missing or empty sidecar, a sidecar elsewhere, a sidecar
+  from the other artifact family, and a name that resolved to two bodies. A
+  failure to resolve or parse raises instead. The rows are in plan order, which
+  is post-order.
 
 `validate=INVOKED` runs **after** the graph is complete, because it needs the
 whole invocation graph. The loader first builds the registry, then walks
@@ -197,8 +195,8 @@ invoked-scope diagnostics.
 A recursive dependency has no finite load order, so the loader rejects it. When
 `_visit` sees a key already in `_loading`, it raises `DependencyCycleError`
 with the canonical cycle path, for example `("alpha", "beta", "alpha")`. The
-error is structural: `strict=True` and `strict=False` both fail, and a cycle
-inside an unparseable dependency still fails the load.
+error is structural: a cycle inside an unparseable dependency still fails the
+load.
 
 A cycle is identified by its directed node sequence, not by its member set.
 Rotations of the same sequence describe the same cycle, so every path is
@@ -223,7 +221,8 @@ referencing file's own definition first, then to any definition in the checked
 program's closure, so a library that shadows a dependency's type name loads.
 
 The check runs before validation and is not governed by `LoadValidation`, so
-`validate=NONE` and `strict=False` cannot let a recursive type through. Unused module types in a loaded dependency are checked
+`validate=NONE` cannot let a recursive type through. Unused module types in a
+loaded dependency are checked
 too, because the type itself is structurally invalid. The search stops at the
 first cycle it finds, so a dense instantiation graph cannot make rejection
 enumerate an exponential number of elementary cycles.
@@ -261,9 +260,6 @@ flowchart TB
     M --> DV["validate only invoked module types<br/>in each dependency file"]
     TV --> D["diagnostics"]
     DV --> D
-    D --> TENT{"does this finding depend on<br/>an unloaded dependency?"}
-    TENT -->|yes| TM["tentative"]
-    TENT -->|no| FIN["final"]
 ```
 
 `invoked_moduletypes` walks the target's module tree, follows every
@@ -271,37 +267,23 @@ flowchart TB
 their submodules. Only reached module types are validated. The target itself is
 always validated in full.
 
-Tentativeness is decided **per finding**, not per code. A finding is tentative
-when the definition it could not resolve, or the module type it resolved
-through, may have come from a dependency that a non-strict load skipped:
+Every finding the loader produces is final. A load is all or nothing, so a
+definition can never be missing from a closure that a finding was computed
+against: a missing or unparseable artifact raises instead of leaving a program
+out. `DATECODE_CONFLICT` compares declarations that did load, and the mapping
+and transfer rules see every definition their program's closure reaches.
 
-| Finding | Tentative when |
-| --- | --- |
-| `UNKNOWN_DATATYPE_NAME` | the program's closure is incomplete: the name may live in the skipped dependency |
-| `UNKNOWN_MODULETYPE_NAME` | the program's closure is incomplete |
-| `PARAM_TRANSFER_TYPE_MISMATCH` | the module type, or one of its parameter datatypes, is declared by an incomplete dependency or is unresolved |
-| `PARAMETER_MAPPING_TARGET_UNKNOWN` | on a module-type instance: the module type, or one of its parameter datatypes, is declared by an incomplete dependency or is unresolved |
-| `PARAMETER_MAPPING_TYPE_MISMATCH` | on a module-type instance: the module type, or one of its parameter datatypes, is declared by an incomplete dependency or is unresolved |
+## Load failures
 
-A mapping on a plain submodule is compared against the parameters the submodule
-declares, so it is final even when a dependency is missing. Every other finding
-stays final. A purely local mismatch, for example a
-parameter transfer between a module type declared in the file and a variable
-declared in the same file, is final even when an unrelated dependency is
-missing. `DATECODE_CONFLICT` is final too: it compares declarations that did
-load. A skipped program is never silent: it is recorded as a `LOAD_SKIPPED`
-diagnostic, once per missing name, with every requester listed in the detail.
+A missing or unparseable artifact raises `ProjectLoadError` and its subclasses.
+There is no partial project: `SattLineProject.load` either returns a complete
+registry or raises. That applies to a missing body, an unreadable dependency
+sidecar, a malformed companion, and a parse failure in any body the closure
+reaches. Validation findings never raise, because they are findings and not load
+failures.
 
-## Strict versus lenient
-
-| `strict` | Missing or unparseable artifact |
-| --- | --- |
-| `True` (default) | Raise `ProjectLoadError` and its subclasses |
-| `False` | Record `LOAD_SKIPPED`, mark dependents incomplete, continue |
-
-Validation findings never raise. `strict` governs load failures only. It does
-not govern the two structural errors: a recursive sidecar chain and a module
-type that instantiates itself always raise.
+The two structural errors are fatal in the same way: a recursive sidecar chain
+and a module type that instantiates itself.
 
 ## Datecodes
 
@@ -559,13 +541,10 @@ before it is read, because a companion is a small configuration blob.
 This is deliberately stricter than the graphics companion, where structural
 problems become `GraphicsMessage` values on a companion that still loads. A
 graphics message still describes the file it came from; an unusable distribution
-companion cannot answer the one question it exists to answer, so the program is
-either failed or skipped instead of being reported as unconfigured. The
-three-state field therefore describes only what the parser could establish: a
-program that was skipped for a bad companion is absent from `programs()` and
-appears in `diagnostics()` as `LOAD_SKIPPED`, so a consumer that only reads
-`programs()` must also read the diagnostics to distinguish "no companion" from
-"companion rejected".
+companion cannot answer the one question it exists to answer, so the load fails
+instead of reporting the program as unconfigured. The three-state field therefore
+describes only what the parser could establish, and a rejected companion is
+never mistaken for "no companion".
 
 The companion is read during assembly on every load, including a load served
 from a warm AST cache, so editing only the `.q` changes the answer without
@@ -626,9 +605,9 @@ discovery fixes the plan order before any parse runs.
 | --- | --- |
 | `tests/project/test_discovery.py` | Ordered lookup and cluster precedence |
 | `tests/project/test_formats.py` | Extension selection and companion pairing |
-| `tests/project/test_loader.py` | Recursive loading, post-order, strictness |
+| `tests/project/test_loader.py` | Recursive loading and post-order |
 | `tests/project/test_project_layer.py` | `SattLineProject` views and graph |
-| `tests/project/test_project_validation.py` | Scopes, tentative findings, datecodes |
+| `tests/project/test_project_validation.py` | Scopes and datecodes |
 | `tests/project/test_reachability.py` | Invoked module-type walk |
 | `tests/project/test_lookup_cache.py` | Cache trust and invalidation |
 | `tests/project/test_ast_cache.py` | Cache key, signature, pruning |

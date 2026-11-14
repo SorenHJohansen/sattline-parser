@@ -10,10 +10,10 @@ sidecars, loads dependencies first, parses ``.g`` / ``.y`` graphics and ``.p`` /
 ``.q`` distribution companions, and (with ``validate=INVOKED``, the default)
 runs the single-file validator against the definitions visible
 from already-loaded dependencies. The loader records library and origin
-provenance, marks a finding tentative when the definition it needs may have come
-from a dependency a non-strict load skipped, reports definition datecode
-conflicts, and rejects recursive dependency sidecars and recursive module-type
-instantiation.
+provenance, reports definition datecode conflicts, and rejects recursive
+dependency sidecars and recursive module-type instantiation. A load is all or
+nothing: a missing or unparseable artifact raises instead of returning a partial
+project.
 """
 
 from __future__ import annotations

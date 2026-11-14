@@ -69,7 +69,7 @@ that needs an intermediate stage.
 | Name | Signature summary | Returns |
 | --- | --- | --- |
 | `validate_basepicture` | `(bp, *, external_datatypes=(), external_moduletype_defs=(), allow_unresolved_external_datatypes=False)` | `tuple[Diagnostic, ...]` |
-| `Diagnostic` | dataclass `(code, message, span=None, tentative=False)` | value |
+| `Diagnostic` | dataclass `(code, message, span=None)` | value |
 | `DiagnosticCode` | `StrEnum` of stable `SL-V###` ids | value |
 
 `validate_basepicture` is re-exported by both `sattline_parser` and

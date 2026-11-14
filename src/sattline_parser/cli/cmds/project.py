@@ -10,7 +10,6 @@ from pathlib import Path
 from sattline_parser.project import (
     DistributionTarget,
     LoadDiagnostic,
-    LoadDiagnosticKind,
     LoadMode,
     LoadValidation,
     ProjectLoadError,
@@ -88,7 +87,6 @@ def register(subparsers: argparse._SubParsersAction[argparse.ArgumentParser]) ->
             f"{_MAX_DEFAULT_WORKERS}; 1 parses in this process)"
         ),
     )
-    parser.add_argument("--lenient", action="store_true", help="continue past unreadable artifacts")
     parser.add_argument(
         "--validate",
         choices=("invoked", "full", "none"),
@@ -130,10 +128,7 @@ def run(args: argparse.Namespace) -> int:
         _emit_graph(edges, args=args)
     else:
         _emit_programs(programs, edges, load_diagnostics, validation_rows, args=args)
-    skipped = sum(1 for diagnostic in load_diagnostics if diagnostic.kind is LoadDiagnosticKind.LOAD_SKIPPED)
-    failing = fails_on(skipped, args.fail_on)
-    if _validation_fails(validation_rows, args.fail_on):
-        failing = True
+    failing = _validation_fails(validation_rows, args.fail_on)
     return int(ExitCode.FINDINGS if failing else ExitCode.OK)
 
 
@@ -149,7 +144,6 @@ def _validation_rows(programs: Mapping[str, SattLineProgram]) -> list[dict[str, 
                     "message": diagnostic.message,
                     "line": None if span is None else span.line,
                     "column": None if span is None else span.column,
-                    "tentative": diagnostic.tentative,
                 }
             )
     return rows
@@ -179,7 +173,6 @@ def _load(args: argparse.Namespace) -> SattLineProject:
         roots,
         mode=mode,
         targets=targets,
-        strict=not args.lenient,
         cache_dir=_cache_dir(args),
         validate=LoadValidation.NONE if args.no_validate else LoadValidation(args.validate),
         workers=args.workers,
@@ -350,8 +343,7 @@ def _emit_programs(
             location = ""
             if row["line"] is not None:
                 location = f" {row['line']}:{row['column']}"
-            tentative = " (tentative)" if row["tentative"] else ""
-            print(f"  {row['code']} {row['program']}{location}{tentative}: {row['message']}")
+            print(f"  {row['code']} {row['program']}{location}: {row['message']}")
 
 
 def _emit_graph(edges: Sequence[Edge], *, args: argparse.Namespace) -> None:
