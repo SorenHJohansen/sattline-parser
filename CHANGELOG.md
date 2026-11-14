@@ -9,6 +9,239 @@ policy are documented in the README.
 
 ## [Unreleased]
 
+## [2026.11.5] - 2026-11-14
+
+### Added
+
+- **`BuiltinParameter.accepts_const_string`.** The catalogue and the catalogue
+  source carry a per-parameter boolean that marks a string-cursor parameter, so
+  a Const string is accepted there while the argument is still checked for being
+  a reference and for its datatype. Only `GetStringPos` and `SetStringPos`
+  declare it.
+
+- **Distribution companions.** The project layer now resolves and parses the
+  distribution companion (`.p` draft, `.q` official) beside the selected code
+  body. `SattLineProgram` gains `distribution_path`, `distribution`, and
+  `has_executing_system`, the last being `None` when no companion was found,
+  `False` when the executing-system list is empty, and `True` when it is not.
+  `parse_distribution_file`, `parse_distribution_text`,
+  `resolve_distribution_companion_path`, `DistributionData`, and
+  `DistributionTarget` are public. `sattline project` reports the answer in both
+  its text and JSON output, and the JSON program rows gain `distribution`,
+  `has_executing_system`, and `executing_systems`. A companion that exists but
+  does not parse is a load
+  failure, never an empty list, and `check`, `parse`, `query`, `decode`, and
+  `diff` refuse a `.p`/`.q` input as a companion rather than reporting it
+  as broken source.
+
+- **Parallel project load.** `SattLineProject.load(..., workers=N)` parses
+  program bodies in `N` processes, and `sattline project` gains `--workers`
+  defaulting to `min(8, cpu_count)`. Discovery resolves the whole closure first,
+  so every plan is independent and the result is identical at any worker count:
+  a 268-program library tree that takes 255s in one process splits across
+  workers without changing the result. The library default stays `workers=1`. A single-threaded caller forks;
+  a caller with other threads gets `forkserver`, because forking a threaded
+  process is deprecated and can inherit a held lock. A daemonic parent, or a
+  pool that cannot start, parses in the calling process instead of failing the
+  load.
+
+### Changed
+
+- **Artifact families no longer mix.** The resolved code body's extension now
+  decides the artifact family for the whole unit: a `.s` body pairs only with
+  `.l` dependencies, `.g` graphics, and `.p` distribution, and an `.x` body only
+  with `.z`, `.y`, and `.q`. Previously the dependency sidecar followed the load
+  mode alone, so draft mode could pair a `.s` body with a `.z` sidecar and an
+  `.x` body with a `.l` sidecar, and draft bodies fell back to the official
+  `.y` and `.q` companions. A sidecar that sits beside the body but in the other
+  family is reported as `sidecar-family-mismatch` and is not paired. Code-body
+  selection is unchanged: draft mode still prefers `.s` and falls back to `.x`.
+
+- **A caller-supplied cache directory is only used when it is private.** The
+  whole root is validated before either cache opens it, and an owned directory
+  with group or world permission bits is tightened to `0700`. A directory that
+  another user could write to, a symlink, or a read-only location disables both
+  caches instead of being followed.
+
+- **Companion extension candidates never cross families.**
+  `graphics_ext_candidates` and `distribution_ext_candidates` return only the
+  mode's own extension, matching the rule that a body pairs only with the
+  companion of its own family. `body_mode` now derives the family from a `.s` or
+  `.x` suffix alone, so `resolve_graphics_companion_path("A.s", official)` no
+  longer answers `A.y`.
+
+- **`sattline project` caches by default.** A load writes and reads the parser
+  caches under `$XDG_CACHE_HOME/sattline-parser/project` unless `--no-cache` is
+  given; `--cache-dir` overrides the location. A repeated load of an unchanged
+  tree skips parsing: 68s instead of 255s on a 268-program tree. Workers read the
+  cache and the parent writes it, so the per-user key stays single-process. The
+  directory holds parsed ASTs of the loaded sources and must stay private.
+
+- **Graphics expression spans.** An `Expr` binding is parsed without a padding
+  prefix, and its spans are rebased into companion coordinates afterwards. The
+  work is linear in the expression length instead of the file offset, so a
+  companion with many bindings no longer pays quadratic padding.
+
+- **A loader resolves one load.** `ProjectLoader.resolve()` raises on a second
+  call instead of doubling the discovery plans over an existing registry;
+  construct another loader for another load.
+
+- **Cheaper parse hot paths.** The post-transform depth check caches a type's
+  dataclass fields and checks atomic children against a tuple instead of a
+  rebuilt union type, which halves its cost. The contextual lexer reads the
+  compact-provenance flag once per run instead of once per token, so an
+  uncompressed source skips the keyword retype entirely. `isinstance` checks
+  across the parser, transformer, validator, and walker use tuples of types.
+  Together these are about 9% of a cold parse.
+
+- **`sattline project` drops `--cycles` and the `cycles` payload key.** A
+  recursive dependency chain or a self-instantiating module type is a structural
+  load error, so the command reports `cannot load project` and exits `1`; there
+  is no cycle list left to print. A JSON consumer that read `cycles` must read
+  the error instead. `SattLineProject.cycles()` remains for a directly built
+  graph.
+
+- **Recursive projects are rejected.** A `.l`/`.z` dependency chain that
+  returns to a program already loading, and a module type that instantiates
+  itself directly or through other module types, now raise
+  `DependencyCycleError` and `ModuleTypeCycleError` from
+  `SattLineProject.load`. Both are structural errors, so `strict=False` and
+  `validate=NONE` cannot bypass them. `LoadDiagnosticKind.DEPENDENCY_CYCLE` is
+  removed; read the error's `cycle` path instead. `SattLineProject.cycles()`
+  remains for a directly built graph, where the loader has not already raised.
+
+- **`Rule.status` replaces the rule flags.** `Rule.implemented` and
+  `Rule.retired`, and their constructor arguments, are removed; read
+  `Rule.status` (`ACTIVE`, `RETIRED`, `UNIMPLEMENTED`) instead. `to_json()`
+  keeps the derived `retired` boolean, so a JSON consumer needs no change.
+
+### Removed
+
+- **Fuzz exports leave the package.** `FuzzResult`, `assert_no_crashes`,
+  `assert_no_timeouts`, `collect_corpus_inputs`, `fuzz_harness`,
+  `fuzz_parse_text`, `generate_random_text`, `run_corpus_regression`, and
+  `run_random_fuzz` are no longer attributes of `sattline_parser`, and the
+  modules `sattline_parser.fuzz_harness`, `sattline_parser.parser_fuzzer`, and
+  `sattline_parser.decode_fuzzer` are gone. The harness lives in the repository
+  under `fuzzing/`; it is not part of the installed package.
+
+### Fixed
+
+- **Builtin output arguments are type-checked again.** A `VarRef` in an `out` or
+  `inout` position reaches the datatype check, so `CopyTime(Source, IntVar)` and
+  `CopyString(Src, IntVar, Status)` report `SL-V047` again. Only the two
+  string-cursor parameters keep their `accepts_const_string` exemption, which
+  covers the Const-write finding alone.
+
+- **Corrupt cache metadata no longer fails a load.** A cache identity marker or
+  lookup cache file that cannot be decoded is treated as an unusable entry and
+  replaced on the next write, instead of raising `UnicodeDecodeError` out of
+  every load now that the project cache is on by default.
+
+- **Companions pair ignoring filename case.** Graphics and distribution
+  companions are found by stem and extension case-insensitively, like code
+  bodies and sidecars, so `Pump.S` pairs with `pump.g` and `Pump.S` with
+  `pump.p` on a case-sensitive filesystem. `find_companion_beside` is the shared
+  helper and is exported from `sattline_parser.project`.
+
+- **Companions cannot be resolved through the ordered roots.**
+  `ProjectLookup.find` now raises `ValueError` for `ArtifactKind.GRAPHICS` and
+  `ArtifactKind.DISTRIBUTION`. A graphics or distribution companion is anchored
+  to the body that owns it, so a root-ordered search could return another unit's
+  companion and pollute the source index. Companions are reached only through
+  `resolve_graphics_companion_path` and `resolve_distribution_companion_path`.
+  Code bodies and dependency sidecars are unaffected.
+
+- **An apostrophe inside an unquoted name is name text.** In a compressed source
+  a name such as `Pump'A` no longer opens a quoted-identifier region, so a
+  marker between two such names is decoded again and an unknown marker there
+  raises `PreprocessError` instead of passing through as literal text.
+
+- **Compressed lexing.** A single-quoted identifier such as `'#84'` is literal
+  text, so a marker inside it is no longer expanded or rejected as unknown. A
+  description that ends at a line break no longer shields the following lines
+  from marker expansion. `load_source_text` expands markers inside a coded
+  stream instead of returning them undecoded.
+
+- **The default cache location degrades instead of crashing.** A relative
+  `XDG_CACHE_HOME` is ignored rather than placing the cache inside the tree the
+  command runs in, and a home directory that cannot be determined disables the
+  cache instead of raising `RuntimeError`.
+
+- **A deeply nested graphics expression becomes a message.** The binding
+  scanner catches a recursion failure while rebasing spans, so an over-deep
+  `Expr` payload returns a `GraphicsBinding` plus a `GraphicsMessage` warning
+  instead of raising `RecursionError` out of `parse_graphics_text` and out of a
+  project load.
+
+- **Numeric literals in a graphics expression carry companion spans.**
+  `IntLiteral` and `FloatLiteral` are `int` and `float` subclasses, so the span
+  rebase used to skip them; an `Expr` binding now reports every leaf in file
+  coordinates.
+
+- **The module-type cycle check compares definitions, not names.** A cycle is a
+  node per owning program and folded type name, so two libraries that reuse a
+  type name no longer look recursive, and a library that shadows a dependency's
+  name loads. A reference resolves to the referencing file's own definition
+  first, then to any definition in the checked program's closure. The error
+  names the program that owns the first node of the cycle.
+
+- **`#;>` decodes as `Non_Zoomable`.** Scanner ordinal 190 was missing from
+  `scanner_tokens.json`, so a coded library body that spells the argument failed
+  to preprocess with `Unknown compressed marker '#;>'` and was skipped whole.
+  The ordinal sits between `Cancel_Variable` (189) and `LayerLimit_` (191), and
+  a coded invocation spells it where the uncompressed siblings spell
+  `Non_Zoomable` after the five invocation coordinates. The code had been
+  dropped from an earlier seed table because its entry there read `Zoomable`,
+  which is already ordinal 106.
+
+- **A parse pool that cannot start falls back.** `ProcessPoolExecutor` starts
+  its workers on the first submit, so a denied fork, an exhausted process limit
+  or a missing worker start method surfaces from `map`, not from the
+  constructor. That failure is now handled like a broken pool: the load logs it
+  and parses in the calling process, as the parallel-load documentation already
+  promised.
+
+- **Project cache integrity.** The Lark parser cache now validates the
+  per-user directory under the temporary directory as well as the `lark-cache`
+  child, so a pre-created parent cannot be used to replace the signed cache
+  entry. A symlinked cache directory now disables caching instead of being
+  followed. The AST cache records the source snapshot taken before the parse,
+  so a body edited while a worker was reading it is not stored as current, and
+  a warm load no longer rewrites entries it read. A warm lookup resolves the
+  cached base through the same case-insensitive index as a cold scan, so a
+  dependency spelling whose case differs from the file name no longer falls
+  through to a coarser extension.
+
+- **Project errors survive pickling.** `DependencyCycleError`,
+  `ModuleTypeCycleError`, and `DistributionParseError` keep their fields across
+  a process boundary, so a load or a companion parse that runs in a worker can
+  return its error unchanged.
+
+- **Project scope fixes.** A datecode conflict now names only the visible
+  versions that differ from the program's own, so a closure holding versions 1
+  and 2 no longer hides the conflict on a program that declares 1. Invoked
+  validation resolves a module-type reference inside the referencing program's
+  dependency closure, so a same-named type in an unrelated library is no longer
+  validated. Module-type recursion is rejected at the first cycle found instead
+  of enumerating every elementary cycle.
+
+- **Family mismatch is reported in every mode.** A sidecar that sits at the
+  body's prefix but in the other artifact family is probed for directly, so
+  `--mode official` over `Main.x` beside `Main.l` reports
+  `sidecar-family-mismatch` instead of a plain `sidecar-missing`.
+
+- **Parsing works when the grammar cache is unusable.** With no private Lark
+  cache directory the parser used to build with `cache_grammar=True` and no
+  cache path, which Lark rejects, so every parse failed. The parser now builds
+  without grammar caching in that case.
+
+- **Argument and guard checks.** `accepts_const_string` now exempts only the
+  Const-write finding for a string-cursor parameter: `GetStringPos` still
+  rejects a non-reference argument (`SL-V014`) and a wrong datatype (`SL-V047`).
+  An SFC transition guard is now checked like an IF condition, so
+  `WAIT_FOR 123` reports `SL-V030`.
+
 ## [2026.11.4] - 2026-11-05
 
 ### Added
