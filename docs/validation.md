@@ -248,8 +248,8 @@ The full code table lives in the rule registry, not in the enum. Every
 enum name, a scope, a status, a summary, and optional details. `status` is one
 `RuleStatus` value, so a rule cannot be both retired and unimplemented. It is
 `active` when the validator emits the rule, `retired` when the form was proved
-to load and the check was withdrawn, and `unimplemented` when a code was
-reserved but no check exists yet.
+to load and the check was withdrawn or another rule already covers it, and
+`unimplemented` when a code was reserved but no check exists yet.
 
 `RULES`, `RULES_BY_ID`, and `RULES_BY_NAME` are the lookup tables. `find_rule`
 accepts either `SL-V019` or `UNDEFINED_VARIABLE`, case-insensitively.
@@ -323,11 +323,12 @@ here. `sattline rules` exposes the same data on the command line.
 ### Retired and unimplemented codes
 
 `RETIRED_CODES` in `validation/rules.py` records the retired rules and why they
-are not enforced. Each was implemented, then disproved by loading the same
-source directly. The editor's UI refused to *create* such a declaration, but the
-file loaded and parsed from disk. A UI guard is not a parser rule. The enum
-members stay so existing imports and stored diagnostics remain valid, but
-nothing emits them:
+are not enforced. The enum members stay so existing imports and stored
+diagnostics remain valid, but nothing emits them.
+
+Disproved by loading the same source directly. The editor's UI refused to
+*create* such a declaration, but the file loaded and parsed from disk. A UI
+guard is not a parser rule:
 
 - duplicate datatype, module-type, variable, and record-field names;
 - shadowing a builtin datatype;
@@ -335,16 +336,21 @@ nothing emits them:
 - init value of a different datatype;
 - bare duration or time init;
 - malformed duration or time literal;
-- misplaced or missing init step.
+- misplaced or missing init step;
+- a literal zero divisor (`DIVISION_BY_ZERO`): the valid full-grammar fixture
+  divides by a literal zero, which is runtime semantics.
+
+Superseded by a rule that already covers the shape:
+
+- `SEQUENCE_TRANSITION_AFTER_TRANSITION` is covered by
+  `SEQUENCE_POSITION_INVALID`;
+- `PARALLEL_BRANCH_INCOMPLETE` is covered by `SFC_PARALLEL_BRANCH_START` and
+  the position rules.
 
 Do not reintroduce one of these without new, reproducible evidence.
 
-A rule marked `unimplemented` is a reserved code with no check at all. It is not
-a statement about the language; it is a gap in the validator. The registry
-records the gap so it cannot be mistaken for an enforced rule. Three codes are
-reserved and not enforced today: `DIVISION_BY_ZERO`, so a literal zero divisor is
-not reported; `SEQUENCE_TRANSITION_AFTER_TRANSITION`; and
-`PARALLEL_BRANCH_INCOMPLETE`.
+No code is `unimplemented` today. The status is reserved for a code with no
+check at all, so a future gap cannot be mistaken for an enforced rule.
 
 ## Relation to the project loader
 

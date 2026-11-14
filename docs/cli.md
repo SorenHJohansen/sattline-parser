@@ -137,8 +137,8 @@ id or name always finds one. `--json` emits one document and `--jsonl` emits one
 object per line followed by a summary. An unknown rule exits `2`.
 
 The status is `active` (the validator emits it), `retired` (the form was proved
-to load and the check was withdrawn), or `unimplemented` (a reserved code with
-no check). The same registry renders the rule table in
+to load and the check was withdrawn, or another rule already covers it), or
+`unimplemented` (a reserved code with no check). The same registry renders the rule table in
 [validation.md](validation.md).
 
 ### `project`

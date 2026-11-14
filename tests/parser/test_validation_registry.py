@@ -24,8 +24,6 @@ _DOCS = Path(__file__).resolve().parents[2] / "docs" / "validation.md"
 _START = "<!-- RULE-TABLE:START -->"
 _END = "<!-- RULE-TABLE:END -->"
 
-_UNIMPLEMENTED: set[DiagnosticCode] = set()
-
 
 def test_registry_covers_every_diagnostic_code_exactly_once() -> None:
     assert set(RULES_BY_CODE) == set(DiagnosticCode)
@@ -67,14 +65,19 @@ def test_retired_codes_come_from_the_registry() -> None:
         assert reason
 
 
-def test_unimplemented_codes_are_recorded_not_enabled() -> None:
-    unimplemented = {rule.code for rule in RULES if rule.status is RuleStatus.UNIMPLEMENTED}
+def test_no_rule_is_unimplemented() -> None:
+    assert [rule.code for rule in RULES if rule.status is RuleStatus.UNIMPLEMENTED] == []
 
-    assert unimplemented == _UNIMPLEMENTED
-    for rule in RULES:
-        if rule.code in _UNIMPLEMENTED:
-            assert rule.status is RuleStatus.UNIMPLEMENTED
-            assert not rule.enabled
+
+def test_superseded_rules_are_retired() -> None:
+    for code in (
+        DiagnosticCode.DIVISION_BY_ZERO,
+        DiagnosticCode.SEQUENCE_TRANSITION_AFTER_TRANSITION,
+        DiagnosticCode.PARALLEL_BRANCH_INCOMPLETE,
+    ):
+        rule = RULES_BY_CODE[code]
+        assert rule.status is RuleStatus.RETIRED
+        assert not rule.enabled
 
 
 def test_active_rules_are_the_only_enabled_ones() -> None:

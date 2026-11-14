@@ -116,6 +116,21 @@ def test_project_get_contains_programs_case_insensitive() -> None:
     assert project.programs()["p1"].name == "P1"
 
 
+def test_from_programs_rejects_a_key_that_disagrees_with_the_program_name() -> None:
+    program = SattLineProgram(name="B", code=_code())
+
+    with pytest.raises(ValueError, match="does not match program name"):
+        SattLineProject.from_programs({"A": program})
+
+
+def test_from_programs_rejects_two_keys_that_fold_together() -> None:
+    first = SattLineProgram(name="Util", code=_code())
+    second = SattLineProgram(name="UTIL", code=_code())
+
+    with pytest.raises(ValueError, match="fold to"):
+        SattLineProject.from_programs({"Util": first, "UTIL": second})
+
+
 def test_project_get_missing_raises_key_error() -> None:
     project = SattLineProject()
     with pytest.raises(KeyError, match="no loaded program"):

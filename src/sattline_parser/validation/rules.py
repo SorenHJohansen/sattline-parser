@@ -34,8 +34,6 @@ __all__ = [
     "require_rule",
 ]
 
-_UNIMPLEMENTED_NOTE = "Declared as a diagnostic code, but the current validator does not emit it."
-
 
 class RuleScope(StrEnum):
     """The part of the language a rule inspects."""

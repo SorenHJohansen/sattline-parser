@@ -48,6 +48,7 @@ flowchart TB
     CLI --> VALIDATION
     CLI -->|graphics| PROJECT
     API --> SOURCE_IO
+    API --> PREPROCESS
     API --> VALIDATION
     INIT --> API
     INIT --> ASTSURF
@@ -92,8 +93,8 @@ The important import-direction rules:
 - `source_io` imports neither `api` nor `project`. It is the shared floor.
 - `project/loader.py` imports `source_io.parse_source_file` and
   `validation.validate_basepicture`. It never imports `api`.
-- `api.py` re-exports `source_io`, `errors`, and `validation`. It is a façade,
-  not an implementation. The top-level package re-exports the graphics entry
+- `api.py` re-exports `source_io`, `errors`, `preprocessing`, and `validation`.
+  It is a façade, not an implementation. The top-level package re-exports the graphics entry
   points from the project layer.
 - `ast.py` is a façade over `models/`: every node, clause, tail, and walker
   name crosses one import door, and it depends on nothing above `models/`.

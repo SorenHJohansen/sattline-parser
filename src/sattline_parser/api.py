@@ -5,7 +5,7 @@ This façade re-exports the parse pipeline from
 validation, so consumers have one door for parsing.
 
 The dependency direction is downward only: this module builds on ``source_io``,
-``errors`` and ``validation``, and knows nothing about
+``errors``, ``preprocessing``, and ``validation``, and knows nothing about
 :mod:`sattline_parser.project`. The package root in
 :mod:`sattline_parser` composes this façade with the project layer, and the
 project layer loads files through ``source_io`` rather than back through here,

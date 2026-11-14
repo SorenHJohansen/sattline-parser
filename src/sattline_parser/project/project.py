@@ -2,8 +2,8 @@
 
 Phases 3-4 wire ``load`` end to end: file discovery, recursive dependency
 resolution, and ``.g`` / ``.y`` graphics companion parsing via the project
-loader. The public ``from_programs`` builder covers tests, schema-only construction,
-and consumers that already hold parsed programs.
+loader. The public ``from_programs`` builder covers tests and consumers that already
+hold parsed programs.
 """
 
 from __future__ import annotations
@@ -34,12 +34,23 @@ class SattLineProject:
         """Build a project directly from a name-to-program mapping.
 
         For a consumer that already holds parsed programs, or a test that wants
-        to exercise the graph views without a filesystem. Names are casefolded
-        into canonical keys. Unlike :meth:`load`, this path does not reject a
-        cycle, which is what makes :meth:`cycles` useful.
+        to exercise the graph views without a filesystem. Each mapping key must
+        be the program's own name, compared case-insensitively, because the
+        project keys programs by folded name. A key that disagrees with
+        ``program.name``, or two keys that fold together, raise ``ValueError``.
+        Unlike ``load``, this path does not reject a cycle, which is what makes
+        ``cycles`` useful.
         """
         project = cls()
-        project._programs = {name.casefold(): program for name, program in programs.items()}
+        registry: dict[str, SattLineProgram] = {}
+        for key, program in programs.items():
+            canonical = key.casefold()
+            if canonical != program.name.casefold():
+                raise ValueError(f"mapping key {key!r} does not match program name {program.name!r}")
+            if canonical in registry:
+                raise ValueError(f"two mapping keys fold to {canonical!r}")
+            registry[canonical] = program
+        project._programs = registry
         return project
 
     @classmethod

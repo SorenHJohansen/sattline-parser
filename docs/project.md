@@ -303,6 +303,7 @@ dependency still reports its own conflict in either target order.
 ```mermaid
 classDiagram
     class SattLineProject {
+        from_programs(programs)
         get(name)
         programs()
         diagnostics()
