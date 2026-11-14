@@ -1,4 +1,4 @@
-# pyright: reportUnknownVariableType=false, reportUnknownMemberType=false, reportUnknownParameterType=false, reportMissingParameterType=false, reportUnknownArgumentType=false, reportUnknownLambdaType=false, reportArgumentType=false, reportPrivateUsage=false, reportUnusedImport=false, reportCallIssue=false
+# pyright: reportMissingParameterType=false, reportUnknownArgumentType=false, reportUnknownMemberType=false, reportUnknownParameterType=false, reportUnknownVariableType=false
 """``sattline query``: structural questions over one unit."""
 
 from __future__ import annotations
@@ -210,6 +210,18 @@ def test_definitions_is_an_alias_for_symbols(tmp_path, capsys) -> None:
     assert main(["query", str(source), "--what", "definitions", "--name", "Gate"]) == ExitCode.OK
     assert "transition Gate" in capsys.readouterr().out
 
+    # The alias means declarations only, so a name that is both a symbol and a
+    # reference produces one row rather than every kind.
+    assert main(["query", str(source), "--what", "definitions", "--name", "Flag"]) == ExitCode.OK
+    out = capsys.readouterr().out
+    assert "variable Flag" in out
+    assert "references Flag" not in out
+    assert "writers Flag" not in out
+
+    assert main(["query", str(source), "--what", "definitions", "--name", "Flag", "--json"]) == ExitCode.OK
+    payload = json.loads(capsys.readouterr().out)
+    assert {row["kind"] for row in payload["rows"]} == {"symbols"}
+
 
 def test_references_writers_and_callers(tmp_path, capsys) -> None:
     source = write_source(tmp_path, "Query.s", _MODULE_SOURCE)
@@ -302,6 +314,16 @@ def test_no_match_is_a_finding_exit(tmp_path, capsys) -> None:
 
     assert main(["query", str(source), "--what", "references", "--name", "Nowhere"]) == ExitCode.FINDINGS
     assert capsys.readouterr().out == ""
+
+
+def test_paths_absolute_applies_to_the_document_file(tmp_path, capsys, monkeypatch) -> None:
+    write_source(tmp_path, "Query.s", VALID_SOURCE)
+    monkeypatch.chdir(tmp_path)
+
+    assert main(["query", "Query.s", "--what", "symbols", "--json", "--paths", "absolute"]) == ExitCode.OK
+
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["file"] == str((tmp_path / "Query.s").resolve())
 
 
 def test_query_on_a_broken_source_reports_the_parse_error(tmp_path, capsys) -> None:

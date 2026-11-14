@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Iterable, Iterator
 from dataclasses import dataclass
-from typing import Any, Literal, cast
+from typing import Any, Final, Literal, ParamSpec, TypeVar, cast
 
 from lark import Tree
 from lark.visitors import v_args as _lark_v_args  # pyright: ignore[reportUnknownVariableType]
@@ -17,8 +17,14 @@ from sattline_parser.models.tails import Tail
 TransformerTree = Tree[Any]
 TransformerItem = object
 ModuleInvocation = SingleModule | FrameModule | ModuleTypeInstance
-type VArgsDecorator = Callable[[object], object]
-_V_ARGS_FACTORY = cast(Callable[..., VArgsDecorator], _lark_v_args)
+
+#: Terminal types the shared transformer helpers inspect by name.
+OUTVAR_TOKEN: Final = "OUTVAR_PREFIX"  # nosec B105 - grammar token literal, not a credential
+INVAR_TOKEN: Final = "INVAR_PREFIX"
+PREFIX_TOKENS: Final = (INVAR_TOKEN, OUTVAR_TOKEN)
+
+_P = ParamSpec("_P")
+_R = TypeVar("_R")
 
 
 @dataclass(frozen=True)
@@ -82,8 +88,17 @@ class TextContent:
     span: SourceSpan | None = None
 
 
-def v_args(*args: Any, **kwargs: Any) -> VArgsDecorator:
-    return _V_ARGS_FACTORY(*args, **kwargs)
+def v_args(*args: object, **kwargs: object) -> Callable[[Callable[_P, _R]], Callable[_P, _R]]:
+    """Typed passthrough for Lark's ``v_args`` decorator factory.
+
+    Lark annotates the decorated value as ``Callable[[object], object]``, which
+    erases the decorated method's signature, so a wrong ``(meta, children)``
+    order or a wrong return type would pass strict mode. ``ParamSpec`` keeps the
+    declared signature, which is exactly how the ``meta=True`` rule methods are
+    written.
+    """
+    factory = cast(Callable[..., Callable[[Callable[_P, _R]], Callable[_P, _R]]], _lark_v_args)
+    return factory(*args, **kwargs)
 
 
 def tree_children(tree: TransformerTree) -> list[TransformerItem]:

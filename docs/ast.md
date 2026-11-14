@@ -13,17 +13,19 @@ classDiagram
         header: ModuleHeader
         name: str
         program_name: str | None
+        position: tuple | None
         datatype_defs: list[DataType]
         moduletype_defs: list[ModuleTypeDef]
         moduleparameters: list[Variable]
         localvariables: list[Variable]
-        submodules: list[Module]
+        submodules: list
         moduledef: ModuleDef | None
         modulecode: ModuleCode | None
         moduledefs: list[ModuleDef]
         modulecodes: list[ModuleCode]
         origin_file: str | None
         origin_lib: str | None
+        trailing_comments: list[CodeComment]
         datecode: int | None
     }
 
@@ -40,10 +42,11 @@ classDiagram
 
     class SingleModule {
         header: ModuleHeader
-        moduledef: ModuleDef | None
+        datecode: int | None
         moduleparameters: list[Variable]
         localvariables: list[Variable]
-        submodules: list[Module]
+        submodules: list
+        moduledef: ModuleDef | None
         modulecode: ModuleCode | None
         moduledefs: list[ModuleDef]
         modulecodes: list[ModuleCode]
@@ -53,9 +56,15 @@ classDiagram
 
     class FrameModule {
         header: ModuleHeader
-        submodules: list[Module]
+        datecode: int | None
+        moduleparameters: list[Variable]
+        localvariables: list[Variable]
+        submodules: list
         moduledef: ModuleDef | None
         modulecode: ModuleCode | None
+        moduledefs: list[ModuleDef]
+        modulecodes: list[ModuleCode]
+        trailing_comments: list[CodeComment]
     }
 
     class ModuleTypeInstance {
@@ -70,10 +79,14 @@ classDiagram
         is_private: bool
         moduleparameters: list[Variable]
         localvariables: list[Variable]
-        submodules: list[Module]
+        submodules: list
         moduledef: ModuleDef | None
         modulecode: ModuleCode | None
+        moduledefs: list[ModuleDef]
+        modulecodes: list[ModuleCode]
+        parametermappings: list[ParameterMapping]
         groupconn: VarRef | None
+        groupconn_global: bool
         origin_file: str | None
         origin_lib: str | None
         declaration_span: SourceSpan | None
@@ -93,7 +106,9 @@ classDiagram
     ModuleTypeDef --> Variable
 ```
 
-`Module` is the alias for `SingleModule | FrameModule | ModuleTypeInstance`.
+A `submodules` list holds `SingleModule`, `FrameModule`, and
+`ModuleTypeInstance` values. `moduledef` and `modulecode` are read-only views
+over the last entry of `moduledefs` and `modulecodes`; they are not fields.
 
 `ModuleHeader.arguments` is the canonical invocation argument list: layer,
 `Enable_`, `Module_In_View`, zoom limits and the `Zoomable` marker, marker
@@ -160,6 +175,17 @@ becomes a `Simple_DataType` member through `fold_identifier`, so `INTEGER`,
 `Integer`, and `integer` are one datatype. An unrecognized name stays a `str`,
 which is how a user-defined record type is represented.
 
+`Variable.datatype_text` is the only safe accessor for the written datatype
+name. It returns the enum member's value for a builtin and the string itself for
+a user-defined record, so a consumer compares through `datatype_text` rather
+than against the raw union field.
+
+`Simple_DataType` is a plain `Enum`, while `MappingSource` is a `StrEnum`. The
+asymmetry is deliberate. `Simple_DataType` members are language datatypes and
+must not compare equal to arbitrary strings. A `MappingSource` member is part of
+the parsed spelling (`"variable_name"` or `"value"`) and is stored as that
+string. Neither type should be converted to the other style.
+
 `attribute_order` keeps declaration modifiers in source order, lowercased. The
 order matters: `State OpSave` is valid, while `OpSave State` and
 `OpSave Const` are not. Boolean flags alone cannot express that rule.
@@ -211,6 +237,7 @@ classDiagram
         seqcontrol: bool
         seqtimer: bool
         code: list[SFCBodyItem]
+        layer_info: int | None
     }
 
     class Equation {
@@ -230,6 +257,10 @@ classDiagram
 
 `Equation.kind` is `"equationblock"` or `"equations"`. The two keywords are
 kept distinct; their effect is not modelled, so only the spelling is preserved.
+
+`Sequence.layer_info` and `Equation.layer_info` keep the `Layer_ = <int>` value
+written after the `OBJSIZE` pair. The drawing effect is not modelled, but the
+written value is preserved and absence stays `None`.
 
 `ModuleDef.clipping` holds the whole `ClippingBounds` clause, so the resolved
 corners and the tails attached to them live in one payload. `clipping_bounds`
@@ -257,13 +288,20 @@ for `LeftAligned`/`RightAligned`, and the typed clauses (`EnableClause`,
 reaches a caller, so a consumer reads body entries directly instead of
 unwrapping a grammar node.
 
-Every clause payload, tail, interact object, and module definition also carries
-a `span` (`SourceSpan | None`) recording the source range of the rule that
-produced it. A span is layout metadata: it does not participate in equality, so
-two structurally identical payloads from different files compare equal. Read
+Every payload that reaches the parsed tree (the interact body clauses,
+coordinate and header tails, `ClippingClause`, `ModuleArguments`, graphics and
+interact objects, and module definitions) carries a `span`
+(`SourceSpan | None`) recording the source range of the rule that produced it.
+A span is layout metadata: it does not participate in equality, so two
+structurally identical payloads from different files compare equal. Read
 `.span` when you need the provenance. A bound tail exposes the written name
 through `VarTail.bound_name`. A `PickButton` keeps the written `value` and, when
 the `VarName` marker is present, a `reference` `VarRef`.
+
+The eight interim payloads described below are the exceptions: they never reach
+a parsed tree, so they carry no span. They are `CommonProperties`,
+`ModuleOptions`, `TwoLayers`, `Grid`, `SeqLayers`, `Zoomable`, `ClipValue`, and
+`CoordinateClipping`.
 
 The same `layout` marker is on the geometry fields: `BasePicture.position`,
 `Sequence.position` and `size`, `Equation.position` and `size`,
@@ -272,6 +310,17 @@ equality too, so a consumer diffing two revisions can drop the marked
 presentation fields. Other layout-adjacent values, such as
 `ModuleDef.zoom_limits`, `ModuleDef.grid`, and `ModuleDef.seq_layers`, remain
 part of the model and still participate in equality.
+
+### Interim transformer payloads
+
+The transformer builds eight typed payloads and folds each one into an owner
+before it returns a `BasePicture`: `CommonProperties`, `ModuleOptions`,
+`TwoLayers`, `Grid`, `SeqLayers`, `Zoomable`, `ClipValue`, and
+`CoordinateClipping`. They stay on the model and `sattline_parser.ast` surface
+so a consumer that builds or inspects transformer input can name them, but a
+parsed tree never contains one. An `isinstance` check against them on a parsed
+AST is always false, `walk` never yields them, and `iter_child_nodes` never
+reports them.
 
 ## SFC nodes
 
@@ -418,6 +467,19 @@ Type aliases:
 `span`. They preserve the literal's source position without boxing the value in
 a wrapper.
 
+## Tails
+
+`Tail` is `SLExpression | VarTail | LitStringTail`. A `VarTail` is the bound
+`InVar_`/`OutVar_` wrapper; a `LitStringTail` is the quoted-symbol form. Two
+model helpers are part of the supported surface:
+
+- `tail_list()` is the empty-list factory used as the default for every
+  tail-bearing field.
+- `is_expression_tail(value)` is the single predicate for a computed tail. It
+  is true for a literal or an expression node and false for the bound wrappers.
+  `EXPRESSION_NODE_TYPES` in `models/tails.py` is the shared tuple behind it,
+  and the walker calls the predicate instead of keeping a private copy.
+
 ## Comments and spans
 
 ```mermaid
@@ -503,7 +565,12 @@ Every field of every node class is declared in `_FIELD_SPECS` as a child
 `dataclasses.fields`, so a new field cannot be left unclassified. Literal
 values are leaves and are not emitted as `WalkEvent`s; `iter_literal_leaves(node)`
 reads the literal values a node holds directly, and `LiteralLeaf` carries the
-relation, field, indices, and value.
+relation, field, indices, and value. It covers all three literal homes: a
+`value` field (including literals nested in its sequences), a scalar on a
+`leaf` field, and a scalar entry of a property map. For example,
+`iter_literal_leaves(ModuleDef(grid=0.04))` reports `grid`, and
+`iter_literal_leaves(GraphObject)` reports `properties.layer`. Containers,
+`None`, spans, and enum members are not literal leaves.
 
 `NodeVisitor` dispatches to `visit_<ClassName>` and falls back to
 `generic_visit`, which visits every child that `iter_child_nodes` reports. An
@@ -581,16 +648,25 @@ function names and their documented signatures; the exact rendered string is
 display output, not a serialization contract. Use the CLI or a consumer
 serializer when you need machine-readable output.
 
+`format_expr` renders an expression or statement in source spelling, so the
+output parses back to the same node: a `VarRef` state is written `:Old`/`:New`,
+and a string literal uses double quotes with an inner quote doubled. The SFC
+renderer chooses the closing keyword from the node kind, so a `SUBSEQSTEP`
+renders `Substep ... EndSubstep` while a `SUBSEQUENCE` renders
+`Subsequence ... EndSubsequence`. The SFC labels are display text, not source
+keywords; only `format_expr` output is round-trip parseable.
+
 ## Tests that pin the model
 
 | Test | What it protects |
 | --- | --- |
-| `tests/parser/test_parser_core_ast_model.py` | Dataclass defaults, comments, spans |
+| `tests/parser/test_parser_core_ast_model.py` | Dataclass defaults, comments, spans, record descriptions, datecodes, per-variable init payloads |
 | `tests/parser/test_parser_core_expressions.py` | Expression shapes and precedence |
 | `tests/parser/test_parser_core_modules.py` | Module nesting and assembly |
 | `tests/parser/test_parser_core_sfc.py` | SFC node shapes |
 | `tests/parser/test_parser_core_module_definitions.py` | Layout and graphics fields |
 | `tests/parser/test_models_walk.py` | Field coverage, node order, field and indices, ancestry, pruning, leave events, literal leaves, visitor dispatch |
+| `tests/parser/test_formatter.py` | Expression rendering in source spelling, SFC footers, round-trip parsing |
 | `tests/parser/test_models_boundary.py` | The model layer imports no Lark module |
 | `tests/parser/test_ast_namespace.py` | Every node type and model dataclass is on the `sattline_parser.ast` surface |
 | `tests/parser/test_layout_metadata.py` | Every span and geometry field is classified as layout |

@@ -25,7 +25,7 @@ translates positions on the way out.
 flowchart TB
     ORIG["original_text<br/>exactly what the caller supplied"]
     NORM["normalized_text<br/>what the parser sees"]
-    MAP["char_map<br/>one entry per normalized character"]
+    MAP["char_map<br/>one entry per normalized character<br/>None for an identity document"]
     ORIG --> DOC["SourceDocument"]
     NORM --> DOC
     MAP --> DOC
@@ -35,8 +35,13 @@ flowchart TB
     DOC --> D["is_decoded_range(start, end)"]
 ```
 
-`char_map` is a `tuple[int, ...]` whose length equals `len(normalized_text)`.
-Each entry is either:
+`SourceDocument` is importable from `sattline_parser.source_document` and
+re-exported from `sattline_parser.preprocessing`, which is where
+`preprocess_source` hands one out.
+
+`char_map` is a read-only property of type `tuple[int, ...] | None`. Its length
+equals `len(normalized_text)`, and it is `None` for an identity document, where
+there is nothing to map. Each entry is either:
 
 - a real original offset (`>= 0`), or
 - `GENERATED`, the first-class sentinel `Generated(-1)`.
@@ -50,15 +55,20 @@ character can never silently become a real position.
 
 `SourceDocument.identity(text)` sets `char_map=None`. It does not materialize
 `tuple(range(len(text)))`, which for a large plain source would be a large
-disposable allocation. For an identity document:
+disposable allocation. `is_identity()` reports whether the map is absent, not
+whether the two texts happen to be equal, so a caller-supplied map is never
+skipped. For an identity document:
 
 - `map_position(i)` returns `min(i, len(original_text))`;
-- `map_range(start, end)` returns the range unchanged;
+- `map_range(start, end)` returns the range clamped to the original text, and a
+  zero-width range at the mapped boundary when `start >= end`;
 - `remap_tree_to_original` is a no-op;
 - `is_decoded_range` is always `False`.
 
 Most sources are identity documents. The expensive path only runs for coded or
-compressed input.
+compressed input. A compressed file that decodes to the text it started from
+(for example a header-flagged file with no markers) is also an identity
+document.
 
 ### Mapping rules
 
@@ -68,7 +78,8 @@ compressed input.
 | Generated character | Anchor: nearest preceding real character | Anchored at the preceding real character |
 | Deleted original region | No normalized counterpart | Included when the range spans the surviving text around it |
 | Offset at or past the end | End boundary after the last real character | End boundary |
-| Negative offset | `None` | Zero-width range at 0 |
+| Negative offset | `None` | Clamped to 0 |
+| Range with `start >= end` | Boundary position | Zero-width range at that boundary |
 
 Anchoring is the key rule: a generated character never claims an exact
 original position of its own. It borrows the nearest preceding real position
@@ -197,7 +208,10 @@ Replacement text is aligned to the matched source region by longest common
 subsequence. A replacement character gets a real source mapping only when it
 genuinely survives from the region. Inserted, renamed, or rewritten characters
 are `GENERATED`. This is what keeps a keyword expansion from claiming the
-position of the `#NN` code as if it were the keyword's own spelling.
+position of the `#NN` code as if it were the keyword's own spelling. A
+replacement that shares no character with its region (the common case for a
+`#NN` code) is marked `GENERATED` without building the alignment table; the
+result is identical.
 
 ## IDE text rendering
 

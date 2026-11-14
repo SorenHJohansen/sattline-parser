@@ -4,10 +4,10 @@ The supported public surface is the names listed in
 `sattline_parser.__all__`, `sattline_parser.api.__all__`,
 `sattline_parser.ast.__all__`, `sattline_parser.models.__all__`,
 `sattline_parser.types.__all__`, `sattline_parser.formatting.__all__`,
-`sattline_parser.validation.__all__`, `sattline_parser.project.__all__`, and
-`sattline_parser.builtins.__all__`, plus the documented `sattline` command and
-its JSON schemas. Submodule paths not listed there are internal and may change
-between releases.
+`sattline_parser.preprocessing.__all__`, `sattline_parser.validation.__all__`,
+`sattline_parser.project.__all__`, and `sattline_parser.builtins.__all__`, plus
+the documented `sattline` command and its JSON schemas. Submodule paths not
+listed there are internal and may change between releases.
 
 ## Import doors
 
@@ -17,10 +17,11 @@ flowchart LR
     TOP --> ASTTYPES["AST and diagnostic types"]
     TOP --> GRAPH["graphics entry points"]
     AST["sattline_parser.ast<br/>full model surface"] --> ASTTYPES
+    MODELS["sattline_parser.models<br/>expression and model nodes"] --> ASTTYPES
     FAÇADE["sattline_parser.api"] --> CORE
     FAÇADE --> VALID["validate_basepicture"]
     FACTS["sattline_parser.types<br/>scalar type facts"] --> VALIDATION["validation type facts"]
-    FORMAT["sattline_parser.formatting<br/>AST rendering"] --> ASTTYPES
+    FORMAT["sattline_parser.formatting<br/>AST rendering"] --> MODELS
 ```
 
 Use the top-level package for ordinary parsing. Use `sattline_parser.api` when
@@ -43,6 +44,7 @@ statements.
 | `MAX_SOURCE_DEPTH` | both | `256` | Maximum structural depth accepted by `parse_source_text` |
 | `is_compressed` | top-level | `(text)` | `bool` |
 | `preprocess_source` | top-level | `(text)` | `SourceDocument` |
+| `SourceDocument` | `preprocessing` | `(original_text, normalized_text, char_map=None)` | provenance object with the read-only `char_map` property (`None` for an identity document), `map_position`, `map_range`, `line_col`, and `is_decoded_range` |
 | `preprocess_sl_text` | top-level | `(text)` | `(decoded_text, marker_mapping)` |
 | `render_ide_text` | both | `(text)` | `str` with CRLF and IDE-safe lines |
 | `decode_source_bytes` | `api` | `(raw_bytes, *, debug=None, source_path=None, log_failures=True)` | decoded `str` |
@@ -51,8 +53,16 @@ statements.
 | `source_text_for_parse` | `api` | `(path, *, debug=None, log_failures=True)` | text for `parse_source_text` |
 
 `parse_source_text` and `parse_source_file` are the ordinary entry points.
-`parse_and_validate` is the opt-in single-source validation. The rest are
-power-user helpers for tooling that needs an intermediate stage.
+`parse_and_validate` is the opt-in single-source validation. `preprocess_source`
+returns a `SourceDocument`, and the class itself is importable from
+`sattline_parser.preprocessing`. The rest are power-user helpers for tooling
+that needs an intermediate stage.
+
+## Grammar vocabulary
+
+| Name | Exported from | Description |
+| --- | --- | --- |
+| `constants` | top-level | Module of `Final` grammar constants: terminal names, tree tags, property-map keys, and grammar values used by the lexer and transformer |
 
 ## Validation
 
@@ -76,14 +86,19 @@ registry is exported from `sattline_parser.validation`:
 | --- | --- | --- |
 | `RULES` | tuple of every rule, in enum order | `tuple[Rule, ...]` |
 | `RULES_BY_ID`, `RULES_BY_NAME` | case-folded id and name lookups | `dict[str, Rule]` |
-| `find_rule` | `(value)` accepts `SL-V019` or `UNDEFINED_VARIABLE` | `Rule | None` |
+| `RULES_BY_CODE` | lookup by `DiagnosticCode` member | `dict[DiagnosticCode, Rule]` |
+| `find_rule` | `(value)` accepts `SL-V019` or `UNDEFINED_VARIABLE` | `Rule`, or `None` |
+| `require_rule` | `(value)` like `find_rule`, but raises `UnknownRuleError` | `Rule` |
+| `UnknownRuleError` | raised for an unknown id or name; carries close matches | `ValueError` subclass |
+| `render_markdown_table` | `(*, include_retired=True)` renders the registry as Markdown | `str` |
 | `Rule` | metadata dataclass with status, and derived `id`, `name`, `enabled` | value |
 | `RuleScope` | `DECLARATIONS`, `CODE`, `SFC`, `MAPPINGS`, `PROJECT` | `StrEnum` |
 | `RuleStatus` | `ACTIVE`, `RETIRED`, `UNIMPLEMENTED` | `StrEnum` |
 
 The registry is metadata, not an execution switch. `validate_basepicture` still
 runs the full strict pass; `sattline rules` and the documentation table read the
-registry. `RETIRED_CODES` is derived from it.
+registry, and `render_markdown_table` produces the table in
+[validation.md](validation.md). `RETIRED_CODES` is derived from it.
 
 ## Type facts
 
@@ -236,9 +251,10 @@ does not encode semantic-version compatibility.
 
 Within the supported surface:
 
-- Patch releases preserve existing names and behaviour.
-- A breaking change is called out in the changelog and removed in that release.
-  There is no deprecation window and no compatibility shim.
+- A breaking change is marked in the changelog and lands in the release that
+  makes it. There is no deprecation window and no compatibility shim.
+- A superseded field, alias, or name is removed in the release that replaces it,
+  so read the changelog before upgrading across a breaking entry.
 - Adding a dataclass field is not breaking.
 - Removing or renaming a field is breaking.
 
@@ -249,9 +265,11 @@ from pathlib import Path
 
 from sattline_parser import parse_and_validate, parse_source_file
 
-base_picture = parse_source_file(Path("program.s"))
+path = Path("program.s")
+base_picture = parse_source_file(path)
 print(base_picture.program_name)
 
+source_text = path.read_text(encoding="cp1252")
 base_picture, diagnostics = parse_and_validate(source_text)
 for diagnostic in diagnostics:
     print(diagnostic.code, diagnostic.message, diagnostic.span)

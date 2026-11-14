@@ -1,4 +1,3 @@
-# pyright: reportUnknownVariableType=false, reportUnknownMemberType=false, reportUnknownParameterType=false, reportMissingParameterType=false, reportUnknownArgumentType=false, reportUnknownLambdaType=false, reportArgumentType=false, reportPrivateUsage=false, reportUnusedImport=false, reportCallIssue=false
 """Tests for the validation rule registry."""
 
 from __future__ import annotations
@@ -26,12 +25,9 @@ _START = "<!-- RULE-TABLE:START -->"
 _END = "<!-- RULE-TABLE:END -->"
 
 _UNIMPLEMENTED = {
-    DiagnosticCode.DATATYPE_TOO_FEW_FIELDS,
     DiagnosticCode.DIVISION_BY_ZERO,
     DiagnosticCode.SEQUENCE_TRANSITION_AFTER_TRANSITION,
     DiagnosticCode.PARALLEL_BRANCH_INCOMPLETE,
-    DiagnosticCode.SUBSEQTRANSITION_STARTS_WITH_STEP,
-    DiagnosticCode.SEQUENCE_REQUIRES_INIT_STEP,
 }
 
 

@@ -64,6 +64,17 @@ def _is_allowed_base(roots: Sequence[Path], base: Path) -> bool:
     return _lookup_path_key(base) in allowed
 
 
+#: A dependency name is a bare unit name, never a path. The stat fallback and
+#: the sidecar lookup build ``base / f"{name}{ext}"``, so a name carrying a
+#: separator or a parent reference would resolve outside every configured root.
+_UNSAFE_NAME_FRAGMENTS = ("/", "\\", "..")
+
+
+def _is_safe_name(name: str) -> bool:
+    """Whether *name* is a bare unit name that cannot escape a lookup base."""
+    return not any(fragment in name for fragment in _UNSAFE_NAME_FRAGMENTS)
+
+
 class SourceIndex:
     """Per-root artifact index of ``stem.casefold() -> {ext -> Path}``.
 
@@ -235,14 +246,19 @@ class ProjectLookup:
 
     def _find_in_base(self, name: str, extensions: Sequence[str], base: Path, *, kind: str) -> Path | None:
         """Resolve ``name`` against a single base via its index, then a stat fallback."""
+        if not _is_safe_name(name):
+            self._dbg(f"Refusing {kind} name {name!r}: a unit name may not carry a path")
+            return None
         indexed = self._index.find_in_index(base=base, name=name, extensions=extensions)
-        if indexed is not None:
+        if indexed is not None and indexed.is_file():
             self._dbg(f"Using ordered lookup file: {indexed}")
             self._remember(kind, name, base, indexed.suffix.lower())
             return indexed
         for ext in extensions:
             candidate = base / f"{name}{ext}"
-            if candidate.exists():
+            # The index only holds directory entries, but the stat fallback
+            # builds a path from the name, so containment is checked here too.
+            if candidate.exists() and _is_relative_to(candidate, base):
                 self._dbg(f"Using ordered lookup file: {candidate}")
                 self._remember(kind, name, base, ext)
                 self._index.add(base=base, name=name, path=candidate)
@@ -368,9 +384,13 @@ class ProjectLookup:
 
         The body's own suffix selects the artifact family, so a ``.s`` body
         looks only for ``.l`` and an ``.x`` body only for ``.z``. A sidecar from
-        the other family is never paired.
+        the other family is never paired. A name that carries a path separator
+        or a parent reference is refused rather than resolved beside the body.
         """
         del requester_dir  # the body prefix, not the requester, decides
+        if not _is_safe_name(name):
+            self._dbg(f"Refusing deps name {name!r}: a unit name may not carry a path")
+            return None
         extensions = deps_extensions_for_code(code_path.suffix, self._mode)
         return self._find_in_base(name, extensions, code_path.parent, kind=ArtifactKind.DEPS.value)
 

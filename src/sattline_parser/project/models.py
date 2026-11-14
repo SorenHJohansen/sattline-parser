@@ -46,6 +46,11 @@ class ProgramFormat:
 
     Extensions describe the artifacts actually found; each is ``None`` when the
     artifact was not present/loaded. ``code`` is always resolved for a program.
+
+    ``mode`` is the artifact family the resolved body belongs to, not the mode
+    the caller requested: a draft load that fell back to an ``.x`` body reports
+    ``OFFICIAL``, because the body's suffix decides which sidecars and
+    companions can pair with it.
     """
 
     mode: LoadMode
@@ -163,6 +168,10 @@ class LoadDiagnosticKind(StrEnum):
     #: A program was left out of a non-strict load because it could not be
     #: resolved or parsed. The load continues, but the omission stays visible.
     LOAD_SKIPPED = "load-skipped"
+    #: One folded name resolved to different bodies for different requesters,
+    #: for example ``Util`` in two roots. Both bodies load, but the project
+    #: registry can only expose one program per name.
+    NAME_RESOLUTION_CONFLICT = "name-resolution-conflict"
 
 
 @dataclass(frozen=True, slots=True)
@@ -233,10 +242,12 @@ class SattLineProgram:
     ``name`` is the program identity, ``code`` the parsed SattLine source
     picture, ``graphics`` the parsed companion file (``None`` when absent),
     ``dependencies`` the declared dependency program names, and ``format`` the
-    concrete artifact combination this program resolved to. ``source_path`` is
-    the resolved code file, exposed as provenance for consumer-side
-    diagnostics and indexing; the artifact paths themselves remain on
-    ``format`` and are otherwise internal to the loader.
+    concrete artifact combination this program resolved to. ``dependencies``
+    keeps the declared spelling and order; the loader keeps the resolved body
+    for each edge internally, because one name may resolve to different bodies
+    for different requesters. ``source_path`` is the resolved code file, exposed
+    as provenance for consumer-side diagnostics and indexing; the artifact paths
+    themselves remain on ``format`` and are otherwise internal to the loader.
 
     ``library`` is the name of the root directory that resolved the body, and
     ``resolved_base`` is that directory. ``diagnostics`` holds this program's

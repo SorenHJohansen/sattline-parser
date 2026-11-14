@@ -37,6 +37,7 @@ from sattline_parser.models.clauses import (
 from sattline_parser.models.tails import LitStringTail, VarTail
 from sattline_parser.project import FILE_AST_CACHE_VERSION, FileASTCache
 from sattline_parser.project.ast_cache import (
+    _CODE_FINGERPRINT_SOURCES,
     _PICKLE_CACHE_MAGIC,
     _PICKLE_HMAC_KEY_NAME,
     _as_data_dict,
@@ -50,6 +51,7 @@ from sattline_parser.project.ast_cache import (
     _remove_file,
     _safe_stat,
     _save_pickle_payload,
+    _stored_source_exists,
     _temp_file_is_abandoned,
     _temp_path_for,
     source_snapshot,
@@ -708,5 +710,111 @@ def test_drain_startup_pruned_entries(tmp_path: Path) -> None:
 def test_temp_file_without_a_stat_is_abandoned(tmp_path: Path) -> None:
     path = tmp_path / "gone.pickle.tmp"
 
-    with patch(f"{_AC_PATH}._safe_stat", return_value=None):
-        assert _temp_file_is_abandoned(path)
+    assert _temp_file_is_abandoned(path)
+
+
+def test_code_fingerprint_covers_the_decoding_and_name_modules() -> None:
+    """A fix in decoding, span remapping, or name folding must invalidate an AST."""
+    assert {"source_io.py", "source_document.py", "names.py"} <= set(_CODE_FINGERPRINT_SOURCES)
+
+
+def test_code_fingerprint_hashes_a_standalone_module(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    source = tmp_path / "names.py"
+    source.write_text("FOLD = 1\n", encoding="utf-8")
+    monkeypatch.setattr(f"{_AC_PATH}._PACKAGE_ROOT", tmp_path)
+    monkeypatch.setattr(f"{_AC_PATH}._CODE_FINGERPRINT_SOURCES", ("names.py",))
+    _code_fingerprint.cache_clear()
+    try:
+        first = _code_fingerprint()
+        source.write_text("FOLD = 2\n", encoding="utf-8")
+        _code_fingerprint.cache_clear()
+        assert _code_fingerprint() != first
+    finally:
+        _code_fingerprint.cache_clear()
+
+
+def test_cache_key_keeps_non_utf8_names_distinct(tmp_path: Path) -> None:
+    """A lossy UTF-8 encode would collide two undecodable file names."""
+    first = tmp_path / os.fsdecode(b"Bad\xffName.s")
+    second = tmp_path / os.fsdecode(b"Bad\xfeName.s")
+    cache = FileASTCache(tmp_path)
+
+    assert cache._key(first, "draft") != cache._key(second, "draft")
+
+
+def test_load_does_not_create_the_hmac_key(tmp_path: Path) -> None:
+    """Only a writer creates the key; a reader with no key has a miss."""
+    code_path = _write_code(tmp_path)
+    cache = FileASTCache(tmp_path)
+    cache.save(code_path, "draft", _picture(code_path))
+    _key_path(cache).unlink()
+
+    assert cache.load(code_path, "draft") is None
+    assert not _key_path(cache).exists()
+
+
+def test_prune_drops_an_entry_whose_source_is_gone(tmp_path: Path) -> None:
+    """A renamed or deleted tree must not leave unreachable entries behind."""
+    code_path = _write_code(tmp_path)
+    cache = FileASTCache(tmp_path)
+    cache.save(code_path, "draft", _picture(code_path))
+    assert cache.load(code_path, "draft") is not None
+
+    code_path.unlink()
+
+    assert cache.prune_stale_entries() == 1
+    assert list(cache.cache_dir.glob("*.pickle")) == []
+
+
+def test_prune_caps_the_entry_count(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    cache = FileASTCache(tmp_path)
+    first = _write_code(tmp_path, "A.s")
+    second = _write_code(tmp_path, "B.s")
+    cache.save(first, "draft", _picture(first))
+    cache.save(second, "draft", _picture(second))
+    monkeypatch.setattr(f"{_AC_PATH}.MAX_AST_CACHE_ENTRIES", 1)
+
+    assert cache.prune_stale_entries() == 1
+
+    assert len(list(cache.cache_dir.glob("*.pickle"))) == 1
+    survivors = [cache.load(path, "draft") is not None for path in (first, second)]
+    assert survivors.count(True) == 1
+
+
+def test_startup_prune_enforces_the_cap_when_identity_matches(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A long-lived cache stays bounded even when nothing else changed."""
+    cache = FileASTCache(tmp_path)
+    for name in ("A.s", "B.s"):
+        code_path = _write_code(tmp_path, name)
+        cache.save(code_path, "draft", _picture(code_path))
+    monkeypatch.setattr(f"{_AC_PATH}.MAX_AST_CACHE_ENTRIES", 1)
+
+    restarted = FileASTCache(tmp_path)
+
+    assert restarted.drain_startup_pruned_entries() == 1
+    assert len(list(restarted.cache_dir.glob("*.pickle"))) == 1
+
+
+def test_stored_source_exists_rejects_a_missing_or_malformed_path() -> None:
+    assert _stored_source_exists({}) is False
+    assert _stored_source_exists({"path": ""}) is False
+    assert _stored_source_exists({"path": 1}) is False
+
+
+def test_entry_cap_is_a_noop_without_a_cache_directory(tmp_path: Path) -> None:
+    cache = FileASTCache(tmp_path)
+    shutil.rmtree(cache.cache_dir)
+
+    assert cache._enforce_entry_cap() == 0
+
+
+def test_entry_cap_skips_a_pickle_whose_stat_disappears(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    cache = FileASTCache(tmp_path)
+    (cache.cache_dir / "gone.pickle").write_bytes(b"x")
+
+    def _no_stat(_path: Path) -> object:
+        return None
+
+    monkeypatch.setattr(f"{_AC_PATH}._safe_stat", _no_stat)
+
+    assert cache._enforce_entry_cap() == 0

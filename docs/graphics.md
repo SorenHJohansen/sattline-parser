@@ -22,7 +22,8 @@ The companion always sits in the code file's own directory, as a `with_suffix`
 substitution. It is never resolved through the ordered root list. The body's
 suffix decides the artifact family, so a `.x` body pairs only with `.y` and a
 draft body pairs only with `.g`. A draft body never picks up an official `.y`,
-because that would mix families within one unit. See
+because that would mix families within one unit. Only a regular file pairs: a
+directory named like a companion is not one. See
 [project.md](project.md#artifact-formats).
 
 ## Parsing
@@ -45,12 +46,20 @@ flowchart TB
 ```
 
 `parse_graphics_text` scans every line for bindings, then runs the structural
-record scanner. `parse_graphics_file` reads the file as cp1252 and delegates.
+record scanner. `parse_graphics_file` stats the file first, reads it as cp1252,
+and delegates.
 
 Structural problems become `GraphicsMessage` values, never exceptions. That is
 the opposite of the source parser, where invalid syntax raises. A companion is
 a serialized configuration blob, and a malformed record should not stop a
 project load that is otherwise readable.
+
+A file-level refusal is the exception to that rule. A companion larger than
+`MAX_GRAPHICS_COMPANION_BYTES` (4 MiB) raises `GraphicsParseError` before it is
+read, because a partially scanned model would misreport what the file says. The
+loader maps that error onto `ArtifactLoadError` for a target and
+`DependencyParseError` for a dependency, exactly as it maps `OSError` and
+`UnicodeError`.
 
 ## Bindings
 
@@ -87,6 +96,8 @@ character offsets are shifted by the payload's absolute start. That keeps the
 work linear in the expression length rather than in the file offset. Binding
 spans and picture-display path-row spans use the same absolute coordinates. A
 failure to parse an expression becomes a `GraphicsMessage`, not an exception.
+The failure set matches the source parser's classification: a grammar error, a
+recursion limit, or a transformer `ValueError`, `TypeError`, or `IndexError`.
 
 ## Records
 

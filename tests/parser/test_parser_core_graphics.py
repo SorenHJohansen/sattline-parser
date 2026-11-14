@@ -1,6 +1,32 @@
-# pyright: reportUnknownVariableType=false, reportUnknownMemberType=false, reportUnknownParameterType=false, reportMissingParameterType=false, reportUnknownArgumentType=false, reportUnknownLambdaType=false, reportArgumentType=false, reportPrivateUsage=false, reportUnusedImport=false, reportCallIssue=false, reportTypedDictNotRequiredAccess=false
-# ruff: noqa: F403, F405
-from ._parser_core_test_support import *
+# pyright: reportPrivateUsage=false, reportTypedDictNotRequiredAccess=false
+from typing import Any, cast
+
+import pytest
+from lark import Token, Tree
+from lark.exceptions import UnexpectedInput
+from lark.tree import Meta
+
+from sattline_parser import parse_source_text as parser_core_parse_source_text
+from sattline_parser.grammar import constants as parser_const
+from sattline_parser.models.ast_model import CodeComment, GraphObject, InteractObject
+from sattline_parser.models.clauses import (
+    Alignment,
+    AssignClause,
+    ColourSpec,
+    CommonProperties,
+    EnableClause,
+    FlagClause,
+    ModuleInViewClause,
+    PickButton,
+    ProcedureCall,
+    ScaleSelector,
+    TailedClause,
+)
+from sattline_parser.models.expressions import Compare, VarRef
+from sattline_parser.models.tails import VarTail
+from sattline_parser.transformer._module_shared import InterimCoords, TextContent
+
+from ._parser_core_test_support import _GraphicsHarness, _repo_path
 
 
 def test_graphics_interact_mixin_keeps_graph_object_enable_tail():
@@ -591,14 +617,13 @@ def test_graphics_interact_mixin_cover_interact_helpers_and_validation_errors():
     )
     assert mixin.interact_assign_variable_plain(Meta(), ["Setpoint", 5]) == AssignClause("Setpoint", 5)
     assert mixin.interact_assign_variable([AssignClause("Setpoint", 5)]) == AssignClause("Setpoint", 5)
-    assert mixin.interact_flag(
-        Meta(),
-        [
-            Token(parser_const.KEY_NAME, "Abs_"),
-            Token(parser_const.KEY_STRING, "label"),
-            VarTail("in", "InVar"),
-        ],
-    ) == FlagClause("Abs_", "label", VarTail("in", "InVar"))
+    assert mixin.interact_flag(Meta(), [Token(parser_const.KEY_NAME, "Abs_"), VarTail("in", "InVar")]) == FlagClause(
+        "Abs_", VarTail("in", "InVar")
+    )
+    # The grammar accepts no literal after the flag, so a stray STRING or
+    # SIGNED_INT token is not stored anywhere on the clause.
+    assert mixin.interact_flag(Meta(), ["Abs_", Token(parser_const.KEY_STRING, "label")]) == FlagClause("Abs_")
+    assert mixin.interact_flag(Meta(), ["Abs_", Token(parser_const.KEY_SIGNED_INT, "1")]) == FlagClause("Abs_")
     assert mixin.interact_value_line([1]) == 1
     assert mixin.layer_info([Token("JUNK", ":"), 4]) == 4
     assert mixin.seq_control_opt(["SEQ_CONTROL", "SEQTIMER"]).data == parser_const.KEY_SEQ_CONTROL_OPS

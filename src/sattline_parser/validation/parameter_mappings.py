@@ -1,12 +1,17 @@
-"""Module-type instance parameter mapping rules.
+"""Parameter mapping rules for submodule declarations and module-type instances.
 
 A mapping connects an actual source (a variable, a literal, or a global) to a
 formal module parameter. This module checks the target side (duplicates, field
-access, unknown fields) and the value side (literal and variable datatypes).
-Module types and datatypes visible from loaded dependencies are passed in by
-the project layer, so a mapping that targets an external typedef resolves the
-same way as a local one. An instance may omit mappings entirely; only the
-mappings that are present are checked.
+access, unknown targets) and the value side (literal and variable datatypes).
+The same checks run for a module-type instance, a plain submodule declaration,
+and a module-type definition.
+
+An absent mapping target is reported when the formal parameter list is known.
+``None`` means the formals come from a definition that is not loaded, so the
+target stays unproven and silent. Module types and datatypes visible from loaded
+dependencies are passed in by the project layer, so a mapping that targets an
+external typedef resolves the same way as a local one. An instance may omit
+mappings entirely; only the mappings that are present are checked.
 """
 
 from __future__ import annotations
@@ -59,6 +64,13 @@ def check_parameter_mappings(
         base_name, field_path = split_dotted_name(target_name)
         target_variable = expected_parameters.get(fold_identifier(base_name))
         if target_variable is None:
+            errors.append(
+                Diagnostic(
+                    code=DiagnosticCode.PARAMETER_MAPPING_TARGET_UNKNOWN,
+                    message=f"Parameter mapping target {target_name!r} is not a parameter of the target module",
+                    span=mapping.span,
+                )
+            )
             continue
 
         target_datatype = resolve_variable_field_datatype(target_variable, field_path, type_graph)
@@ -74,7 +86,7 @@ def check_parameter_mappings(
                         span=mapping.span,
                     )
                 )
-            elif type_graph.has_record(str(target_variable.datatype)):
+            elif type_graph.has_known_fields(str(target_variable.datatype)):
                 errors.append(
                     Diagnostic(
                         code=DiagnosticCode.PARAMETER_MAPPING_TARGET_UNKNOWN,

@@ -1,4 +1,4 @@
-# pyright: reportUnknownVariableType=false, reportUnknownMemberType=false, reportUnknownParameterType=false, reportUnknownArgumentType=false, reportPrivateUsage=false, reportUnusedImport=false
+# pyright: reportArgumentType=false
 """Packaging and installed-package smoke tests.
 
 These tests live outside ``tests/parser`` on purpose: they verify the package
@@ -13,11 +13,13 @@ import importlib.metadata
 import importlib.resources
 import importlib.util
 import json
+import os
 import re
 import subprocess
 import sys
 from pathlib import Path
 
+import pytest
 from lark.exceptions import UnexpectedInput
 
 from sattline_parser import (
@@ -41,11 +43,41 @@ _SMALL_PROGRAM = (
     "ENDDEF (*BasePicture*);\n"
 )
 
+_ROOT = Path(__file__).resolve().parents[1]
+_SRC = _ROOT / "src"
 
-def test_package_imports_and_version_metadata() -> None:
+
+def _installed_distribution() -> importlib.metadata.Distribution | None:
+    """The ``sattline-parser`` distribution when it is installed, else ``None``.
+
+    A gitignored ``src/sattline_parser.egg-info`` beside the checkout also
+    satisfies ``importlib.metadata``, so a resolvable distribution is not
+    evidence that the package is installed. Installed-artifact evidence belongs
+    to ``scripts/smoke_installed.py``; here the metadata checks run only against
+    a distribution located outside this checkout.
+    """
+    try:
+        distribution = importlib.metadata.distribution("sattline-parser")
+    except importlib.metadata.PackageNotFoundError:
+        return None
+    location = Path(distribution.locate_file("")).resolve()
+    if location.is_relative_to(_SRC):
+        return None
+    return distribution
+
+
+def test_package_version_is_calver() -> None:
     assert isinstance(__version__, str)
     assert re.fullmatch(r"\d{4}\.\d{1,2}\.\d{1,2}", __version__), __version__
-    assert importlib.metadata.version("sattline-parser") == __version__
+
+
+def test_installed_distribution_version_matches_the_package() -> None:
+    distribution = _installed_distribution()
+    if distribution is None:
+        pytest.skip(
+            "sattline-parser is not installed in this interpreter; scripts/smoke_installed.py owns that evidence"
+        )
+    assert distribution.version == __version__
 
 
 def test_grammar_resources_are_packaged() -> None:
@@ -111,6 +143,10 @@ def test_fuzz_tooling_is_not_part_of_the_parser_package() -> None:
 
 
 def test_console_script_is_registered() -> None:
+    if _installed_distribution() is None:
+        pytest.skip(
+            "sattline-parser is not installed in this interpreter; scripts/smoke_installed.py owns that evidence"
+        )
     scripts = {
         entry.name: entry.value
         for entry in importlib.metadata.entry_points(group="console_scripts")
@@ -120,11 +156,16 @@ def test_console_script_is_registered() -> None:
 
 
 def test_module_entry_point_reaches_the_cli() -> None:
+    # The child must import *this* checkout, not whatever happens to be
+    # installed in the interpreter. ``PYTHONPATH`` is pinned to ``src`` so the
+    # test proves the checkout's module entry point, and CI's build-package job
+    # proves the installed artifact through scripts/smoke_installed.py.
     completed = subprocess.run(
         [sys.executable, "-m", "sattline_parser", "version", "--json"],
         capture_output=True,
         text=True,
         check=False,
+        env={**os.environ, "PYTHONPATH": str(_SRC)},
     )
     assert completed.returncode == 0, completed.stderr
     payload = json.loads(completed.stdout)

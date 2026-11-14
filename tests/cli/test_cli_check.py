@@ -1,4 +1,4 @@
-# pyright: reportUnknownVariableType=false, reportUnknownMemberType=false, reportUnknownParameterType=false, reportMissingParameterType=false, reportUnknownArgumentType=false, reportUnknownLambdaType=false, reportArgumentType=false, reportPrivateUsage=false, reportUnusedImport=false, reportCallIssue=false
+# pyright: reportMissingParameterType=false, reportUnknownArgumentType=false, reportUnknownMemberType=false, reportUnknownParameterType=false, reportUnknownVariableType=false
 """``sattline check``: findings, output formats, filters and exit codes."""
 
 from __future__ import annotations
@@ -189,6 +189,16 @@ def test_stdin_requires_a_name(tmp_path, capsys, monkeypatch) -> None:
 
     assert main(["check", "-", "--stdin-name", "Piped.s"]) == ExitCode.OK
     assert capsys.readouterr().out == ""
+
+
+def test_stdin_named_as_a_companion_is_refused(capsys) -> None:
+    # Piped companion content is refused exactly like a companion path, so it is
+    # never reported as broken SattLine source.
+    assert main(["check", "-", "--stdin-name", "Companion.g"]) == ExitCode.USAGE
+    assert "is a graphics companion (.g)" in capsys.readouterr().err
+
+    assert main(["check", "-", "--stdin-name", "Companion.q"]) == ExitCode.USAGE
+    assert "is a distribution companion (.q)" in capsys.readouterr().err
 
 
 def test_missing_and_undecodable_inputs_are_usage_errors(tmp_path, capsys) -> None:

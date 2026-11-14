@@ -33,7 +33,8 @@ Describe what changed and why.
 ## Documentation
 
 - [ ] The matching `docs/` page is updated.
-- [ ] `CHANGELOG.md` has an entry.
+- [ ] `changelog.d/<slug>.<type>.md` exists for every user-visible change, and
+      `python scripts/build_changelog.py --check` passes.
 - [ ] No dash punctuation was added to prose.
 - [ ] No third-party names, paths, or build numbers were added.
 

@@ -39,7 +39,7 @@ def run(args: argparse.Namespace) -> int:
     resolve_rule_filters(args.rule or ())
     findings: list[Finding] = []
     for target in args.paths:
-        reject_companion(target)
+        reject_companion(target, stdin_name=args.stdin_name)
         source = read_source(target, name=args.stdin_name)
         findings.extend(analyse(source.name, source.text, absolute=absolute).findings)
     reported = selected_findings(findings, args)

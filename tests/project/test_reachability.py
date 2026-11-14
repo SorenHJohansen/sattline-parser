@@ -1,5 +1,15 @@
-from sattline_parser.models.ast_model import FrameModule, ModuleHeader, ModuleTypeInstance, SingleModule
-from sattline_parser.project.reachability import invoked_moduletypes, iter_moduletype_refs
+from collections.abc import Sequence
+
+from sattline_parser.models.ast_model import (
+    BasePicture,
+    FrameModule,
+    ModuleHeader,
+    ModuleTypeDef,
+    ModuleTypeInstance,
+    SingleModule,
+)
+from sattline_parser.project.models import SattLineProgram
+from sattline_parser.project.reachability import invoked_moduletypes, iter_moduletype_refs, visible_program_keys
 
 
 def _header(name: str) -> ModuleHeader:
@@ -16,3 +26,51 @@ def test_iter_moduletype_refs_walks_nested_frames_and_instances() -> None:
 
 def test_invoked_moduletypes_ignores_an_unknown_target() -> None:
     assert invoked_moduletypes({}, ["Missing"]) == {}
+
+
+def _program(
+    name: str,
+    *,
+    dependencies: tuple[str, ...] = (),
+    moduletypes: Sequence[ModuleTypeDef] = (),
+    submodules: Sequence[SingleModule | FrameModule | ModuleTypeInstance] = (),
+) -> SattLineProgram:
+    code = BasePicture(
+        header=_header(name),
+        moduletype_defs=list(moduletypes),
+        submodules=list(submodules),
+    )
+    return SattLineProgram(name=name, code=code, dependencies=dependencies)
+
+
+def _invocation(name: str) -> ModuleTypeInstance:
+    return ModuleTypeInstance(header=_header(name), moduletype_name="BType")
+
+
+def test_visible_program_keys_returns_loaded_transitive_dependencies() -> None:
+    programs = {
+        "a": _program("A", dependencies=("B", "Ghost", "A")),
+        "b": _program("B", dependencies=("C",)),
+        "c": _program("C"),
+    }
+
+    assert visible_program_keys(programs, "a", programs["a"].dependencies) == frozenset({"a", "b", "c"})
+
+
+def test_visible_program_keys_keeps_an_incomplete_closure_incomplete() -> None:
+    programs = {"a": _program("A", dependencies=("Ghost",))}
+
+    assert visible_program_keys(programs, "a", programs["a"].dependencies) == frozenset({"a"})
+
+
+def test_invoked_moduletypes_walks_declared_dependencies_by_default() -> None:
+    programs = {
+        "a": _program(
+            "A",
+            dependencies=("B",),
+            submodules=(SingleModule(header=_header("A"), submodules=[_invocation("Call")]),),
+        ),
+        "b": _program("B", moduletypes=(ModuleTypeDef(name="BType"),)),
+    }
+
+    assert invoked_moduletypes(programs, ["a"]) == {"b": {"btype"}}

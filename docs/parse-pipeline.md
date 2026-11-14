@@ -44,6 +44,10 @@ file in binary and hands the bytes to `decode_source_bytes`.
   cp1252 (`0x81 0x8D 0x8F 0x90 0x9D`) is tolerated **only inside a
   `(* ... *)` comment body**, where it becomes `U+FFFD`. Everywhere else the
   `UnicodeDecodeError` survives.
+- A leading UTF-8 byte-order mark (`EF BB BF`) is removed before the cp1252
+  decode. Some editors write one in front of an otherwise cp1252 file, and
+  decoding it as cp1252 would produce three characters the grammar rejects. The
+  decoded text therefore never starts with `U+FEFF`.
 - Files are read in binary mode on purpose. `Path.read_text()` performs
   universal newline translation and would silently turn CRLF into LF, changing
   offsets.
@@ -53,8 +57,10 @@ file in binary and hands the bytes to `decode_source_bytes`.
 
 `load_source_text(path)` is the read-then-decode helper for callers that want
 the final plain text and no parse result. It decodes marker-compressed text as
-well. `source_text_for_parse` deliberately does **not**, so provenance stays
-anchored to the original markers.
+well. It reads the file once, so the coded/compressed classification and the
+decoded bytes come from the same snapshot. `source_text_for_parse` deliberately
+does **not** decode markers, so provenance stays anchored to the original
+markers.
 
 ## Preprocessing: text to `SourceDocument`
 
@@ -185,7 +191,8 @@ transformer, or unusually low interpreter recursion limit still raises
 | Undecodable byte outside a comment | `UnicodeDecodeError` | The file is not cp1252 |
 | Syntax error | Lark `UnexpectedInput` family | The decoded text does not match the grammar |
 | Structure too deep | `SourceTooDeepError` | The parsed structure exceeds the 256-level nesting limit |
-| Transformer defect | `ValueError`, `RuntimeError` | The parse succeeded but the AST could not be built |
+| Transformer value error | `ValueError` | The parse succeeded but a value could not be built |
+| Transformer defect | `RuntimeError` | Propagates: the transformer returned the wrong type or hit an internal bug |
 | Unreadable file | `OSError` | The path could not be read |
 
 `PARSE_FAILURES` in `errors.py` is the shared tuple
@@ -193,10 +200,21 @@ transformer, or unusually low interpreter recursion limit still raises
 a failed parse into a finding uses it, so a broken file is classified the same
 way by `sattline check` and by the project loader.
 
+`RuntimeError` is deliberately **not** in `PARSE_FAILURES`. It is reserved for
+a parser defect: `parse_source_text` raises it when the transformer returns
+something that is not a `BasePicture`, and a transformer that raises one is
+signalling a bug rather than invalid input. Such a failure propagates as a
+traceback instead of becoming a finding, so a defect is never reported as a
+broken source.
+
 ## Performance notes
 
 - The default parser is cached for the process.
 - Plain text short-circuits both the source map and the tree walk.
+- A `SourceDocument` builds its line index on first use, so a parse that never
+  renders a line and column does not scan the original text.
+- Decoding appends into one per-character buffer per stage instead of building
+  a list of parts and then concatenating a second copy.
 - Parse-tree transformation and position remapping use explicit stacks, so
   their cost follows the tree size rather than the Python call stack.
 - The Lark cache is opt-in only through the private cache directory. It is

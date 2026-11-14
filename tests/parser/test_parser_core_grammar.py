@@ -1,6 +1,20 @@
-# pyright: reportUnknownVariableType=false, reportUnknownMemberType=false, reportUnusedImport=false, reportTypedDictNotRequiredAccess=false
-# ruff: noqa: F403, F405
-from ._parser_core_test_support import *
+# pyright: reportOptionalMemberAccess=false, reportOptionalSubscript=false, reportPrivateUsage=false, reportTypedDictNotRequiredAccess=false, reportUnknownMemberType=false, reportUnknownVariableType=false
+from typing import Any, cast
+
+import pytest
+from lark import Token
+from lark.exceptions import UnexpectedCharacters
+
+from sattline_parser import parse_source_text as parser_core_parse_source_text
+from sattline_parser import source_io as parser_api
+from sattline_parser.api import create_parser
+from sattline_parser.grammar import constants as const
+from sattline_parser.models.ast_model import BasePicture, IntLiteral, ModuleTypeInstance
+from sattline_parser.models.clauses import AssignClause
+from sattline_parser.models.expressions import Assignment, BinOp, TernaryOp, VarRef
+from sattline_parser.models.tails import VarTail
+
+from ._parser_core_test_support import _parse_to_basepicture, _repo_path
 
 
 def test_ternary_if_has_lowest_precedence():

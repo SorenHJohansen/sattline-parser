@@ -1,4 +1,4 @@
-# pyright: reportUnknownVariableType=false, reportUnknownMemberType=false, reportUnknownParameterType=false, reportMissingParameterType=false, reportUnknownArgumentType=false, reportUnknownLambdaType=false, reportArgumentType=false, reportPrivateUsage=false, reportUnusedImport=false, reportCallIssue=false
+# pyright: reportMissingParameterType=false, reportUnknownArgumentType=false, reportUnknownMemberType=false, reportUnknownParameterType=false, reportUnknownVariableType=false
 """``sattline parse``: summary, tree serialisation and parse failures."""
 
 from __future__ import annotations
@@ -38,6 +38,11 @@ def test_summary_json_and_jsonl(tmp_path, capsys) -> None:
     one_line = capsys.readouterr().out.strip()
     assert "\n" not in one_line
     assert json.loads(one_line)["schema"] == "sattline.v1.parse"
+
+    assert main(["parse", str(source), "--json", "--compact"]) == ExitCode.OK
+    one_line = capsys.readouterr().out.strip()
+    assert "\n" not in one_line
+    assert json.loads(one_line)["counts"]["sequences"] == 1
 
 
 def test_tree_serialises_the_ast_with_a_depth_limit(tmp_path, capsys) -> None:
@@ -87,6 +92,19 @@ def test_parse_reads_stdin_with_a_name(capsys, monkeypatch) -> None:
 
     assert main(["parse", "-", "--stdin-name", "Piped.s"]) == ExitCode.OK
     assert "file: Piped.s" in capsys.readouterr().out
+
+
+def test_paths_absolute_applies_to_the_document_file(tmp_path, capsys, monkeypatch) -> None:
+    write_source(tmp_path, "Sample.s", VALID_SOURCE)
+    monkeypatch.chdir(tmp_path)
+
+    assert main(["parse", "Sample.s", "--json", "--paths", "absolute"]) == ExitCode.OK
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["file"] == str((tmp_path / "Sample.s").resolve())
+
+    assert main(["parse", "Sample.s", "--tree", "--paths", "absolute"]) == ExitCode.OK
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["file"] == str((tmp_path / "Sample.s").resolve())
 
 
 def test_parse_reports_a_missing_file(tmp_path, capsys) -> None:

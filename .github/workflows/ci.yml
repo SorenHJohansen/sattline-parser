@@ -22,7 +22,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Set up Python 3.14
         uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
@@ -42,7 +42,7 @@ jobs:
         run: uv run ruff format --check src tests scripts benchmarks fuzzing
 
       - name: Pyright strict
-        run: uv run pyright src tests benchmarks fuzzing
+        run: uv run pyright src tests benchmarks fuzzing scripts
 
       - name: Changelog fragments
         run: uv run python scripts/build_changelog.py --check
@@ -64,7 +64,7 @@ jobs:
       matrix:
         python-version: ["3.12", "3.13", "3.14"]
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Set up Python ${{ matrix.python-version }}
         uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
@@ -77,15 +77,21 @@ jobs:
       - name: Install locked dev environment
         run: uv sync --frozen --all-extras
 
-      # Runs the complete configured test suite (pyproject testpaths =
-      # ["tests"]), including tests/test_packaging.py outside tests/parser,
-      # and enforces both coverage gates: 100% line coverage after exclusions
-      # and a minimum branch coverage. It also prints how many executable
-      # lines the exclusion rules keep outside the line gate.
-      - name: Run full suite and enforce line + branch coverage gates
+      # The coverage gate runs on one leg only. Totals depend on interpreter
+      # bytecode, so gating every leg triples the most expensive job and can
+      # make the same source pass on one version and fail on another. The other
+      # legs still run the complete suite (pyproject testpaths = ["tests"],
+      # including tests/test_packaging.py outside tests/parser).
+      - name: Run full suite with line + branch coverage gates (Python 3.13)
+        if: matrix.python-version == '3.13'
         run: uv run python scripts/check_branch_coverage.py
 
+      - name: Run full suite (Python ${{ matrix.python-version }})
+        if: matrix.python-version != '3.13'
+        run: uv run python -m pytest
+
       - name: Verify full-suite coverage file was produced
+        if: matrix.python-version == '3.13'
         run: test -s coverage.xml
 
   benchmarks:
@@ -93,7 +99,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Set up Python 3.14
         uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
@@ -110,8 +116,9 @@ jobs:
         run: uv run pytest benchmarks --no-cov -q --benchmark-json=benchmark.json
 
       - name: Upload benchmark results
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
+          if-no-files-found: error
           name: benchmark-json-${{ github.run_id }}
           path: benchmark.json
 
@@ -120,7 +127,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Set up Python 3.14
         uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
@@ -141,17 +148,20 @@ jobs:
         run: >-
           uv run python -c "from fuzzing.fuzz_harness import run_corpus_regression, assert_no_crashes, assert_no_timeouts; results = run_corpus_regression(); assert_no_crashes(results); assert_no_timeouts(results); print(f'corpus regression OK ({len(results)} files)')"
 
-      # PR fuzz smoke: random input generation must not crash the parser.
+      # PR fuzz smoke: random input generation must not crash the parser. The
+      # seed is fixed so a red run is replayable: each result's input_desc
+      # carries its per-round seed, and generate_random_text(length, seed=...)
+      # reproduces the exact input. Seedless runs stay a local exploration tool.
       - name: Random fuzz smoke
         run: >-
-          uv run python -c "from fuzzing.fuzz_harness import run_random_fuzz, assert_no_crashes; results = run_random_fuzz(rounds=50); assert_no_crashes(results); print('random fuzz smoke OK')"
+          uv run python -c "from fuzzing.fuzz_harness import run_random_fuzz, assert_no_crashes; results = run_random_fuzz(rounds=50, seed=20261114); assert_no_crashes(results); print(f'random fuzz smoke OK ({len(results)} rounds, base seed 20261114)')"
 
   security:
     name: Dependency Security Audit
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Set up Python 3.14
         uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
@@ -173,7 +183,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Set up Python 3.14
         uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
@@ -207,7 +217,7 @@ jobs:
           /tmp/sdist-venv/bin/python scripts/smoke_installed.py
 
       - name: Upload distributions
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           if-no-files-found: error
           name: pypi-dist-${{ github.run_id }}
@@ -220,7 +230,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Set up Python 3.14
         uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
@@ -244,7 +254,7 @@ jobs:
     runs-on: windows-latest
     timeout-minutes: 25
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Set up Python 3.14
         uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0

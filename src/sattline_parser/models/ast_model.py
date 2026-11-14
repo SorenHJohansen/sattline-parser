@@ -13,7 +13,6 @@ from ._ast_model_support import (
     code_comment_list,
     code_item_list,
     datatype_def_list,
-    format_list,
     graph_object_list,
     interact_object_list,
     modulecode_list,
@@ -21,10 +20,13 @@ from ._ast_model_support import (
     moduletype_def_list,
     parameter_mapping_list,
     render_base_picture,
+    render_datatype,
+    render_equation,
     render_frame_module,
     render_module_code,
     render_moduletype_def,
     render_moduletype_instance,
+    render_sequence,
     render_single_module,
     sfc_body_list,
     submodule_list,
@@ -240,17 +242,7 @@ class DataType:
     trailing_comments: list[CodeComment] = field(default_factory=code_comment_list)
 
     def __str__(self) -> str:
-        from ..formatting.formatter import format_list  # noqa: PLC0415
-
-        lines = [
-            f"Name       : {self.name!r}",
-            f"Description: {self.description!r}",
-            f"Datecode   : {self.datecode!r}",
-            f"OriginFile : {self.origin_file!r}",
-            f"OriginLib  : {self.origin_lib!r}",
-            f"Variables in datatype   : {format_list(self.var_list)}",
-        ]
-        return "Datatype{\n" + textwrap.indent("\n".join(lines), "    ") + "}"
+        return render_datatype(self)
 
 
 class MappingSource(StrEnum):
@@ -362,13 +354,12 @@ class Sequence:
     seqcontrol: bool = False
     seqtimer: bool = False
     code: list[SFCBodyItem] = field(default_factory=sfc_body_list)
+    #: ``Layer_ = <int>`` written after the ``OBJSIZE`` pair, when present.
+    #: Absence is preserved as ``None``, matching ``Equation.layer_info``.
+    layer_info: int | None = None
 
     def __str__(self) -> str:
-        return (
-            f"Sequence(name={self.name}, pos={self.position}, "
-            f"type={self.type}, control={self.seqcontrol}, timer={self.seqtimer},\n"
-            f"    code={format_list(self.code)})"
-        )
+        return render_sequence(self)
 
 
 @dataclass
@@ -391,7 +382,7 @@ class Equation:
     layer_info: int | None = None
 
     def __str__(self) -> str:
-        return f"Equation(name={self.name}, pos={self.position},\n    code={format_list(self.code)})"
+        return render_equation(self)
 
 
 @dataclass
@@ -570,7 +561,6 @@ class BasePicture(_ModuleBlockViews):
     modulecodes: list[ModuleCode] = field(default_factory=modulecode_list)
     origin_file: str | None = None
     origin_lib: str | None = None
-    graphics_file: str | None = None
     trailing_comments: list[CodeComment] = field(default_factory=code_comment_list)
     #: Explicit DateCode_ attribute of the root module definition, when present.
     #: Absent is preserved as ``None``; stamping an import date is a separate

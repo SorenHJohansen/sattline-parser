@@ -1,4 +1,3 @@
-# pyright: reportUnusedImport=false
 """Syntax forms covered by the parser test suite.
 
 Each case covers one syntax shape. The parser must accept the shapes the
@@ -19,7 +18,7 @@ from sattline_parser.models.ast_model import (
     SFCSubsequence,
     SFCTransition,
 )
-from sattline_parser.models.expressions import Assignment, IfStmt, VarRef
+from sattline_parser.models.expressions import Assignment, BinOp, Compare, IfStmt, VarRef
 from sattline_parser.models.tails import VarTail
 
 _HEADER = (
@@ -251,6 +250,41 @@ def test_datecode_without_value_is_rejected() -> None:
                 _sequence("      SEQSTEP Done\n      SEQTRANSITION TrEnd WAIT_FOR True\n"), datecode="DateCode_"
             )
         )
+
+
+def test_adjacent_datecode_keyword_is_one_identifier_not_two_tokens() -> None:
+    # A keyword ends at a word boundary, so `DateCode_1` is a single name, not
+    # the `DateCode_` keyword followed by `1`. The datecode slot accepts only the
+    # keyword, so the adjacent spelling is rejected rather than silently split.
+    with pytest.raises(UnexpectedInput):
+        parse_source_text(
+            _module_code(
+                _sequence("      SEQSTEP Done\n      SEQTRANSITION TrEnd WAIT_FOR True\n"), datecode="DateCode_1"
+            )
+        )
+
+
+def test_adjacent_private_moduledefinition_is_one_identifier_not_two_keywords() -> None:
+    # Same rule for two adjacent keywords: `PRIVATE_MODULEDEFINITION` is one
+    # name, so the module-type definition that requires `PRIVATE_ MODULEDEFINITION`
+    # does not accept the underscore-joined spelling.
+    def _source(declaration: str) -> str:
+        return (
+            _HEADER
+            + "BasePicture Invocation (0.0,0.0,0.0,1.0,1.0) : MODULEDEFINITION DateCode_ 1\n"
+            + "TYPEDEFINITIONS\n"
+            + declaration
+            + "ModuleDef\n"
+            + "ClippingBounds = ( -1.0 , -1.0 ) ( 1.0 , 1.0 )\n"
+            + "ENDDEF (*BasePicture*);\n"
+        )
+
+    body = "   ModuleDef\n   ClippingBounds = ( -1.0 , -1.0 ) ( 1.0 , 1.0 )\n   ENDDEF;\n"
+    separated = parse_source_text(_source("   Hidden = PRIVATE_ MODULEDEFINITION\n" + body))
+    assert [moduletype.name for moduletype in separated.moduletype_defs] == ["Hidden"]
+
+    with pytest.raises(UnexpectedInput):
+        parse_source_text(_source("   Hidden = PRIVATE_MODULEDEFINITION\n" + body))
 
 
 def test_record_datecode_is_optional() -> None:
@@ -581,3 +615,76 @@ def test_equation_block_without_name_or_metadata() -> None:
     assert equations[0].position is None and equations[0].size is None
     assert equations[2].position == (0.0, 0.0)
     assert len(equations[0].code) == 1
+
+
+# --- Numeric literals and their signs ---------------------------------------
+
+
+def _expression_value(expression: str):
+    picture = parse_source_text(_module_code(f"   EQUATIONBLOCK Main :\n      Flag = {expression};\n"))
+    module_code = picture.modulecode
+    assert module_code is not None
+    statement = (module_code.equationblocks or [])[0].code[0]
+    assert isinstance(statement, Assignment)
+    return statement.value
+
+
+@pytest.mark.parametrize(
+    ("expression", "operator"),
+    [
+        ("1+2", "+"),
+        ("1-2", "-"),
+        ("1 - 2", "-"),
+        ("1+ 2", "+"),
+        ("1.0+2.0", "+"),
+        ("1.0-2.0", "-"),
+    ],
+)
+def test_a_binary_sign_is_not_swallowed_into_the_next_literal(expression: str, operator: str) -> None:
+    # A numeric literal may only carry a sign where a literal may start, so the
+    # operator in `1+2` is the binary operator rather than the start of `+2`.
+    value = _expression_value(expression)
+    assert isinstance(value, BinOp)
+    assert value.op == operator
+    assert value.left in (1, 1.0)
+    assert value.right in (2, 2.0)
+
+
+def test_a_variable_operand_keeps_its_binary_sign() -> None:
+    value = _expression_value("Flag-1")
+    assert isinstance(value, BinOp)
+    assert value.op == "-"
+    assert isinstance(value.left, VarRef)
+    assert value.right == 1
+
+
+@pytest.mark.parametrize(("expression", "expected"), [("-5", -5), ("+5", 5), ("-5.5", -5.5), ("+5.5", 5.5)])
+def test_a_leading_sign_still_belongs_to_the_literal(expression: str, expected: float) -> None:
+    assert _expression_value(expression) == expected
+
+
+def test_an_exponent_sign_belongs_to_the_literal() -> None:
+    assert _expression_value("1e-3") == 0.001
+    assert _expression_value("1.0E+10") == 1.0e10
+
+
+def test_a_signed_operand_after_a_comparison_operator() -> None:
+    value = _expression_value("1 > -2")
+    assert isinstance(value, Compare)
+    assert value.left == 1
+    assert value.op == ">"
+    assert value.right == -2
+
+
+def test_signed_coordinates_and_layout_values_still_parse() -> None:
+    source = (
+        _HEADER
+        + "BasePicture Invocation ( -0.5 , -0.5 , 0.0 , 1.0 , 1.0 ) : MODULEDEFINITION DateCode_ 1\n"
+        + "ModuleDef\n"
+        + "ClippingBounds = ( -1.5 , -2.0 ) ( 1.0 , 2.0 )\n"
+        + "ENDDEF (*BasePicture*);\n"
+    )
+    picture = parse_source_text(source)
+    assert picture.header.invoke_coord == (-0.5, -0.5, 0.0, 1.0, 1.0)
+    assert picture.moduledef is not None
+    assert picture.moduledef.clipping_bounds == ((-1.5, -2.0), (1.0, 2.0))

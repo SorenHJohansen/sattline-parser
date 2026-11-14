@@ -130,7 +130,8 @@ def run(args: argparse.Namespace) -> int:
         _emit_graph(edges, args=args)
     else:
         _emit_programs(programs, edges, load_diagnostics, validation_rows, args=args)
-    failing = any(diagnostic.kind is LoadDiagnosticKind.LOAD_SKIPPED for diagnostic in load_diagnostics)
+    skipped = sum(1 for diagnostic in load_diagnostics if diagnostic.kind is LoadDiagnosticKind.LOAD_SKIPPED)
+    failing = fails_on(skipped, args.fail_on)
     if _validation_fails(validation_rows, args.fail_on):
         failing = True
     return int(ExitCode.FINDINGS if failing else ExitCode.OK)

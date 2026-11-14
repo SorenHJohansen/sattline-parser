@@ -85,10 +85,9 @@ class AssignClause:
 
 @dataclass(frozen=True)
 class FlagClause:
-    """A bare interactor flag: a name plus an optional literal and tail."""
+    """A bare interactor flag: a name plus an optional tail."""
 
     name: str
-    extra: str | None = None
     tail: Tail | None = None
     span: SourceSpan | None = field(default=None, compare=False, metadata={"layout": True})
 

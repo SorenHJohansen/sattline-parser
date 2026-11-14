@@ -30,6 +30,13 @@ Draft is `.s`, `.l`, `.g`, `.p`; official is `.x`, `.z`, `.y`, `.q`. See
 | Scalar type facts and literal inference | `validation/typing.py`, `types.py` | `sattline_parser.types` |
 | Generic parser and project introspection | `cli/` | the `sattline` command |
 
+`preprocess_source` and `SourceDocument` are both importable from
+`sattline_parser.preprocessing`. `SourceDocument` carries the original text and
+the normalized text, plus a read-only `char_map` property: a tuple with one
+original-source offset per decoded character, or `None` when the text needed no
+decoding. `map_position`, `map_range`, `line_col`, and `is_decoded_range`
+remap a position or span through that map.
+
 ### What it deliberately does not own
 
 - Semantic analysis, lint policy, metrics, refactoring, or code generation.
@@ -110,7 +117,7 @@ flowchart TB
 
     subgraph Surface["Public surface"]
         API["sattline_parser.api<br/>parse_source_file, parse_source_text"]
-        CLI["sattline command<br/>check, parse, query, project, graphics, decode, diff, corpus, version"]
+        CLI["sattline command<br/>check, parse, query, project, graphics, decode, diff, corpus, rules, version"]
         PROJ["sattline_parser.project<br/>SattLineProject.load"]
     end
 
@@ -145,7 +152,6 @@ flowchart TB
 
     API --> SRC
     API --> VAL
-    API --> GPARSE
     PROJ --> LOAD
 
     SRC --> PRE
@@ -191,7 +197,8 @@ flowchart TB
    spelling, comments, and source order. Validation lives in `validation/` and
    is opt-in through `parse_and_validate` or the project loader.
 5. **The CLI adds no semantics.** Every command maps onto a documented library
-   call and emits one finding shape. Exit codes are the contract.
+   call, and the source commands report problems in one finding shape. Exit
+   codes are the contract.
 6. **Layers point downward.** `source_io` imports neither `api` nor `project`,
    so the project layer can build on it without a cycle. The project layer may
    import the parser core. The public `api` façade re-exports both.

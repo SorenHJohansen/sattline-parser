@@ -1,8 +1,4 @@
-# pyright: reportUnknownVariableType=false, reportPrivateUsage=false, reportUnusedImport=false
-# ruff: noqa: F403
 from sattline_parser.preprocessing import MAX_IDE_LINE_LENGTH, render_ide_text
-
-from ._parser_core_test_support import *
 
 
 def test_render_ide_text_normalizes_line_endings_to_crlf():

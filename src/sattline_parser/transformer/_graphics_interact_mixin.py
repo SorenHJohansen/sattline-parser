@@ -32,10 +32,7 @@ from sattline_parser.models.properties import GraphProperties, InteractBodyEntry
 from sattline_parser.models.tails import Tail
 
 from ._comments_mixin import code_comments_from_run, is_comment_tree
-from ._module_shared import InterimCoords, TextContent, meta_span, v_args
-
-TransformerItem = object
-TransformerTree = Tree[object]
+from ._module_shared import InterimCoords, TextContent, TransformerItem, TransformerTree, meta_span, v_args
 
 
 def _is_coord_pair(value: object) -> TypeGuard[CoordPair]:
@@ -59,7 +56,7 @@ def _as_float(value: object) -> float:
 
 
 def _tree_children(tree: object) -> list[object]:
-    return cast(list[object], cast(Tree[object], tree).children)
+    return cast(list[object], cast(TransformerTree, tree).children)
 
 
 def _coords_value(coords: object) -> CoordPair | CoordBox:
@@ -669,24 +666,23 @@ class _GraphicsInteractMixin:
 
     @v_args(meta=True)
     def interact_flag(self, meta: Any, items: list[TransformerItem]) -> FlagClause:
-        """Grammar interact_flag -> flag with name, optional extra, and tail.
+        """Grammar interact_flag -> flag with a name and an optional tail.
 
-        The flag name is the leading NAME terminal, which arrives as a ``str``
-        after token coercion and must land in ``name`` rather than ``tail``.
+        The flag name is the leading NAME terminal (or the bare ``TextObject``
+        keyword), which arrives as a ``str`` after token coercion and must land
+        in ``name`` rather than ``tail``. The grammar accepts no literal after
+        the flag, so nothing else is stored.
         """
         name: str | None = None
-        extra: str | None = None
         tail: Tail | None = None
         for it in items:
-            if isinstance(it, Token) and it.type in (const.KEY_STRING, const.KEY_SIGNED_INT):
-                extra = it.value
-            elif name is None and isinstance(it, str):
+            if name is None and isinstance(it, str):
                 name = str(it)
             elif not isinstance(it, Token):
                 tail = cast(Tail, it)
         if name is None:
             raise ValueError(f"interact_flag expected a flag name; got: {items!r}")
-        return FlagClause(name=name, extra=extra, tail=tail, span=meta_span(meta))
+        return FlagClause(name=name, tail=tail, span=meta_span(meta))
 
     @v_args(meta=True)
     def interact_scale_selector(self, meta: Any, items: list[TransformerItem]) -> ScaleSelector:
@@ -751,7 +747,7 @@ class _GraphicsInteractMixin:
 
     def seq_control_opt(self, items: list[TransformerItem]) -> TransformerTree:
         """Grammar seq_control_opt -> Tree of optional SEQ_CONTROL/SEQTIMER."""
-        return cast(TransformerTree, Tree(const.KEY_SEQ_CONTROL_OPS, cast(list[Any], items)))
+        return Tree(const.KEY_SEQ_CONTROL_OPS, cast(list[Any], items))
 
     def codeblock_coord(self, items: list[TransformerItem]) -> tuple[float, float]:
         """Grammar codeblock_coord -> (x, y) coordinate pair."""
@@ -769,3 +765,5 @@ class _GraphicsInteractMixin:
 
 
 GraphicsInteractMixin = _GraphicsInteractMixin
+
+__all__ = ["GraphicsInteractMixin"]

@@ -46,9 +46,12 @@ validate_basepicture(
 
 The validator builds one `_ValidationContext`:
 
-- `records`: the file's `DATATYPE` definitions, the external definitions, and
-  the builtin record specs, keyed by `fold_identifier`;
-- `moduletypes`: the file's module types plus external ones;
+- `records`: the external definitions, the file's `DATATYPE` definitions, and
+  the builtin record specs, keyed by `fold_identifier`. The tables are built
+  external-first so the file wins over a same-named dependency definition, and
+  a builtin name is only a fallback. Resolution order is file, dependency,
+  builtin;
+- `moduletypes`: external module types, then the file's own;
 - `type_graph`: a case-insensitive `TypeGraph` over the same records;
 - `sfc_names`: every SFC step, transition, subsequence, and sequence name in
   the program, collected once;
@@ -69,8 +72,7 @@ findings tentative instead.
 
 ```mermaid
 flowchart TB
-    ROOT["BasePicture"] --> R1["check_reserved_name_declarations"]
-    ROOT --> R2["check_identifiers"]
+    ROOT["BasePicture"] --> R2["check_identifiers"]
     ROOT --> R3["build scope<br/>parameters + locals"]
     ROOT --> R4["check_variable_declarations"]
     ROOT --> R5["check_record_fields"]
@@ -83,6 +85,7 @@ flowchart TB
     S2 --> S3["module code"]
     S2 --> S5["module layout tails"]
     R9 --> S6["submodule header tails<br/>parent scope"]
+    R9 --> S7["parameter transfers<br/>and mappings"]
     S3 --> S4["nested submodules"]
 ```
 
@@ -118,16 +121,16 @@ them, not a separate scope.
 
 | Module | Rules |
 | --- | --- |
-| `declarations.py` | Reserved names, identifier length and keywords, sibling submodule uniqueness, declaration modifiers, datatype references, record fields |
+| `declarations.py` | Identifier length and keywords, sibling submodule uniqueness, declaration modifiers, datatype references, record fields |
 | `annotations.py` | Header, graphics, interact, and module-layout tails: undefined names, boolean `Enable_` conditions, real coordinate positions |
 | `code.py` | Module code and SFC: expressions, assignments, calls, conditions, `:Old`/`:New`, const writes, sequence structure, fork targets |
 | `sequences.py` | SFC position grammar: S/T/M body shapes for closed, transition, step, and open bodies |
-| `transfers.py` | Parameter-transfer type compatibility when the module type is declared in the same file |
-| `parameter_mappings.py` | Module-type instance mappings: duplicate targets, field access, literal and variable types |
+| `transfers.py` | Parameter-transfer type compatibility for a submodule, a module-type instance, or a module-type definition whose formals are known |
+| `parameter_mappings.py` | Submodule and module-type instance mappings: duplicate targets, field access, literal and variable types |
 | `typing.py` | Scalar families, literal inference, assignment and operand compatibility, datatype typo suggestions |
 | `type_graph.py` | Record field resolution and leaf-path expansion |
 | `symbols.py` | Scope chain and reference resolution |
-| `builtins.py` | Builtin arity, output-argument positions, datatype typo helper |
+| `builtins.py` | Builtin arity, parameter directions and datatypes, datatype typo helper |
 
 `sattline_parser.types` publishes the pure type facts from `typing.py`. It is a
 consumer door over the same helpers, not a second implementation. Expression
@@ -137,32 +140,43 @@ typing that needs a validation scope stays in this layer.
 
 ### Declarations
 
-- Reserved runtime names (`On`, `Off`) may be read but not declared.
+- The grammar rejects `On` and `Off` at a declaration position, so `SL-V034` is
+  retired. A constructed AST that reuses one of those spellings, or any other
+  reserved keyword, reports `SL-V039` instead.
 - Identifiers must be at most 20 characters and must not be a reserved keyword.
+  This covers parameters, locals, and module-code names in single modules and
+  frame modules alike.
 - Sibling submodules must have unique names.
 - Declaration modifiers are checked in source order. `State OpSave` is valid;
   `OpSave State` and `OpSave Const` are invalid.
 - A declared datatype name must resolve to a file datatype, a builtin record,
   or a loaded external datatype, unless the single-file escape hatch applies.
-- Record fields must resolve.
+- Record fields must resolve, and every definition of a duplicated datatype
+  name is validated on its own.
 
 ### Module code and expressions
 
 - `:Old` and `:New` require a `State` variable, or a field whose declaration is
   state.
-- A write to a `Const` variable is rejected, including a write through a
-  builtin output argument.
+- A write to a `Const` variable is rejected. The `Const` modifier is read from
+  every segment of a dotted target, so `Rec.Field := 1` is rejected when `Rec`
+  is `Const`, and the same rule covers a builtin output argument.
 - References to undefined variables are rejected, except SFC runtime
   accessors and the `On`/`Off` runtime constants.
 - Builtin calls are checked for arity and for output arguments that must be
-  writable variable references. Calls to unknown names are left alone.
-- String literals are not accepted where a variable reference is required.
+  writable variable references. Arity, argument-direction, and argument-datatype
+  checks need a known signature, so they apply only to names in the catalogue.
+- A string literal argument is rejected in every call, known or unknown,
+  because the parser does not evidence that the callee accepts a value there.
 - Numeric operands are required for arithmetic; boolean operands for `AND`,
   `OR`, and `NOT`; a boolean condition for `IF`, `ELSIF`, and `WAIT_FOR`.
 - Assignment types must be compatible.
-- Comparison operands must be compatible.
+- Comparison operands must be compatible. Each offending operand gets its own
+  finding, with that operand's span and name.
 - Ternary branches must have compatible types.
 - A string may not be assigned where the language does not allow it.
+- `AnyType` is exempt from the condition, ternary, assignment, operand, logical,
+  and builtin-argument rules: it proves nothing about the value.
 
 ### Sequences
 
@@ -194,10 +208,21 @@ it is a suffix of its host step or transition.
 
 ### Parameter transfers and mappings
 
-- A module-type instance whose module type is declared in the same file is
-  checked for parameter-transfer type compatibility.
-- A module-type instance mapping is checked for a duplicate target, field
-  access, unknown target, and literal or variable type mismatch.
+- A submodule declaration, a module-type instance, and a module-type definition
+  are checked for parameter-transfer type compatibility against their own formal
+  parameters. Mapping sources resolve in the invoking scope for a submodule and
+  in the file scope for a module-type definition.
+- Every mapping is checked for a duplicate target, field access, unknown target,
+  and literal or variable type mismatch. The checks are the same for a plain
+  submodule as for a module-type instance.
+- An absent mapping target is reported when the formal parameter list is known.
+  When the target type comes from a definition that is not loaded, the formals
+  are unknown: the target check stays silent while the local duplicate-target
+  check still runs.
+- A module-type instance whose type is neither declared in the file nor visible
+  from a loaded dependency reports `SL-V058`. The project loader marks that
+  finding tentative when part of the closure failed to load, and the single-file
+  escape hatch suppresses it.
 - When the module type is external, the mapping rule resolves against the
   loaded definition through the project layer.
 
@@ -252,7 +277,7 @@ here. `sattline rules` exposes the same data on the command line.
 | `SL-V012` | `MALFORMED_TIME_LITERAL` | retired | declarations | A time literal must be well formed. |
 | `SL-V013` | `BUILTIN_WRONG_ARITY` | active | code | A builtin call must supply between its minimum and maximum argument count. |
 | `SL-V014` | `BUILTIN_OUT_ARG_NOT_VARIABLE` | active | code | A builtin output argument must be a plain variable reference. |
-| `SL-V015` | `STRING_LITERAL_CALL_ARGUMENT` | active | code | A string literal may not stand in a call argument position that requires a reference. |
+| `SL-V015` | `STRING_LITERAL_CALL_ARGUMENT` | active | code | A string literal is not accepted in a call argument position. |
 | `SL-V016` | `CONSECUTIVE_SEQUENCE_STEPS` | active | sfc | SFC steps must be separated by a transition. |
 | `SL-V017` | `SEQUENCE_FORK_UNKNOWN_TARGET` | active | sfc | A SEQFORK target must name an SFC element in the module. |
 | `SL-V018` | `BUILTIN_DATATYPE_TYPO` | active | declarations | A near miss of a builtin datatype name is reported as a typo. |
@@ -277,7 +302,7 @@ here. `sattline rules` exposes the same data on the command line.
 | `SL-V037` | `SEQUENCE_FORK_TARGET_KIND` | active | sfc | A SEQFORK on a step must target a transition, and the reverse. |
 | `SL-V038` | `IDENTIFIER_TOO_LONG` | active | declarations | A declared identifier may be at most 20 characters. |
 | `SL-V039` | `RESERVED_KEYWORD_NAME` | active | declarations | A declaration may not use a reserved SattLine keyword as its name. |
-| `SL-V040` | `DATATYPE_TOO_FEW_FIELDS` | unimplemented | declarations | A DATATYPE declaration must declare at least one field. |
+| `SL-V040` | `DATATYPE_TOO_FEW_FIELDS` | retired | declarations | A DATATYPE declaration must declare at least one field. |
 | `SL-V041` | `COMPARE_INCOMPATIBLE_OPERANDS` | active | code | Comparison operators require compatible operand datatypes. |
 | `SL-V042` | `DIVISION_BY_ZERO` | unimplemented | code | Division by a literal zero is rejected. |
 | `SL-V043` | `LOGICAL_OPERAND_NOT_BOOLEAN` | active | code | Logical operators require boolean operands. |
@@ -291,11 +316,11 @@ here. `sattline rules` exposes the same data on the command line.
 | `SL-V051` | `STEP_AUTO_VARIABLE_UNAVAILABLE` | active | code | A step or sequence accessor requires the matching SeqControl or SeqTimer flag. |
 | `SL-V052` | `SEQUENCE_TRANSITION_AFTER_TRANSITION` | unimplemented | sfc | A transition may not directly follow another transition. |
 | `SL-V053` | `PARALLEL_BRANCH_INCOMPLETE` | unimplemented | sfc | A parallel branch must contain a complete step sequence. |
-| `SL-V054` | `SUBSEQTRANSITION_STARTS_WITH_STEP` | unimplemented | sfc | A SUBSEQTRANSITION body must not start with a step. |
-| `SL-V055` | `SEQUENCE_REQUIRES_INIT_STEP` | unimplemented | sfc | A closed sequence must contain an init step. |
+| `SL-V054` | `SUBSEQTRANSITION_STARTS_WITH_STEP` | active | sfc | A SUBSEQTRANSITION body must start with a SEQTRANSITION. |
+| `SL-V055` | `SEQUENCE_REQUIRES_INIT_STEP` | retired | sfc | A closed sequence must contain an init step. |
 | `SL-V056` | `SEQUENCE_AMBIGUOUS_FORK_TARGET` | active | sfc | A SEQFORK target may not be declared more than once in a module. |
 | `SL-V057` | `DATECODE_CONFLICT` | active | project | The same module type or datatype may not be declared with different datecodes in a visible closure. |
-| `SL-V058` | `UNKNOWN_MODULETYPE_NAME` | active | project | A module-type instance must name a declared type or one visible from a loaded dependency. |
+| `SL-V058` | `UNKNOWN_MODULETYPE_NAME` | active | mappings | A module-type instance must name a declared type or one visible from a loaded dependency. |
 <!-- RULE-TABLE:END -->
 
 ### Retired and unimplemented codes
@@ -309,6 +334,7 @@ nothing emits them:
 
 - duplicate datatype, module-type, variable, and record-field names;
 - shadowing a builtin datatype;
+- a datatype declaration with no fields;
 - init value of a different datatype;
 - bare duration or time init;
 - malformed duration or time literal;
@@ -318,18 +344,20 @@ Do not reintroduce one of these without new, reproducible evidence.
 
 A rule marked `unimplemented` is a reserved code with no check at all. It is not
 a statement about the language; it is a gap in the validator. The registry
-records the gap so it cannot be mistaken for an enforced rule. In particular,
-`DIVISION_BY_ZERO` is reserved but not enforced, so a literal zero divisor is
-not reported today.
+records the gap so it cannot be mistaken for an enforced rule. Three codes are
+reserved and not enforced today: `DIVISION_BY_ZERO`, so a literal zero divisor is
+not reported; `SEQUENCE_TRANSITION_AFTER_TRANSITION`; and
+`PARALLEL_BRANCH_INCOMPLETE`.
 
 ## Relation to the project loader
 
-The loader adds findings the single-file validator cannot know:
+The loader adds findings the single-file validator cannot know, and marks the
+ones that depend on an incomplete closure as tentative:
 
 | Finding | Why it needs the project |
 | --- | --- |
 | `DATECODE_CONFLICT` | The same module type or datatype is declared with different datecodes in the visible closure |
-| `UNKNOWN_MODULETYPE_NAME` | The module type may be declared in another loaded file |
+| `UNKNOWN_MODULETYPE_NAME` | The validator emits it; the loader marks it tentative when the module type may live in a dependency that failed to load |
 | `PARAM_TRANSFER_TYPE_MISMATCH` | The formal parameter is in another file |
 | `PARAMETER_MAPPING_TARGET_UNKNOWN` | The formal parameter is in another file |
 | `PARAMETER_MAPPING_TYPE_MISMATCH` | The formal parameter is in another file |

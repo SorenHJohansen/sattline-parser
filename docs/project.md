@@ -44,9 +44,15 @@ by the body suffix. See `body_mode`, `deps_extensions_for_code`,
 `project/formats.py`.
 
 There is no "guess the extension" step. A companion has exactly one candidate
-extension, and a sidecar has one or two (a draft body falls back to the official
-sidecar). A companion whose stem differs only in case from its body still pairs,
-so a tree copied from a case-insensitive filesystem keeps working.
+extension and a sidecar has exactly one too, both chosen by the body suffix. A
+companion whose stem differs only in case from its body still pairs, so a tree
+copied from a case-insensitive filesystem keeps working. Only a regular file
+pairs: a directory named like a companion is not one.
+
+`ProgramFormat.mode` is the artifact family of the **resolved body**, not the
+mode the caller requested. A draft load that fell back to an `.x` body reports
+`OFFICIAL`, because the body's suffix is what decides which sidecars and
+companions can pair with it.
 
 ## Discovery
 
@@ -75,7 +81,15 @@ stem.casefold() -> {extension -> Path}
 Only code and dependency extensions are indexed. Graphics and distribution
 companions are resolved from their code path and never appear in the index. A
 miss in the index falls back to a `stat` check for each candidate extension, and
-a hit updates the index.
+a hit updates the index. An index hit is re-statted before it is returned, so a
+body deleted after the index was built reports a miss instead of a later
+"failed to parse".
+
+A dependency name is a bare unit name, never a path. A name that carries `/`,
+`\`, or `..` is refused, and the `stat` fallback additionally requires the
+candidate to resolve inside the lookup base. A `.l` line of
+`../outside/Secret`, or an absolute path, therefore resolves to nothing and is
+reported as a missing dependency instead of loading a body outside every root.
 
 `ProjectLookup.find` resolves only a code body or a dependency sidecar. It
 raises `ValueError` for `ArtifactKind.GRAPHICS` and
@@ -105,11 +119,12 @@ sequenceDiagram
     Note over L: phase 1: discover, sequential, I/O only
     L->>V: visit(target, requester_dir=None, declared_by=None)
     V->>V: already loading? raise DependencyCycleError
-    V->>V: already planned? return
-    V->>V: push key on _loading
-    V->>V: resolve artifact
+    V->>V: push the folded name on _loading
     V->>F: find_code_with_base(name, requester_dir)
     F-->>V: code_path, resolved_base
+    V->>V: plan key = resolved code path
+    V->>V: plan key already planned? reuse it
+    V->>V: same folded name, other body? report NAME_RESOLUTION_CONFLICT
     V->>F: find_deps_beside(code_path, name)
     F-->>V: deps_path or None
     V->>V: read dependency names
@@ -140,6 +155,17 @@ is what makes the parse phase parallel: the whole closure is known before any
 parse starts, so a worker needs nothing but a path, and the assembled registry
 does not depend on which worker finished first.
 
+A plan is identified by its **resolved code path**, not by its folded name. Two
+roots that each hold a `Util.s` are two plans with two bodies, and each
+requester's closure follows the body its own ordered lookup resolved. Within one
+resolved body a name is still parsed once, so the single-root case is unchanged.
+
+The project registry keeps one program per folded name. When one name resolves to
+different bodies for different requesters, both bodies load and are validated,
+the first resolution is the one `programs()` exposes, and the load reports a
+`NAME_RESOLUTION_CONFLICT` diagnostic naming both bodies. The conflict is
+reported once per conflicting body, whatever the target order.
+
 Post-order is an invariant: the registry is built dependencies-first, so a
 program's diagnostics are computed against a complete prefix of its closure.
 `_assert_registry_post_order` checks this and raises `RuntimeError` if a
@@ -158,8 +184,8 @@ observable orders:
   finding (a missing or empty sidecar, a sidecar elsewhere, a sidecar from the
   other artifact family, a body skipped during discovery) before every assembly
   finding (a body that failed to parse, a graphics or distribution companion
-  that failed to read). Within each group the order is plan order, which is
-  post-order.
+  that failed to read, a name that resolved to two bodies). Within each group
+  the order is plan order, which is post-order.
 
 `validate=INVOKED` runs **after** the graph is complete, because it needs the
 whole invocation graph. The loader first builds the registry, then walks
@@ -235,8 +261,8 @@ flowchart TB
     M --> DV["validate only invoked module types<br/>in each dependency file"]
     TV --> D["diagnostics"]
     DV --> D
-    D --> TENT{"closure incomplete?"}
-    TENT -->|yes| TM["mark external-dependent findings tentative"]
+    D --> TENT{"does this finding depend on<br/>an unloaded dependency?"}
+    TENT -->|yes| TM["tentative"]
     TENT -->|no| FIN["final"]
 ```
 
@@ -245,18 +271,24 @@ flowchart TB
 their submodules. Only reached module types are validated. The target itself is
 always validated in full.
 
-The loader marks these findings tentative when a non-strict load skipped part
-of the closure:
+Tentativeness is decided **per finding**, not per code. A finding is tentative
+when the definition it could not resolve, or the module type it resolved
+through, may have come from a dependency that a non-strict load skipped:
 
-- `UNKNOWN_DATATYPE_NAME`
-- `UNKNOWN_MODULETYPE_NAME`
-- `PARAM_TRANSFER_TYPE_MISMATCH`
-- `PARAMETER_MAPPING_TYPE_MISMATCH`
-- `PARAMETER_MAPPING_TARGET_UNKNOWN`
-- `DATECODE_CONFLICT`
+| Finding | Tentative when |
+| --- | --- |
+| `UNKNOWN_DATATYPE_NAME` | the program's closure is incomplete: the name may live in the skipped dependency |
+| `UNKNOWN_MODULETYPE_NAME` | the program's closure is incomplete |
+| `PARAM_TRANSFER_TYPE_MISMATCH` | the module type, or one of its parameter datatypes, is declared by an incomplete dependency or is unresolved |
+| `PARAMETER_MAPPING_TARGET_UNKNOWN` | the module type, or one of its parameter datatypes, is declared by an incomplete dependency or is unresolved |
+| `PARAMETER_MAPPING_TYPE_MISMATCH` | the module type, or one of its parameter datatypes, is declared by an incomplete dependency or is unresolved |
 
-Purely local findings stay final. A skipped program is never silent: it is
-recorded as a `LOAD_SKIPPED` diagnostic.
+Every other finding stays final. A purely local mismatch, for example a
+parameter transfer between a module type declared in the file and a variable
+declared in the same file, is final even when an unrelated dependency is
+missing. `DATECODE_CONFLICT` is final too: it compares declarations that did
+load. A skipped program is never silent: it is recorded as a `LOAD_SKIPPED`
+diagnostic, once per missing name, with every requester listed in the detail.
 
 ## Strict versus lenient
 
@@ -278,7 +310,9 @@ closure. A program compares its own declaration against the visible versions,
 so a closure holding versions 1 and 2 reports the conflict on a program that
 declares either one, naming only the version that differs. Datecode findings
 belong to an explicitly selected program, not to a library import: a library is
-not the place to report its own version drift.
+not the place to report its own version drift. Ownership comes from the target
+set, not from discovery order, so a target that was first reached as a
+dependency still reports its own conflict in either target order.
 
 ## Models
 
@@ -342,7 +376,10 @@ classDiagram
 `SattLineProject` keys programs by `str.casefold()` identity internally while
 preserving the caller's original spelling on `SattLineProgram.name`. `get`,
 `__contains__`, `dependencies_of`, and `dependents_of` are case-insensitive.
-Graph nodes and edge endpoints are canonical casefolded identities.
+`dependencies_of` returns the declared spelling in declaration order, and
+`dependents_of` returns each dependent's declared spelling in load order, so a
+name either method returns can be passed back to `get`. Graph nodes and edge
+endpoints are canonical casefolded identities.
 
 `graph()` returns every declared edge, including edges to dependencies that
 were not loaded. That is deliberate: the graph is the declared structure, not
@@ -374,6 +411,11 @@ resolved through the same case-insensitive index a cold scan uses, so a
 dependency spelling whose case differs from the file name resolves identically
 warm and cold. A warm lookup and a cold lookup always agree.
 
+Startup pruning drops an entry whose recorded base directory no longer exists,
+removes abandoned `*.tmp` siblings older than an hour, and caps the entry count
+(`MAX_LOOKUP_CACHE_ENTRIES`); the surplus is dropped in key order. Writes stay
+atomic: a temporary sibling, `fsync`, then `os.replace`.
+
 ### AST cache
 
 `FileASTCache` stores each parsed `BasePicture` in an HMAC-signed pickle
@@ -383,8 +425,14 @@ envelope. The key includes:
 - the load mode;
 - the package version;
 - the resolved grammar fingerprint;
-- a fingerprint of the `models/` and `transformer/` sources;
+- a fingerprint of the sources that shape an AST: `models/`, `transformer/`,
+  `source_io.py`, `source_document.py`, and `names.py`;
 - a `mtime_ns` and `size` stat snapshot.
+
+Decoding, span remapping, and identifier folding all change the parsed AST, so
+they are part of the fingerprint: a fix there invalidates a cached body through
+the key rather than through a version bump. `FILE_AST_CACHE_VERSION` tracks the
+envelope shape only.
 
 The snapshot is taken **before** the source is parsed, and the entry records
 that snapshot, so an entry can never claim a source revision it was not parsed
@@ -400,6 +448,16 @@ and its `file_ast` subdirectory are checked; an entry that is a symlink, or a
 directory owned by someone else, disables the caches instead of being followed
 or tightened in place. Never point `cache_dir` at a shared location.
 
+Only a writer creates the HMAC key. A read with no key is a miss, so a reader
+never writes into the cache directory and the single-writer invariant holds.
+
+Pruning drops an entry whose envelope, identity, grammar, or code fingerprint no
+longer matches, an entry whose recorded source path no longer exists (a rename,
+a branch switch, a deleted temporary checkout), and the oldest entries past
+`MAX_AST_CACHE_ENTRIES`. The count cap runs on every startup because it only
+stats files; the full fingerprint and path check runs when the cache identity
+changes. Abandoned `*.tmp` siblings older than an hour are removed too.
+
 A cache write failure is swallowed and logged; it must not turn a successful
 parse into a load failure.
 
@@ -412,10 +470,15 @@ code file's directory. It never does a root-ordered lookup:
 - `.s` resolves only to `.g`;
 - a `.g` or `.y` input resolves to itself.
 
-The stem is compared ignoring case, so `Pump.S` pairs with `pump.g`.
+The stem is compared ignoring case, so `Pump.S` pairs with `pump.g`. Only a
+regular file pairs: a directory named `Pump.g` is not a companion.
 
 The loader parses the companion into `program.graphics`. Structural problems
-become `GraphicsMessage` values, never exceptions. See [graphics.md](graphics.md).
+become `GraphicsMessage` values, never exceptions. A companion larger than
+`MAX_GRAPHICS_COMPANION_BYTES` (4 MiB) is a file-level refusal instead: it
+raises `GraphicsParseError`, which the loader maps onto `ArtifactLoadError` or
+`DependencyParseError`, because a partially scanned model would misreport what
+the file says. See [graphics.md](graphics.md).
 
 ## Distribution companion
 
@@ -487,7 +550,9 @@ A companion that exists but does not match the structure raises
 `DistributionParseError`, which the loader turns into `ArtifactLoadError` (for a
 target) or `DependencyParseError` (for a dependency). It is never reported as an
 empty list, because "none" and "could not tell" are different answers. A missing
-companion is not a diagnostic: distribution data is optional.
+companion is not a diagnostic: distribution data is optional. A companion larger
+than `MAX_DISTRIBUTION_COMPANION_BYTES` (1 MiB) is a parse error too, refused
+before it is read, because a companion is a small configuration blob.
 
 This is deliberately stricter than the graphics companion, where structural
 problems become `GraphicsMessage` values on a companion that still loads. A
@@ -506,7 +571,7 @@ re-parsing the body.
 
 ## Loading performance
 
-- Dependencies are parsed once, by casefolded identity.
+- Each resolved body is parsed once, by resolved code path.
 - The parser is shared across files.
 - The lookup cache skips repeated ordered scans for a stable layout.
 - The AST cache skips re-parsing an unchanged file.

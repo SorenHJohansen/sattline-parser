@@ -1,20 +1,27 @@
-# pyright: reportUnknownVariableType=false, reportUnknownMemberType=false, reportUnknownParameterType=false, reportMissingParameterType=false, reportUnknownArgumentType=false, reportUnknownLambdaType=false, reportArgumentType=false, reportPrivateUsage=false, reportUnusedImport=false, reportCallIssue=false
-# ruff: noqa: F403, F405
+# pyright: reportArgumentType=false, reportPrivateUsage=false, reportUnknownArgumentType=false, reportUnknownMemberType=false, reportUnknownVariableType=false
 """Deep-structure limits: clean nesting errors, iterative parse-tree handling, and the iterative walker."""
 
 from __future__ import annotations
 
 import pickle
 from dataclasses import dataclass
+from typing import cast
 
-from lark.exceptions import VisitError
+import pytest
+from lark import Token, Tree
+from lark.exceptions import UnexpectedInput, VisitError
+from lark.tree import Meta
 
+from fuzzing import fuzz_harness as parser_fuzz_harness
 from sattline_parser import MAX_SOURCE_DEPTH, SourceTooDeepError
-from sattline_parser.models.expressions import SLExpression
+from sattline_parser import parse_source_text as parser_core_parse_source_text
+from sattline_parser import source_io as parser_api
+from sattline_parser.api import create_parser
+from sattline_parser.formatting.formatter import format_expr
+from sattline_parser.models.ast_model import CodeComment
+from sattline_parser.models.expressions import BinOp, SLExpression, VarRef
 from sattline_parser.models.walk import WalkEvent, walk
-from sattline_parser.source_document import remap_tree_to_original
-
-from ._parser_core_test_support import *
+from sattline_parser.source_document import SourceDocument, remap_tree_to_original
 
 
 def _program(expression: str) -> str:

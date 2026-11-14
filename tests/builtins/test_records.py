@@ -12,8 +12,8 @@ from sattline_parser.models.ast_model import Simple_DataType
 
 
 def test_record_specs_and_declared_names_are_complete() -> None:
-    assert len(BUILTIN_RECORD_SPECS) == 108
-    assert len(BUILTIN_DECLARED_DATATYPE_NAMES) == 118
+    assert len(BUILTIN_RECORD_SPECS) == 111
+    assert len(BUILTIN_DECLARED_DATATYPE_NAMES) == 121
     assert len(set(BUILTIN_DECLARED_DATATYPE_NAMES)) == len(BUILTIN_DECLARED_DATATYPE_NAMES)
 
 
@@ -23,11 +23,22 @@ def test_declared_names_start_with_the_scalar_datatypes() -> None:
     assert set(scalars) <= set(BUILTIN_DECLARED_DATATYPE_NAMES)
 
 
-def test_only_the_native_object_handles_carry_an_empty_spec() -> None:
+def test_only_the_native_handles_and_untranscribed_records_carry_an_empty_spec() -> None:
     empty = {name for name, spec in BUILTIN_RECORD_SPECS.items() if not spec}
-    assert empty == {"tObject", "ArrayObject", "QueueObject"}
-    assert empty == set(OPAQUE_BUILTIN_RECORD_NAMES) | set(FIELDLESS_BUILTIN_RECORD_NAMES)
+    # The native handles have no fields at all; the three system records are
+    # declared but their field tables are not part of the transcribed reference
+    # set, so their shape stays unknown.
+    assert empty == {"tObject", "ArrayObject", "QueueObject", "ByteRecord", "ComliMessage", "PidType"}
+    assert set(OPAQUE_BUILTIN_RECORD_NAMES) | set(FIELDLESS_BUILTIN_RECORD_NAMES) <= empty
     assert "ArrayObject" in FIELDLESS_BUILTIN_RECORD_NAMES
+
+
+def test_signature_only_records_are_declared_datatypes() -> None:
+    """The types builtin signatures name must resolve as declared datatypes."""
+    for name in ("ByteRecord", "ComliMessage", "PidType"):
+        assert name in BUILTIN_RECORD_SPECS
+        assert name in BUILTIN_DECLARED_DATATYPE_NAMES
+        assert name not in OPAQUE_BUILTIN_RECORD_NAMES
 
 
 def test_record_types_with_a_declared_shape_are_not_treated_as_opaque() -> None:

@@ -1,4 +1,4 @@
-# pyright: reportUnknownVariableType=false, reportUnknownMemberType=false, reportUnknownParameterType=false, reportMissingParameterType=false, reportUnknownArgumentType=false, reportUnknownLambdaType=false, reportArgumentType=false, reportPrivateUsage=false, reportUnusedImport=false, reportCallIssue=false
+# pyright: reportMissingParameterType=false, reportUnknownArgumentType=false, reportUnknownMemberType=false, reportUnknownParameterType=false, reportUnknownVariableType=false
 """``sattline graphics``: companion bindings and scan messages."""
 
 from __future__ import annotations
@@ -77,3 +77,13 @@ def test_stdin_is_accepted_as_a_companion() -> None:
         assert main(["graphics", "-", "--stdin-name", "Companion.y"]) == ExitCode.OK
     finally:
         sys.stdin = original
+
+
+def test_paths_absolute_applies_to_the_document_file(tmp_path, capsys, monkeypatch) -> None:
+    write_source(tmp_path, "M.y", _COMPANION)
+    monkeypatch.chdir(tmp_path)
+
+    assert main(["graphics", "M.y", "--json", "--paths", "absolute"]) == ExitCode.OK
+
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["file"] == str((tmp_path / "M.y").resolve())

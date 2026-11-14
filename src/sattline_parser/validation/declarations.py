@@ -13,6 +13,7 @@ declaration while the same source loads and parses from disk; see
 from __future__ import annotations
 
 import re
+from collections.abc import Sequence
 
 from sattline_parser.builtins.records import BUILTIN_RECORD_SPECS
 from sattline_parser.grammar import constants as const
@@ -152,11 +153,12 @@ def _check_submodule_identifiers(submodule: Submodule, errors: list[Diagnostic])
     if isinstance(submodule, ModuleTypeInstance):
         check_identifier(submodule.moduletype_name, "Module type reference", submodule.header.declaration_span, errors)
         return
-    if isinstance(submodule, SingleModule):
-        _check_variable_names(submodule.moduleparameters, errors)
-        _check_variable_names(submodule.localvariables, errors)
-        for modulecode in submodule.modulecodes:
-            _check_modulecode_identifiers(modulecode, errors)
+    # A frame module declares parameters, locals, and module code like a single
+    # module, so its identifiers are checked the same way.
+    _check_variable_names(submodule.moduleparameters, errors)
+    _check_variable_names(submodule.localvariables, errors)
+    for modulecode in submodule.modulecodes:
+        _check_modulecode_identifiers(modulecode, errors)
     for nested in submodule.submodules:
         _check_submodule_identifiers(nested, errors)
 
@@ -227,16 +229,18 @@ def check_record_fields(
     records: dict[str, DataType],
     errors: list[Diagnostic],
     *,
-    owned_records: dict[str, DataType],
+    owned_records: Sequence[DataType],
     allow_unresolved_external_datatypes: bool = False,
 ) -> None:
-    """Validate the fields of records this file owns.
+    """Validate the fields of every record this file owns.
 
     ``records`` carries every visible record so field datatypes resolve across
     dependencies. ``owned_records`` limits which definitions are validated, so a
-    consumer does not repeat findings that belong to a library file.
+    consumer does not repeat findings that belong to a library file. It is a
+    sequence, not a folded map, because a file may declare the same datatype name
+    twice and each definition is validated on its own.
     """
-    for record in owned_records.values():
+    for record in owned_records:
         check_variable_declarations(
             record.var_list,
             records,

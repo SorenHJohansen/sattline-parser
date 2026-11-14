@@ -1,4 +1,4 @@
-# pyright: reportUnknownVariableType=false, reportUnknownMemberType=false, reportUnknownParameterType=false, reportMissingParameterType=false, reportUnknownArgumentType=false, reportUnknownLambdaType=false, reportArgumentType=false, reportPrivateUsage=false, reportUnusedImport=false, reportCallIssue=false
+# pyright: reportMissingParameterType=false, reportUnknownArgumentType=false, reportUnknownMemberType=false, reportUnknownParameterType=false, reportUnknownVariableType=false
 """``sattline decode``, ``diff`` and ``corpus``."""
 
 from __future__ import annotations
@@ -41,10 +41,24 @@ def test_decode_reports_and_embeds_json(tmp_path, capsys) -> None:
 
 
 def test_decode_refuses_undecodable_input(tmp_path, capsys) -> None:
-    source = write_source(tmp_path, "Broken.x", '"Syntax version 2.23, date: 2026-10-28-00:00:00.000 C"\n#ZZ\n')
+    source = write_source(tmp_path, "Broken.x", '"Syntax version 2.23, date: 2026-10-28-00:00:00.000 C"\n#00\n')
 
     assert main(["decode", str(source)]) == ExitCode.USAGE
     assert "Unknown compressed marker" in capsys.readouterr().err
+
+
+def test_paths_absolute_applies_to_decode_and_diff(tmp_path, capsys, monkeypatch) -> None:
+    write_source(tmp_path, "M.s", VALID_SOURCE)
+    monkeypatch.chdir(tmp_path)
+    resolved = str((tmp_path / "M.s").resolve())
+
+    assert main(["decode", "M.s", "--report", "--paths", "absolute"]) == ExitCode.OK
+    assert json.loads(capsys.readouterr().out)["file"] == resolved
+
+    assert main(["diff", "M.s", "M.s", "--json", "--paths", "absolute"]) == ExitCode.OK
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["old"]["file"] == resolved
+    assert payload["new"]["file"] == resolved
 
 
 def test_decode_report_and_json_are_mutually_exclusive(tmp_path, capsys) -> None:

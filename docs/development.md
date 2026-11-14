@@ -39,7 +39,8 @@ pip install -e ".[dev,fuzz]"
 | `.opencode/agents/` | Repo-local subagents, including the read-only reviewer |
 | `AGENTS.md` | AI control-plane entry point |
 | `README.md` | Public entry point |
-| `CHANGELOG.md` | Release history |
+| `CHANGELOG.md` | Release history, assembled from the fragments |
+| `changelog.d/` | One fragment per user-visible change, named `<slug>.<type>.md` |
 
 ## Workflow
 
@@ -52,7 +53,7 @@ flowchart LR
     D -->|yes| E["widen: ruff, pyright, pre-commit"]
     E --> F["full pytest"]
     F --> G["branch coverage script"]
-    G --> H["update docs and changelog"]
+    G --> H["update docs and add a changelog fragment"]
     H --> I["feature branch, pull request"]
 ```
 
@@ -104,7 +105,8 @@ documentation usable as context:
   modules, flags, exit codes, rules, fields.
 - Mermaid diagrams describe the graph that actually exists. If an import edge
   changes, update the diagram in the same change.
-- Public behaviour changes update the matching document and `CHANGELOG.md`.
+- Public behaviour changes update the matching document and add a changelog
+  fragment.
 - Do not duplicate a fact in three places. Link to the owner.
 
 ## AI workspace tooling
@@ -147,17 +149,23 @@ other agents.
 - The public surface is the set of documented `__all__` lists, the `sattline`
   command, and its JSON schemas. [api.md](api.md) owns the exact list.
 - Submodule paths not listed in [api.md](api.md) are internal and may change.
-- A patch release preserves existing names and behaviour.
-- A breaking change is called out in the changelog and removed in that release.
-  There is no deprecation window and no compatibility shim.
+- A breaking change is marked in the changelog and lands in the release that
+  makes it. There is no deprecation window and no compatibility shim.
+- A superseded field, alias, or name is removed in the release that replaces it,
+  so read the changelog before upgrading across a breaking entry.
 - Adding a dataclass field is not breaking. Removing or renaming one is.
 
 ## Changelog
 
-`CHANGELOG.md` follows Keep a Changelog. Add a bullet under `Unreleased` for
-every user-visible change. A documentation change is user-visible when it
-changes the public contract; a pure clarification can be one bullet under
-`Changed` or `Documentation`.
+`CHANGELOG.md` follows Keep a Changelog and is assembled by
+`scripts/build_changelog.py`; never edit its `[Unreleased]` section by hand.
+Every pull request that changes user-visible behaviour adds one fragment file
+named `changelog.d/<slug>.<type>.md`, where `type` is `added`, `changed`,
+`removed`, `fixed`, or `security` and the content is the bullet text only.
+
+A documentation change needs a fragment when it changes the public contract; a
+pure clarification does not. `changelog.d/README.md` owns the naming rules and
+the build commands, and CI runs `python scripts/build_changelog.py --check`.
 
 ## Dependency policy
 
@@ -181,14 +189,15 @@ standard library, then an existing dependency, then a new one.
 - [ ] `python scripts/check_branch_coverage.py` passes.
 - [ ] `ruff check src tests scripts benchmarks fuzzing` passes.
 - [ ] `ruff format --check src tests scripts benchmarks fuzzing` passes.
-- [ ] `pyright src tests benchmarks fuzzing` passes.
+- [ ] `pyright src tests benchmarks fuzzing scripts` passes.
 - [ ] `bandit -q -r src fuzzing -x tests -c pyproject.toml` passes.
 - [ ] `python scripts/check_docs.py` passes when Markdown changed.
 - [ ] New syntax or rules have fixtures.
 - [ ] New rules have golden expectations.
 - [ ] New builtins update the catalogue source, not the generated file.
 - [ ] `docs/` is updated.
-- [ ] `CHANGELOG.md` has an entry.
+- [ ] `changelog.d/` has a fragment for every user-visible change.
+- [ ] `python scripts/build_changelog.py --check` passes.
 - [ ] No consumer imports were added.
 - [ ] No dash punctuation was added.
 - [ ] No third-party identifiers were added.

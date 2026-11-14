@@ -8,7 +8,7 @@ on:
     inputs:
       version:
         description: "Expected package version (e.g. 2026.8.1); checked against the package metadata"
-        required: false
+        required: true
         type: string
 
 permissions:
@@ -20,7 +20,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v6
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Set up Python 3.14
         uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
@@ -44,7 +44,13 @@ jobs:
           else
             expected="${{ inputs.version }}"
           fi
-          if [[ -n "${expected}" && "${expected}" != "${package_version}" ]]; then
+          # workflow_dispatch requires inputs.version, and a tag push always
+          # supplies one, so an empty value is a configuration bug, not a pass.
+          if [[ -z "${expected}" ]]; then
+            echo "No expected version: pass inputs.version or push a v* tag."
+            exit 1
+          fi
+          if [[ "${expected}" != "${package_version}" ]]; then
             echo "Version mismatch: tag/dispatch version '${expected}' != package version '${package_version}'"
             exit 1
           fi
@@ -57,7 +63,7 @@ jobs:
         run: uv run ruff format --check src tests scripts benchmarks fuzzing
 
       - name: Pyright strict
-        run: uv run pyright src tests benchmarks fuzzing
+        run: uv run pyright src tests benchmarks fuzzing scripts
 
       - name: Full suite with line + branch coverage gates
         run: uv run python scripts/check_branch_coverage.py
@@ -83,7 +89,7 @@ jobs:
           /tmp/sdist-venv/bin/python scripts/smoke_installed.py
 
       - name: Upload distributions
-        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           if-no-files-found: error
           name: pypi-dist-${{ github.run_id }}
@@ -102,13 +108,12 @@ jobs:
       id-token: write
     steps:
       - name: Download distributions
-        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
         with:
           name: pypi-dist-${{ github.run_id }}
           path: dist
 
       - name: Publish to PyPI
-        uses: pypa/gh-action-pypi-publish@7245906fb61fa33a13554f9d5fb856fe61758086
+        uses: pypa/gh-action-pypi-publish@7245906fb61fa33a13554f9d5fb856fe61758086 # v1.14.3
         with:
           packages-dir: dist
-          skip-existing: true

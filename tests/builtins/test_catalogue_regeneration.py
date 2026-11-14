@@ -4,8 +4,12 @@ from __future__ import annotations
 
 import importlib.util
 import json
+from copy import deepcopy
 from pathlib import Path
 from types import ModuleType
+from typing import Any
+
+import pytest
 
 from sattline_parser.builtins import BUILTIN_FUNCTIONS
 
@@ -23,10 +27,14 @@ def _load_generator() -> ModuleType:
     return module
 
 
+def _source() -> dict[str, Any]:
+    document: dict[str, Any] = json.loads(_SOURCE_PATH.read_text(encoding="utf-8"))
+    return document
+
+
 def test_committed_catalogue_matches_the_generator() -> None:
     generator = _load_generator()
-    source = json.loads(_SOURCE_PATH.read_text(encoding="utf-8"))
-    rendered = generator._render(generator.build(source))
+    rendered = generator._render(generator.build(_source()))
     assert rendered == _CATALOGUE_PATH.read_text(encoding="utf-8")
 
 
@@ -36,5 +44,27 @@ def test_check_mode_passes_on_the_committed_catalogue() -> None:
 
 
 def test_source_and_catalogue_carry_the_same_names() -> None:
-    source = json.loads(_SOURCE_PATH.read_text(encoding="utf-8"))
-    assert set(source["functions"]) == set(BUILTIN_FUNCTIONS)
+    assert set(_source()["functions"]) == set(BUILTIN_FUNCTIONS)
+
+
+def test_generator_rejects_an_unknown_parameter_datatype() -> None:
+    """A parameter datatype must be a scalar, a declared record, or AnyType."""
+    generator = _load_generator()
+    source = deepcopy(_source())
+    source["functions"]["pid"]["parameters"][0]["datatype"] = "PidTypo"
+
+    with pytest.raises(SystemExit) as exc_info:
+        generator.build(source)
+
+    assert "PidTypo" in str(exc_info.value)
+
+
+def test_generator_rejects_an_unknown_return_datatype() -> None:
+    generator = _load_generator()
+    source = deepcopy(_source())
+    source["functions"]["abs"]["return_type"] = "NoSuchType"
+
+    with pytest.raises(SystemExit) as exc_info:
+        generator.build(source)
+
+    assert "NoSuchType" in str(exc_info.value)

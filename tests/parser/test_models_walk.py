@@ -1,4 +1,4 @@
-# pyright: reportUnknownVariableType=false, reportUnknownMemberType=false, reportUnknownParameterType=false, reportMissingParameterType=false, reportUnknownArgumentType=false, reportUnknownLambdaType=false, reportArgumentType=false, reportPrivateUsage=false, reportUnusedImport=false, reportCallIssue=false
+# pyright: reportArgumentType=false, reportPrivateUsage=false
 """Tests for the public AST walker in ``sattline_parser.models``."""
 
 from __future__ import annotations
@@ -6,6 +6,7 @@ from __future__ import annotations
 import dataclasses
 from pathlib import Path
 
+import sattline_parser.models as models_package
 from sattline_parser import NodeVisitor, parse_source_file, walk
 from sattline_parser.models import ast_model, clauses, expressions, iter_child_nodes, tails
 from sattline_parser.models import ast_model as m
@@ -35,6 +36,7 @@ from sattline_parser.models.walk import (
     _GRAPH_PROPERTY_ORDER,
     _INTERACT_PROPERTY_ORDER,
     _NODE_TYPES,
+    LiteralLeaf,
     _unowned_tail_entries,
     iter_literal_leaves,
 )
@@ -391,22 +393,55 @@ def test_pruned_node_still_gets_a_leave_event() -> None:
     assert not any(isinstance(event.node, m.SFCStep) for event in events)
 
 
-def test_iter_literal_leaves_reads_value_fields() -> None:
+def test_iter_literal_leaves_reads_value_fields_and_leaf_scalars() -> None:
     clause = TailedClause("Width_", 2.5, VarTail("in", "Name"))
     comparison = Compare(VarRef("A"), "<", 3)
     variable = m.Variable(name="V", datatype="integer", init_value=7)
 
-    assert [(leaf.field, leaf.indices, leaf.value) for leaf in iter_literal_leaves(clause)] == [("value", (), 2.5)]
-    assert [(leaf.field, leaf.value) for leaf in iter_literal_leaves(comparison)] == [("right", 3)]
-    assert [(leaf.field, leaf.value) for leaf in iter_literal_leaves(variable)] == [("init_value", 7)]
-    assert [(leaf.relation, leaf.value) for leaf in iter_literal_leaves(VarTail("in", "Name"))] == [("value", "Name")]
+    assert [(leaf.field, leaf.indices, leaf.value) for leaf in iter_literal_leaves(clause)] == [
+        ("key", (), "Width_"),
+        ("value", (), 2.5),
+    ]
+    assert [(leaf.field, leaf.value) for leaf in iter_literal_leaves(comparison)] == [("op", "<"), ("right", 3)]
+
+    variable_leaves = {(leaf.field, leaf.value) for leaf in iter_literal_leaves(variable)}
+    assert ("name", "V") in variable_leaves
+    assert ("global_var", False) in variable_leaves
+    assert ("init_value", 7) in variable_leaves
+    # A builtin datatype is an enum member, not a literal string.
+    assert all(field != "datatype" for field, _value in variable_leaves)
+
+    assert [(leaf.relation, leaf.value) for leaf in iter_literal_leaves(VarTail("in", "Name"))] == [
+        ("direction", "in"),
+        ("value", "Name"),
+    ]
     assert list(iter_literal_leaves([clause])) == list(iter_literal_leaves(clause))
-    assert list(iter_literal_leaves(VarTail("out", LitStringTail("LitString", "Sym")))) == []
+    assert [
+        (leaf.relation, leaf.value) for leaf in iter_literal_leaves(VarTail("out", LitStringTail("LitString", "Sym")))
+    ] == [("direction", "out")]
     assert list(iter_literal_leaves(m.SourceSpan(0, 1, 1, 1))) == []
     call = FuncCall("Max", (VarRef("A"), 2, 3))
     assert [(leaf.field, leaf.indices, leaf.value) for leaf in iter_literal_leaves(call)] == [
+        ("name", (), "Max"),
         ("args", (1,), 2),
         ("args", (2,), 3),
+    ]
+
+
+def test_iter_literal_leaves_reads_leaf_fields_and_property_scalars() -> None:
+    module_def = m.ModuleDef(grid=0.04, zoomable=True)
+    graph_object = m.GraphObject(
+        "RectangleObject",
+        properties={"layer": 1, "coords": ((0.0, 0.0), (1.0, 1.0)), "polygon_type": ["Polyline"]},
+    )
+
+    assert [(leaf.relation, leaf.value) for leaf in iter_literal_leaves(module_def)] == [
+        ("grid", 0.04),
+        ("zoomable", True),
+    ]
+    assert [(leaf.relation, leaf.field, leaf.indices, leaf.value) for leaf in iter_literal_leaves(graph_object)] == [
+        ("type", "type", (), "RectangleObject"),
+        ("properties.layer", "layer", (), 1),
     ]
 
 
@@ -423,6 +458,13 @@ def test_iter_literal_leaves_reads_branch_conditions_and_values() -> None:
         ("branches", (0, 1), 1),
         ("else_expr", (), 2),
     ]
+
+
+def test_models_package_reexports_the_literal_leaf_helpers() -> None:
+    assert models_package.iter_literal_leaves is iter_literal_leaves
+    assert models_package.LiteralLeaf is LiteralLeaf
+    assert "iter_literal_leaves" in models_package.__all__
+    assert "LiteralLeaf" in models_package.__all__
 
 
 class _ScopeCollector(NodeVisitor):

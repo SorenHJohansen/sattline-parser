@@ -1,9 +1,14 @@
-# pyright: reportUnknownVariableType=false, reportUnknownParameterType=false, reportMissingParameterType=false, reportPrivateUsage=false, reportUnusedImport=false
-# ruff: noqa: F403, F405
+# pyright: reportPrivateUsage=false
 import queue
 import struct
+from pathlib import Path
+from typing import Any
 
-from ._parser_core_test_support import *
+import pytest
+
+from fuzzing import fuzz_harness as parser_fuzz_harness
+
+from ._parser_core_test_support import _repo_path
 
 
 def test_fuzz_harness_timeout_and_default_input_description(monkeypatch: pytest.MonkeyPatch):
@@ -15,7 +20,8 @@ def test_fuzz_harness_timeout_and_default_input_description(monkeypatch: pytest.
     assert result.success is False
     assert isinstance(result.error, parser_fuzz_harness.FuzzTimeoutError)
     assert "timed out" in str(result.error)
-    assert result.duration_ms >= 0.0
+    assert result.result is None
+    assert result.duration_ms >= 250.0
 
 
 def test_fuzz_worker_survives_and_reuses_single_process():
@@ -128,6 +134,16 @@ def test_fuzz_worker_restarts_when_process_is_gone_or_pipe_breaks():
 def test_as_float_fallback_for_non_numeric_values():
     assert parser_fuzz_harness._as_float(3.5) == 3.5
     assert parser_fuzz_harness._as_float("nope") == 0.0
+
+
+def test_as_summary_accepts_only_complete_payloads():
+    summary = parser_fuzz_harness._as_summary({"root_name": "BasePicture", "node_count": 7})
+    assert summary == parser_fuzz_harness.FuzzSummary(root_name="BasePicture", node_count=7)
+    assert parser_fuzz_harness._as_summary(None) is None
+    assert parser_fuzz_harness._as_summary({}) is None
+    assert parser_fuzz_harness._as_summary({"root_name": "BasePicture"}) is None
+    assert parser_fuzz_harness._as_summary({"root_name": 1, "node_count": 2}) is None
+    assert parser_fuzz_harness._as_summary({"root_name": "BasePicture", "node_count": "2"}) is None
 
 
 def test_reconstruct_error_non_exception_class_falls_back_to_runtime_error():

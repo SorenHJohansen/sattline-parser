@@ -49,7 +49,10 @@ _TOKEN_DATA: dict[str, str] = {
 #: caller may mutate the mapping that every later decode reads.
 SCANNER_TOKENS: Mapping[str, str] = MappingProxyType(_TOKEN_DATA)
 
-_MARKER_RE = re.compile(r"#[0-9A-Za-z;:=><?]{1,2}")
+#: A compact marker: ``#`` plus exactly two characters from the ASCII run
+#: ``0`` to ``?``. The scanner ordinal is encoded in that run, so a shorter or
+#: letter-bearing ``#`` sequence is ordinary text, not a marker.
+_MARKER_RE = re.compile(r"#[0-?]{2}")
 _WHITESPACE_RE = re.compile(r"\s+")
 
 
@@ -185,16 +188,15 @@ def _continues_name(text: str, index: int) -> bool:
     return index > 0 and _NAME_CHAR_RE.match(text[index - 1]) is not None
 
 
-def scan_opaque_regions(text: str) -> list[tuple[str, int, int]]:
-    """Return ``(kind, start, end)`` for every string ('S') and comment ('C').
+def _scan_opaque_regions(text: str) -> list[tuple[str, int, int, bool]]:
+    """Return ``(kind, start, end, closed)`` for every string and comment.
 
-    The scanner follows the grammar's lexical boundaries: nested ``(* ... *)``
-    comments, doubled ``""`` escapes, a string or a variable description that
-    ends at a line break (``STRING_CRLF`` accepts an unterminated description),
-    and a single-quoted identifier such as ``'#84'``, whose body is literal
-    text rather than a marker.
+    ``closed`` is ``False`` for a ``(* ... *)`` comment whose nesting depth is
+    still positive at the end of the text. Strings always report ``True``: an
+    unterminated description ends at the line break by grammar rule, so it has a
+    real boundary.
     """
-    regions: list[tuple[str, int, int]] = []
+    regions: list[tuple[str, int, int, bool]] = []
     index = 0
     length = len(text)
     while index < length:
@@ -210,7 +212,7 @@ def scan_opaque_regions(text: str) -> list[tuple[str, int, int]]:
                     cursor += 2
                 else:
                     cursor += 1
-            regions.append(("C", index, cursor))
+            regions.append(("C", index, cursor, depth == 0))
             index = cursor
         elif text[index] == '"':
             cursor = index + 1
@@ -226,7 +228,7 @@ def scan_opaque_regions(text: str) -> list[tuple[str, int, int]]:
                     # line break, and no string spans lines.
                     break
                 cursor += 1
-            regions.append(("S", index, cursor))
+            regions.append(("S", index, cursor, True))
             index = cursor
         elif text[index] == "'":
             if _continues_name(text, index):
@@ -238,11 +240,33 @@ def scan_opaque_regions(text: str) -> list[tuple[str, int, int]]:
             if closing == -1:
                 index += 1
                 continue
-            regions.append(("S", index, closing + 1))
+            regions.append(("S", index, closing + 1, True))
             index = closing + 1
         else:
             index += 1
     return regions
+
+
+def scan_opaque_regions(text: str) -> list[tuple[str, int, int]]:
+    """Return ``(kind, start, end)`` for every string ('S') and comment ('C').
+
+    The scanner follows the grammar's lexical boundaries: nested ``(* ... *)``
+    comments, doubled ``""`` escapes, a string or a variable description that
+    ends at a line break (``STRING_CRLF`` accepts an unterminated description),
+    and a single-quoted identifier such as ``'#84'``, whose body is literal
+    text rather than a marker.
+    """
+    return [(kind, start, end) for kind, start, end, _closed in _scan_opaque_regions(text)]
+
+
+def closed_comment_spans(text: str) -> list[tuple[int, int]]:
+    """Return the span of every ``(* ... *)`` comment that is properly closed.
+
+    A comment whose nesting depth is still positive at the end of the text is
+    left out: there is no reliable boundary for it, so a caller must not treat
+    its body as safe to rewrite.
+    """
+    return [(start, end) for kind, start, end, closed in _scan_opaque_regions(text) if kind == "C" and closed]
 
 
 class _OpaqueRegistry:
@@ -264,30 +288,27 @@ class _OpaqueRegistry:
 
     def protect(self, text: str) -> tuple[str, list[int]]:
         parts: list[str] = []
-        map_parts: list[list[int]] = []
+        char_map: list[int] = []
         last = 0
         for kind, index, start, end in self._regions:
             if start > last:
                 parts.append(text[last:start])
-                map_parts.append(list(range(last, start)))
+                char_map.extend(range(last, start))
             placeholder = f"\x00{kind}{index}\x00"
             parts.append(placeholder)
-            map_parts.append([GENERATED] * len(placeholder))
+            char_map.extend([GENERATED] * len(placeholder))
             last = end
         if last < len(text):
             parts.append(text[last:])
-            map_parts.append(list(range(last, len(text))))
+            char_map.extend(range(last, len(text)))
         decoded = "".join(parts)
-        char_map: list[int] = []
-        for part in map_parts:
-            char_map.extend(part)
         if len(char_map) != len(decoded):  # pragma: no cover - invariant by construction
             raise PreprocessError("internal error: opaque protection map mismatch")  # pragma: no cover
         return decoded, char_map
 
     def restore(self, decoded: str, char_map: list[int]) -> tuple[str, list[int]]:
         parts: list[str] = []
-        map_parts: list[list[int]] = []
+        restored_map: list[int] = []
         last = 0
         for match in _PLACEHOLDER_RE.finditer(decoded):
             placeholder = match.group(0)
@@ -300,17 +321,14 @@ class _OpaqueRegistry:
             start, end = match.start(), match.end()
             if start > last:
                 parts.append(decoded[last:start])
-                map_parts.append(char_map[last:start])
+                restored_map.extend(char_map[last:start])
             parts.append(orig_text)
-            map_parts.append([orig_start + i for i in range(len(orig_text))])
+            restored_map.extend(range(orig_start, orig_start + len(orig_text)))
             last = end
         if last < len(decoded):
             parts.append(decoded[last:])
-            map_parts.append(char_map[last:])
+            restored_map.extend(char_map[last:])
         restored = "".join(parts)
-        restored_map: list[int] = []
-        for part in map_parts:
-            restored_map.extend(part)
         if len(restored_map) != len(restored):  # pragma: no cover - invariant by construction
             raise PreprocessError("internal error: placeholder restore map mismatch")  # pragma: no cover
         return restored, restored_map
@@ -334,6 +352,12 @@ def _align_replacement(replacement: str, region: str, region_map: list[int]) -> 
     """
     if not replacement:
         return []
+    if not set(replacement) & set(region):
+        # No character survives from the matched region, so the LCS table would
+        # be empty and every replacement character is generated. This is the
+        # common case: a `#NN` code shares no character with the keyword it
+        # expands to.
+        return [GENERATED] * len(replacement)
     rows = len(replacement)
     cols = len(region)
     table = [[0] * (cols + 1) for _ in range(rows + 1)]
@@ -374,24 +398,21 @@ def _regex_sub(
     characters that genuinely survive from the source get a real mapping.
     """
     parts: list[str] = []
-    map_parts: list[list[int]] = []
+    new_map: list[int] = []
     last = 0
     for match in pattern.finditer(decoded):
         start, end = match.start(), match.end()
         if start > last:
             parts.append(decoded[last:start])
-            map_parts.append(char_map[last:start])
+            new_map.extend(char_map[last:start])
         replacement = match.expand(repl) if isinstance(repl, str) else repl(match)
         parts.append(replacement)
-        map_parts.append(_align_replacement(replacement, decoded[start:end], char_map[start:end]))
+        new_map.extend(_align_replacement(replacement, decoded[start:end], char_map[start:end]))
         last = end
     if last < len(decoded):
         parts.append(decoded[last:])
-        map_parts.append(char_map[last:])
+        new_map.extend(char_map[last:])
     new_decoded = "".join(parts)
-    new_map: list[int] = []
-    for part in map_parts:
-        new_map.extend(part)
     if len(new_map) != len(new_decoded):  # pragma: no cover - invariant by construction
         raise PreprocessError("internal error: decoded text / map length mismatch")  # pragma: no cover
     return new_decoded, new_map
@@ -455,7 +476,9 @@ def preprocess_source(text: str) -> SourceDocument:
 
     Plain text is returned as an identity document (no normalization). For
     compressed text the returned document carries the decoded text and the
-    per-character map back to the original source.
+    per-character map back to the original source. A compressed file that
+    decodes to the text it started from (a header-flagged file with no markers)
+    is also returned as an identity document, because there is nothing to map.
     """
     if not is_compressed(text):
         return SourceDocument.identity(text)
@@ -465,4 +488,6 @@ def preprocess_source(text: str) -> SourceDocument:
     # provenance (see ``grammar.sattline_lexer``).
     mapping = dict(SCANNER_TOKENS)
     decoded, char_map = _decode_with_map(text, mapping)
+    if decoded == text:
+        return SourceDocument.identity(text)
     return SourceDocument(text, decoded, tuple(char_map))

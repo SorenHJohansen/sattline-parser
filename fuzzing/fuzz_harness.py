@@ -21,8 +21,7 @@ import sys
 import threading
 import time
 import typing as t
-
-from sattline_parser.models.ast_model import BasePicture
+from dataclasses import dataclass
 
 _WORKER_HEADER = struct.Struct(">I")
 
@@ -36,6 +35,7 @@ import sys
 import time
 
 from sattline_parser.api import parse_source_text
+from sattline_parser.models import walk
 
 _HEADER = struct.Struct(">I")
 
@@ -58,8 +58,14 @@ def main() -> None:
         source = data.decode("utf-8", errors="replace")
         start = time.perf_counter()
         try:
-            parse_source_text(source, log_failures=False)
-            result: dict[str, object] = {"ok": True}
+            picture = parse_source_text(source, log_failures=False)
+            result: dict[str, object] = {
+                "ok": True,
+                "summary": {
+                    "root_name": picture.name,
+                    "node_count": sum(1 for _ in walk(picture)),
+                },
+            }
         except Exception as exc:  # noqa: BLE001 - serialised for the parent
             result = {
                 "ok": False,
@@ -99,6 +105,19 @@ CORPUS_DIR = None if REPO_ROOT is None else REPO_ROOT / "tests" / "fixtures" / "
 DEFAULT_TIMEOUT_SECONDS = 10
 
 
+@dataclass(frozen=True, slots=True)
+class FuzzSummary:
+    """A small, JSON-safe description of a successful parse.
+
+    The harness runs the parser in a subprocess, so it cannot hand back the
+    ``BasePicture`` itself. The summary is what the worker reports instead: the
+    root name and the node count of the transformed AST.
+    """
+
+    root_name: str
+    node_count: int
+
+
 class FuzzResult:
     __slots__ = ("duration_ms", "error", "input_desc", "result", "success")
 
@@ -107,7 +126,7 @@ class FuzzResult:
         input_desc: str,
         *,
         success: bool,
-        result: BasePicture | None = None,
+        result: FuzzSummary | None = None,
         error: Exception | None = None,
         duration_ms: float = 0.0,
     ) -> None:
@@ -268,10 +287,22 @@ def _as_float(value: object) -> float:
     return 0.0
 
 
+def _as_summary(value: object) -> FuzzSummary | None:
+    """Build a :class:`FuzzSummary` from a worker payload, or ``None``."""
+    if not isinstance(value, dict):
+        return None
+    payload = t.cast(dict[str, object], value)
+    root_name = payload.get("root_name")
+    node_count = payload.get("node_count")
+    if not isinstance(root_name, str) or not isinstance(node_count, int):
+        return None
+    return FuzzSummary(root_name=root_name, node_count=node_count)
+
+
 def _run_with_timeout(
     source: str,
     timeout: float,
-) -> tuple[BasePicture | None, Exception | None, float]:
+) -> tuple[FuzzSummary | None, Exception | None, float]:
     start = time.perf_counter()
     worker = _FuzzWorker()
     try:
@@ -279,9 +310,11 @@ def _run_with_timeout(
     finally:
         worker.close()
     error: Exception | None = None
-    result: BasePicture | None = None
+    result: FuzzSummary | None = None
     if not bool(raw.get("ok")):
         error = _reconstruct_error(str(raw.get("error_class") or ""), str(raw.get("error_message") or ""))
+    else:
+        result = _as_summary(raw.get("summary"))
     duration = _as_float(raw.get("duration_ms", (time.perf_counter() - start) * 1000))
     return result, error, duration
 
@@ -298,7 +331,7 @@ def fuzz_parse_text(
     return FuzzResult(
         input_desc=input_desc,
         success=error is None,
-        result=result if isinstance(result, BasePicture) else None,
+        result=result,
         error=error,
         duration_ms=duration_ms,
     )
@@ -365,6 +398,7 @@ def run_corpus_regression(
                 FuzzResult(
                     input_desc=f"corpus:{desc}",
                     success=bool(raw.get("ok")),
+                    result=_as_summary(raw.get("summary")) if raw.get("ok") else None,
                     error=error,
                     duration_ms=_as_float(raw.get("duration_ms", 0.0)),
                 )
@@ -445,13 +479,19 @@ def run_random_fuzz(
     timeout: float = DEFAULT_TIMEOUT_SECONDS,
     seed: int | None = None,
 ) -> list[FuzzResult]:
-    if seed is not None:
-        random.seed(seed)
+    """Parse *rounds* random inputs and return one result per round.
+
+    Passing *seed* makes the whole run reproducible: each round uses
+    ``seed + i`` and the result description carries that per-round seed, so a
+    failing case can be replayed with ``generate_random_text(text_length,
+    seed=<seed from input_desc>)``.
+    """
     results: list[FuzzResult] = []
     worker = _FuzzWorker()
     try:
         for i in range(rounds):
-            source = generate_random_text(text_length, seed=seed + i if seed else None)
+            round_seed = None if seed is None else seed + i
+            source = generate_random_text(text_length, seed=round_seed)
             raw = worker.parse(source, timeout)
             error = (
                 None
@@ -460,8 +500,9 @@ def run_random_fuzz(
             )
             results.append(
                 FuzzResult(
-                    input_desc=f"random:{i}({text_length} chars)",
+                    input_desc=f"random:seed={round_seed}" if round_seed is not None else f"random:{i}",
                     success=bool(raw.get("ok")),
+                    result=_as_summary(raw.get("summary")) if raw.get("ok") else None,
                     error=error,
                     duration_ms=_as_float(raw.get("duration_ms", 0.0)),
                 )

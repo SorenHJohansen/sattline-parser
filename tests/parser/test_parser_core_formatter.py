@@ -1,6 +1,30 @@
-# pyright: reportUnknownVariableType=false, reportUnknownMemberType=false, reportUnknownParameterType=false, reportMissingParameterType=false, reportUnknownArgumentType=false, reportUnknownLambdaType=false, reportArgumentType=false, reportUnusedImport=false
-# ruff: noqa: F403, F405
-from ._parser_core_test_support import *
+# pyright: reportUnknownLambdaType=false
+from types import SimpleNamespace
+
+from sattline_parser.formatting.formatter import format_expr, format_list, format_optional, format_seq_nodes
+from sattline_parser.models.ast_model import (
+    IntLiteral,
+    SFCAlternative,
+    SFCCodeBlocks,
+    SFCFork,
+    SFCParallel,
+    SFCStep,
+    SFCSubsequence,
+    SFCTransition,
+    SFCTransitionSub,
+    Variable,
+)
+from sattline_parser.models.expressions import (
+    Assignment,
+    BinOp,
+    BoolOp,
+    Compare,
+    FuncCall,
+    IfStmt,
+    NotOp,
+    TernaryOp,
+    VarRef,
+)
 
 
 def test_formatter_helpers_cover_variable_lists_optionals_and_expression_shapes():
@@ -25,7 +49,7 @@ def test_formatter_helpers_cover_variable_lists_optionals_and_expression_shapes(
     assert format_optional(5) == "5"
     assert format_expr(Assignment(VarRef("Counter"), IntLiteral(1))) == "Counter = 1"
     assert format_expr(VarRef("Value")) == "Value"
-    assert format_expr("hello") == "'hello'"
+    assert format_expr("hello") == '"hello"'
     assert format_expr(Assignment(VarRef("Value"), IntLiteral(5))) == "Value = 5"
     assert "ELSIF C" in format_expr(if_stmt)
     assert "ELSE" in format_expr(if_stmt)

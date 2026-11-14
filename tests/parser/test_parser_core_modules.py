@@ -1,6 +1,41 @@
-# pyright: reportUnknownVariableType=false, reportUnknownMemberType=false, reportUnknownParameterType=false, reportMissingParameterType=false, reportUnknownArgumentType=false, reportCallIssue=false, reportPrivateUsage=false, reportUnusedImport=false
-# ruff: noqa: F403, F405
-from ._parser_core_test_support import *
+# pyright: reportMissingParameterType=false, reportPrivateUsage=false, reportUnknownParameterType=false
+from types import SimpleNamespace
+from typing import Any, cast
+
+import pytest
+from lark import Token, Tree
+from lark.tree import Meta
+
+from sattline_parser.grammar import constants as parser_const
+from sattline_parser.models.ast_model import (
+    BasePicture,
+    DataType,
+    FrameModule,
+    MappingSource,
+    ModuleCode,
+    ModuleDef,
+    ModuleTypeDef,
+    ModuleTypeInstance,
+    ParameterMapping,
+    SingleModule,
+    SourceSpan,
+    Variable,
+)
+from sattline_parser.models.clauses import (
+    AssignClause,
+    EnableClause,
+    ModuleArguments,
+    ModuleInViewClause,
+    ModuleMarker,
+    Zoomable,
+    ZoomLimits,
+)
+from sattline_parser.models.expressions import VarRef
+from sattline_parser.models.tails import ClipValue, CoordinateClipping, VarTail
+from sattline_parser.transformer._module_shared import CoordTail, GroupConnInfo, InterimCoords, flatten_items, meta_span
+from sattline_parser.transformer.sl_transformer import _is_tree
+
+from ._parser_core_test_support import _module_header, _ModulesHarness
 
 
 def test_modules_mixin_helpers_flatten_nested_module_trees_and_meta_spans():

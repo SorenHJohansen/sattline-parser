@@ -24,6 +24,7 @@ from sattline_parser.models.ast_model import (
     ModuleHeader,
     ModuleTypeDef,
     ModuleTypeInstance,
+    ParameterMapping,
     SingleModule,
     Variable,
 )
@@ -43,7 +44,7 @@ from sattline_parser.validation.declarations import (
 from sattline_parser.validation.diagnostics import Diagnostic, DiagnosticCode
 from sattline_parser.validation.parameter_mappings import check_parameter_mappings
 from sattline_parser.validation.symbols import Scope, build_scope
-from sattline_parser.validation.transfers import check_moduletype_transfers
+from sattline_parser.validation.transfers import check_parameter_transfers
 from sattline_parser.validation.type_graph import TypeGraph
 
 Submodule = SingleModule | FrameModule | ModuleTypeInstance
@@ -99,6 +100,24 @@ def _check_annotation_tails(
     )
 
 
+def _check_parameter_contract(
+    mappings: list[ParameterMapping],
+    parameters: list[Variable],
+    subject: str,
+    scope: Scope,
+    context: _ValidationContext,
+    errors: list[Diagnostic],
+) -> None:
+    """Run the transfer and mapping rules for one declaration's formals.
+
+    ``scope`` is the scope the mapping sources resolve in: the invoking scope for
+    a submodule, the file scope for a module-type definition.
+    """
+    check_parameter_transfers(mappings, parameters, subject, scope, context.records, errors)
+    expected = {fold_identifier(parameter.name): parameter for parameter in parameters}
+    check_parameter_mappings(mappings, expected, scope, context.type_graph, errors)
+
+
 def validate_basepicture(
     bp: BasePicture,
     *,
@@ -114,10 +133,14 @@ def validate_basepicture(
     findings tentative instead. The flag exists for the standalone single-file
     path, where an unknown name may genuinely be external; it suppresses only
     the unknown-name findings, not typo suggestions or local rules.
+
+    The tables are built external-first, so a definition in this file wins over a
+    same-named definition from a dependency, and a builtin name is only a
+    fallback. Resolution order is therefore file, dependency, builtin.
     """
     errors: list[Diagnostic] = []
-    available_datatypes = [*bp.datatype_defs, *external_datatypes]
-    available_moduletypes = [*bp.moduletype_defs, *external_moduletype_defs]
+    available_datatypes = [*external_datatypes, *bp.datatype_defs]
+    available_moduletypes = [*external_moduletype_defs, *bp.moduletype_defs]
     records = {fold_identifier(datatype.name): datatype for datatype in available_datatypes}
     for builtin in _builtin_record_datatypes():
         records.setdefault(fold_identifier(builtin.name), builtin)
@@ -140,7 +163,7 @@ def validate_basepicture(
     check_record_fields(
         context.records,
         errors,
-        owned_records={fold_identifier(datatype.name): datatype for datatype in bp.datatype_defs},
+        owned_records=bp.datatype_defs,
         allow_unresolved_external_datatypes=allow_unresolved_external_datatypes,
     )
     check_sibling_submodules(bp.submodules, errors)
@@ -157,7 +180,7 @@ def validate_basepicture(
     for child in bp.submodules:
         _walk_submodule(child, base_scope, context, errors)
     for moduletype in bp.moduletype_defs:
-        _walk_moduletype_def(moduletype, context, errors)
+        _walk_moduletype_def(moduletype, base_scope, context, errors)
 
     return tuple(errors)
 
@@ -183,21 +206,47 @@ def _walk_submodule(
                         span=child.header.declaration_span,
                     )
                 )
+            # The formals are unknown, so only the local mapping rules apply:
+            # a duplicate target is a defect regardless of where the type lives.
+            check_parameter_mappings(child.parametermappings, None, parent, context.type_graph, errors)
             return
-        check_moduletype_transfers(child, moduletype, parent, context.records, errors)
-        expected = {fold_identifier(parameter.name): parameter for parameter in moduletype.moduleparameters}
-        check_parameter_mappings(child.parametermappings, expected, parent, context.type_graph, errors)
+        _check_parameter_contract(
+            child.parametermappings,
+            moduletype.moduleparameters,
+            f"Submodule {child.header.name}",
+            parent,
+            context,
+            errors,
+        )
         return
     scope = _child_scope(child, parent)
+    if isinstance(child, SingleModule):
+        _check_parameter_contract(
+            child.parametermappings,
+            child.moduleparameters,
+            f"Submodule {child.header.name}",
+            parent,
+            context,
+            errors,
+        )
     _walk_definition(child, scope, context, errors)
 
 
 def _walk_moduletype_def(
     moduletype: ModuleTypeDef,
+    file_scope: Scope,
     context: _ValidationContext,
     errors: list[Diagnostic],
 ) -> None:
     scope = build_scope(None, [*moduletype.moduleparameters, *moduletype.localvariables])
+    _check_parameter_contract(
+        moduletype.parametermappings,
+        moduletype.moduleparameters,
+        f"Module type {moduletype.name}",
+        file_scope,
+        context,
+        errors,
+    )
     check_variable_declarations(
         [*moduletype.moduleparameters, *moduletype.localvariables],
         context.records,

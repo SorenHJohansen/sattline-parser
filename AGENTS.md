@@ -99,8 +99,10 @@
   findings, re-run the verification ladder, and stop; request a second review
   only when the user asks for one.
 - The pull request template is the smallest checklist a change must satisfy.
-- `scripts/check_docs.py` checks relative links and dash punctuation, and
-  extracts Mermaid blocks for rendering. The Docs workflow renders every block.
+- `scripts/check_docs.py` checks relative links, `#anchors`, and dash
+  punctuation across `docs/`, `changelog.d/`, `SECURITY.md`, the root Markdown
+  files, and the PR template, and extracts Mermaid blocks for rendering. The
+  Docs workflow renders every block.
 
 ## Public Tree Rule
 

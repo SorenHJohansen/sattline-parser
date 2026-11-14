@@ -46,7 +46,7 @@ from .grammar.resolved import resolved_grammar as _resolved_grammar
 from .grammar.sattline_lexer import SattLineLexer, compact_provenance
 from .preprocessing import is_coded, is_compressed, preprocess_source, render_ide_text
 from .preprocessing.coded import decode_coded_stream
-from .preprocessing.compressed import scan_opaque_regions
+from .preprocessing.compressed import closed_comment_spans
 
 __all__ = [
     "MAX_SOURCE_DEPTH",
@@ -371,6 +371,16 @@ def _decode_coded_file_bytes(
         raise
 
 
+#: The UTF-8 byte-order mark, as bytes. Some editors write it in front of an
+#: otherwise Windows-1252 file.
+_UTF8_BOM = b"\xef\xbb\xbf"
+
+
+def _strip_utf8_bom(raw: bytes) -> bytes:
+    """Return *raw* without a leading UTF-8 byte-order mark."""
+    return raw[len(_UTF8_BOM) :] if raw.startswith(_UTF8_BOM) else raw
+
+
 def read_text_cp1252(path: Path) -> str:
     """Read a SattLine source file as **Windows-1252** (cp1252) text.
 
@@ -383,9 +393,11 @@ def read_text_cp1252(path: Path) -> str:
 
     Reads in binary mode to preserve original line endings (CRLF). Python's
     ``path.read_text()`` performs universal newline translation which would
-    silently convert CRLF to LF.
+    silently convert CRLF to LF. A leading UTF-8 byte-order mark is removed
+    first: no SattLine source starts with one, and decoding it as cp1252 would
+    turn it into three characters the grammar rejects.
     """
-    return path.read_bytes().decode("cp1252")
+    return _strip_utf8_bom(path.read_bytes()).decode("cp1252")
 
 
 _UNDEFINED_LOW = "\udc80"
@@ -401,9 +413,11 @@ def _decode_cp1252_comments_tolerant(raw: bytes) -> str:
     ``U+FFFD``; there is no encoding that maps it to a real character.
 
     Everywhere else the decode stays strict, and nothing is ever re-read as utf-8
-    or latin-1. The scan reuses :func:`scan_opaque_regions`, so it follows the
+    or latin-1. The scan reuses :func:`closed_comment_spans`, so it follows the
     same lexical rules as the rest of the pipeline: comment bodies nest, and a
-    ``(*`` or ``*)`` inside a string literal is text, not a delimiter.
+    ``(*`` or ``*)`` inside a string literal is text, not a delimiter. A nested
+    comment whose outer ``*)`` is missing is not closed, so it does not shield a
+    byte either.
 
     An unterminated comment or string is not tolerated: there is no reliable
     boundary for it, so the strict decode error survives.
@@ -414,9 +428,7 @@ def _decode_cp1252_comments_tolerant(raw: bytes) -> str:
     if not any(_UNDEFINED_LOW <= character <= _UNDEFINED_HIGH for character in text):
         return text
 
-    comment_spans = [
-        (start, end) for kind, start, end in scan_opaque_regions(text) if kind == "C" and text.endswith("*)", 0, end)
-    ]
+    comment_spans = closed_comment_spans(text)
     characters = list(text)
     span_index = 0
     for index, character in enumerate(characters):
@@ -430,12 +442,24 @@ def _decode_cp1252_comments_tolerant(raw: bytes) -> str:
     return "".join(characters)
 
 
-def _decode_source_bytes_for_parse(path: Path) -> str:
-    """Read a source file for the parse path, allowing undefined comment bytes."""
+def _decode_bytes_for_parse(raw: bytes) -> str:
+    """Decode source bytes for the parse path, allowing undefined comment bytes."""
+    raw = _strip_utf8_bom(raw)
     try:
-        return read_text_cp1252(path)
+        return raw.decode("cp1252")
     except UnicodeDecodeError:
-        return _decode_cp1252_comments_tolerant(path.read_bytes())
+        return _decode_cp1252_comments_tolerant(raw)
+
+
+def _decode_source_bytes_for_parse(path: Path) -> str:  # pyright: ignore[reportUnusedFunction]
+    """Read one source file and decode it for the parse path.
+
+    The parse pipeline itself reads the bytes once and calls
+    :func:`_decode_bytes_for_parse`, so classification and decoding share a
+    snapshot. This read-and-decode form stays available for callers that hold a
+    path.
+    """
+    return _decode_bytes_for_parse(path.read_bytes())
 
 
 def decode_source_bytes(
@@ -448,17 +472,15 @@ def decode_source_bytes(
     """Decode raw source bytes into the text :func:`parse_source_text` expects.
 
     Byte-coded streams (the binary ``\\x80 3.1`` framing some ``.x`` files
-    carry) are decoded first. Everything else is returned as written —
+    carry) are decoded first. Everything else is returned as written,
     including marker-compressed text, so provenance spans keep pointing into
     the original source. Undefined Windows-1252 bytes are tolerated inside
-    comments only.
+    comments only. A leading UTF-8 byte-order mark is removed before the decode.
     """
+    raw_bytes = _strip_utf8_bom(raw_bytes)
     if is_coded(raw_bytes):
         return _decode_coded_file_bytes(raw_bytes, debug=debug, source_path=source_path, log_failures=log_failures)
-    try:
-        return raw_bytes.decode("cp1252")
-    except UnicodeDecodeError:
-        return _decode_cp1252_comments_tolerant(raw_bytes)
+    return _decode_bytes_for_parse(raw_bytes)
 
 
 def source_text_for_parse(
@@ -491,9 +513,11 @@ def load_source_text(
     This is the read-then-decode helper for callers that want the final text
     rather than a parse result: byte-coded streams and marker-compressed text
     both come back decoded, and undefined Windows-1252 bytes are tolerated
-    inside comments. :func:`source_text_for_parse` differs on purpose: it
-    leaves marker-compressed text as written so provenance spans keep pointing
-    into the original source.
+    inside comments. The file is read once, so the coded/compressed
+    classification and the decoded bytes come from the same snapshot.
+    :func:`source_text_for_parse` differs on purpose: it leaves
+    marker-compressed text as written so provenance spans keep pointing into
+    the original source.
     """
     source_path = Path(code_path)
     if debug is not None:
@@ -503,7 +527,7 @@ def load_source_text(
     if is_coded(raw_bytes):
         src = _decode_coded_file_bytes(raw_bytes, debug=debug, source_path=source_path)
     else:
-        src = _decode_source_bytes_for_parse(source_path)
+        src = _decode_bytes_for_parse(raw_bytes)
     # A coded stream can still hold marker-compressed text, so the coded and
     # plain branches share the marker expansion before the text is returned.
     return _decode_compressed_source(src, debug=debug, source_path=source_path)

@@ -48,31 +48,30 @@ def _diagnostics_parser(path: Path) -> list[dict[str, object]]:
     return records
 
 
-def build() -> dict[str, object]:
-    fixtures: dict[str, object] = {}
+def _build_fixtures() -> dict[str, list[dict[str, object]]]:
+    fixtures: dict[str, list[dict[str, object]]] = {}
     for group in ("invalid", "valid", "edge_cases"):
         directory = _CORPUS / group
         if not directory.is_dir():
             continue
         for path in sorted(directory.glob("*.s")):
             fixtures[f"{group}/{path.name}"] = _diagnostics_parser(path)
-    return {
-        "generated_by": "scripts/export_parity_expectations.py",
-        "validator": "parser",
-        "fixtures": fixtures,
-    }
+    return fixtures
 
 
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.parse_args(argv)
 
-    document = build()
-    fixtures = document["fixtures"]
+    fixtures = _build_fixtures()
+    document = {
+        "generated_by": "scripts/export_parity_expectations.py",
+        "validator": "parser",
+        "fixtures": fixtures,
+    }
     _OUT.parent.mkdir(parents=True, exist_ok=True)
     _OUT.write_text(json.dumps(document, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-    count = len(fixtures) if isinstance(fixtures, dict) else 0
-    print(f"wrote {_OUT} ({count} fixtures)")
+    print(f"wrote {_OUT} ({len(fixtures)} fixtures)")
     return 0
 
 

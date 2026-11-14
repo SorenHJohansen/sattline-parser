@@ -73,6 +73,15 @@ class TypeGraph:
     def has_record(self, type_name: str) -> bool:
         return fold_identifier(type_name) in self._records_by_key
 
+    def has_known_fields(self, type_name: str) -> bool:
+        """True when the record is declared with a non-empty field table.
+
+        An empty table is a declared type whose shape is not modelled, so a
+        missing field is unproven rather than absent.
+        """
+        record = self.record(type_name)
+        return record is not None and bool(record.fields_by_key)
+
     def record(self, type_name: str) -> RecordDef | None:
         return self._records_by_key.get(fold_identifier(type_name))
 

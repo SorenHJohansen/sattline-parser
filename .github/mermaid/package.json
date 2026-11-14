@@ -1,0 +1,9 @@
+{
+  "name": "sattline-docs-mermaid",
+  "version": "0.0.0",
+  "private": true,
+  "description": "Pinned Mermaid CLI used by the Docs workflow to render docs/ diagrams.",
+  "devDependencies": {
+    "@mermaid-js/mermaid-cli": "11.17.1"
+  }
+}

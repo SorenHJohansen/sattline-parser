@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from typing import cast
 
 from .._exit import ExitCode
-from .._io import read_source
+from .._io import display_path, read_source
 from .._json import SCHEMA_PREFIX, dumps
 from .._validate import Analysis, analyse
 from ._common import add_output_flags, add_source_flags, reject_companion
@@ -71,17 +71,18 @@ def register(subparsers: argparse._SubParsersAction[argparse.ArgumentParser]) ->
 
 
 def run(args: argparse.Namespace) -> int:
-    reject_companion(args.old)
-    reject_companion(args.new)
+    reject_companion(args.old, stdin_name=args.stdin_name)
+    reject_companion(args.new, stdin_name=args.stdin_name)
     old_source = read_source(args.old, name=args.stdin_name)
     new_source = read_source(args.new, name=args.stdin_name)
     old_name, old_text = old_source.name, old_source.text
     new_name, new_text = new_source.name, new_source.text
+    absolute = args.path_style == "absolute"
     result = compare(
-        analyse(old_name, old_text, absolute=False),
-        analyse(new_name, new_text, absolute=False),
-        old_name=old_name,
-        new_name=new_name,
+        analyse(old_name, old_text, absolute=absolute),
+        analyse(new_name, new_text, absolute=absolute),
+        old_name=display_path(old_name, absolute=absolute),
+        new_name=display_path(new_name, absolute=absolute),
     )
     if args.json or args.jsonl:
         print(dumps({"schema": f"{SCHEMA_PREFIX}.diff", **result.to_json()}, compact=bool(args.jsonl)))

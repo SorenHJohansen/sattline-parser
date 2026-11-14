@@ -32,23 +32,23 @@ positions. A consumer applies its own policy on top.
 
 ## Documentation
 
-The internals are documented in [`docs/`](docs/README.md):
+The internals are documented in [`docs/`](https://github.com/SorenHJohansen/sattline-parser/blob/main/docs/README.md):
 
-- [Architecture](docs/architecture.md): layers, module map, and import rules
-- [Parse pipeline](docs/parse-pipeline.md): bytes to `BasePicture`
-- [Grammar and tokenization](docs/grammar.md): `sattline.lark`, the lexer, comments
-- [Source provenance](docs/source-provenance.md): original-source positions
-- [AST models](docs/ast.md): the tree and its invariants
-- [Transformer](docs/transformer.md): how the tree is built
-- [Validation](docs/validation.md): the strict single-source rules
-- [Project layer](docs/project.md): discovery, dependencies, caches
-- [Graphics companions](docs/graphics.md): `.g` / `.y` parsing
-- [Distribution companions](docs/project.md#distribution-companion): `.p` / `.q` parsing
-- [Command line](docs/cli.md): commands, exit codes, JSON schemas
-- [Builtins](docs/builtins.md): function signatures and record fields
-- [Public API](docs/api.md): the stable import surface
-- [Testing and CI](docs/testing.md): suites, coverage, fuzzing
-- [Development](docs/development.md): setup, workflow, conventions
+- [Architecture](https://github.com/SorenHJohansen/sattline-parser/blob/main/docs/architecture.md): layers, module map, and import rules
+- [Parse pipeline](https://github.com/SorenHJohansen/sattline-parser/blob/main/docs/parse-pipeline.md): bytes to `BasePicture`
+- [Grammar and tokenization](https://github.com/SorenHJohansen/sattline-parser/blob/main/docs/grammar.md): `sattline.lark`, the lexer, comments
+- [Source provenance](https://github.com/SorenHJohansen/sattline-parser/blob/main/docs/source-provenance.md): original-source positions
+- [AST models](https://github.com/SorenHJohansen/sattline-parser/blob/main/docs/ast.md): the tree and its invariants
+- [Transformer](https://github.com/SorenHJohansen/sattline-parser/blob/main/docs/transformer.md): how the tree is built
+- [Validation](https://github.com/SorenHJohansen/sattline-parser/blob/main/docs/validation.md): the strict single-source rules
+- [Project layer](https://github.com/SorenHJohansen/sattline-parser/blob/main/docs/project.md): discovery, dependencies, caches
+- [Graphics companions](https://github.com/SorenHJohansen/sattline-parser/blob/main/docs/graphics.md): `.g` / `.y` parsing
+- [Distribution companions](https://github.com/SorenHJohansen/sattline-parser/blob/main/docs/project.md#distribution-companion): `.p` / `.q` parsing
+- [Command line](https://github.com/SorenHJohansen/sattline-parser/blob/main/docs/cli.md): commands, exit codes, JSON schemas
+- [Builtins](https://github.com/SorenHJohansen/sattline-parser/blob/main/docs/builtins.md): function signatures and record fields
+- [Public API](https://github.com/SorenHJohansen/sattline-parser/blob/main/docs/api.md): the stable import surface
+- [Testing and CI](https://github.com/SorenHJohansen/sattline-parser/blob/main/docs/testing.md): suites, coverage, fuzzing
+- [Development](https://github.com/SorenHJohansen/sattline-parser/blob/main/docs/development.md): setup, workflow, conventions
 
 ## Provenance
 
@@ -62,7 +62,10 @@ This package owns the Lark grammar, the strict single-file syntax behavior, the 
 ## Features
 
 - Lark LALR parser for SattLine sources (grammar in `grammar/sattline.lark`)
-- Parses plain text and files (`.s`, `.g`, `.l`, `.x`, `.y`, `.z` and any other extension; the parser is content-based, not extension-based)
+- Parses plain text and files with any extension: the parser is content-based,
+  not extension-based. Code bodies are `.s` (draft) and `.x` (official); `.l`/`.z`
+  (dependencies), `.g`/`.y` (graphics), and `.p`/`.q` (distribution) are
+  companions, parsed by the project layer
 - Strict, no-silent-fallback parsing: unknown compressed markers and unexpected transformer structures raise errors instead of being silently rewritten or dropped
 - Structural comments (`(* ... *)`, nested) preserved as role-tagged AST nodes
 - Automatic compressed-source decoding with full source provenance: AST spans and error locations always refer to the *original* source (`SourceSpan` carries character offsets plus line/column)
@@ -73,8 +76,8 @@ This package owns the Lark grammar, the strict single-file syntax behavior, the 
 - `SLTransformer` tree transformer in `sattline_parser.transformer`
 - `sattline` command line over the parser, project and graphics layers
   (`check`, `parse`, `query`, `project`, `graphics`, `decode`, `diff`, `corpus`,
-  `version`) with JSON-first output; it never edits a tree, and `project`
-  caches parsed ASTs unless `--no-cache` is given
+  `rules`, `version`) with JSON-first output; it never edits a tree, and
+  `project` caches parsed ASTs unless `--no-cache` is given
 - PEP 561 typed: `py.typed` ships, so downstream type checkers use the inline
   annotations
 - Standalone fuzz harness with hard subprocess timeouts and corpus regression
@@ -189,7 +192,7 @@ except Exception as exc:
 `ENDDEF (*BasePicture*)` with the terminating `;` missing it reads:
 
 ```text
-unexpected end of file; expected ';', '(', 'LOCALVARIABLES' or 'ModuleDef'
+unexpected end of file; expected ';', '(', 'LOCALVARIABLES', 'ModuleDef' or 'MODULEPARAMETERS'
 help: the unit ends before a required ';'; the last construct is incomplete
 ENDDEF (*BasePicture*)
                     ^
@@ -252,8 +255,9 @@ print(visitor.names)
 node. `walk(..., emit_leave=True)` adds matching leave events for scope stacks,
 and `iter_literal_leaves` reads the literal values a node holds. `NodeVisitor`
 dispatches on the class name and supports `leave_<ClassName>` hooks. See
-[docs/ast.md](docs/ast.md) for the covered fields and the parts of the model it
-deliberately does not descend into.
+[the AST document](https://github.com/SorenHJohansen/sattline-parser/blob/main/docs/ast.md)
+for the covered fields and the parts of the model it deliberately does not
+descend into.
 
 ### One unit, four files
 
@@ -264,7 +268,8 @@ The resolved body decides the artifact family, so every other file comes from
 the same family: a `.s` body pairs only with `.l`, `.g`, and `.p`, and an `.x`
 body only with `.z`, `.y`, and `.q`. A missing sidecar is reported as a
 diagnostic and a missing companion is recorded as absent, never invented. See
-[docs/project.md](docs/project.md#artifact-formats) for the extension table.
+[the artifact formats](https://github.com/SorenHJohansen/sattline-parser/blob/main/docs/project.md#artifact-formats)
+for the extension table.
 
 ### Project layer: load a whole project
 
@@ -298,14 +303,19 @@ if program.graphics is not None:  # GraphicsMessage values, never raised
 - Each target is resolved across ordered roots, its `.l` / `.z` dependency file
   is read, and dependencies load recursively before the target itself.
 - Programs are canonicalized by casefolded identity: each name is visited and
-  parsed exactly once, and cycles resolve as edges in the derived
-  `DependencyGraph` (never infinite recursion).
+  parsed exactly once, so a dependency diamond costs one parse per unit.
+- A cycle is rejected at load, not represented in the graph: a recursive
+  dependency chain raises `DependencyCycleError`, and a module type that
+  instantiates itself raises `ModuleTypeCycleError`, so `SattLineProject.load`
+  never returns a cyclic project. `SattLineProject.cycles()` still reports the
+  declared cycles of a project you assemble directly from programs.
 - `strict=True` (default) fails fast on missing or unparseable artifacts;
   `strict=False` skips the failing program and continues. Failures surface as
   structured errors (`ProjectLoadError`, `ArtifactLoadError`,
-  `DependencyNotFoundError`, `DependencyParseError`), and a skipped program is
-  recorded as a `LoadDiagnosticKind.LOAD_SKIPPED` diagnostic, so a partial load
-  is never silent.
+  `DependencyNotFoundError`, `DependencyParseError`, `DependencyCycleError`,
+  `ModuleTypeCycleError`), and a skipped program is recorded as a
+  `LoadDiagnosticKind.LOAD_SKIPPED` diagnostic, so a partial load is never
+  silent.
 - `validate=LoadValidation.INVOKED` (default) validates each target in full and
   limits a dependency file to the module types that target invokes,
   transitively, so an imported library's unused module types are never checked
@@ -339,8 +349,9 @@ the names in the documented `__all__` sets, the `sattline` command, and its JSON
 schemas. Submodule paths and names not listed there are internal and may change
 between releases.
 
-Within that surface, patch releases preserve existing names and behaviour. A
-breaking change is called out in the changelog and removed in that release.
+Within that surface, a breaking change is marked in the changelog and lands in
+the release that makes it. A superseded name is removed in the release that
+replaces it, so read the changelog before upgrading across a breaking entry.
 There is no deprecation window and no compatibility shim. Adding a dataclass
 field is not considered breaking; removing or renaming one is.
 
@@ -353,7 +364,7 @@ pytest -q                                   # full configured suite
 pytest benchmarks --no-cov -q               # parse benchmarks
 ruff check src tests scripts benchmarks fuzzing
 ruff format --check src tests scripts benchmarks fuzzing
-pyright src tests benchmarks fuzzing
+pyright src tests benchmarks fuzzing scripts
 bandit -q -r src fuzzing -x tests -c pyproject.toml
 pip-audit
 python scripts/check_branch_coverage.py     # line >= 100%, branch >= 93%

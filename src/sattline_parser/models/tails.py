@@ -23,6 +23,7 @@ if TYPE_CHECKING:
     from .ast_model import SourceSpan
 
 __all__ = [
+    "EXPRESSION_NODE_TYPES",
     "ClipValue",
     "CoordinateClipping",
     "LitStringTail",
@@ -97,8 +98,20 @@ class CoordinateClipping:
 #: Every tail shape a coordinate, header, or clause can carry.
 type Tail = SLExpression | VarTail | LitStringTail
 
+#: Expression node classes that can stand as a tail or a clause value. This is
+#: the single registry: ``is_expression_tail`` and the walker both read it, so a
+#: new expression node type only has to be added here.
+EXPRESSION_NODE_TYPES: tuple[type[object], ...] = (
+    VarRef,
+    BoolOp,
+    NotOp,
+    Compare,
+    BinOp,
+    UnaryOp,
+    FuncCall,
+    TernaryOp,
+)
 _LITERAL_TAIL_TYPES = (bool, int, float, str)
-_EXPRESSION_NODE_TYPES = (VarRef, BoolOp, NotOp, Compare, BinOp, UnaryOp, FuncCall, TernaryOp)
 
 
 def tail_list() -> list[Tail]:
@@ -114,4 +127,4 @@ def is_expression_tail(value: object) -> TypeGuard[SLExpression]:
     """
     if isinstance(value, (VarTail, LitStringTail)):
         return False
-    return isinstance(value, _LITERAL_TAIL_TYPES + _EXPRESSION_NODE_TYPES)
+    return isinstance(value, _LITERAL_TAIL_TYPES + EXPRESSION_NODE_TYPES)

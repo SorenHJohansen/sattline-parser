@@ -38,7 +38,10 @@ if TYPE_CHECKING:
 #: ``PreprocessError`` and ``UnicodeError`` are ``ValueError`` subclasses, so the
 #: tuple is effectively ``(LarkError, ValueError, OSError)``.
 #: :class:`SourceTooDeepError` is an ``UnexpectedInput`` subclass and is
-#: therefore covered by the first entry.
+#: therefore covered by the first entry. ``RuntimeError`` is deliberately
+#: absent: it marks a parser defect (a transformer returning the wrong type),
+#: not invalid input, and propagates as a traceback so a defect is never
+#: reported as a broken source.
 PARSE_FAILURES: tuple[type[Exception], ...] = (
     UnexpectedInput,  # grammar/matcher/transform failures reach the caller as UnexpectedInput
     ValueError,  # preprocess and transformer value errors (PreprocessError included)
@@ -136,13 +139,22 @@ _QUOTED_TERMINAL_RE = re.compile(r'^"(?P<text>[^"\\]+)"$')
 #: ``/(?i:ENDDEF\b)/`` — a keyword after case folding.
 _CASE_FOLDED_KEYWORD_RE = re.compile(r"^/\(\?i:(?P<text>[A-Za-z_][A-Za-z0-9_]*)\\b\)/$")
 #: Friendly names for terminals that are patterns, not literal spellings.
+#: Every variant a parser state can expect is listed, including the ``_NOTAIL``
+#: twins, so a real failure never names a Lark terminal.
 _TERMINAL_DISPLAY = {
     "NAME": "a name",
     "REAL": "a number",
+    "REAL_NOTAIL": "a number",
     "SIGNED_INT": "an integer",
+    "SIGNED_INT_NOTAIL": "an integer",
     "STRING": "a string",
+    "STRING_NOTAIL": "a string",
     "STRING_CRLF": "a string",
+    "BOOL": "a boolean",
+    "BOOL_NOTAIL": "a boolean",
     "COMMENT_START": "a comment",
+    "COMMENT_TEXT": "a comment",
+    "STATE_SUFFIX": "a state suffix (':New' or ':Old')",
     "SL_DATECODE": "a date code",
 }
 #: Lark names anonymous punctuation terminals after the character
@@ -193,7 +205,19 @@ def _terminal_label(name: str, spellings: dict[str, str]) -> str:
     spelling = spellings.get(name)
     if spelling is not None:
         return f"'{spelling}'"
-    return _TERMINAL_DISPLAY.get(name, name)
+    display = _TERMINAL_DISPLAY.get(name)
+    if display is not None:
+        return display
+    # A pattern terminal that is not in the table still must not leak its Lark
+    # name into the sentence. The ``_NOTAIL`` twins share their base phrase, and
+    # anything else is spelled out as words ("a state suffix").
+    base = name.removesuffix("_NOTAIL")
+    base_display = _TERMINAL_DISPLAY.get(base)
+    if base_display is not None:
+        return base_display
+    words = base.replace("_", " ").casefold()
+    article = "an" if words[:1] in "aeiou" else "a"
+    return f"{article} {words}"
 
 
 def _label_order(label: str) -> tuple[bool, str]:
@@ -329,11 +353,21 @@ def describe_parse_error(
 
 
 def _source_line(source_text: str, line: int | None) -> str | None:
-    """The original source line at ``line`` (1-based), when it exists."""
+    """The original source line at ``line`` (1-based), when it exists.
+
+    Lines are split on ``"\\n"`` only, exactly like the offsets that produce
+    ``line``. ``str.splitlines`` also splits on a lone ``\\r``, ``\\v``, ``\\f``
+    and ``\\x1c``-``\\x1e``, which are legal inside a string literal, so it would
+    disagree with the line numbers the parser reports. One trailing ``\\r`` is
+    removed so a CRLF file does not leave a stray CR on the reported line.
+    """
     if not isinstance(line, int) or line < 1:
         return None
-    lines = source_text.splitlines()
-    return lines[line - 1] if line <= len(lines) else None
+    lines = source_text.split("\n")
+    if line > len(lines):
+        return None
+    text = lines[line - 1]
+    return text[:-1] if text.endswith("\r") else text
 
 
 def _failure_details(

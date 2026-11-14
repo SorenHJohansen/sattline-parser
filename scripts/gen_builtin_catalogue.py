@@ -43,6 +43,8 @@ import sys
 from pathlib import Path
 from typing import Final, cast
 
+from sattline_parser.builtins.records import BUILTIN_DECLARED_DATATYPE_NAMES
+
 _ROOT: Final[Path] = Path(__file__).resolve().parents[1]
 _SOURCE_PATH: Final[Path] = _ROOT / "scripts" / "builtin_catalogue_source.json"
 _OUT_PATH: Final[Path] = _ROOT / "src" / "sattline_parser" / "builtins" / "catalogue.json"
@@ -52,10 +54,28 @@ _SORTING: Final[frozenset[str]] = frozenset({"RS", "WS", "RS/WS", "NoS"})
 _OWNERSHIP: Final[frozenset[str]] = frozenset({"RO", "WO", "RO/WO", "NoO"})
 _KINDS: Final[frozenset[str]] = frozenset({"function", "procedure"})
 
+#: Every datatype a signature may name: a scalar, a declared builtin record, or
+#: the explicit ``AnyType`` wildcard. A name outside this set is a typo or an
+#: unmodelled type, and the validator could never satisfy it.
+_KNOWN_DATATYPES: Final[frozenset[str]] = frozenset(
+    name.casefold() for name in (*BUILTIN_DECLARED_DATATYPE_NAMES, "AnyType")
+)
+
 
 def _require(condition: object, message: str) -> None:
     if not condition:
         raise SystemExit(f"invalid builtin catalogue source: {message}")
+
+
+def _validate_datatype(owner: str, value: object, where: str) -> str:
+    """Reject a datatype name no scalar, declared record, or ``AnyType`` covers."""
+    _require(isinstance(value, str) and value, f"{owner}: {where} is missing")
+    text = cast("str", value)
+    _require(
+        text.casefold() in _KNOWN_DATATYPES,
+        f"{owner}: {where} {text!r} is not a scalar, a declared builtin record, or AnyType",
+    )
+    return text
 
 
 def _validate_parameter(name: str, parameter: object) -> dict[str, object]:
@@ -63,6 +83,7 @@ def _validate_parameter(name: str, parameter: object) -> dict[str, object]:
     entry = cast("dict[str, object]", parameter)
     for key in ("name", "datatype", "direction", "sorting", "ownership"):
         _require(isinstance(entry.get(key), str) and entry[key], f"{name}: parameter is missing {key}")
+    _validate_datatype(name, entry["datatype"], f"parameter {entry['name']!r} datatype")
     _require(entry["direction"] in _DIRECTIONS, f"{name}: unknown direction {entry['direction']!r}")
     _require(entry["sorting"] in _SORTING, f"{name}: unknown sorting {entry['sorting']!r}")
     _require(entry["ownership"] in _OWNERSHIP, f"{name}: unknown ownership {entry['ownership']!r}")
@@ -96,6 +117,8 @@ def _validate_function(name: str, raw: object) -> dict[str, object]:
     _require(isinstance(typed, bool), f"{name}: typed must be a boolean")
     return_type = entry.get("return_type")
     _require(return_type is None or isinstance(return_type, str), f"{name}: return_type must be a string or null")
+    if return_type is not None:
+        _validate_datatype(name, return_type, "return_type")
     precision_scangroup = entry.get("precision_scangroup")
     _require(isinstance(precision_scangroup, bool), f"{name}: precision_scangroup must be a boolean")
     parameters = entry.get("parameters")

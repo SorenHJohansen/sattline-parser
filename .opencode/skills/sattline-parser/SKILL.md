@@ -89,7 +89,7 @@ Use `.venv/bin/python` when the virtual environment exists. Otherwise use
 .venv/bin/python -m ruff format --check src tests scripts benchmarks fuzzing
 
 # 3. Types
-.venv/bin/pyright src tests benchmarks fuzzing
+.venv/bin/pyright src tests benchmarks fuzzing scripts
 
 # 4. Security
 .venv/bin/python -m bandit -q -r src fuzzing -x tests -c pyproject.toml

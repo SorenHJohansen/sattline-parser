@@ -1,8 +1,13 @@
-# pyright: reportUnknownVariableType=false, reportUnknownMemberType=false, reportUnknownParameterType=false, reportPrivateUsage=false, reportUnusedImport=false
-# ruff: noqa: F403, F405
-from sattline_parser import errors as parser_errors
+# pyright: reportPrivateUsage=false
+from typing import Any, LiteralString, cast
 
-from ._parser_core_test_support import *
+import pytest
+from lark import Token
+from lark.exceptions import UnexpectedCharacters, UnexpectedEOF, UnexpectedInput, UnexpectedToken
+
+from sattline_parser import errors as parser_errors
+from sattline_parser import parse_source_text as parser_core_parse_source_text
+from sattline_parser import source_io as parser_api
 
 
 def _parse_failure(expected: set[str], *, token: object, line: int = 4) -> Any:
@@ -207,3 +212,59 @@ def test_source_line_needs_a_usable_line_number():
     assert parser_errors._source_line("text", 0) is None
     assert parser_errors._source_line("a\nb", 2) == "b"
     assert parser_errors._source_line("a", 9) is None
+
+
+def test_source_line_splits_on_newline_only_and_drops_one_trailing_cr():
+    # A lone CR is legal inside a string literal, so it must not start a new
+    # line here: the parser's line numbers come from "\n" only.
+    source = '"a\rb"\nsecond\nthird\n'
+    assert parser_errors._source_line(source, 1) == '"a\rb"'
+    assert parser_errors._source_line(source, 2) == "second"
+    assert parser_errors._source_line(source, 3) == "third"
+    # A CRLF file keeps its content and loses the line terminator.
+    assert parser_errors._source_line("first\r\nsecond\r\n", 1) == "first"
+    assert parser_errors._source_line("first\r\nsecond\r\n", 2) == "second"
+    # Form feed and vertical tab are content, not line separators.
+    assert parser_errors._source_line("a\vb\fc", 1) == "a\vb\fc"
+
+
+def test_describe_parse_error_source_line_agrees_with_a_lone_cr_in_a_string():
+    source = '"a\rb"\nsecond\nthird\n'
+    failure = _parse_failure({"SEMICOLON"}, token=Token("$END", ""), line=2)
+
+    details = parser_api.describe_parse_error(failure, source)
+
+    assert details.source_line == "second"
+
+
+def test_every_pattern_terminal_has_a_friendly_display_name():
+    spellings = parser_errors._terminal_spellings()
+    for name in (
+        "REAL_NOTAIL",
+        "SIGNED_INT_NOTAIL",
+        "STRING_NOTAIL",
+        "BOOL_NOTAIL",
+        "BOOL",
+        "STATE_SUFFIX",
+        "COMMENT_TEXT",
+    ):
+        label = parser_errors._terminal_label(name, spellings)
+        assert name not in label
+        assert label
+
+    # A name with no entry is spelled out as words rather than printed raw.
+    assert parser_errors._terminal_label("SOMETHING_ODD", {}) == "a something odd"
+    assert parser_errors._terminal_label("ODD_NOTAIL", {}) == "an odd"
+    # A ``_NOTAIL`` twin of a tabled terminal reuses the base phrase.
+    assert parser_errors._terminal_label("STATE_SUFFIX_NOTAIL", {}) == parser_errors._TERMINAL_DISPLAY["STATE_SUFFIX"]
+
+
+def test_a_real_failure_never_prints_a_lark_terminal_name():
+    expected = {"REAL_NOTAIL", "SIGNED_INT_NOTAIL", "STRING_NOTAIL", "BOOL_NOTAIL", "BOOL"}
+    sentence = parser_errors._unexpected_description(_parse_failure(expected, token=Token("$END", "")))[0]
+
+    assert "_NOTAIL" not in sentence
+    assert "a number" in sentence
+    assert "an integer" in sentence
+    assert "a string" in sentence
+    assert "a boolean" in sentence

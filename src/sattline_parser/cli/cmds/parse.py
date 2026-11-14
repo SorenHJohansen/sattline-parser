@@ -12,7 +12,7 @@ from sattline_parser.preprocessing import PreprocessError
 
 from .._exit import ExitCode
 from .._findings import finding_from_parse_error
-from .._io import read_source
+from .._io import display_path, read_source
 from .._json import to_jsonable
 from .._validate import summarise
 from ._common import (
@@ -47,27 +47,28 @@ def register(subparsers: argparse._SubParsersAction[argparse.ArgumentParser]) ->
 
 
 def run(args: argparse.Namespace) -> int:
-    reject_companion(args.path)
+    reject_companion(args.path, stdin_name=args.stdin_name)
     source = read_source(args.path, name=args.stdin_name)
     name, text = source.name, source.text
     absolute = args.path_style == "absolute"
+    display = display_path(name, absolute=absolute)
     try:
         picture = parse_source_text(text, log_failures=False)
     except (UnexpectedInput, PreprocessError) as exc:
         finding = finding_from_parse_error(exc, text, file=name, absolute_paths=absolute)
-        emit_findings([finding], args=args, schema="parse", extra={"file": name})
+        emit_findings([finding], args=args, schema="parse", extra={"file": display})
         return int(ExitCode.FINDINGS)
     if args.tree:
         emit_payload(
-            {"file": name, "tree": to_jsonable(picture, depth=args.depth)},
+            {"file": display, "tree": to_jsonable(picture, depth=args.depth)},
             args=args,
             schema="parse",
             compact=args.compact,
         )
         return int(ExitCode.OK)
-    summary = summarise(name, text, picture, coded=source.coded)
+    summary = summarise(display, text, picture, coded=source.coded)
     if args.json or args.jsonl:
-        emit_payload(summary, args=args, schema="parse")
+        emit_payload(summary, args=args, schema="parse", compact=args.compact)
         return int(ExitCode.OK)
     for label, value in summary.items():
         if isinstance(value, dict):

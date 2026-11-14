@@ -25,14 +25,27 @@ import time
 import tracemalloc
 from collections.abc import Callable
 from pathlib import Path
-from typing import cast
+from typing import Protocol, cast
+
+from lark import Lark, Token, Tree
 
 from sattline_parser import api
-from sattline_parser.preprocessing import decode_coded_stream, is_coded
+from sattline_parser.preprocessing import decode_coded_stream, is_coded, preprocess_source
 from sattline_parser.source_document import SourceDocument, remap_tree_to_original
 from sattline_parser.transformer.sl_transformer import SLTransformer
 
 STAGE_NAMES = ("read_decode", "preprocess", "parse", "remap", "transform", "total")
+
+
+class _TextParser(Protocol):
+    """The slice of ``Lark`` this script uses.
+
+    Lark's ``LarkInput`` alias leaves its text type parameter unresolved, so
+    strict mode sees ``Lark.parse`` as partially unknown. This protocol pins the
+    call shape the profiler actually uses.
+    """
+
+    def parse(self, text: str) -> Tree[Token]: ...
 
 
 def _load_text(path: Path) -> str:
@@ -51,7 +64,7 @@ def _timed(fn: Callable[[], object]) -> float:
 
 def _profile_once(
     path: Path,
-    parser: api.Lark,
+    parser: Lark,
     *,
     transform_only: bool,
 ) -> dict[str, float]:
@@ -64,23 +77,24 @@ def _profile_once(
     doc_holder: dict[str, object] = {}
 
     def do_preprocess_holder() -> None:
-        doc_holder["doc"] = api.preprocess_source(text)
+        doc_holder["doc"] = preprocess_source(text)
 
     tree_holder: dict[str, object] = {}
 
     def do_parse() -> None:
         doc = cast(SourceDocument, doc_holder["doc"])
-        tree_holder["tree"] = parser.parse(doc.normalized_text)
+        parse = cast(_TextParser, parser).parse
+        tree_holder["tree"] = parse(doc.normalized_text)
 
     def do_remap() -> None:
         doc = cast(SourceDocument, doc_holder["doc"])
-        tree = tree_holder["tree"]
+        tree = cast("Tree[Token]", tree_holder["tree"])
         remap_tree_to_original(tree, doc)
 
     transformer = SLTransformer()
 
     def do_transform() -> None:
-        tree = tree_holder["tree"]
+        tree = cast("Tree[Token]", tree_holder["tree"])
         transformer.transform(tree)
 
     if transform_only:
@@ -107,7 +121,7 @@ def _profile_once(
 
 def _profile_file(
     path: Path,
-    parser: api.Lark,
+    parser: Lark,
     *,
     repeat: int,
     memory: bool,

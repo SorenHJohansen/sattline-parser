@@ -63,15 +63,19 @@ class SattLineProject:
         dependency file (when present) is read, and dependencies are loaded
         recursively before the target itself. When a code file has a ``.g`` /
         ``.y`` sibling, the companion is parsed into the program's graphics
-        model. Programs are canonicalized by casefolded identity: each name is
-        visited and parsed exactly once. A recursive sidecar chain or a module
-        type that instantiates itself is a structural error and always raises.
-        ``strict=True`` (default) fails fast on missing or unparseable
-        artifacts; ``strict=False`` skips the failing program and continues.
+        model. Programs are canonicalized by casefolded identity: within one
+        resolved body each name is visited and parsed exactly once. A name that
+        resolves to different bodies for different requesters is reported as a
+        ``NAME_RESOLUTION_CONFLICT`` diagnostic, and the registry keeps the
+        first body. A recursive sidecar chain or a module type that instantiates
+        itself is a structural error and always raises. ``strict=True``
+        (default) fails fast on missing or unparseable artifacts;
+        ``strict=False`` skips the failing program and continues.
 
-        ``validate=FULL`` (default) runs the single-file validator per program
-        with the definitions visible from already-loaded dependencies and stores
-        the findings on each program. ``validate=NONE`` parses only.
+        ``validate=INVOKED`` (default) validates each target in full while a
+        dependency file contributes only the module types the target invokes,
+        transitively. ``validate=FULL`` runs the single-file validator over
+        every loaded program. ``validate=NONE`` parses only.
 
         ``cache_dir`` optionally enables the parser-owned lookup and AST caches
         so repeated loads skip re-discovery and re-parsing. When ``None`` the
@@ -115,11 +119,13 @@ class SattLineProject:
         return MappingProxyType(self._programs)
 
     def diagnostics(self) -> tuple[LoadDiagnostic, ...]:
-        """Non-fatal load findings (missing/empty sidecars, stray sidecars).
+        """Non-fatal load findings, in discovery then assembly order.
 
-        These are conditions the loader reports and an operator may
-        continue past; they are surfaced rather than raised so the default
-        ``strict=True`` contract (missing *bodies* fail) is unchanged.
+        Missing, empty, stray, and family-mismatched sidecars, a program a
+        lenient load skipped, and a folded name that resolved to two bodies are
+        conditions the loader reports and an operator may continue past; they
+        are surfaced rather than raised so the default ``strict=True`` contract
+        (missing *bodies* fail) is unchanged.
         """
         return self._diagnostics
 
@@ -143,11 +149,16 @@ class SattLineProject:
         return self.get(name).dependencies
 
     def dependents_of(self, name: str) -> tuple[str, ...]:
-        """Loaded programs declaring ``name`` as a dependency, in load order."""
+        """Loaded programs declaring ``name`` as a dependency, in load order.
+
+        Like :meth:`dependencies_of`, the answer is spelled the way each
+        dependent declared itself, so a caller can pass a returned name back to
+        :meth:`get` and read the same program's ``name``.
+        """
         key = name.casefold()
         return tuple(
-            owner
-            for owner, program in self._programs.items()
+            program.name
+            for program in self._programs.values()
             if key in (dependency.casefold() for dependency in program.dependencies)
         )
 

@@ -25,14 +25,9 @@ from sattline_parser.project.discovery import (
     _resolved,
 )
 
+from ._support import write_file
+
 _DISCOVERY_PATH = "sattline_parser.project.discovery"
-
-
-def _write(root: Path, rel: str, content: str = "") -> Path:
-    p = root / rel
-    p.parent.mkdir(parents=True, exist_ok=True)
-    p.write_text(content, encoding="utf-8")
-    return p
 
 
 def test_resolved_paths() -> None:
@@ -60,20 +55,20 @@ def test_first_branch_under_edges(tmp_path: Path) -> None:
 
 
 def test_is_allowed_base(tmp_path: Path) -> None:
-    root_a = _write(tmp_path, "a/.keep")
-    root_b = _write(tmp_path, "b/.keep")
+    root_a = write_file(tmp_path, "a/.keep")
+    root_b = write_file(tmp_path, "b/.keep")
     assert _is_allowed_base([root_a, root_b], root_a)
     assert not _is_allowed_base([root_a], tmp_path / "elsewhere")
 
 
 def test_source_index_builds_and_finds(tmp_path: Path) -> None:
     root = tmp_path / "p"
-    _write(root, "Alpha.s")
-    _write(root, "Beta.x")
-    _write(root, "Gamma.l")
-    _write(root, "Delta.z")
-    _write(root, "Epsilon.g")
-    _write(root, "Nested/Eta.s")
+    write_file(root, "Alpha.s")
+    write_file(root, "Beta.x")
+    write_file(root, "Gamma.l")
+    write_file(root, "Delta.z")
+    write_file(root, "Epsilon.g")
+    write_file(root, "Nested/Eta.s")
 
     index = SourceIndex([root])
     assert index.roots == (root,)
@@ -94,7 +89,7 @@ def test_source_index_add_registers_after_index_build(tmp_path: Path) -> None:
     index = SourceIndex([root])
     # Build the cache while the directory is empty; the late file must not appear.
     assert index.find_in_index(base=root, name="Absent", extensions=(".s",)) is None
-    late = _write(root, "Late.s")
+    late = write_file(root, "Late.s")
     assert index.find_in_index(base=root, name="Late", extensions=(".s",)) is None
     index.add(base=root, name="Late", path=late)
     assert index.find_in_index(base=root, name="late", extensions=(".s",)) == late
@@ -105,19 +100,19 @@ def test_source_index_rejects_missing_and_file_bases(tmp_path: Path) -> None:
     root.mkdir()
     index = SourceIndex([root])
     assert index.find_in_index(base=root / "missing", name="X", extensions=(".s",)) is None
-    a_file = _write(tmp_path, "f.s")
+    a_file = write_file(tmp_path, "f.s")
     assert index.find_in_index(base=a_file, name="f", extensions=(".s",)) is None
 
 
 def test_shared_lookup_root_for_edges(tmp_path: Path) -> None:
     assert shared_lookup_root_for(None, []) is None
-    requester = _write(tmp_path, "cluster/app/.keep")
-    sibling_a = _write(tmp_path, "cluster/brandA/.keep")
-    sibling_b = _write(tmp_path, "cluster/brandB/.keep")
+    requester = write_file(tmp_path, "cluster/app/.keep")
+    sibling_a = write_file(tmp_path, "cluster/brandA/.keep")
+    sibling_b = write_file(tmp_path, "cluster/brandB/.keep")
     assert shared_lookup_root_for(requester, [requester, sibling_a, sibling_b]) == tmp_path / "cluster"
-    only_requester = _write(tmp_path, "lonely/.keep")
+    only_requester = write_file(tmp_path, "lonely/.keep")
     assert shared_lookup_root_for(only_requester, [only_requester]) is None
-    disjoint = _write(tmp_path, "disjoint/.keep")
+    disjoint = write_file(tmp_path, "disjoint/.keep")
     assert shared_lookup_root_for(requester, [requester, disjoint]) is None
 
 
@@ -144,9 +139,9 @@ def test_ordered_lookup_bases_cluster_precedence(tmp_path: Path) -> None:
 
 
 def test_ordered_lookup_bases_skips_unallowed_requester_and_dedups(tmp_path: Path) -> None:
-    root_a = _write(tmp_path, "cluster/a/.keep")
-    root_b = _write(tmp_path, "cluster/b/.keep")
-    outside = _write(tmp_path.parent, "outside/.keep")
+    root_a = write_file(tmp_path, "cluster/a/.keep")
+    root_b = write_file(tmp_path, "cluster/b/.keep")
+    outside = write_file(tmp_path.parent, "outside/.keep")
     ordered = ordered_lookup_bases([root_a, root_b], requester_dir=outside)
     assert ordered == (root_a.resolve(), root_b.resolve())
     ordered_dup = ordered_lookup_bases([root_a, root_a], requester_dir=root_a)
@@ -154,15 +149,15 @@ def test_ordered_lookup_bases_skips_unallowed_requester_and_dedups(tmp_path: Pat
 
 
 def test_ordered_lookup_bases_no_cluster_keeps_root_order(tmp_path: Path) -> None:
-    root_a = _write(tmp_path, "first/.keep")
-    root_b = _write(tmp_path, "second/.keep")
+    root_a = write_file(tmp_path, "first/.keep")
+    root_b = write_file(tmp_path, "second/.keep")
     ordered = ordered_lookup_bases([root_a, root_b], requester_dir=root_a)
     assert ordered == (root_a.resolve(), root_b.resolve())
 
 
 def test_ordered_lookup_bases_without_requester_and_empty(tmp_path: Path) -> None:
-    root_a = _write(tmp_path, "ra/.keep")
-    root_b = _write(tmp_path, "rb/.keep")
+    root_a = write_file(tmp_path, "ra/.keep")
+    root_b = write_file(tmp_path, "rb/.keep")
     assert ordered_lookup_bases([root_a, root_b], None) == (root_a.resolve(), root_b.resolve())
     assert ordered_lookup_bases([], None) == ()
 
@@ -190,8 +185,8 @@ def test_ordered_lookup_bases_same_branch_before_siblings(tmp_path: Path) -> Non
 
 def test_lookup_draft_prefers_s_then_falls_back_to_x(tmp_path: Path) -> None:
     root = tmp_path / "p"
-    _write(root, "A.s")
-    _write(root, "B.x")
+    write_file(root, "A.s")
+    write_file(root, "B.x")
     lookup = ProjectLookup([root], LoadMode.DRAFT)
     assert lookup.find_code("A") == root / "A.s"
     assert lookup.find_code("b") == root / "B.x"
@@ -199,8 +194,8 @@ def test_lookup_draft_prefers_s_then_falls_back_to_x(tmp_path: Path) -> None:
 
 def test_lookup_draft_deps_prefers_l_then_z(tmp_path: Path) -> None:
     root = tmp_path / "p"
-    _write(root, "C.l")
-    _write(root, "D.z")
+    write_file(root, "C.l")
+    write_file(root, "D.z")
     lookup = ProjectLookup([root], LoadMode.DRAFT)
     assert lookup.find_deps("C") == root / "C.l"
     assert lookup.find_deps("D") == root / "D.z"
@@ -208,8 +203,8 @@ def test_lookup_draft_deps_prefers_l_then_z(tmp_path: Path) -> None:
 
 def test_lookup_official_accepts_only_official_extensions(tmp_path: Path) -> None:
     root = tmp_path / "p"
-    _write(root, "A.s")
-    _write(root, "E.x")
+    write_file(root, "A.s")
+    write_file(root, "E.x")
     lookup = ProjectLookup([root], LoadMode.OFFICIAL)
     assert lookup.find_code("A") is None
     assert lookup.find_code("E") == root / "E.x"
@@ -220,9 +215,9 @@ def test_lookup_root_precedence_prefers_earlier_root(tmp_path: Path) -> None:
     root_a.mkdir()
     root_b = tmp_path / "rb"
     root_b.mkdir()
-    _write(root_a, "A.s")
-    _write(root_b, "A.s")
-    _write(root_b, "A.x")
+    write_file(root_a, "A.s")
+    write_file(root_b, "A.s")
+    write_file(root_b, "A.x")
     lookup = ProjectLookup([root_a, root_b], LoadMode.DRAFT)
     assert lookup.find_code("A") == root_a / "A.s"
 
@@ -238,8 +233,8 @@ def test_lookup_missing_reports_via_debug(tmp_path: Path) -> None:
 
 def test_lookup_refuses_root_ordered_companion_search(tmp_path: Path) -> None:
     root = tmp_path / "p"
-    _write(root, "Pic.g")
-    _write(root, "Pic.q")
+    write_file(root, "Pic.g")
+    write_file(root, "Pic.q")
     lookup = ProjectLookup([root], LoadMode.DRAFT)
     for kind in (ArtifactKind.GRAPHICS, ArtifactKind.DISTRIBUTION):
         with pytest.raises(ValueError, match="beside the body"):
@@ -248,8 +243,8 @@ def test_lookup_refuses_root_ordered_companion_search(tmp_path: Path) -> None:
 
 def test_companions_never_enter_the_source_index(tmp_path: Path) -> None:
     root = tmp_path / "p"
-    _write(root, "Pic.g")
-    _write(root, "Pic.q")
+    write_file(root, "Pic.g")
+    write_file(root, "Pic.q")
     index = SourceIndex([root])
     lookup = ProjectLookup([root], LoadMode.DRAFT, index=index)
     with pytest.raises(ValueError):
@@ -263,7 +258,7 @@ def test_lookup_custom_index_discovers_previously_unindexed_file(tmp_path: Path)
     root.mkdir()
     index = SourceIndex([root])
     lookup = ProjectLookup([root], LoadMode.DRAFT, index=index)
-    _write(root, "NewFile.s")
+    write_file(root, "NewFile.s")
     found = lookup.find_code("NewFile")
     assert found == root / "NewFile.s"
     assert index.find_in_index(base=root, name="NewFile", extensions=(".s",)) == found
@@ -274,14 +269,14 @@ def test_lookup_requester_dir_relative_hit(tmp_path: Path) -> None:
     requester.mkdir(parents=True)
     dep_root = tmp_path / "cluster" / "libs" / "deps"
     dep_root.mkdir(parents=True)
-    _write(dep_root, "A.x")
+    write_file(dep_root, "A.x")
     lookup = ProjectLookup([requester, dep_root], LoadMode.DRAFT)
     assert lookup.find_code("A", requester_dir=requester) == dep_root / "A.x"
 
 
 def test_lookup_uses_and_validates_cached_base(tmp_path: Path) -> None:
     root = tmp_path / "p"
-    _write(root, "A.s")
+    write_file(root, "A.s")
     cache_dir = tmp_path / "cache"
     cache = FileLookupCache(cache_dir, write_through=True)
     lookup = ProjectLookup([root], LoadMode.DRAFT, cache=cache)
@@ -292,7 +287,7 @@ def test_lookup_uses_and_validates_cached_base(tmp_path: Path) -> None:
 
 def test_find_in_cached_base_direct(tmp_path: Path) -> None:
     root = tmp_path / "p"
-    _write(root, "Cached.x")
+    write_file(root, "Cached.x")
     cache_dir = tmp_path / "cache"
     cache = FileLookupCache(cache_dir, write_through=True)
     lookup = ProjectLookup([root], LoadMode.OFFICIAL, cache=cache)
@@ -327,7 +322,7 @@ def test_find_in_cached_base_direct(tmp_path: Path) -> None:
 
 def test_find_in_cached_base_rejects_base_outside_ordering(tmp_path: Path) -> None:
     root = tmp_path / "p"
-    _write(root, "X.x")
+    write_file(root, "X.x")
     cache_dir = tmp_path / "cache"
     cache = FileLookupCache(cache_dir, write_through=True)
     lookup = ProjectLookup([root], LoadMode.OFFICIAL, cache=cache)
@@ -341,8 +336,8 @@ def test_find_in_cached_base_prefers_outranking_base(tmp_path: Path) -> None:
     requester.mkdir(parents=True)
     dep_root = tmp_path / "cluster" / "libs"
     dep_root.mkdir(parents=True)
-    _write(requester, "A.x")
-    _write(dep_root, "A.x")
+    write_file(requester, "A.x")
+    write_file(dep_root, "A.x")
     cache_dir = tmp_path / "cache"
     cache = FileLookupCache(cache_dir, write_through=True)
     lookup = ProjectLookup([requester, dep_root], LoadMode.OFFICIAL, cache=cache)
@@ -361,7 +356,7 @@ def test_find_in_cached_base_falls_through_to_cached_base(tmp_path: Path) -> Non
     requester.mkdir(parents=True)
     dep_root = tmp_path / "cluster" / "libs"
     dep_root.mkdir(parents=True)
-    _write(dep_root, "B.x")
+    write_file(dep_root, "B.x")
     cache_dir = tmp_path / "cache"
     cache = FileLookupCache(cache_dir, write_through=True)
     lookup = ProjectLookup([requester, dep_root], LoadMode.OFFICIAL, cache=cache)
@@ -383,7 +378,7 @@ def _raise_if_called(
 
 def test_find_returns_cached_result_without_scanning(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     root = tmp_path / "p"
-    _write(root, "Cached.s")
+    write_file(root, "Cached.s")
     cache_dir = tmp_path / "cache"
     cache = FileLookupCache(cache_dir, write_through=True)
     first = ProjectLookup([root], LoadMode.DRAFT, cache=cache)
@@ -396,8 +391,8 @@ def test_find_returns_cached_result_without_scanning(tmp_path: Path, monkeypatch
 
 def test_find_full_scan_fallbacks(tmp_path: Path) -> None:
     root = tmp_path / "p"
-    _write(root, "A.s")
-    _write(root, "Z.x")
+    write_file(root, "A.s")
+    write_file(root, "Z.x")
 
     lookup = ProjectLookup([root], LoadMode.DRAFT)
     assert lookup.find_code("A") == root / "A.s"
@@ -411,7 +406,7 @@ def test_find_full_scan_fallbacks(tmp_path: Path) -> None:
     late = ProjectLookup([root], LoadMode.DRAFT)
     # Build the index before the file exists, so resolution has to fall back to a scan.
     assert late._index.find_in_index(base=root, name="Absent", extensions=(".s",)) is None
-    late_file = _write(root, "Late.s")
+    late_file = write_file(root, "Late.s")
     assert late.find_code("Late") == late_file
     assert late._index.find_in_index(base=root, name="Late", extensions=(".s",)) == late_file
 
@@ -431,19 +426,97 @@ def test_find_cache_refreshes_when_higher_precedence_file_appears(tmp_path: Path
     requester.mkdir(parents=True)
     dep_root = tmp_path / "cluster" / "libs"
     dep_root.mkdir(parents=True)
-    _write(dep_root, "A.s")
+    write_file(dep_root, "A.s")
     cache_dir = tmp_path / "cache"
     cache = FileLookupCache(cache_dir, write_through=True)
     first = ProjectLookup([requester, dep_root], LoadMode.DRAFT, cache=cache)
     assert first.find_code("A") == dep_root / "A.s"
 
-    _write(requester, "A.s")
+    write_file(requester, "A.s")
     second = ProjectLookup([requester, dep_root], LoadMode.DRAFT, cache=cache)
     assert second.find_code("A") == requester / "A.s"
     assert cache.get("code", "a", LoadMode.DRAFT.value) == {
         "base_dir": str(requester.resolve()),
         "ext": ".s",
     }
+
+
+def test_lookup_refuses_a_dependency_name_with_a_parent_reference(tmp_path: Path) -> None:
+    """A dependency name is a unit name, never a path into another tree."""
+    root = tmp_path / "lib"
+    root.mkdir()
+    write_file(tmp_path, "outside/Secret.s")
+
+    lookup = ProjectLookup([root], LoadMode.DRAFT)
+
+    assert lookup.find_code("../outside/Secret", requester_dir=root) is None
+
+
+def test_lookup_refuses_an_absolute_dependency_name(tmp_path: Path) -> None:
+    root = tmp_path / "lib"
+    root.mkdir()
+    outside = write_file(tmp_path, "outside/Secret.s")
+
+    lookup = ProjectLookup([root], LoadMode.DRAFT)
+
+    assert lookup.find_code(str(outside), requester_dir=root) is None
+
+
+def test_find_deps_beside_refuses_a_name_with_a_path(tmp_path: Path) -> None:
+    root = tmp_path / "lib"
+    root.mkdir()
+    body = write_file(root, "Main.s")
+    write_file(tmp_path, "outside/Secret.l", "Lib\n")
+
+    lookup = ProjectLookup([root], LoadMode.DRAFT)
+
+    assert lookup.find_deps_beside(body, "../outside/Secret") is None
+    assert lookup.find_deps_beside(body, str(tmp_path / "outside" / "Secret")) is None
+
+
+def test_find_in_base_requires_containment_for_the_stat_fallback(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The stat fallback builds a path from the name, so it checks containment too."""
+    root = tmp_path / "lib"
+    root.mkdir()
+    write_file(tmp_path, "outside/Secret.s")
+
+    # Bypass the name guard so the containment check is the only barrier left.
+    def always_safe(name: str) -> bool:
+        del name
+        return True
+
+    monkeypatch.setattr(f"{_DISCOVERY_PATH}._is_safe_name", always_safe)
+
+    lookup = ProjectLookup([root], LoadMode.DRAFT)
+
+    assert lookup.find_code("../outside/Secret", requester_dir=root) is None
+    assert lookup.find_code(str(tmp_path / "outside" / "Secret"), requester_dir=root) is None
+
+
+def test_lookup_restats_an_index_hit_and_misses_a_deleted_body(tmp_path: Path) -> None:
+    """A body deleted after the index was built must not resolve."""
+    root = tmp_path / "lib"
+    body = write_file(root, "Gone.s")
+    lookup = ProjectLookup([root], LoadMode.DRAFT)
+
+    assert lookup.find_code("Gone") == body
+    body.unlink()
+
+    assert lookup.find_code("Gone") is None
+
+
+def test_lookup_restats_an_index_hit_for_a_sidecar(tmp_path: Path) -> None:
+    root = tmp_path / "lib"
+    body = write_file(root, "Main.s")
+    sidecar = write_file(root, "Main.l", "Lib\n")
+    lookup = ProjectLookup([root], LoadMode.DRAFT)
+
+    assert lookup.find_deps_beside(body, "Main") == sidecar
+    sidecar.unlink()
+
+    assert lookup.find_deps_beside(body, "Main") is None
 
 
 def test_project_lookup_requester_ordering_end_to_end(tmp_path: Path) -> None:
@@ -455,8 +528,8 @@ def test_project_lookup_requester_ordering_end_to_end(tmp_path: Path) -> None:
     brand_b.mkdir()
     abb = tmp_path.parent / "abb-end" / "lib"
     abb.mkdir(parents=True, exist_ok=True)
-    _write(brand_a, "Dep.x")
-    _write(brand_b, "Dep.x")
+    write_file(brand_a, "Dep.x")
+    write_file(brand_b, "Dep.x")
     lookup = ProjectLookup([requester, brand_b, brand_a, abb], LoadMode.DRAFT)
     assert lookup.find_code("Dep", requester_dir=requester) == brand_a / "Dep.x"
 
@@ -469,14 +542,14 @@ def test_warm_cache_preserves_cold_extension_precedence(tmp_path: Path) -> None:
     """
     root = tmp_path / "p"
     cache_dir = tmp_path / "cache"
-    _write(root, "Lib.x")
+    write_file(root, "Lib.x")
 
     cache = FileLookupCache(cache_dir)
     cold_first = ProjectLookup([root], LoadMode.DRAFT, cache=cache).find_code("Lib")
     assert cold_first == root / "Lib.x"
     cache.flush()
 
-    _write(root, "Lib.s")
+    write_file(root, "Lib.s")
 
     warm = ProjectLookup([root], LoadMode.DRAFT, cache=FileLookupCache(cache_dir)).find_code("Lib")
     cold = ProjectLookup([root], LoadMode.DRAFT).find_code("Lib")
@@ -487,8 +560,8 @@ def test_warm_cache_resolves_a_name_whose_case_differs(tmp_path: Path) -> None:
     """A cold lookup is case-insensitive; the warm path must not lose that."""
     root = tmp_path / "p"
     cache_dir = tmp_path / "cache"
-    _write(root, "Mixed.s")
-    _write(root, "mixed.x")
+    write_file(root, "Mixed.s")
+    write_file(root, "mixed.x")
 
     first = FileLookupCache(cache_dir)
     assert ProjectLookup([root], LoadMode.DRAFT, cache=first).find_code("mixed") == root / "Mixed.s"

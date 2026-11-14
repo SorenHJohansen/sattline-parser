@@ -49,6 +49,7 @@ from __future__ import annotations
 from collections.abc import Callable, Iterator, Sequence
 from dataclasses import dataclass, is_dataclass
 from dataclasses import fields as dataclass_fields
+from enum import Enum
 from typing import Literal, cast, overload
 
 from . import ast_model as m
@@ -81,7 +82,7 @@ from .expressions import (
     UnaryOp,
     VarRef,
 )
-from .tails import LitStringTail, VarTail
+from .tails import LitStringTail, VarTail, is_expression_tail
 
 __all__ = ["LiteralLeaf", "NodeVisitor", "WalkEvent", "iter_child_nodes", "iter_literal_leaves", "walk"]
 
@@ -163,7 +164,6 @@ _FIELD_SPECS: _FieldSpecs = {
         "modulecodes": "node",
         "origin_file": "leaf",
         "origin_lib": "leaf",
-        "graphics_file": "leaf",
         "trailing_comments": "node",
         "datecode": "leaf",
     },
@@ -273,6 +273,7 @@ _FIELD_SPECS: _FieldSpecs = {
         "seqcontrol": "leaf",
         "seqtimer": "leaf",
         "code": "node",
+        "layer_info": "leaf",
     },
     m.SingleModule: {
         "header": "node",
@@ -315,7 +316,7 @@ _FIELD_SPECS: _FieldSpecs = {
     },
     Compare: {"left": "value", "op": "leaf", "right": "value", "span": "leaf"},
     EnableClause: {"enabled": "leaf", "tail": "value", "span": "leaf"},
-    FlagClause: {"name": "leaf", "extra": "leaf", "tail": "value", "span": "leaf"},
+    FlagClause: {"name": "leaf", "tail": "value", "span": "leaf"},
     FuncCall: {"name": "leaf", "args": "value", "span": "leaf"},
     FuncCallStmt: {"call": "node", "span": "leaf"},
     IfStmt: {"branches": "value", "else_block": "node", "span": "leaf"},
@@ -370,18 +371,6 @@ _INTERACT_PROPERTY_ORDER: tuple[str, ...] = (
     "tails",
     "coords",
     "layers",
-)
-
-#: Expression node classes that can stand as a tail or a clause value.
-_EXPRESSION_NODE_TYPES: tuple[type[object], ...] = (
-    VarRef,
-    BoolOp,
-    NotOp,
-    Compare,
-    BinOp,
-    UnaryOp,
-    FuncCall,
-    TernaryOp,
 )
 
 
@@ -522,7 +511,15 @@ class _Child:
 
 
 def _is_tail_value(value: object) -> bool:
-    return isinstance(value, (VarTail, LitStringTail, *_EXPRESSION_NODE_TYPES))
+    """True for a bound wrapper or a computed tail node.
+
+    ``is_expression_tail`` is the single registry shared with the model layer.
+    It also accepts plain literals, which are values rather than tail nodes, so
+    they are filtered out here.
+    """
+    if isinstance(value, (VarTail, LitStringTail)):
+        return True
+    return is_expression_tail(value) and not isinstance(value, (bool, int, float, str))
 
 
 def _collect_tail_ids(value: object, into: set[int]) -> None:
@@ -553,6 +550,19 @@ def _descend(field: str, value: object, relation: str, indices: tuple[int, ...])
             yield from _descend(field, item, f"{relation}[{index}]", (*indices, index))
 
 
+def _literal_scalar(value: object) -> bool | int | float | str | None:
+    """Return ``value`` when it is a plain literal, otherwise ``None``.
+
+    Enum members are excluded: a ``Simple_DataType`` or ``MappingSource`` value
+    is a symbol, not a literal, even when the enum subclasses ``str``.
+    """
+    if isinstance(value, Enum):
+        return None
+    if isinstance(value, (bool, int, float, str)):
+        return value
+    return None
+
+
 def _literal_leaves(field: str, value: object, relation: str, indices: tuple[int, ...]) -> Iterator[LiteralLeaf]:
     """Yield the literal values reachable through one ``value`` field."""
     if isinstance(value, _NODE_TYPES):
@@ -563,6 +573,16 @@ def _literal_leaves(field: str, value: object, relation: str, indices: tuple[int
     if isinstance(value, (list, tuple)):
         for index, item in enumerate(cast("Sequence[object]", value)):
             yield from _literal_leaves(field, item, f"{relation}[{index}]", (*indices, index))
+
+
+def _property_literal_leaves(node: m.GraphObject | m.InteractObject) -> Iterator[LiteralLeaf]:
+    """Yield the scalar entries of a typed property map."""
+    properties = node.properties
+    order = _GRAPH_PROPERTY_ORDER if isinstance(node, m.GraphObject) else _INTERACT_PROPERTY_ORDER
+    for key in order:
+        literal = _literal_scalar(properties.get(key))
+        if literal is not None:
+            yield LiteralLeaf(f"properties.{key}", key, (), literal)
 
 
 def _unowned_tail_entries(values: object, owned: set[int]) -> Iterator[_Child]:
@@ -630,11 +650,13 @@ def iter_child_nodes(node: object) -> Iterator[tuple[str, object]]:
 
 
 def iter_literal_leaves(node: object) -> Iterator[LiteralLeaf]:
-    """Yield the literal values directly under ``node``.
+    """Yield the literal values a node holds directly.
 
-    Only fields declared as ``value`` can hold a literal. Use :func:`walk` to
-    reach the nodes, and this helper to read the literal values a node holds
-    without boxing them.
+    ``value`` fields may hold a node or a literal, so nested sequences are
+    traversed and node values are skipped. ``leaf`` fields hold literal scalars,
+    and a typed property map contributes its scalar entries. Containers,
+    ``None``, spans, and enum members are not literal leaves. Use :func:`walk`
+    to reach the nodes.
     """
     if isinstance(node, (list, tuple)):
         for item in cast("Sequence[object]", node):
@@ -646,9 +668,16 @@ def iter_literal_leaves(node: object) -> Iterator[LiteralLeaf]:
     if specs is None:
         return
     for name, kind in specs.items():
-        if kind != "value":
+        if kind == "properties":
+            yield from _property_literal_leaves(cast("m.GraphObject | m.InteractObject", node))
             continue
-        yield from _literal_leaves(name, getattr(node, name), name, ())
+        if kind == "value":
+            yield from _literal_leaves(name, getattr(node, name), name, ())
+            continue
+        if kind == "leaf":
+            literal = _literal_scalar(getattr(node, name))
+            if literal is not None:
+                yield LiteralLeaf(name, name, (), literal)
 
 
 def walk(

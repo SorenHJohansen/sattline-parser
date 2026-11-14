@@ -1,7 +1,7 @@
 """Recursive program loading, dependency resolution, and project validation.
 
 The loader resolves a target across ordered roots, reads its dependency sidecar,
-loads dependencies first, parses the body, and (when ``validate=FULL``) runs the
+loads dependencies first, parses the body, and (when validation runs) runs the
 single-file validator with the definitions visible from already-loaded programs.
 ``validate=INVOKED`` validates each target in full and limits dependency files
 to the module types that target invokes, transitively.
@@ -11,9 +11,17 @@ program's diagnostics are computed against a complete prefix of its closure.
 The loader asserts that invariant. Invoked-scope validation runs after the graph
 is complete because it needs the whole invocation graph.
 
-``tentative`` marking is owned here. When a non-strict load skips a dependency,
-every program whose closure includes that dependency gets tentative findings for
-rules that depend on external definitions. Purely local findings stay final.
+A plan is keyed by the resolved code path, not by the folded name. One root's
+``Util.s`` and another root's ``Util.s`` are therefore two plans with two
+bodies, and each requester's closure follows the body its own ordered lookup
+resolved. The public registry still holds one program per folded name; when one
+name resolves to different bodies for different requesters, the loader keeps
+the first and reports a ``NAME_RESOLUTION_CONFLICT`` diagnostic.
+
+``tentative`` marking is owned here. A finding is tentative when the definition
+it could not resolve, or the module type it resolved through, may have come
+from a dependency that a non-strict load skipped. Purely local findings stay
+final even when an unrelated dependency is missing.
 
 Strict loading fails fast on missing or unparseable artifacts. Validation
 findings never raise; ``strict`` governs load failures only. Two structural
@@ -25,18 +33,28 @@ from __future__ import annotations
 
 import multiprocessing
 import threading
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Iterable, Mapping, Sequence
 from concurrent.futures import ProcessPoolExecutor
 from concurrent.futures.process import BrokenProcessPool
 from dataclasses import dataclass, replace
 from pathlib import Path
 
 from sattline_parser.errors import PARSE_FAILURES
-from sattline_parser.models.ast_model import BasePicture, DataType, ModuleTypeDef, SourceSpan
+from sattline_parser.models.ast_model import (
+    BasePicture,
+    DataType,
+    FrameModule,
+    ModuleTypeDef,
+    ModuleTypeInstance,
+    Simple_DataType,
+    SingleModule,
+    SourceSpan,
+)
 from sattline_parser.names import fold_identifier
 from sattline_parser.source_io import parse_source_file, private_cache_dir, read_text_cp1252
 from sattline_parser.validation import validate_basepicture
 from sattline_parser.validation.diagnostics import Diagnostic, DiagnosticCode
+from sattline_parser.validation.type_graph import TypeGraph
 
 from ._cycles import canonical_cycle, first_cycle
 from .ast_cache import FileASTCache, source_snapshot
@@ -55,8 +73,8 @@ from .errors import (
     ProjectLoadError,
     StructuralProjectError,
 )
-from .formats import ALL_DEPS_EXTENSIONS, find_companion_beside
-from .graphics_parsing import parse_graphics_file, resolve_graphics_companion_path
+from .formats import ALL_DEPS_EXTENSIONS, body_mode, find_companion_beside
+from .graphics_parsing import GraphicsParseError, parse_graphics_file, resolve_graphics_companion_path
 from .lookup_cache import FileLookupCache
 from .models import (
     DistributionData,
@@ -69,25 +87,91 @@ from .models import (
     SattLineProgram,
     SidecarState,
 )
-from .reachability import invoked_moduletypes, iter_moduletype_refs, visible_program_keys
+from .reachability import invoked_moduletypes, iter_moduletype_refs
 
-#: Findings that depend on definitions outside the program itself. They become
-#: tentative when a part of the closure failed to load.
-_TENTATIVE_CODES = frozenset(
+#: Findings whose subject is a name no loaded definition resolved. A skipped
+#: dependency may hold the definition, so they are tentative in an incomplete
+#: closure.
+_UNRESOLVED_NAME_CODES = frozenset(
     {
         DiagnosticCode.UNKNOWN_DATATYPE_NAME,
         DiagnosticCode.UNKNOWN_MODULETYPE_NAME,
-        DiagnosticCode.PARAM_TRANSFER_TYPE_MISMATCH,
-        DiagnosticCode.PARAMETER_MAPPING_TYPE_MISMATCH,
-        DiagnosticCode.PARAMETER_MAPPING_TARGET_UNKNOWN,
-        DiagnosticCode.DATECODE_CONFLICT,
     }
 )
 
+#: Findings produced by resolving a module type and checking a mapping against
+#: it. They are tentative only when that module type is contributed by a
+#: dependency whose own closure is incomplete.
+_MODULE_MAPPING_CODES = frozenset(
+    {
+        DiagnosticCode.PARAM_TRANSFER_TYPE_MISMATCH,
+        DiagnosticCode.PARAMETER_MAPPING_TARGET_UNKNOWN,
+        DiagnosticCode.PARAMETER_MAPPING_TYPE_MISMATCH,
+    }
+)
 
-def _mark_tentative(diagnostics: Sequence[Diagnostic]) -> list[Diagnostic]:
-    """Mark the findings that depend on an incomplete closure as tentative."""
-    return [replace(item, tentative=True) if item.code in _TENTATIVE_CODES else item for item in diagnostics]
+#: The folded names of the scalar datatypes, which are always known.
+_SCALAR_DATATYPE_NAMES = frozenset(fold_identifier(datatype.value) for datatype in Simple_DataType)
+
+
+@dataclass(frozen=True, slots=True)
+class _MappingDefinitions:
+    """The folded definitions one parameter mapping resolves through."""
+
+    #: The module type the instance names.
+    moduletype: str
+    #: The datatypes of that module type's parameters.
+    datatypes: frozenset[str]
+
+
+@dataclass(frozen=True, slots=True)
+class _TentativeScope:
+    """What can make a finding in one program depend on an unloaded dependency."""
+
+    #: The program's own closure is incomplete, so an unresolved name may live
+    #: in a skipped dependency.
+    incomplete: bool
+    #: Plan keys of the incomplete dependencies in this program's closure.
+    incomplete_owners: frozenset[str]
+    #: Folded module-type and datatype name to the plan keys that declare it.
+    definition_owners: Mapping[str, frozenset[str]]
+    #: Parameter-mapping span to the definitions the mapping resolves through.
+    definitions_by_span: Mapping[SourceSpan, _MappingDefinitions]
+    #: Local, external, and builtin datatypes, so an unresolved name is
+    #: distinguishable from a known one. ``None`` when the closure is complete,
+    #: where no finding can become tentative.
+    type_graph: TypeGraph | None = None
+
+    def mark(self, diagnostics: Sequence[Diagnostic]) -> list[Diagnostic]:
+        """Mark the findings this scope cannot make final."""
+        return [replace(item, tentative=True) if self._is_tentative(item) else item for item in diagnostics]
+
+    def _is_tentative(self, item: Diagnostic) -> bool:
+        if item.code in _UNRESOLVED_NAME_CODES:
+            return self.incomplete
+        if item.code not in _MODULE_MAPPING_CODES or item.span is None:
+            return False
+        definitions = self.definitions_by_span.get(item.span)
+        if definitions is None:
+            return False
+        if self._owner_is_incomplete(definitions.moduletype):
+            return True
+        for datatype in definitions.datatypes:
+            if self._owner_is_incomplete(datatype):
+                return True
+            if not self._is_known_datatype(datatype):
+                # The parameter datatype may be declared by a skipped dependency.
+                return True
+        return False
+
+    def _owner_is_incomplete(self, name: str) -> bool:
+        owners = self.definition_owners.get(name)
+        return bool(owners and owners & self.incomplete_owners)
+
+    def _is_known_datatype(self, name: str) -> bool:
+        if name in _SCALAR_DATATYPE_NAMES:
+            return True
+        return self.type_graph is not None and self.type_graph.has_record(name)
 
 
 def read_dependency_names(deps_path: Path) -> tuple[str, ...]:
@@ -119,13 +203,38 @@ class _Plan:
 
     Discovery fills a plan without parsing anything, so the whole closure is
     known before parse work starts. Assembly consumes plans in plan order,
-    which is post-order: every dependency precedes its consumer.
+    which is post-order: every dependency precedes its consumer. ``key`` is the
+    resolved code path, so two roots holding a same-named unit are two plans.
+    ``dependencies`` holds the plan key of each resolved dependency, in
+    declaration order.
     """
 
     key: str
     name: str
     declared_by: str | None
     artifact: _ResolvedArtifact
+    dependencies: tuple[str, ...] = ()
+
+
+def _plan_key(code_path: Path) -> str:
+    """The unique plan identity for a resolved body: its resolved code path."""
+    try:
+        return str(code_path.resolve())
+    except OSError:
+        return str(code_path)
+
+
+def _iter_moduletype_instances(code: BasePicture) -> Iterable[ModuleTypeInstance]:
+    """Yield every module-type instance in one picture, nested ones included."""
+    pending: list[SingleModule | FrameModule | ModuleTypeInstance] = [*code.submodules]
+    for moduletype in code.moduletype_defs:
+        pending.extend(moduletype.submodules)
+    while pending:
+        node = pending.pop()
+        if isinstance(node, ModuleTypeInstance):
+            yield node
+            continue
+        pending.extend(node.submodules)
 
 
 @dataclass(frozen=True, slots=True)
@@ -162,6 +271,24 @@ def _parse_failure(program_name: str, code_name: str, dependency: str | None) ->
         f"failed to parse dependency {dependency!r}",
         dependency=dependency,
     )
+
+
+def _skipped_diagnostic(name: str, error: ProjectLoadError, parents: Sequence[str]) -> LoadDiagnostic:
+    """The one ``LOAD_SKIPPED`` row for a name that could not be discovered."""
+    detail = f"skipped {name!r}: {error}"
+    if parents:
+        detail += f" (requested by {', '.join(parents)})"
+    return LoadDiagnostic(kind=LoadDiagnosticKind.LOAD_SKIPPED, program=name, detail=detail)
+
+
+@dataclass(slots=True)
+class _SkippedName:
+    """One negative-cached discovery failure, with every requester that hit it."""
+
+    error: ProjectLoadError
+    parents: list[str]
+    diagnostic: LoadDiagnostic
+    index: int
 
 
 #: One cache handle per worker process. Constructing a handle per task would
@@ -258,15 +385,28 @@ class ProjectLoader:
         self._validate = validate
         self._workers = max(1, workers)
         self._secure_cache_dir = secure_cache_dir
-        #: Discovery order is post-order, so assembly is a single pass.
+        #: Discovery order is post-order, so assembly is a single pass. Plans
+        #: are keyed by resolved code path, so a same-named unit in another
+        #: root is a second plan rather than a silent alias.
         self._plans: list[_Plan] = []
-        self._planned_keys: set[str] = set()
+        self._planned: set[str] = set()
+        #: Folded name -> the plan key that first resolved it.
+        self._plan_key_by_name: dict[str, str] = {}
+        #: Plan key -> the plan keys of its resolved dependencies.
+        self._resolved_dependencies: dict[str, tuple[str, ...]] = {}
         self._parsed: dict[str, _ParseOutcome] = {}
         self._resolved = False
+        #: Plan key -> the assembled program. The public view keeps one program
+        #: per folded name; this registry keeps every resolved body.
         self._registry: dict[str, SattLineProgram] = {}
-        #: Insertion-ordered set of program keys currently being loaded.
+        #: Insertion-ordered set of folded names currently being loaded.
         self._loading: dict[str, None] = {}
         self._diagnostics: list[LoadDiagnostic] = []
+        self._diagnostic_set: set[LoadDiagnostic] = set()
+        #: Folded name -> the one negative-cached discovery failure.
+        self._skipped: dict[str, _SkippedName] = {}
+        #: Plan keys of the explicitly requested programs.
+        self._target_plan_keys: set[str] = set()
         self._incomplete: set[str] = set()
         #: name -> datecode -> program keys declaring it. Conflict checks are
         #: scoped to a program's visible closure, so unrelated programs that
@@ -287,8 +427,10 @@ class ProjectLoader:
 
     def _diagnose(self, kind: LoadDiagnosticKind, program: str, detail: str, path: Path | None = None) -> None:
         diagnostic = LoadDiagnostic(kind=kind, program=program, detail=detail, path=path)
-        if diagnostic not in self._diagnostics:
-            self._diagnostics.append(diagnostic)
+        if diagnostic in self._diagnostic_set:
+            return
+        self._diagnostics.append(diagnostic)
+        self._diagnostic_set.add(diagnostic)
 
     def resolve(self, targets: Sequence[str]) -> dict[str, SattLineProgram]:
         """Resolve ``targets`` into the canonical registry for this load.
@@ -296,24 +438,43 @@ class ProjectLoader:
         A loader accumulates one registry: discovery plans, parse outcomes, and
         the registry itself are per-load state, so a second call would double
         the plans and re-assemble over the first result. One loader resolves
-        once; construct another for another load.
+        once; construct another for another load. The returned mapping holds one
+        program per folded name, which is the documented project identity.
         """
         if self._resolved:
             raise RuntimeError("ProjectLoader.resolve() resolves one load; construct another loader")
         self._resolved = True
         try:
             for target in targets:
-                self._visit(target, requester_dir=None, declared_by=None)
+                plan_key = self._visit(target, requester_dir=None, declared_by=None)
+                if plan_key is not None:
+                    self._target_plan_keys.add(plan_key)
             self._parse_planned()
             self._assemble()
             self._assert_registry_post_order()
             self._assert_no_moduletype_cycles()
             if self._validate is LoadValidation.INVOKED:
-                self._validate_invoked(targets)
-            return self._registry
+                self._validate_invoked()
+            return self._name_registry()
         finally:
             if self._lookup_cache is not None:
                 self._lookup_cache.flush()
+
+    def _name_registry(self) -> dict[str, SattLineProgram]:
+        """The public registry: one program per folded name, first resolution wins.
+
+        When the first-resolved body failed to assemble, the first body that did
+        assemble carries the name, so a skipped plan never blanks a name that a
+        later requester resolved successfully.
+        """
+        registry: dict[str, SattLineProgram] = {}
+        for key, program in self._registry.items():
+            name_key = program.name.casefold()
+            exposed_key = self._plan_key_by_name.get(name_key)
+            if exposed_key is not None and exposed_key != key and exposed_key in self._registry:
+                continue
+            registry.setdefault(name_key, program)
+        return registry
 
     def _assert_no_moduletype_cycles(self) -> None:
         """Reject a module type whose instantiation chain returns to itself.
@@ -327,8 +488,8 @@ class ProjectLoader:
         matters, and a graph can hold exponentially many elementary cycles, so
         the search stops as soon as it finds one.
         """
-        for key, program in self._registry.items():
-            visible_keys = self._visible_program_keys(key, program.dependencies)
+        for key in self._registry:
+            visible_keys = self._visible_plan_keys(key)
             edges, labels, owners = _moduletype_edges(self._registry, visible_keys)
             cycle = first_cycle(edges)
             if cycle is not None:
@@ -339,15 +500,16 @@ class ProjectLoader:
         """Assert that every loaded dependency precedes its consumer."""
         seen: set[str] = set()
         for key, program in self._registry.items():
-            for dependency in program.dependencies:
-                dependency_key = dependency.casefold()
+            for dependency_key in self._resolved_dependencies.get(key, ()):
                 if dependency_key in self._registry and dependency_key not in seen:
+                    dependency_name = self._registry[dependency_key].name
                     raise RuntimeError(
-                        f"loader registry is not in post-order: {program.name!r} precedes dependency {dependency!r}"
+                        f"loader registry is not in post-order: {program.name!r} precedes dependency {dependency_name!r}"
                     )
             seen.add(key)
 
-    def _visit(self, name: str, *, requester_dir: Path | None, declared_by: str | None) -> None:
+    def _visit(self, name: str, *, requester_dir: Path | None, declared_by: str | None) -> str | None:
+        """Plan one program and return its plan key, or ``None`` when it was skipped."""
         key = name.casefold()
         if key in self._loading:
             # A dependency loop has no finite load order. It is structural, so
@@ -355,25 +517,34 @@ class ProjectLoader:
             loading = tuple(self._loading)
             start = loading.index(key)
             raise DependencyCycleError(canonical_cycle((*loading[start:], key)))
-        if key in self._planned_keys:
-            return
         self._loading[key] = None
         try:
-            self._discover(name, requester_dir=requester_dir, declared_by=declared_by)
+            return self._discover(name, requester_dir=requester_dir, declared_by=declared_by)
         finally:
             del self._loading[key]
 
-    def _discover(self, name: str, *, requester_dir: Path | None, declared_by: str | None) -> None:
+    def _discover(self, name: str, *, requester_dir: Path | None, declared_by: str | None) -> str | None:
         """Resolve one program's artifacts and recurse into its dependencies.
 
         Discovery is path resolution and sidecar reads only: it never parses a
         body, so the whole closure is known before any parse work starts. The
         plan is appended after the recursion, which makes ``self._plans`` the
         post-order sequence the assembly phase needs.
+
+        A name that resolves to a body this load already planned reuses that
+        plan. A name that resolves to a *different* body is a second plan, and
+        the conflict is reported when that body assembles, because the two
+        requesters really did resolve two different units.
         """
         program_name = declared_by if declared_by is not None else name
         dependency = None if declared_by is None else name
-        key = name.casefold()
+        skipped = self._skipped.get(name.casefold())
+        if skipped is not None:
+            # A miss is name-global: the ordered bases are the same configured
+            # roots for every requester, only their order changes. Reusing the
+            # cached failure skips a second ordered scan and a second finding.
+            self._record_skipped(name, parent=declared_by, error=skipped.error)
+            return None
         try:
             self._dbg(f"Visiting: {name}")
             artifact = self._resolve_artifact(
@@ -382,30 +553,90 @@ class ProjectLoader:
                 program_name=program_name,
                 dependency=dependency,
             )
-            self._planned_keys.add(key)
-            for declared in artifact.dependencies:
-                self._visit(
-                    declared,
-                    requester_dir=artifact.dependency_requester,
-                    declared_by=name,
-                )
-            self._plans.append(
-                _Plan(
-                    key=key,
-                    name=name,
-                    declared_by=declared_by,
-                    artifact=artifact,
-                )
-            )
         except StructuralProjectError:
             raise
         except ProjectLoadError as exc:
             if self._strict:
                 raise
             # Non-strict loading must not be silent: an agent or a CI job has to
-            # be able to tell that a program is missing from the result.
-            self._incomplete.add(key)
-            self._diagnose(LoadDiagnosticKind.LOAD_SKIPPED, name, f"skipped {name!r}: {exc}")
+            # be able to tell that a program is missing from the result. The
+            # failure is cached per name, so a second requester extends the same
+            # row instead of repeating the ordered scan and the finding.
+            self._record_skipped(name, parent=declared_by, error=exc)
+            return None
+        plan_key = _plan_key(artifact.code_path)
+        name_key = name.casefold()
+        self._plan_key_by_name.setdefault(name_key, plan_key)
+        if plan_key in self._planned:
+            return plan_key
+        self._planned.add(plan_key)
+        resolved: list[str] = []
+        incomplete = False
+        for declared in artifact.dependencies:
+            dependency_key = self._visit(
+                declared,
+                requester_dir=artifact.dependency_requester,
+                declared_by=name,
+            )
+            if dependency_key is None:
+                incomplete = True
+            else:
+                resolved.append(dependency_key)
+        self._plans.append(
+            _Plan(
+                key=plan_key,
+                name=name,
+                declared_by=declared_by,
+                artifact=artifact,
+                dependencies=tuple(resolved),
+            )
+        )
+        self._resolved_dependencies[plan_key] = tuple(resolved)
+        if incomplete:
+            self._incomplete.add(plan_key)
+        return plan_key
+
+    def _record_skipped(self, name: str, *, parent: str | None, error: ProjectLoadError) -> None:
+        """Record one discovery failure, extending its parent list on a repeat."""
+        key = name.casefold()
+        requester = parent if parent is not None else name
+        existing = self._skipped.get(key)
+        if existing is None:
+            diagnostic = _skipped_diagnostic(name, error, [requester])
+            self._diagnostics.append(diagnostic)
+            self._diagnostic_set.add(diagnostic)
+            self._skipped[key] = _SkippedName(
+                error=error,
+                parents=[requester],
+                diagnostic=diagnostic,
+                index=len(self._diagnostics) - 1,
+            )
+            return
+        if requester in existing.parents:
+            return
+        existing.parents.append(requester)
+        updated = _skipped_diagnostic(name, existing.error, existing.parents)
+        self._diagnostic_set.discard(existing.diagnostic)
+        self._diagnostics[existing.index] = updated
+        self._diagnostic_set.add(updated)
+        existing.diagnostic = updated
+
+    def _record_shared_name(self, name: str, plan_key: str) -> None:
+        """Report one folded name resolving to different bodies for different requesters.
+
+        Called when a body assembles, so the diagnostic only ever describes two
+        bodies that really did load.
+        """
+        first = self._plan_key_by_name.get(name.casefold())
+        if first is None or first == plan_key:
+            return
+        self._diagnose(
+            LoadDiagnosticKind.NAME_RESOLUTION_CONFLICT,
+            name,
+            f"name {name!r} resolves to {first} for one requester and {plan_key} for another; "
+            f"both bodies load, and the project registry keeps {first}",
+            Path(plan_key),
+        )
 
     def _parse_planned(self) -> None:
         """Parse every planned body, in parallel when ``workers`` allows it.
@@ -503,7 +734,7 @@ class ProjectLoader:
 
     def _assemble_one(self, plan: _Plan) -> None:
         artifact = plan.artifact
-        if any(dependency.casefold() in self._incomplete for dependency in artifact.dependencies):
+        if any(dependency in self._incomplete for dependency in plan.dependencies):
             self._incomplete.add(plan.key)
 
         outcome = self._parsed[plan.key]
@@ -533,11 +764,11 @@ class ProjectLoader:
         name = plan.name
         program_name = _program_name(plan)
         dependency = _dependency(plan)
+        self._record_shared_name(name, plan.key)
         diagnostics = self._artifact_diagnostics(
             basepicture,
             key=plan.key,
             artifact=artifact,
-            declared_by=plan.declared_by,
         )
         self._remember_definitions(
             basepicture,
@@ -564,7 +795,7 @@ class ProjectLoader:
             graphics=graphics,
             dependencies=artifact.dependencies,
             format=ProgramFormat(
-                mode=self._mode,
+                mode=body_mode(artifact.code_path.suffix, self._mode),
                 code_ext=artifact.code_path.suffix.lower(),
                 graphics_ext=graphics_path.suffix.lower() if graphics_path is not None else None,
                 deps_ext=artifact.deps_path.suffix.lower() if artifact.deps_path is not None else None,
@@ -657,27 +888,28 @@ class ProjectLoader:
         *,
         key: str,
         artifact: _ResolvedArtifact,
-        declared_by: str | None,
     ) -> tuple[Diagnostic, ...]:
         if self._validate is not LoadValidation.INVOKED:
             return self._program_diagnostics(
                 basepicture,
-                dependencies=artifact.dependencies,
+                dependencies=self._resolved_dependencies.get(key, ()),
                 library=artifact.library,
                 file_name=artifact.code_path.name,
                 key=key,
             )
         # Module diagnostics need the whole graph. Datecode findings belong to
         # an explicitly selected program; a library import is not the place to
-        # report its own version drift.
-        if declared_by is not None:
+        # report its own version drift. Ownership comes from the target set, not
+        # from discovery order, so a target that was first reached as a
+        # dependency still reports its own conflict whatever the target order.
+        if key not in self._target_plan_keys:
             return ()
         return tuple(
             self._datecode_conflicts(
                 basepicture,
                 library=artifact.library,
                 file_name=artifact.code_path.name,
-                visible=self._visible_program_keys(key, artifact.dependencies),
+                visible=self._visible_plan_keys(key),
             )
         )
 
@@ -735,56 +967,126 @@ class ProjectLoader:
             ) from exc
         return distribution_path, distribution
 
-    def _visible_definitions(
-        self, dependencies: tuple[str, ...]
-    ) -> tuple[tuple[DataType, ...], tuple[ModuleTypeDef, ...]]:
-        """Definitions from this program's transitive dependency closure.
-
-        The registry is dependency-first, so filtering it by the closure keeps
-        a deterministic order. Using the whole registry here would let an
-        unrelated target's types hide an unknown-name finding.
-        """
+    def _closure(self, dependencies: Sequence[str]) -> frozenset[str]:
+        """Plan keys of every program a set of resolved dependencies reaches."""
         closure: set[str] = set()
-        pending = [dependency.casefold() for dependency in dependencies]
+        pending = list(dependencies)
         while pending:
             key = pending.pop()
             if key in closure:
                 continue
             closure.add(key)
-            program = self._registry.get(key)
-            if program is not None:
-                pending.extend(dependency.casefold() for dependency in program.dependencies)
+            pending.extend(self._resolved_dependencies.get(key, ()))
+        return frozenset(closure)
+
+    def _visible_plan_keys(self, key: str) -> frozenset[str]:
+        """Keys of every program *key* can see: itself plus its transitive deps."""
+        return frozenset({key}) | self._closure(self._resolved_dependencies.get(key, ()))
+
+    def _visible_definitions(
+        self, dependencies: Sequence[str]
+    ) -> tuple[tuple[DataType, ...], tuple[ModuleTypeDef, ...], dict[str, frozenset[str]]]:
+        """Definitions from this program's transitive dependency closure.
+
+        The registry is dependency-first, so filtering it by the closure keeps
+        a deterministic order. Using the whole registry here would let an
+        unrelated target's types hide an unknown-name finding. The owner map
+        says which plan declared each folded name, so a finding can tell a
+        local definition from one contributed by a dependency.
+        """
+        closure = self._closure(dependencies)
         datatypes: list[DataType] = []
         moduletypes: list[ModuleTypeDef] = []
+        owners: dict[str, frozenset[str]] = {}
         for key, program in self._registry.items():
             if key not in closure:
                 continue
             datatypes.extend(program.code.datatype_defs)
             moduletypes.extend(program.code.moduletype_defs)
-        return tuple(datatypes), tuple(moduletypes)
+            for definition in (*program.code.moduletype_defs, *program.code.datatype_defs):
+                folded = fold_identifier(definition.name)
+                owners[folded] = owners.get(folded, frozenset()) | {key}
+        return tuple(datatypes), tuple(moduletypes), owners
 
-    def _validate_invoked(self, targets: Sequence[str]) -> None:
+    def _validate_invoked(self) -> None:
         """Add diagnostics for the module types each target actually invokes."""
-        target_keys = {target.casefold() for target in targets}
-        reachable = invoked_moduletypes(self._registry, targets)
+        reachable = invoked_moduletypes(
+            self._registry,
+            self._target_plan_keys,
+            closure_of=self._visible_plan_keys,
+        )
         for key, program in list(self._registry.items()):
-            if key in target_keys:
-                module_diagnostics = self._validate_code(program.code, dependencies=program.dependencies)
+            dependencies = self._resolved_dependencies.get(key, ())
+            if key in self._target_plan_keys:
+                module_diagnostics = self._validate_code(program.code, dependencies=dependencies)
             else:
                 names = reachable.get(key)
                 if not names:
                     continue
                 module_diagnostics = self._validate_code(
                     self._invoked_view(program.code, names),
-                    dependencies=program.dependencies,
+                    dependencies=dependencies,
                 )
             diagnostics = [*program.diagnostics, *module_diagnostics]
-            if key in self._incomplete:
-                diagnostics = _mark_tentative(diagnostics)
-            self._registry[key] = replace(program, diagnostics=tuple(diagnostics))
+            scope = self._tentative_scope(key, program.code)
+            self._registry[key] = replace(program, diagnostics=tuple(scope.mark(diagnostics)))
 
-    def _validate_code(self, code: BasePicture, *, dependencies: tuple[str, ...]) -> tuple[Diagnostic, ...]:
-        visible_datatypes, visible_moduletypes = self._visible_definitions(dependencies)
+    def _tentative_scope(self, key: str, code: BasePicture) -> _TentativeScope:
+        """What a finding in this program needs to stay final."""
+        dependencies = self._resolved_dependencies.get(key, ())
+        if key not in self._incomplete:
+            return _TentativeScope(
+                incomplete=False,
+                incomplete_owners=frozenset(),
+                definition_owners={},
+                definitions_by_span={},
+            )
+        visible_datatypes, _, owners = self._visible_definitions(dependencies)
+        return _TentativeScope(
+            incomplete=True,
+            incomplete_owners=self._closure(dependencies) & self._incomplete,
+            definition_owners=owners,
+            definitions_by_span=self._mapping_definitions(code, dependencies),
+            type_graph=TypeGraph.from_datatypes([*code.datatype_defs, *visible_datatypes]),
+        )
+
+    def _mapping_definitions(
+        self, code: BasePicture, dependencies: Sequence[str]
+    ) -> dict[SourceSpan, _MappingDefinitions]:
+        """The definitions each parameter mapping resolves through.
+
+        A mapping depends on the module type it instantiates and on that module
+        type's parameter datatypes: a parameter typed by a datatype from a
+        skipped dependency cannot be checked against its real shape. The answer
+        is per instance rather than per mapping, so it over-approximates a
+        little; over-approximation can only keep a finding tentative.
+        """
+        visible: dict[str, ModuleTypeDef] = {}
+        for moduletype in code.moduletype_defs:
+            visible.setdefault(fold_identifier(moduletype.name), moduletype)
+        for key in self._closure(dependencies):
+            program = self._registry.get(key)
+            if program is None:
+                continue
+            for moduletype in program.code.moduletype_defs:
+                visible.setdefault(fold_identifier(moduletype.name), moduletype)
+        definitions: dict[SourceSpan, _MappingDefinitions] = {}
+        for node in _iter_moduletype_instances(code):
+            moduletype_key = fold_identifier(node.moduletype_name)
+            moduletype = visible.get(moduletype_key)
+            datatypes = (
+                frozenset(fold_identifier(parameter.datatype_text) for parameter in moduletype.moduleparameters)
+                if moduletype is not None
+                else frozenset[str]()
+            )
+            resolved = _MappingDefinitions(moduletype=moduletype_key, datatypes=datatypes)
+            for mapping in node.parametermappings:
+                if mapping.span is not None:
+                    definitions.setdefault(mapping.span, resolved)
+        return definitions
+
+    def _validate_code(self, code: BasePicture, *, dependencies: Sequence[str]) -> tuple[Diagnostic, ...]:
+        visible_datatypes, visible_moduletypes, _ = self._visible_definitions(dependencies)
         return validate_basepicture(
             code,
             external_datatypes=visible_datatypes,
@@ -808,14 +1110,14 @@ class ProjectLoader:
         self,
         basepicture: BasePicture,
         *,
-        dependencies: tuple[str, ...],
+        dependencies: Sequence[str],
         library: str,
         file_name: str,
         key: str,
     ) -> tuple[Diagnostic, ...]:
         if self._validate is LoadValidation.NONE:
             return ()
-        visible_datatypes, visible_moduletypes = self._visible_definitions(dependencies)
+        visible_datatypes, visible_moduletypes, _ = self._visible_definitions(dependencies)
         diagnostics = list(
             validate_basepicture(
                 basepicture,
@@ -828,16 +1130,11 @@ class ProjectLoader:
                 basepicture,
                 library=library,
                 file_name=file_name,
-                visible=self._visible_program_keys(key, dependencies),
+                visible=self._visible_plan_keys(key),
             )
         )
-        if key in self._incomplete:
-            diagnostics = _mark_tentative(diagnostics)
-        return tuple(diagnostics)
-
-    def _visible_program_keys(self, key: str, dependencies: Sequence[str]) -> frozenset[str]:
-        """Keys of every program *key* can see: itself plus its transitive deps."""
-        return visible_program_keys(self._registry, key, dependencies)
+        scope = self._tentative_scope(key, basepicture)
+        return tuple(scope.mark(diagnostics))
 
     def _versions_in_scope(
         self,
@@ -971,7 +1268,11 @@ def _moduletype_edges(
     """
     index: dict[str, list[tuple[str, ModuleTypeDef]]] = {}
     for visible_key in sorted(visible_keys):
-        for moduletype in programs[visible_key].code.moduletype_defs:
+        program = programs.get(visible_key)
+        if program is None:
+            # A planned body that did not assemble contributes no definitions.
+            continue
+        for moduletype in program.code.moduletype_defs:
             index.setdefault(fold_identifier(moduletype.name), []).append((visible_key, moduletype))
     labels: dict[str, str] = {}
     owners: dict[str, str] = {}
@@ -1042,15 +1343,15 @@ def _load_graphics(
     debug(f"Parsing graphics: {graphics_path}")
     try:
         return parse_graphics_file(graphics_path)
-    except (OSError, UnicodeError) as exc:
+    except (OSError, UnicodeError, GraphicsParseError) as exc:
         if dependency is None:
             raise ArtifactLoadError(
                 program_name,
-                f"failed to read graphics companion {graphics_path.name} for {name!r}",
+                f"failed to read graphics companion {graphics_path.name} for {name!r}: {exc}",
             ) from exc
         raise DependencyParseError(
             program_name,
-            f"failed to read graphics companion for dependency {dependency!r}",
+            f"failed to read graphics companion for dependency {dependency!r}: {exc}",
             dependency=dependency,
         ) from exc
 

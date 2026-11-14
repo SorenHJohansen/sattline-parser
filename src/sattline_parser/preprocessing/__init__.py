@@ -2,13 +2,16 @@
 
 This package decodes compressed SattLine source *before* parsing
 (``compressed``). Structural ``(* ... *)`` comments are handled by the
-grammar itself (``sattline_parser.grammar.sattline``), not by stripping.
+grammar itself (``sattline_parser.grammar.sattline.lark``), not by stripping.
 
 ``preprocess_source`` returns a :class:`~sattline_parser.source_document.SourceDocument`
-that preserves original-source provenance through decoding.
+that preserves original-source provenance through decoding. The class is
+re-exported here because this package is where callers obtain one.
 """
 
 from __future__ import annotations
+
+from sattline_parser.source_document import SourceDocument
 
 from .coded import decode_coded_stream, is_coded
 from .compressed import (
@@ -25,6 +28,7 @@ __all__ = [
     "MAX_IDE_LINE_LENGTH",
     "SCANNER_TOKENS",
     "PreprocessError",
+    "SourceDocument",
     "decode_coded_stream",
     "decode_compressed",
     "is_coded",

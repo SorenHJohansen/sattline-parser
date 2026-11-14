@@ -4,6 +4,9 @@
 from __future__ import annotations
 
 import json
+import os
+import shutil
+import time
 from pathlib import Path
 from unittest.mock import patch
 
@@ -14,6 +17,7 @@ from sattline_parser.project.lookup_cache import (
     LOOKUP_CACHE_VERSION,
     FileLookupCache,
     _as_file_lookup_entry,
+    _base_dir_is_gone,
     _load_file_lookup_entries,
     _normalize_base_dir,
     _remove_file,
@@ -71,7 +75,8 @@ def test_forget_removes_entry(tmp_path: Path) -> None:
 
 def test_write_through_persists_and_reloads(tmp_path: Path) -> None:
     cache = FileLookupCache(tmp_path, write_through=True)
-    base_dir = Path("/data/lib")
+    base_dir = tmp_path / "lib"
+    base_dir.mkdir()
     cache.set("code", "Lib", "official", base_dir=base_dir, ext=".x")
     reloaded = FileLookupCache(tmp_path, write_through=True)
     assert reloaded.get("code", "lib", "official") == {
@@ -207,3 +212,78 @@ def test_flush_tolerates_a_write_failure(tmp_path: Path) -> None:
         cache.flush()
 
     assert cache.get("code", "lib", "draft") is not None
+
+
+def test_prunes_an_abandoned_temporary_sibling(tmp_path: Path) -> None:
+    cache = FileLookupCache(tmp_path)
+    abandoned = tmp_path / "file_lookup_cache.json.123.abcdef.tmp"
+    abandoned.write_bytes(b"x")
+    old = time.time() - 7200
+    os.utime(abandoned, (old, old))
+
+    assert cache.prune_stale_entries() == 1
+    assert not abandoned.exists()
+
+
+def test_keeps_a_temporary_sibling_a_writer_may_still_own(tmp_path: Path) -> None:
+    cache = FileLookupCache(tmp_path)
+    inflight = tmp_path / "file_lookup_cache.json.123.abcdef.tmp"
+    inflight.write_bytes(b"x")
+
+    assert cache.prune_stale_entries() == 0
+    assert inflight.exists()
+
+
+def test_prunes_an_entry_whose_base_is_gone(tmp_path: Path) -> None:
+    """A resolution recorded against a deleted directory can never resolve again."""
+    base = tmp_path / "gone"
+    base.mkdir()
+    cache = FileLookupCache(tmp_path, write_through=True)
+    cache.set("code", "A", "draft", base_dir=base, ext=".s")
+    base.rmdir()
+
+    assert cache.prune_stale_entries() == 1
+
+    reloaded = FileLookupCache(tmp_path)
+    assert reloaded.get("code", "A", "draft") is None
+
+
+def test_caps_the_entry_count(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    cache = FileLookupCache(tmp_path, write_through=True)
+    for name in ("A", "B", "C"):
+        cache.set("code", name, "draft", base_dir=tmp_path, ext=".s")
+    monkeypatch.setattr(f"{_CACHE_PATH}.MAX_LOOKUP_CACHE_ENTRIES", 2)
+
+    assert cache.prune_stale_entries() == 1
+
+    reloaded = FileLookupCache(tmp_path)
+    assert sum(1 for name in ("A", "B", "C") if reloaded.get("code", name, "draft") is not None) == 2
+
+
+def test_prune_keeps_the_file_when_the_rewrite_fails(tmp_path: Path) -> None:
+    base = tmp_path / "gone"
+    base.mkdir()
+    cache = FileLookupCache(tmp_path, write_through=True)
+    cache.set("code", "A", "draft", base_dir=base, ext=".s")
+    base.rmdir()
+
+    with patch(f"{_CACHE_PATH}.os.replace", side_effect=OSError("boom")):
+        assert cache.prune_stale_entries() == 0
+
+    assert (tmp_path / "file_lookup_cache.json").exists()
+
+
+def test_base_dir_is_gone_treats_a_stat_failure_as_gone(monkeypatch: pytest.MonkeyPatch) -> None:
+    def _raise(_path: Path) -> bool:
+        raise OSError("boom")
+
+    monkeypatch.setattr(Path, "is_dir", _raise)
+
+    assert _base_dir_is_gone({"base_dir": "/gone"}) is True
+
+
+def test_prune_temporary_files_is_a_noop_without_a_cache_directory(tmp_path: Path) -> None:
+    cache = FileLookupCache(tmp_path / "cache")
+    shutil.rmtree(cache.cache_dir)
+
+    assert cache._prune_temporary_files() == 0

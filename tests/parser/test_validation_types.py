@@ -404,13 +404,29 @@ def test_parameter_mapping_unknown_field_on_external_record_is_silent() -> None:
     assert errors == []
 
 
-def test_parameter_mapping_unknown_target_and_missing_expected_are_silent() -> None:
+def test_parameter_mapping_unknown_target_is_reported_when_formals_are_known() -> None:
     graph = _graph()
     errors: list[Diagnostic] = []
     check_parameter_mappings(
         [_mapping("Missing")], {fold_identifier("Flag"): _var("Flag", "boolean")}, build_scope(None, []), graph, errors
     )
+    assert _codes(errors) == ["SL-V048"]
+    assert "Missing" in errors[0].message
+
+
+def test_parameter_mapping_unknown_target_is_silent_when_formals_are_unknown() -> None:
+    graph = _graph()
+    errors: list[Diagnostic] = []
     check_parameter_mappings([_mapping("Flag")], None, build_scope(None, []), graph, errors)
+    assert errors == []
+
+
+def test_parameter_mapping_field_of_an_unmodelled_record_is_silent() -> None:
+    """A declared record with no field table has an unknown shape, not an empty one."""
+    graph = _graph()
+    expected = {fold_identifier("Mess"): _var("Mess", "ComliMessage")}
+    errors: list[Diagnostic] = []
+    check_parameter_mappings([_mapping("Mess.Field")], expected, build_scope(None, []), graph, errors)
     assert errors == []
 
 
