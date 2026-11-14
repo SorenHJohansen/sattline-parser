@@ -239,9 +239,7 @@ def test_record_without_a_description_stores_none_not_the_record_keyword() -> No
     record = next(datatype for datatype in picture.datatype_defs if datatype.name == "TestRecord2")
 
     assert record.description is None
-    assert all(
-        datatype.description is None or isinstance(datatype.description, str) for datatype in picture.datatype_defs
-    )
+    assert all(datatype.description is None or type(datatype.description) is str for datatype in picture.datatype_defs)
 
 
 def test_record_with_a_description_stores_the_written_string() -> None:

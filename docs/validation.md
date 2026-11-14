@@ -125,7 +125,7 @@ them, not a separate scope.
 | `annotations.py` | Header, graphics, interact, and module-layout tails: undefined names, boolean `Enable_` conditions, real coordinate positions |
 | `code.py` | Module code and SFC: expressions, assignments, calls, conditions, `:Old`/`:New`, const writes, sequence structure, fork targets |
 | `sequences.py` | SFC position grammar: S/T/M body shapes for closed, transition, step, and open bodies |
-| `transfers.py` | Parameter-transfer type compatibility for a submodule, a module-type instance, or a module-type definition whose formals are known |
+| `transfers.py` | Parameter-transfer type compatibility for a submodule or a module-type instance whose formals are known |
 | `parameter_mappings.py` | Submodule and module-type instance mappings: duplicate targets, field access, literal and variable types |
 | `typing.py` | Scalar families, literal inference, assignment and operand compatibility, datatype typo suggestions |
 | `type_graph.py` | Record field resolution and leaf-path expansion |
@@ -208,10 +208,10 @@ it is a suffix of its host step or transition.
 
 ### Parameter transfers and mappings
 
-- A submodule declaration, a module-type instance, and a module-type definition
-  are checked for parameter-transfer type compatibility against their own formal
-  parameters. Mapping sources resolve in the invoking scope for a submodule and
-  in the file scope for a module-type definition.
+- A submodule declaration and a module-type instance are checked for
+  parameter-transfer type compatibility against their own formal parameters.
+  Mapping sources resolve in the invoking scope. A module type definition has no
+  mapping list in the grammar, so it carries none to check.
 - Every mapping is checked for a duplicate target, field access, unknown target,
   and literal or variable type mismatch. The checks are the same for a plain
   submodule as for a module-type instance.

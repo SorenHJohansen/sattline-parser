@@ -162,9 +162,9 @@ resolved body a name is still parsed once, so the single-root case is unchanged.
 
 The project registry keeps one program per folded name. When one name resolves to
 different bodies for different requesters, both bodies load and are validated,
-the first resolution is the one `programs()` exposes, and the load reports a
-`NAME_RESOLUTION_CONFLICT` diagnostic naming both bodies. The conflict is
-reported once per conflicting body, whatever the target order.
+the first resolution that assembled is the one `programs()` exposes, and the
+load reports a `NAME_RESOLUTION_CONFLICT` diagnostic naming both bodies. The
+conflict is reported once for each additional body, whatever the target order.
 
 Post-order is an invariant: the registry is built dependencies-first, so a
 program's diagnostics are computed against a complete prefix of its closure.
@@ -280,10 +280,12 @@ through, may have come from a dependency that a non-strict load skipped:
 | `UNKNOWN_DATATYPE_NAME` | the program's closure is incomplete: the name may live in the skipped dependency |
 | `UNKNOWN_MODULETYPE_NAME` | the program's closure is incomplete |
 | `PARAM_TRANSFER_TYPE_MISMATCH` | the module type, or one of its parameter datatypes, is declared by an incomplete dependency or is unresolved |
-| `PARAMETER_MAPPING_TARGET_UNKNOWN` | the module type, or one of its parameter datatypes, is declared by an incomplete dependency or is unresolved |
-| `PARAMETER_MAPPING_TYPE_MISMATCH` | the module type, or one of its parameter datatypes, is declared by an incomplete dependency or is unresolved |
+| `PARAMETER_MAPPING_TARGET_UNKNOWN` | on a module-type instance: the module type, or one of its parameter datatypes, is declared by an incomplete dependency or is unresolved |
+| `PARAMETER_MAPPING_TYPE_MISMATCH` | on a module-type instance: the module type, or one of its parameter datatypes, is declared by an incomplete dependency or is unresolved |
 
-Every other finding stays final. A purely local mismatch, for example a
+A mapping on a plain submodule is compared against the parameters the submodule
+declares, so it is final even when a dependency is missing. Every other finding
+stays final. A purely local mismatch, for example a
 parameter transfer between a module type declared in the file and a variable
 declared in the same file, is final even when an unrelated dependency is
 missing. `DATECODE_CONFLICT` is final too: it compares declarations that did

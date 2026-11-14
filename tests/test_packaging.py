@@ -71,15 +71,6 @@ def test_package_version_is_calver() -> None:
     assert re.fullmatch(r"\d{4}\.\d{1,2}\.\d{1,2}", __version__), __version__
 
 
-def test_installed_distribution_version_matches_the_package() -> None:
-    distribution = _installed_distribution()
-    if distribution is None:
-        pytest.skip(
-            "sattline-parser is not installed in this interpreter; scripts/smoke_installed.py owns that evidence"
-        )
-    assert distribution.version == __version__
-
-
 def test_grammar_resources_are_packaged() -> None:
     grammar_path = importlib.resources.files("sattline_parser").joinpath("grammar", "sattline.lark")
     assert grammar_path.is_file()

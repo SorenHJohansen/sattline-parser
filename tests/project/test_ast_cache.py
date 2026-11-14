@@ -715,7 +715,7 @@ def test_temp_file_without_a_stat_is_abandoned(tmp_path: Path) -> None:
 
 def test_code_fingerprint_covers_the_decoding_and_name_modules() -> None:
     """A fix in decoding, span remapping, or name folding must invalidate an AST."""
-    assert {"source_io.py", "source_document.py", "names.py"} <= set(_CODE_FINGERPRINT_SOURCES)
+    assert {"preprocessing", "source_io.py", "source_document.py", "names.py"} <= set(_CODE_FINGERPRINT_SOURCES)
 
 
 def test_code_fingerprint_hashes_a_standalone_module(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

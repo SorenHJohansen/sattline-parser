@@ -180,7 +180,7 @@ def validate_basepicture(
     for child in bp.submodules:
         _walk_submodule(child, base_scope, context, errors)
     for moduletype in bp.moduletype_defs:
-        _walk_moduletype_def(moduletype, base_scope, context, errors)
+        _walk_moduletype_def(moduletype, context, errors)
 
     return tuple(errors)
 
@@ -234,19 +234,14 @@ def _walk_submodule(
 
 def _walk_moduletype_def(
     moduletype: ModuleTypeDef,
-    file_scope: Scope,
     context: _ValidationContext,
     errors: list[Diagnostic],
 ) -> None:
+    # A module type definition carries no parameter mapping: the grammar has no
+    # ``moduletype_par_list`` on ``moduletype_definition``, and the transformer
+    # never fills ``ModuleTypeDef.parametermappings``. Mappings belong to the
+    # submodule or module-type instance that invokes it.
     scope = build_scope(None, [*moduletype.moduleparameters, *moduletype.localvariables])
-    _check_parameter_contract(
-        moduletype.parametermappings,
-        moduletype.moduleparameters,
-        f"Module type {moduletype.name}",
-        file_scope,
-        context,
-        errors,
-    )
     check_variable_declarations(
         [*moduletype.moduleparameters, *moduletype.localvariables],
         context.records,

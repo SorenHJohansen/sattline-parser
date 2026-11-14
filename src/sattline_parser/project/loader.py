@@ -403,8 +403,10 @@ class ProjectLoader:
         self._loading: dict[str, None] = {}
         self._diagnostics: list[LoadDiagnostic] = []
         self._diagnostic_set: set[LoadDiagnostic] = set()
-        #: Folded name -> the one negative-cached discovery failure.
-        self._skipped: dict[str, _SkippedName] = {}
+        #: Folded name and requester directory -> the negative-cached discovery
+        #: failure. ``None`` for the directory keys a name that is absent from
+        #: every base, which is the same answer for every requester.
+        self._skipped: dict[tuple[str, Path | None], _SkippedName] = {}
         #: Plan keys of the explicitly requested programs.
         self._target_plan_keys: set[str] = set()
         self._incomplete: set[str] = set()
@@ -538,12 +540,20 @@ class ProjectLoader:
         """
         program_name = declared_by if declared_by is not None else name
         dependency = None if declared_by is None else name
-        skipped = self._skipped.get(name.casefold())
+        name_key = name.casefold()
+        skipped = self._skipped.get((name_key, requester_dir)) or self._skipped.get((name_key, None))
         if skipped is not None:
-            # A miss is name-global: the ordered bases are the same configured
-            # roots for every requester, only their order changes. Reusing the
-            # cached failure skips a second ordered scan and a second finding.
-            self._record_skipped(name, parent=declared_by, error=skipped.error)
+            # A name absent from every base is the same answer for every
+            # requester, so its entry is name-global. A body-specific failure
+            # (a broken sidecar, an unreadable dependency file) is cached per
+            # requester directory, because another requester's ordered lookup
+            # can resolve a different body with the same name.
+            self._record_skipped(
+                name,
+                parent=declared_by,
+                error=skipped.error,
+                requester_dir=requester_dir,
+            )
             return None
         try:
             self._dbg(f"Visiting: {name}")
@@ -560,9 +570,14 @@ class ProjectLoader:
                 raise
             # Non-strict loading must not be silent: an agent or a CI job has to
             # be able to tell that a program is missing from the result. The
-            # failure is cached per name, so a second requester extends the same
-            # row instead of repeating the ordered scan and the finding.
-            self._record_skipped(name, parent=declared_by, error=exc)
+            # failure is cached, so a second requester extends the same row
+            # instead of repeating the ordered scan and the finding.
+            self._record_skipped(
+                name,
+                parent=declared_by,
+                error=exc,
+                requester_dir=requester_dir,
+            )
             return None
         plan_key = _plan_key(artifact.code_path)
         name_key = name.casefold()
@@ -596,25 +611,40 @@ class ProjectLoader:
             self._incomplete.add(plan_key)
         return plan_key
 
-    def _record_skipped(self, name: str, *, parent: str | None, error: ProjectLoadError) -> None:
-        """Record one discovery failure, extending its parent list on a repeat."""
-        key = name.casefold()
-        requester = parent if parent is not None else name
+    def _record_skipped(
+        self,
+        name: str,
+        *,
+        parent: str | None,
+        error: ProjectLoadError,
+        requester_dir: Path | None,
+    ) -> None:
+        """Record one discovery failure, extending its parent list on a repeat.
+
+        A name that is absent from every base is name-global, so it gets one
+        entry keyed without a directory. Any other failure belongs to the body
+        the requester resolved, so it is keyed by the requester's directory.
+        A requested target has no parent, and its row carries no
+        ``requested by`` clause.
+        """
+        global_miss = isinstance(error, DependencyNotFoundError)
+        key = (name.casefold(), None if global_miss else requester_dir)
+        parents = [] if parent is None else [parent]
         existing = self._skipped.get(key)
         if existing is None:
-            diagnostic = _skipped_diagnostic(name, error, [requester])
+            diagnostic = _skipped_diagnostic(name, error, parents)
             self._diagnostics.append(diagnostic)
             self._diagnostic_set.add(diagnostic)
             self._skipped[key] = _SkippedName(
                 error=error,
-                parents=[requester],
+                parents=parents,
                 diagnostic=diagnostic,
                 index=len(self._diagnostics) - 1,
             )
             return
-        if requester in existing.parents:
+        if not parents or parents[0] in existing.parents:
             return
-        existing.parents.append(requester)
+        existing.parents.append(parents[0])
         updated = _skipped_diagnostic(name, existing.error, existing.parents)
         self._diagnostic_set.discard(existing.diagnostic)
         self._diagnostics[existing.index] = updated

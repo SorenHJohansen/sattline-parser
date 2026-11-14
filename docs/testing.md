@@ -237,7 +237,8 @@ pre-commit run --all-files
 ```
 
 `pyproject.toml` sets Pyright to `strict` for `src`, `tests`, `benchmarks`,
-`fuzzing`, and `scripts`. `src` carries no file-scope suppression. A test file
+`fuzzing`, and `scripts`. `src` carries two narrow file-scope suppressions
+(`reportUnusedClass` on the SFC and token mixins) and no blanket one. A test file
 may open with a `# pyright: reportX=false` header, but the header must list only
 the rules that file actually needs; the set is recomputed by deleting the header
 and reading the rules Pyright reports. Eight test files that carried a header no

@@ -65,7 +65,9 @@ class SLTransformer(
 `flatten_items`, `meta_span`, `tree_children`, `InterimCoords`,
 `TransformerItem`, and `TransformerTree`. It also holds the token-type
 constants the mixins inspect (`OUTVAR_TOKEN`, `INVAR_TOKEN`,
-`STATE_SUFFIX_TOKEN`, `ENDDEF_KW_TOKEN`) and the typed `v_args` passthrough.
+`PREFIX_TOKENS`) and the typed `v_args` passthrough. The `STATE_SUFFIX` and
+`ENDDEF_KW` token names live in `grammar/constants.py` as `KEY_STATE_SUFFIX`
+and `KEY_ENDDEF_KW`.
 The passthrough keeps each decorated rule method's declared `(meta, items)`
 signature, because Lark's own annotation erases it to `Callable[[object],
 object]` and would hide a wrong argument order or return type from the type

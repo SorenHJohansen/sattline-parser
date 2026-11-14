@@ -1197,23 +1197,6 @@ def test_single_module_unknown_mapping_target_is_reported():
     assert "Absent" in diagnostics[0].message
 
 
-def test_moduletype_definition_parameter_mappings_are_checked():
-    """A module-type definition's own transfers resolve in the file scope."""
-    moduletype = ModuleTypeDef(
-        name="Controller",
-        moduleparameters=[_var("EnableFlag", "boolean")],
-        parametermappings=[_transfer("EnableFlag", "CounterValue")],
-    )
-    bp = _base_picture()
-    bp.localvariables = [_var("CounterValue", "integer")]
-    bp.moduletype_defs = [moduletype]
-
-    diagnostics = validate_basepicture(bp)
-
-    assert [d.code.value for d in diagnostics] == ["SL-V027"]
-    assert "Module type Controller" in diagnostics[0].message
-
-
 def test_unknown_moduletype_still_reports_duplicate_mapping_targets():
     """An unknown type hides the formals, not the purely local duplicate rule."""
     bp = _base_picture()

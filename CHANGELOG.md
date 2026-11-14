@@ -125,10 +125,17 @@ policy are documented in the README.
   values. It is re-exported from `sattline_parser.models` together with
   `LiteralLeaf`.
 
-- **Formatting matches source spelling.** States render `:Old` and `:New`,
-  strings render with double quotes and doubled inner quotes, and a
-  `SUBSEQSTEP` body closes with `EndSubstep`, so formatted statements parse
-  again.
+- **Sequence layer information.** A `Layer_ = N` on `SEQUENCE` or
+  `OPENSEQUENCE` is modelled as `Sequence.layer_info` instead of being
+  discarded.
+
+- **`dependents_of` spelling.** `dependents_of` returns each dependent's
+  declared spelling, matching `dependencies_of`.
+
+- **Formatting matches source spelling.** `format_expr` renders states as
+  `:Old` and `:New` and strings with double quotes and doubled inner quotes, so
+  its output parses again. The SFC labels (`Substep`, `EndSubstep`) remain
+  display text, not source keywords.
 
 - **Keyword separators are explicit.** An underscore-suffixed keyword such as
   `DateCode_` or `PRIVATE_` must be separated from the identifier that follows
@@ -324,10 +331,10 @@ policy are documented in the README.
   the validator that emits it, and a `SUBSEQTRANSITION` body that opens with a
   step reports `SL-V054` rather than an alternative-branch code.
 
-- **Parameter mappings on every construct.** Mappings on `SingleModule` and
-  `ModuleTypeDef` are checked like those on a module-type instance, and
-  `SL-V048` now reports a mapping target that is not a declared parameter. An
-  unknown module type still reports duplicate mapping targets.
+- **Parameter mappings on a plain submodule.** A mapping on a `SingleModule` is
+  checked like the same mapping on a module-type instance, and `SL-V048` now
+  reports a mapping target that is not a declared parameter. An unknown module
+  type still reports duplicate mapping targets.
 
 - **Validation scope fixes.** Frame modules are checked like single modules,
   a local definition wins over an external one of the same name, `Const`

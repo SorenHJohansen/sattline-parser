@@ -35,9 +35,8 @@ flowchart TB
     DOC --> D["is_decoded_range(start, end)"]
 ```
 
-`SourceDocument` is importable from `sattline_parser.source_document` and
-re-exported from `sattline_parser.preprocessing`, which is where
-`preprocess_source` hands one out.
+`SourceDocument` is importable from `sattline_parser.preprocessing`, which is
+where `preprocess_source` hands one out.
 
 `char_map` is a read-only property of type `tuple[int, ...] | None`. Its length
 equals `len(normalized_text)`, and it is `None` for an identity document, where

@@ -48,7 +48,7 @@
 | --- | --- |
 | Original source | The text or bytes the caller supplied, before any decoding. |
 | Normalized text | The decoded text the Lark parser sees. |
-| Source document | A `SourceDocument`: original text, normalized text, and the map between them. Import it from `sattline_parser.preprocessing` or `sattline_parser.source_document`. |
+| Source document | A `SourceDocument`: original text, normalized text, and the map between them. Import it from `sattline_parser.preprocessing`. |
 | Character map | `SourceDocument.char_map`, a read-only `tuple[int, ...] \| None` with one entry per normalized character (`None` for an identity document). |
 | `GENERATED` | The sentinel for a normalized character with no exact original offset. |
 | Anchor | The nearest preceding real source offset used for a generated character. |
