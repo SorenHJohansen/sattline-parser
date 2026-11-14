@@ -38,8 +38,8 @@ from sattline_parser.source_io import parse_source_file, private_cache_dir, read
 from sattline_parser.validation import validate_basepicture
 from sattline_parser.validation.diagnostics import Diagnostic, DiagnosticCode
 
-from ._cycles import canonical_cycle, dependency_cycles
-from .ast_cache import FileASTCache
+from ._cycles import canonical_cycle, first_cycle
+from .ast_cache import FileASTCache, source_snapshot
 from .discovery import ProjectLookup
 from .errors import (
     ArtifactLoadError,
@@ -62,7 +62,7 @@ from .models import (
     SattLineProgram,
     SidecarState,
 )
-from .reachability import invoked_moduletypes, iter_moduletype_refs
+from .reachability import invoked_moduletypes, iter_moduletype_refs, visible_program_keys
 
 #: Findings that depend on definitions outside the program itself. They become
 #: tentative when a part of the closure failed to load.
@@ -131,6 +131,11 @@ class _ParseOutcome:
     #: caller can still reach a ``SourceTooDeepError`` limit or a decode
     #: offset through ``__cause__``. A worker returns text only.
     error: ProjectLoadError | None = None
+    #: The source stat captured before the parse, so the parent can refuse to
+    #: cache an AST when the file changed while a worker was reading it.
+    snapshot: tuple[int, int] | None = None
+    #: The AST came from the cache, so it has nothing to store.
+    cached: bool = False
 
 
 def _program_name(plan: _Plan) -> str:
@@ -180,12 +185,13 @@ def _parse_code_file(task: tuple[str, str, str | None]) -> _ParseOutcome:
     if cache_text is not None:
         cached = _worker_cache(cache_text).load(code_path, mode)
         if cached is not None:
-            return _ParseOutcome(ast=cached)
+            return _ParseOutcome(ast=cached, cached=True)
+    snapshot = source_snapshot(code_path)
     try:
         picture = parse_source_file(code_path)
     except PARSE_FAILURES as exc:
         return _ParseOutcome(failure=str(exc) or type(exc).__name__)
-    return _ParseOutcome(ast=picture)
+    return _ParseOutcome(ast=picture, snapshot=snapshot)
 
 
 def _start_method(methods: Sequence[str], *, threaded: bool) -> str | None:
@@ -307,7 +313,9 @@ class ProjectLoader:
 
         Each program is checked against the definitions it can actually see, so
         two unrelated libraries that happen to reuse a type name are not turned
-        into a cycle.
+        into a cycle. Only the first cycle matters, and a graph can hold
+        exponentially many elementary cycles, so the search stops as soon as it
+        finds one instead of enumerating them.
         """
         for key, program in self._registry.items():
             visible_keys = self._visible_program_keys(key, program.dependencies)
@@ -322,9 +330,8 @@ class ProjectLoader:
                     labels.setdefault(name, moduletype.name)
                     for reference in iter_moduletype_refs(moduletype.submodules):
                         edges.append((name, fold_identifier(reference)))
-            cycles = dependency_cycles(edges)
-            if cycles:
-                cycle = cycles[0]
+            cycle = first_cycle(edges)
+            if cycle is not None:
                 display = tuple(labels[node] for node in cycle)
                 raise ModuleTypeCycleError(owners[cycle[0]], display)
 
@@ -436,19 +443,22 @@ class ProjectLoader:
                 self._parsed[plan.key] = self._parse_in_process(plan)
             return
         try:
-            with pool:
-                outcomes = list(pool.map(_parse_code_file, tasks, chunksize=1))
+            outcomes = list(pool.map(_parse_code_file, tasks, chunksize=1))
         except BrokenProcessPool as exc:
             # A worker died before returning its result. Anything else raised
             # through ``map`` is a real failure and must reach the caller.
+            pool.shutdown(wait=True, cancel_futures=True)
             self._dbg(f"Worker pool failed ({exc}); parsing in this process")
             for plan in self._plans:
                 self._parsed[plan.key] = self._parse_in_process(plan)
             return
         except BaseException:
-            # Interrupt: drop the queued bodies instead of waiting for them.
+            # Interrupt: cancel the queued bodies before waiting for anything,
+            # so a Ctrl-C does not have to drain the rest of the tree.
             pool.shutdown(wait=False, cancel_futures=True)
             raise
+        else:
+            pool.shutdown(wait=True)
         for plan, outcome in zip(self._plans, outcomes, strict=True):
             self._parsed[plan.key] = outcome
             self._save_cached(plan, outcome)
@@ -470,13 +480,14 @@ class ProjectLoader:
 
         A worker never writes the cache, so the per-user key and the entry
         signatures stay single-process. A parse that came from the cache has
-        nothing to store.
+        nothing to store, and a body whose source changed while the worker was
+        reading it is left uncached rather than stored under newer metadata.
         """
-        if outcome.ast is None or self._ast_cache is None:
+        if outcome.ast is None or outcome.cached or self._ast_cache is None:
             return
         code_path = plan.artifact.code_path
         try:
-            self._ast_cache.save(code_path, self._mode.value, outcome.ast)
+            self._ast_cache.save(code_path, self._mode.value, outcome.ast, snapshot=outcome.snapshot)
         except OSError as exc:
             # The cache is an optimisation: a failed write must not turn a
             # successful parse into a load failure.
@@ -768,22 +779,7 @@ class ProjectLoader:
 
     def _visible_program_keys(self, key: str, dependencies: Sequence[str]) -> frozenset[str]:
         """Keys of every program *key* can see: itself plus its transitive deps."""
-        visible = {key}
-        seen = {key}
-        pending = [dependency.casefold() for dependency in dependencies]
-        while pending:
-            current = pending.pop()
-            if current in seen:
-                continue
-            seen.add(current)
-            program = self._registry.get(current)
-            if program is None:
-                # A missing dependency makes the caller incomplete; it cannot
-                # contribute a definition to the closure.
-                continue
-            visible.add(current)
-            pending.extend(dependency.casefold() for dependency in program.dependencies)
-        return frozenset(visible)
+        return visible_program_keys(self._registry, key, dependencies)
 
     def _versions_in_scope(
         self,
@@ -880,6 +876,9 @@ class ProjectLoader:
             if cached is not None:
                 self._dbg(f"Using cached AST for: {code_path}")
                 return cached
+        # Capture the source revision before reading it, so the entry written
+        # below describes the bytes that were actually parsed.
+        snapshot = source_snapshot(code_path)
         self._dbg(f"Parsing: {code_path}")
         try:
             basepicture = parse_source_file(code_path, debug=self._debug)
@@ -893,7 +892,7 @@ class ProjectLoader:
             ) from exc
         if self._ast_cache is not None:
             try:
-                self._ast_cache.save(code_path, self._mode.value, basepicture)
+                self._ast_cache.save(code_path, self._mode.value, basepicture, snapshot=snapshot)
             except OSError as exc:
                 # The cache is an optimisation: a failed write must not turn a
                 # successful parse into a load failure.
@@ -921,9 +920,12 @@ def _datecode_conflict(
     source_label: str,
     span: SourceSpan | None,
 ) -> Diagnostic | None:
-    if datecode is None or not known or datecode in known:
+    if datecode is None or not known:
         return None
-    detail = ", ".join(f"{version} in {', '.join(sorted(labels))}" for version, labels in sorted(known.items()))
+    others = {version: labels for version, labels in known.items() if version != datecode}
+    if not others:
+        return None
+    detail = ", ".join(f"{version} in {', '.join(sorted(labels))}" for version, labels in sorted(others.items()))
     return Diagnostic(
         code=DiagnosticCode.DATECODE_CONFLICT,
         message=f"{kind} {name!r} datecode {datecode} in {source_label} conflicts with {detail}",

@@ -102,6 +102,15 @@ def test_api_load_source_text_decodes_coded_file(tmp_path) -> None:
     assert load_source_text(path) == "Coded := 1;\nMore := 2;"
 
 
+def test_api_load_source_text_expands_markers_inside_a_coded_stream(tmp_path) -> None:
+    """A coded body can still be marker-compressed underneath its framing."""
+    compressed = '"Syntax version 2.23 C"\n#71 Demo\n#84\n'
+    path = tmp_path / "coded.x"
+    path.write_bytes(_encode(compressed))
+
+    assert load_source_text(path) == '"Syntax version 2.23 C"\nMODULEDEFINITION Demo\nModuleCode\n'
+
+
 def test_decode_coded_file_bytes_direct() -> None:
     assert parser_api._decode_coded_file_bytes(_encode("text")) == "text"
     with pytest.raises(ValueError, match="not a coded stream"):

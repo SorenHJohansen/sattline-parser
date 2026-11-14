@@ -9,6 +9,7 @@ from sattline_parser.preprocessing.compressed import (
     _decode_with_map,
     _header_compression_flag,
     _regex_sub,
+    scan_opaque_regions,
 )
 from sattline_parser.source_document import GENERATED, Generated
 
@@ -92,6 +93,55 @@ def test_decode_markers_stage_protects_strings_from_unknown_markers():
 
 def test_scanner_tokens_expands_marker_70_to_composite_object():
     assert SCANNER_TOKENS["#70"] == "CompositeObject"
+
+
+def test_scan_opaque_regions_recognizes_a_quoted_identifier():
+    assert scan_opaque_regions("A := '#84';") == [("S", 5, 10)]
+
+
+def test_scan_opaque_regions_ignores_an_unterminated_apostrophe():
+    assert scan_opaque_regions("A := 1 + 'unterminated") == []
+
+
+def test_scan_opaque_regions_ends_a_description_at_the_line_break():
+    text = 'Value: integer "open description\nMore: integer;'
+
+    assert scan_opaque_regions(text) == [("S", 15, 32)]
+
+
+def test_compressed_markers_inside_a_quoted_identifier_stay_literal():
+    src = "\"Syntax version 2.23 C\"\nSomeVar := '#84';\n"
+
+    doc = preprocess_source(src)
+
+    assert "'#84'" in doc.normalized_text
+    assert "ModuleCode" not in doc.normalized_text
+
+
+def test_an_unknown_marker_inside_a_quoted_identifier_is_not_an_error():
+    src = "\"Syntax version 2.23 C\"\nSomeVar := '#ZZ';\n"
+
+    doc = preprocess_source(src)
+
+    assert "'#ZZ'" in doc.normalized_text
+
+
+def test_an_unterminated_description_does_not_shield_the_next_line():
+    src = '"Syntax version 2.23 C"\nLOCALVARIABLES\n   Value: integer "description with no closing quote\n#71 Demo\n'
+
+    doc = preprocess_source(src)
+
+    assert "MODULEDEFINITION Demo" in doc.normalized_text
+    assert "#71" not in doc.normalized_text
+
+
+def test_a_marker_inside_an_unterminated_description_stays_literal():
+    src = '"Syntax version 2.23 C"\nLOCALVARIABLES\n   Value: integer "description #84\n#71 Demo\n'
+
+    doc = preprocess_source(src)
+
+    assert '"description #84' in doc.normalized_text
+    assert "MODULEDEFINITION Demo" in doc.normalized_text
 
 
 # ---------------------------------------------------------------------------

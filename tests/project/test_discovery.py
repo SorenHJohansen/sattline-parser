@@ -459,9 +459,27 @@ def test_warm_cache_preserves_cold_extension_precedence(tmp_path: Path) -> None:
     cache = FileLookupCache(cache_dir)
     cold_first = ProjectLookup([root], LoadMode.DRAFT, cache=cache).find_code("Lib")
     assert cold_first == root / "Lib.x"
+    cache.flush()
 
     _write(root, "Lib.s")
 
     warm = ProjectLookup([root], LoadMode.DRAFT, cache=FileLookupCache(cache_dir)).find_code("Lib")
     cold = ProjectLookup([root], LoadMode.DRAFT).find_code("Lib")
     assert warm == cold == root / "Lib.s"
+
+
+def test_warm_cache_resolves_a_name_whose_case_differs(tmp_path: Path) -> None:
+    """A cold lookup is case-insensitive; the warm path must not lose that."""
+    root = tmp_path / "p"
+    cache_dir = tmp_path / "cache"
+    _write(root, "Mixed.s")
+    _write(root, "mixed.x")
+
+    first = FileLookupCache(cache_dir)
+    assert ProjectLookup([root], LoadMode.DRAFT, cache=first).find_code("mixed") == root / "Mixed.s"
+    first.flush()
+
+    warm = ProjectLookup([root], LoadMode.DRAFT, cache=FileLookupCache(cache_dir))
+    cold = ProjectLookup([root], LoadMode.DRAFT)
+
+    assert warm.find_code("mixed") == cold.find_code("mixed") == root / "Mixed.s"

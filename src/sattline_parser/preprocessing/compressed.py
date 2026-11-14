@@ -169,12 +169,18 @@ def is_compressed(text: str) -> bool:
 # ---------------------------------------------------------------------------
 
 
+#: Longest body a quoted identifier may have, from the grammar's name regex.
+_QUOTED_NAME_MAX = 20
+
+
 def scan_opaque_regions(text: str) -> list[tuple[str, int, int]]:
     """Return ``(kind, start, end)`` for every string ('S') and comment ('C').
 
-    The scanner understands nested ``(* ... *)`` comments, doubled ``""``
-    quote escapes, and does not treat text inside a string as a comment (or
-    vice versa).
+    The scanner follows the grammar's lexical boundaries: nested ``(* ... *)``
+    comments, doubled ``""`` escapes, a string or a variable description that
+    ends at a line break (``STRING_CRLF`` accepts an unterminated description),
+    and a single-quoted identifier such as ``'#84'``, whose body is literal
+    text rather than a marker.
     """
     regions: list[tuple[str, int, int]] = []
     index = 0
@@ -203,9 +209,20 @@ def scan_opaque_regions(text: str) -> list[tuple[str, int, int]]:
                         continue
                     cursor += 1
                     break
+                if text[cursor] in "\r\n":
+                    # The grammar accepts an unterminated description up to the
+                    # line break, and no string spans lines.
+                    break
                 cursor += 1
             regions.append(("S", index, cursor))
             index = cursor
+        elif text[index] == "'":
+            closing = text.find("'", index + 2, index + 2 + _QUOTED_NAME_MAX)
+            if closing == -1:
+                index += 1
+                continue
+            regions.append(("S", index, closing + 1))
+            index = closing + 1
         else:
             index += 1
     return regions

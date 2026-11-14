@@ -32,6 +32,59 @@ def canonical_cycle(cycle: Sequence[str]) -> tuple[str, ...]:
     return (*key, key[0]) if key else ()
 
 
+def first_cycle(edges: Sequence[tuple[str, str]]) -> tuple[str, ...] | None:
+    """The first elementary cycle, canonical and closed, or ``None``.
+
+    A caller that rejects recursive input only needs to know that a cycle
+    exists, and a dense graph can hold exponentially many elementary cycles.
+    This search returns as soon as it finds one, so it stays linear in the
+    number of edges. Roots and adjacency are visited in sorted order, so the
+    result does not depend on edge insertion order.
+    """
+    adjacency: dict[str, list[str]] = {}
+    for dependent, dependency in edges:
+        adjacency.setdefault(dependent, []).append(dependency)
+    for targets in adjacency.values():
+        targets.sort()
+
+    explored: set[str] = set()
+    for node in sorted(adjacency):
+        if node in explored:
+            continue
+        cycle = _first_cycle_from(node, adjacency, explored)
+        if cycle is not None:
+            return canonical_cycle(cycle)
+    return None
+
+
+def _first_cycle_from(
+    root: str,
+    adjacency: Mapping[str, Sequence[str]],
+    explored: set[str],
+) -> tuple[str, ...] | None:
+    """Depth-first search from *root* that stops at the first back edge."""
+    path = [root]
+    on_path = {root}
+    iterators = [iter(adjacency.get(root, ()))]
+    while iterators:
+        try:
+            neighbour = next(iterators[-1])
+        except StopIteration:
+            iterators.pop()
+            node = path.pop()
+            on_path.discard(node)
+            explored.add(node)
+            continue
+        if neighbour in on_path:
+            return tuple(path[path.index(neighbour) :])
+        if neighbour in explored:
+            continue
+        path.append(neighbour)
+        on_path.add(neighbour)
+        iterators.append(iter(adjacency.get(neighbour, ())))
+    return None
+
+
 def dependency_cycles(edges: Sequence[tuple[str, str]]) -> tuple[tuple[str, ...], ...]:
     """Every elementary dependency cycle, once, as a canonical closed path.
 

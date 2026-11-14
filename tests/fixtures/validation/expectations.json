@@ -470,6 +470,14 @@
         "line": 20
       }
     ],
+    "invalid/TransitionConditionNotBoolean.s": [
+      {
+        "code": "SL-V030",
+        "column": 38,
+        "length": 5,
+        "line": 20
+      }
+    ],
     "invalid/UndefinedVariableRef.s": [
       {
         "code": "SL-V019",

@@ -7,6 +7,7 @@ transformer, with source spans in companion-file coordinates.
 
 from __future__ import annotations
 
+import dataclasses
 import re
 from functools import lru_cache
 from typing import Any, cast
@@ -54,18 +55,54 @@ def _unwrap_expression_root(node: object) -> object:
     return node
 
 
-def _expression_prefix(*, line: int, line_start_offset: int, absolute_start: int) -> str:
-    """Padding that makes Lark report positions in the companion file.
+def _rebase_expression_spans(node: object, *, line: int, column: int, start: int) -> object:
+    """Rewrite expression spans from expression-local to companion coordinates.
 
-    The prefix has ``absolute_start`` characters and ``line - 1`` newlines. Its
-    last newline sits where the previous line ended, so the first expression
-    character lands on the requested line, column, and character offset.
+    The expression text is parsed on its own, so its spans start at line 1,
+    column 1, offset 0. ``line``, ``column``, and ``start`` are the companion
+    position of the expression's first character. Parsing without a padding
+    prefix keeps the work linear in the expression length rather than in the
+    file offset.
     """
-    newline_count = line - 1
-    first_newline = line_start_offset - newline_count
-    if first_newline < 0 or absolute_start < line_start_offset:
-        raise ValueError("line_start_offset is inconsistent with the requested line")
-    return " " * first_newline + "\n" * newline_count + " " * (absolute_start - line_start_offset)
+
+    def rebase(value: SourceSpan) -> SourceSpan:
+        return SourceSpan(
+            start=start + value.start,
+            end=start + value.end,
+            line=line + value.line - 1,
+            column=(column + value.column - 1) if value.line == 1 else value.column,
+        )
+
+    def convert(value: object) -> object:
+        if isinstance(value, SourceSpan):
+            return rebase(value)
+        if isinstance(value, dict):
+            mapping = cast(dict[str, object], value)
+            for key, item in mapping.items():
+                mapping[key] = convert(item)
+            return mapping
+        if isinstance(value, list):
+            items = cast(list[object], value)
+            for index, item in enumerate(items):
+                items[index] = convert(item)
+            return items
+        if isinstance(value, tuple):
+            items = cast(tuple[object, ...], value)
+            return tuple(convert(item) for item in items)
+        if isinstance(value, Tree):
+            tree = cast(Tree[object], value)
+            for index, item in enumerate(tree.children):
+                tree.children[index] = convert(item)
+            return tree
+        if dataclasses.is_dataclass(value) and not isinstance(value, type):
+            changes = {
+                structure_field.name: convert(getattr(value, structure_field.name))
+                for structure_field in dataclasses.fields(value)
+            }
+            return dataclasses.replace(value, **changes)
+        return value
+
+    return convert(node)
 
 
 def _coerce_graphics_literal(payload: str) -> object:
@@ -132,17 +169,10 @@ def parse_graphics_binding_match(
 
     try:
         normalized_payload = _normalize_graphics_expression(payload)
-        prefixed_payload = (
-            _expression_prefix(
-                line=line,
-                line_start_offset=line_start_offset,
-                absolute_start=payload_start,
-            )
-            + normalized_payload
-        )
         parsed = _unwrap_expression_root(
-            SLTransformer().transform(_graphics_expression_parser().parse(prefixed_payload))
+            SLTransformer().transform(_graphics_expression_parser().parse(normalized_payload))
         )
+        parsed = _rebase_expression_spans(parsed, line=line, column=payload_column, start=payload_start)
     except LarkError as exc:
         return (
             GraphicsBinding(kind=kind, raw_text=payload, value=payload, span=span),
@@ -186,9 +216,9 @@ def parse_graphics_binding_line(
 __all__: tuple[str, ...] = (
     "BINDING_LINE_RE",
     "_coerce_graphics_literal",
-    "_expression_prefix",
     "_graphics_expression_parser",
     "_normalize_graphics_expression",
+    "_rebase_expression_spans",
     "_unwrap_expression_root",
     "parse_graphics_binding_line",
     "parse_graphics_binding_match",

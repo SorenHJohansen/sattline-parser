@@ -65,8 +65,10 @@ as a call's minimum arity.
 `accepts_const_string` marks a written string parameter that is a cursor rather
 than a data write. `GetStringPos` and `SetStringPos` use it for their first
 parameter, so a Const string is accepted there even though the documented
-direction is `inout`. The flag lives in the catalogue data, not in validator
-code.
+direction is `inout`. The exemption covers the Const-write finding only: the
+argument is still checked for being a variable reference and for matching the
+declared `String` datatype. The flag lives in the catalogue data, not in
+validator code.
 
 `BuiltinFunction` also carries `kind` (`function` or `procedure`), `return_type`,
 `precision_scangroup`, and `typed`. A `typed=False` entry still has an arity.

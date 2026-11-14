@@ -26,7 +26,7 @@ from sattline_parser.project import (
     read_dependency_names,
 )
 from sattline_parser.project import loader as project_loader
-from sattline_parser.project.ast_cache import FileASTCache
+from sattline_parser.project.ast_cache import FileASTCache, source_snapshot
 from sattline_parser.project.models import LoadDiagnosticKind, SidecarState
 
 _CODE = """"Syntax version 2.23, date: 2026-04-23-12:00:00.000 N"
@@ -888,7 +888,14 @@ def test_a_cache_write_failure_does_not_fail_a_parallel_load(tmp_path: Path, mon
     _write(tmp_path, "Main.s", _CODE)
     _write(tmp_path, "Main.l", "Lib\n")
 
-    def failing_save(self: object, code_path: Path, mode: str, ast: BasePicture) -> None:
+    def failing_save(
+        self: object,
+        code_path: Path,
+        mode: str,
+        ast: BasePicture,
+        *,
+        snapshot: tuple[int, int] | None = None,
+    ) -> None:
         raise OSError("disk full")
 
     monkeypatch.setattr(project_loader.FileASTCache, "save", failing_save)
@@ -897,6 +904,72 @@ def test_a_cache_write_failure_does_not_fail_a_parallel_load(tmp_path: Path, mon
 
     assert tuple(project.programs()) == ("lib", "main")
     assert any("cache write failed" in event.lower() for event in events)
+
+
+def test_a_parallel_save_records_the_snapshot_the_worker_parsed(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The parent must store the revision the worker read, not a later stat."""
+    _write(tmp_path, "Lib.s", _CODE)
+    _write(tmp_path, "Main.s", _CODE)
+    _write(tmp_path, "Main.l", "Lib\n")
+    seen: list[tuple[int, int] | None] = []
+    real_save = FileASTCache.save
+
+    def recording_save(
+        self: FileASTCache,
+        code_path: Path,
+        mode: str,
+        ast: BasePicture,
+        *,
+        snapshot: tuple[int, int] | None = None,
+    ) -> None:
+        seen.append(snapshot)
+        real_save(self, code_path, mode, ast, snapshot=snapshot)
+
+    monkeypatch.setattr(FileASTCache, "save", recording_save)
+    _load(tmp_path, workers=2, cache_dir=tmp_path / "cache")
+
+    assert seen == [source_snapshot(tmp_path / "Lib.s"), source_snapshot(tmp_path / "Main.s")]
+
+
+def test_a_warm_parallel_load_does_not_rewrite_cached_bodies(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    _write(tmp_path, "Lib.s", _CODE)
+    _write(tmp_path, "Main.s", _CODE)
+    _write(tmp_path, "Main.l", "Lib\n")
+    cache_dir = tmp_path / "cache"
+    _load(tmp_path, cache_dir=cache_dir)
+    saves: list[Path] = []
+
+    def recording_save(
+        self: FileASTCache,
+        code_path: Path,
+        mode: str,
+        ast: BasePicture,
+        *,
+        snapshot: tuple[int, int] | None = None,
+    ) -> None:
+        saves.append(code_path)
+
+    monkeypatch.setattr(FileASTCache, "save", recording_save)
+    project = _load(tmp_path, workers=2, cache_dir=cache_dir)
+
+    assert tuple(project.programs()) == ("lib", "main")
+    assert saves == []
+
+
+def test_a_body_that_changes_during_the_parse_is_not_cached(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    _write(tmp_path, "Main.s", _CODE)
+
+    def stale_snapshot(_path: Path) -> tuple[int, int]:
+        return (0, 0)
+
+    monkeypatch.setattr(project_loader, "source_snapshot", stale_snapshot)
+
+    project = _load(tmp_path, cache_dir=tmp_path / "cache")
+
+    assert "main" in project
+    assert FileASTCache(tmp_path / "cache").load(tmp_path / "Main.s", LoadMode.DRAFT.value) is None
 
 
 class _InterruptedPool:
