@@ -57,7 +57,7 @@ def test_visible_program_keys_returns_loaded_transitive_dependencies() -> None:
     assert visible_program_keys(programs, "a", programs["a"].dependencies) == frozenset({"a", "b", "c"})
 
 
-def test_visible_program_keys_keeps_an_incomplete_closure_incomplete() -> None:
+def test_visible_program_keys_ignores_a_dependency_that_is_not_loaded() -> None:
     programs = {"a": _program("A", dependencies=("Ghost",))}
 
     assert visible_program_keys(programs, "a", programs["a"].dependencies) == frozenset({"a"})

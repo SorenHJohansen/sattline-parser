@@ -353,7 +353,7 @@ The loader adds findings the single-file validator cannot know:
 | Finding | Why it needs the project |
 | --- | --- |
 | `DATECODE_CONFLICT` | The same module type or datatype is declared with different datecodes in the visible closure |
-| `UNKNOWN_MODULETYPE_NAME` | The validator emits it; a project load resolves the type from the visible closure or fails the load |
+| `UNKNOWN_MODULETYPE_NAME` | The validator emits it; a project load resolves the type against the visible closure, so the finding is final |
 | `PARAM_TRANSFER_TYPE_MISMATCH` | The formal parameter is in another file |
 | `PARAMETER_MAPPING_TARGET_UNKNOWN` | The formal parameter is in another file |
 | `PARAMETER_MAPPING_TYPE_MISMATCH` | The formal parameter is in another file |

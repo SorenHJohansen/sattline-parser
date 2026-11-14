@@ -162,7 +162,7 @@ no partial project: `--fail-on` governs validation findings only.
 Each program row reports `distribution` (the resolved companion extension or
 `null`), `has_executing_system` (`true`, `false`, or `null` when no companion was
 found), and `executing_systems` (one `kind` / `name` / `download` object per
-target). A companion that exists but does not parse is a load finding, never an
+target). A companion that exists but does not parse is a load failure, never an
 empty list. See [project.md](project.md#distribution-companion).
 
 | Flag | Meaning |
