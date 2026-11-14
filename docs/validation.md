@@ -301,7 +301,7 @@ here. `sattline rules` exposes the same data on the command line.
 | `SL-V039` | `RESERVED_KEYWORD_NAME` | active | declarations | A declaration may not use a reserved SattLine keyword as its name. |
 | `SL-V040` | `DATATYPE_TOO_FEW_FIELDS` | retired | declarations | A DATATYPE declaration must declare at least one field. |
 | `SL-V041` | `COMPARE_INCOMPATIBLE_OPERANDS` | active | code | Comparison operators require compatible operand datatypes. |
-| `SL-V042` | `DIVISION_BY_ZERO` | unimplemented | code | Division by a literal zero is rejected. |
+| `SL-V042` | `DIVISION_BY_ZERO` | retired | code | Division by a literal zero is rejected. |
 | `SL-V043` | `LOGICAL_OPERAND_NOT_BOOLEAN` | active | code | Logical operators require boolean operands. |
 | `SL-V044` | `TERNARY_BRANCH_TYPES_INCOMPATIBLE` | active | code | IF-expression branches must have compatible datatypes. |
 | `SL-V045` | `STRING_ASSIGNMENT_NOT_ALLOWED` | active | code | A string variable is copied with CopyString or CopyVar, not assigned directly. |
@@ -311,8 +311,8 @@ here. `sattline rules` exposes the same data on the command line.
 | `SL-V049` | `PARAMETER_MAPPING_DUPLICATE_TARGET` | active | mappings | A module-type instance may map each parameter target only once. |
 | `SL-V050` | `PARAMETER_MAPPING_TYPE_MISMATCH` | active | mappings | A module-type instance mapping value must match the parameter datatype. |
 | `SL-V051` | `STEP_AUTO_VARIABLE_UNAVAILABLE` | active | code | A step or sequence accessor requires the matching SeqControl or SeqTimer flag. |
-| `SL-V052` | `SEQUENCE_TRANSITION_AFTER_TRANSITION` | unimplemented | sfc | A transition may not directly follow another transition. |
-| `SL-V053` | `PARALLEL_BRANCH_INCOMPLETE` | unimplemented | sfc | A parallel branch must contain a complete step sequence. |
+| `SL-V052` | `SEQUENCE_TRANSITION_AFTER_TRANSITION` | retired | sfc | A transition may not directly follow another transition. |
+| `SL-V053` | `PARALLEL_BRANCH_INCOMPLETE` | retired | sfc | A parallel branch must contain a complete step sequence. |
 | `SL-V054` | `SUBSEQTRANSITION_STARTS_WITH_STEP` | active | sfc | A SUBSEQTRANSITION body must start with a SEQTRANSITION. |
 | `SL-V055` | `SEQUENCE_REQUIRES_INIT_STEP` | retired | sfc | A closed sequence must contain an init step. |
 | `SL-V056` | `SEQUENCE_AMBIGUOUS_FORK_TARGET` | active | sfc | A SEQFORK target may not be declared more than once in a module. |

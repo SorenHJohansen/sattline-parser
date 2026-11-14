@@ -96,11 +96,6 @@ def register(subparsers: argparse._SubParsersAction[argparse.ArgumentParser]) ->
             "(default), every loaded program, or nothing"
         ),
     )
-    parser.add_argument(
-        "--no-validate",
-        action="store_true",
-        help="alias for --validate none",
-    )
     add_fail_on(parser)
     parser.add_argument("--graph", action="store_true", help="only print the dependency edges")
     parser.add_argument("--of", metavar="NAME", help="restrict the graph to this program")
@@ -174,7 +169,7 @@ def _load(args: argparse.Namespace) -> SattLineProject:
         mode=mode,
         targets=targets,
         cache_dir=_cache_dir(args),
-        validate=LoadValidation.NONE if args.no_validate else LoadValidation(args.validate),
+        validate=LoadValidation(args.validate),
         workers=args.workers,
     )
 

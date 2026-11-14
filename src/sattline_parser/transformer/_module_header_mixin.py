@@ -16,12 +16,12 @@ from sattline_parser.models.clauses import (
     ModuleArguments,
     ModuleInViewClause,
     ModuleMarker,
-    Zoomable,
     ZoomLimits,
 )
 from sattline_parser.models.tails import Tail
 
 from ._module_shared import InterimCoords, TransformerItem, float_tuple, meta_span, v_args
+from ._payloads import Zoomable
 from ._tokens_mixin import token_span
 
 

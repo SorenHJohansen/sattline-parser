@@ -13,14 +13,9 @@ from sattline_parser.models.clauses import (
     ClippingClause,
     CoordBox,
     CoordPair,
-    Grid,
-    ModuleOptions,
-    SeqLayers,
-    TwoLayers,
-    Zoomable,
     ZoomLimits,
 )
-from sattline_parser.models.tails import ClipValue, CoordinateClipping, LitStringTail, Tail, VarTail
+from sattline_parser.models.tails import LitStringTail, Tail, VarTail
 
 from ._module_shared import (
     OUTVAR_TOKEN,
@@ -31,6 +26,15 @@ from ._module_shared import (
     coord_pair,
     meta_span,
     v_args,
+)
+from ._payloads import (
+    ClipValue,
+    CoordinateClipping,
+    Grid,
+    ModuleOptions,
+    SeqLayers,
+    TwoLayers,
+    Zoomable,
 )
 
 

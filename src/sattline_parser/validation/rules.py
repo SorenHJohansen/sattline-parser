@@ -348,8 +348,11 @@ RULES: tuple[Rule, ...] = (
         DiagnosticCode.DIVISION_BY_ZERO,
         "Division by a literal zero is rejected.",
         scope=RuleScope.CODE,
-        status=RuleStatus.UNIMPLEMENTED,
-        details=_UNIMPLEMENTED_NOTE,
+        status=RuleStatus.RETIRED,
+        details=(
+            "A literal zero divisor is runtime semantics, not a static error: the valid "
+            "full-grammar fixture contains `1/0` and `1.0/0.0`."
+        ),
     ),
     _rule(
         DiagnosticCode.LOGICAL_OPERAND_NOT_BOOLEAN,
@@ -400,15 +403,21 @@ RULES: tuple[Rule, ...] = (
         DiagnosticCode.SEQUENCE_TRANSITION_AFTER_TRANSITION,
         "A transition may not directly follow another transition.",
         scope=RuleScope.SFC,
-        status=RuleStatus.UNIMPLEMENTED,
-        details=_UNIMPLEMENTED_NOTE,
+        status=RuleStatus.RETIRED,
+        details=(
+            "SEQUENCE_POSITION_INVALID already rejects a second consecutive transition, "
+            "so this reserved code never had a check of its own."
+        ),
     ),
     _rule(
         DiagnosticCode.PARALLEL_BRANCH_INCOMPLETE,
         "A parallel branch must contain a complete step sequence.",
         scope=RuleScope.SFC,
-        status=RuleStatus.UNIMPLEMENTED,
-        details=_UNIMPLEMENTED_NOTE,
+        status=RuleStatus.RETIRED,
+        details=(
+            "SFC_PARALLEL_BRANCH_START and SEQUENCE_POSITION_INVALID already require a "
+            "branch to start and end with a step and to alternate, which is the whole shape."
+        ),
     ),
     _rule(
         DiagnosticCode.SUBSEQTRANSITION_STARTS_WITH_STEP,

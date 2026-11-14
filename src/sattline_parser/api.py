@@ -15,6 +15,7 @@ so no import cycle exists at any point.
 from __future__ import annotations
 
 from .errors import ParseErrorDetails, SourceTooDeepError, describe_parse_error
+from .preprocessing import render_ide_text
 from .source_io import (
     MAX_SOURCE_DEPTH,
     build_lark_parser,
@@ -25,7 +26,6 @@ from .source_io import (
     parse_source_file,
     parse_source_text,
     read_text_cp1252,
-    render_ide_text,
     source_text_for_parse,
 )
 from .validation import validate_basepicture

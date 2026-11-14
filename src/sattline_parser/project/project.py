@@ -2,8 +2,8 @@
 
 Phases 3-4 wire ``load`` end to end: file discovery, recursive dependency
 resolution, and ``.g`` / ``.y`` graphics companion parsing via the project
-loader. The phase-1 internal ``_from_programs`` builder remains for tests and
-schema-only construction.
+loader. The public ``from_programs`` builder covers tests, schema-only construction,
+and consumers that already hold parsed programs.
 """
 
 from __future__ import annotations
@@ -30,11 +30,13 @@ class SattLineProject:
         self._diagnostics: tuple[LoadDiagnostic, ...] = ()
 
     @classmethod
-    def _from_programs(cls, programs: Mapping[str, SattLineProgram]) -> SattLineProject:
+    def from_programs(cls, programs: Mapping[str, SattLineProgram]) -> SattLineProject:
         """Build a project directly from a name-to-program mapping.
 
-        Schema-only seam for tests and consumers that already hold resolved
-        programs. Names are casefolded into canonical keys.
+        For a consumer that already holds parsed programs, or a test that wants
+        to exercise the graph views without a filesystem. Names are casefolded
+        into canonical keys. Unlike :meth:`load`, this path does not reject a
+        cycle, which is what makes :meth:`cycles` useful.
         """
         project = cls()
         project._programs = {name.casefold(): program for name, program in programs.items()}

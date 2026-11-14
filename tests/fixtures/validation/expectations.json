@@ -553,6 +553,6 @@
     "valid/UnCompressedFullGrammar.s": [],
     "valid/VariableModifiers.s": []
   },
-  "generated_by": "scripts/export_parity_expectations.py",
+  "generated_by": "scripts/export_validation_expectations.py",
   "validator": "parser"
 }

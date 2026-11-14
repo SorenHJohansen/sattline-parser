@@ -13,7 +13,6 @@ from sattline_parser.models.clauses import (
     Alignment,
     AssignClause,
     ColourSpec,
-    CommonProperties,
     EnableClause,
     FlagClause,
     ModuleInViewClause,
@@ -25,6 +24,7 @@ from sattline_parser.models.clauses import (
 from sattline_parser.models.expressions import Compare, VarRef
 from sattline_parser.models.tails import VarTail
 from sattline_parser.transformer._module_shared import InterimCoords, TextContent
+from sattline_parser.transformer._payloads import CommonProperties
 
 from ._parser_core_test_support import _GraphicsHarness, _repo_path
 

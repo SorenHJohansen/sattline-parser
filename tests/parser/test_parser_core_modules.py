@@ -27,12 +27,12 @@ from sattline_parser.models.clauses import (
     ModuleArguments,
     ModuleInViewClause,
     ModuleMarker,
-    Zoomable,
     ZoomLimits,
 )
 from sattline_parser.models.expressions import VarRef
-from sattline_parser.models.tails import ClipValue, CoordinateClipping, VarTail
+from sattline_parser.models.tails import VarTail
 from sattline_parser.transformer._module_shared import CoordTail, GroupConnInfo, InterimCoords, flatten_items, meta_span
+from sattline_parser.transformer._payloads import ClipValue, CoordinateClipping, Zoomable
 from sattline_parser.transformer.sl_transformer import _is_tree
 
 from ._parser_core_test_support import _module_header, _ModulesHarness

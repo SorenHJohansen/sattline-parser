@@ -17,6 +17,7 @@ from sattline_parser import MAX_SOURCE_DEPTH, SourceTooDeepError
 from sattline_parser import parse_source_text as parser_core_parse_source_text
 from sattline_parser import source_io as parser_api
 from sattline_parser.api import create_parser
+from sattline_parser.errors import describe_parse_error
 from sattline_parser.formatting.formatter import format_expr
 from sattline_parser.models.ast_model import CodeComment
 from sattline_parser.models.expressions import BinOp, SLExpression, VarRef
@@ -181,7 +182,7 @@ def test_describe_parse_error_reports_the_nesting_limit() -> None:
     with pytest.raises(SourceTooDeepError) as exc_info:
         parser_core_parse_source_text(source, log_failures=False)
 
-    details = parser_api.describe_parse_error(exc_info.value, source)
+    details = describe_parse_error(exc_info.value, source)
 
     assert details.sentence == (
         f"the parsed structure is nested too deeply to analyze safely (limit {MAX_SOURCE_DEPTH} levels)"
@@ -288,7 +289,7 @@ def test_source_too_deep_error_survives_pickling() -> None:
 
 
 def test_positionless_nesting_error_has_no_misleading_context() -> None:
-    details = parser_api.describe_parse_error(SourceTooDeepError(MAX_SOURCE_DEPTH), "anything")
+    details = describe_parse_error(SourceTooDeepError(MAX_SOURCE_DEPTH), "anything")
 
     assert details.line is None
     assert details.column is None

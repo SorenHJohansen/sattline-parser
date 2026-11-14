@@ -61,6 +61,12 @@ class SLTransformer(
 | `ModuleLayoutMixin` | `_module_layout_mixin.py` | Layout, coordinates, `ModuleDef` |
 | `GraphicsInteractMixin` | `_graphics_interact_mixin.py` | Graph objects and interactor objects |
 
+`_payloads.py` holds the interim payloads a rule builds and a later rule folds
+into an owner: `CommonProperties`, `ModuleOptions`, `TwoLayers`, `Grid`,
+`SeqLayers`, `Zoomable`, `ClipValue`, and `CoordinateClipping`. They are not AST
+nodes and are not part of `sattline_parser.ast`; a parsed tree never contains
+one.
+
 `_module_shared.py` holds helpers and types shared by several mixins:
 `flatten_items`, `meta_span`, `tree_children`, `InterimCoords`,
 `TransformerItem`, and `TransformerTree`. It also holds the token-type

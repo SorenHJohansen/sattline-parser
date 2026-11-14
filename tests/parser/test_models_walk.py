@@ -604,16 +604,6 @@ def test_walk_skips_non_node_items_in_a_sequence() -> None:
 _NOT_AST_NODE = {
     ast_model.SourceSpan,
     ast_model.GraphicsBinding,
-    # Transformer intermediates: their content is folded into an owner before
-    # the AST is returned, or they are only arguments to the transformer.
-    clauses.CommonProperties,
-    clauses.Grid,
-    clauses.ModuleOptions,
-    clauses.SeqLayers,
-    clauses.TwoLayers,
-    clauses.Zoomable,
-    tails.ClipValue,
-    tails.CoordinateClipping,
 }
 
 

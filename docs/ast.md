@@ -315,11 +315,11 @@ part of the model and still participate in equality.
 The transformer builds eight typed payloads and folds each one into an owner
 before it returns a `BasePicture`: `CommonProperties`, `ModuleOptions`,
 `TwoLayers`, `Grid`, `SeqLayers`, `Zoomable`, `ClipValue`, and
-`CoordinateClipping`. They stay on the model and `sattline_parser.ast` surface
-so a consumer that builds or inspects transformer input can name them, but a
-parsed tree never contains one. An `isinstance` check against them on a parsed
-AST is always false, `walk` never yields them, and `iter_child_nodes` never
-reports them.
+`CoordinateClipping`. They live in `sattline_parser.transformer._payloads` and
+are not part of the model or the `sattline_parser.ast` surface, because a parsed
+tree never contains one. An `isinstance` check against them on a parsed AST is
+always false, `walk` never yields them, and `iter_child_nodes` never reports
+them.
 
 ## SFC nodes
 

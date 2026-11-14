@@ -24,11 +24,7 @@ _DOCS = Path(__file__).resolve().parents[2] / "docs" / "validation.md"
 _START = "<!-- RULE-TABLE:START -->"
 _END = "<!-- RULE-TABLE:END -->"
 
-_UNIMPLEMENTED = {
-    DiagnosticCode.DIVISION_BY_ZERO,
-    DiagnosticCode.SEQUENCE_TRANSITION_AFTER_TRANSITION,
-    DiagnosticCode.PARALLEL_BRANCH_INCOMPLETE,
-}
+_UNIMPLEMENTED: set[DiagnosticCode] = set()
 
 
 def test_registry_covers_every_diagnostic_code_exactly_once() -> None:

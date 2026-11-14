@@ -729,7 +729,7 @@ def test_cycles_are_computed_for_directly_built_projects() -> None:
     code = parse_source_text(_source("X"))
     a = SattLineProgram(name="A", code=code, dependencies=("B",))
     b = SattLineProgram(name="B", code=code, dependencies=("A",))
-    project = SattLineProject._from_programs({"A": a, "B": b})
+    project = SattLineProject.from_programs({"A": a, "B": b})
     assert project.cycles() == (("a", "b", "a"),)
 
 
@@ -737,5 +737,5 @@ def test_cycles_report_no_cycle_for_a_dag() -> None:
     code = parse_source_text(_source("X"))
     a = SattLineProgram(name="A", code=code, dependencies=("B",))
     b = SattLineProgram(name="B", code=code)
-    project = SattLineProject._from_programs({"A": a, "B": b})
+    project = SattLineProject.from_programs({"A": a, "B": b})
     assert project.cycles() == ()

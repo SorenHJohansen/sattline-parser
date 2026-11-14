@@ -42,7 +42,7 @@
 | `src/sattline_parser/names.py` | Identifier identity: the CP1252 fold table used by every layer |
 | `src/sattline_parser/grammar/` | Lark grammar (`sattline.lark`), `constants.py`, `sattline_lexer.py` |
 | `src/sattline_parser/models/` | AST models (`ast_model.py`) |
-| `src/sattline_parser/transformer/` | Transformer mixins and `SLTransformer` |
+| `src/sattline_parser/transformer/` | Transformer mixins, `SLTransformer`, and the interim `_payloads.py` |
 | `fuzzing/fuzz_harness.py` | Standalone fuzz harness |
 | `src/sattline_parser/cli/` | `sattline` command line (never edits a source tree): one module per subcommand in `cli/cmds/` |
 | `src/sattline_parser/project/` | Project layer: discovery, resolution, `.g`/`.y` graphics and `.p`/`.q` distribution companions, per-program validation, provenance, caches, `SattLineProject` |

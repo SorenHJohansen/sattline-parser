@@ -257,7 +257,7 @@ hidden exception. Ruff enables `E`, `F`, `W`, `I`, `N`, `UP`, `B`, `BLE`, `C4`,
 | `scripts/check_docs.py` | Check docs links, anchors, and prose, extract Mermaid blocks |
 | `scripts/gen_builtin_catalogue.py` | Generate or check `builtins/catalogue.json` |
 | `scripts/gen_rule_table.py` | Generate or check the validation rule table |
-| `scripts/export_parity_expectations.py` | Export validation expectations |
+| `scripts/export_validation_expectations.py` | Export validation expectations |
 | `scripts/profile_parse.py` | Profile the parse path |
 | `scripts/smoke_installed.py` | Smoke-test an installed artifact |
 

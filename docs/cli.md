@@ -173,7 +173,6 @@ empty list. See [project.md](project.md#distribution-companion).
 | `--cache-dir DIR` | Parser cache directory |
 | `--no-cache` | Bypass the project caches |
 | `--validate invoked\|full\|none` | What to validate. Default `invoked` |
-| `--no-validate` | Alias for `--validate none` |
 | `--fail-on none\|error` | Whether a validation finding fails the run. Default `error` |
 
 The project caches live under `$XDG_CACHE_HOME/sattline-parser/project` (or
