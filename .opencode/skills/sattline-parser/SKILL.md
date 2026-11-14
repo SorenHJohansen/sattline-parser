@@ -58,8 +58,8 @@ Do not read the whole `docs/` tree up front. Load the matching document.
 ## Invariants
 
 - Strict, no silent fallback. Unknown compressed markers raise
-  `PreprocessError`. A failed parse raises. A skipped project program is
-  recorded as a diagnostic.
+  `PreprocessError`. A failed parse raises. A missing or unparseable project
+  artifact raises, so a project load is all or nothing.
 - Every span and diagnostic points into the original source, even after
   decoding.
 - `grammar/sattline.lark` is the only grammar.

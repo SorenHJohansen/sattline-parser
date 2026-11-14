@@ -79,7 +79,6 @@
 | Diagnostic | One validation finding: code, message, span. It is always an error. |
 | Rule code | A stable `SL-V###` identifier. |
 | Severity | A CLI finding field: `error` for validation and parse findings, `warning` for graphics scan messages. |
-| Tentative | A finding that depends on a part of the closure that failed to load. Set by the loader, never by the validator. |
 | Scope | A chain of variable declarations: module parameters and locals, then enclosing modules. |
 | Type graph | A case-insensitive map from record datatype to its fields. |
 | Builtin record | A record datatype whose fields come from `builtins/records.py`. |

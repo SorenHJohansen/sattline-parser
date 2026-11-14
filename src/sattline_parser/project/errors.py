@@ -28,7 +28,7 @@ class ProjectLoadError(Exception):
 
 
 class StructuralProjectError(ProjectLoadError):
-    """A structural error that no strictness setting can recover from."""
+    """A structural error: the tree has no valid load order."""
 
 
 class DependencyNotFoundError(ProjectLoadError):

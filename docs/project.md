@@ -161,7 +161,7 @@ resolved body a name is still parsed once, so the single-root case is unchanged.
 
 The project registry keeps one program per folded name. When one name resolves to
 different bodies for different requesters, both bodies load and are validated,
-the first resolution that assembled is the one `programs()` exposes, and the
+the first resolution is the one `programs()` exposes, and the
 load reports a `NAME_RESOLUTION_CONFLICT` diagnostic naming both bodies. The
 conflict is reported once for each additional body, whatever the target order.
 
@@ -182,8 +182,8 @@ observable orders:
 - **Diagnostics.** `SattLineProject.diagnostics()` reports only the non-fatal
   load conditions: a missing or empty sidecar, a sidecar elsewhere, a sidecar
   from the other artifact family, and a name that resolved to two bodies. A
-  failure to resolve or parse raises instead. The rows are in plan order, which
-  is post-order.
+  failure to resolve or parse raises instead. Discovery rows come first, in
+  discovery order, then assembly rows in plan order.
 
 `validate=INVOKED` runs **after** the graph is complete, because it needs the
 whole invocation graph. The loader first builds the registry, then walks
@@ -365,9 +365,11 @@ preserving the caller's original spelling on `SattLineProgram.name`. `get`,
 name either method returns can be passed back to `get`. Graph nodes and edge
 endpoints are canonical casefolded identities.
 
-`graph()` returns every declared edge, including edges to dependencies that
-were not loaded. That is deliberate: the graph is the declared structure, not
-just the resolved closure.
+`graph()` returns every declared edge. In a loaded project every declared
+dependency is also loaded, because a missing one fails the load. A project
+assembled directly with `_from_programs` may declare an edge to a program it does
+not hold; the graph keeps that edge, because it describes the declared structure,
+not just the resolved closure.
 
 ## Caches
 

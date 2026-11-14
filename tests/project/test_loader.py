@@ -246,7 +246,7 @@ def test_load_resolves_dependencies_across_roots(tmp_path: Path) -> None:
     assert project.dependencies_of("LibrarySide") == ()
 
 
-def test_load_missing_dependency_strict_raises(tmp_path: Path) -> None:
+def test_load_missing_dependency_raises(tmp_path: Path) -> None:
     write_file(tmp_path, "Main.s", _CODE)
     write_file(tmp_path, "Main.l", "Ghost\n")
     with pytest.raises(DependencyNotFoundError) as exc_info:
@@ -565,7 +565,7 @@ def test_load_x_code_only_accepts_official_distribution(tmp_path: Path) -> None:
     assert program.format.distribution_ext == ".q"
 
 
-def test_load_distribution_decode_failure_strict_raises(tmp_path: Path) -> None:
+def test_load_distribution_decode_failure_raises(tmp_path: Path) -> None:
     write_file(tmp_path, "Main.s", _CODE)
     (tmp_path / "Main.p").write_bytes(b"\x81\n")
 
@@ -575,7 +575,7 @@ def test_load_distribution_decode_failure_strict_raises(tmp_path: Path) -> None:
     assert exc_info.value.program == "Main"
 
 
-def test_load_malformed_distribution_strict_raises(tmp_path: Path) -> None:
+def test_load_malformed_distribution_raises(tmp_path: Path) -> None:
     write_file(tmp_path, "Main.s", _CODE)
     write_file(tmp_path, "Main.p", "not a distribution companion\n")
 
@@ -771,7 +771,7 @@ def test_load_dependency_sidecar_decode_failure_raises(tmp_path: Path) -> None:
     assert exc_info.value.dependency is None
 
 
-def test_load_graphics_decode_failure_strict_raises(tmp_path: Path) -> None:
+def test_load_graphics_decode_failure_raises(tmp_path: Path) -> None:
     write_file(tmp_path, "Main.s", _CODE)
     (tmp_path / "Main.g").write_bytes(b"\x81 graphics\n")
 
@@ -1308,6 +1308,22 @@ def test_a_shared_unit_name_conflict_is_reported_whatever_the_target_order(
     # The registry exposes the body the first requester resolved.
     expected_base = first.resolve() if targets[0] == "Main1" else second.resolve()
     assert project.get("Util").resolved_base == expected_base
+
+
+@pytest.mark.parametrize(
+    ("targets", "expected_base"),
+    [(("Main2", "Util"), "second"), (("Util", "Main2"), "first")],
+)
+def test_a_shared_unit_that_is_also_a_target_keeps_the_first_resolution(
+    tmp_path: Path, targets: tuple[str, str], expected_base: str
+) -> None:
+    """The exposed body is the one the first requested target resolved."""
+    first, second = _two_roots_with_a_shared_unit(tmp_path)
+
+    project = SattLineProject.load([first, second], LoadMode.DRAFT, targets)
+
+    expected = first if expected_base == "first" else second
+    assert project.get("Util").resolved_base == expected.resolve()
 
 
 def _datecode_moduletype(datecode: int) -> str:
