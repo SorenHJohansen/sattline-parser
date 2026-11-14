@@ -237,7 +237,7 @@ def test_describe_parse_error_source_line_agrees_with_a_lone_cr_in_a_string():
     assert details.source_line == "second"
 
 
-def test_every_pattern_terminal_has_a_friendly_display_name():
+def test_sampled_pattern_terminals_have_friendly_display_names():
     spellings = parser_errors._terminal_spellings()
     for name in (
         "REAL_NOTAIL",

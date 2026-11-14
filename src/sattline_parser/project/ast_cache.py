@@ -59,6 +59,7 @@ _PACKAGE_ROOT = Path(__file__).resolve().parents[1]
 _CODE_FINGERPRINT_SOURCES = (
     "models",
     "transformer",
+    "preprocessing",
     "source_io.py",
     "source_document.py",
     "names.py",

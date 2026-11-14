@@ -4,9 +4,8 @@ Only helpers that more than one test module actually uses live here. Library
 symbols are imported from their real modules by each test, so this module never
 becomes a second public surface for the package.
 
-``reportUnusedClass`` and ``reportUnusedFunction`` are disabled at file scope
-because every helper here exists to be imported by another test module, and
-Pyright does not count cross-module use of underscore-prefixed names.
+Every helper here exists to be imported by another test module, so Pyright's
+unused-name reports do not apply to it.
 """
 
 from __future__ import annotations

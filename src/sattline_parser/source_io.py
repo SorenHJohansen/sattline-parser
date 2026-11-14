@@ -456,8 +456,8 @@ def _decode_source_bytes_for_parse(path: Path) -> str:  # pyright: ignore[report
 
     The parse pipeline itself reads the bytes once and calls
     :func:`_decode_bytes_for_parse`, so classification and decoding share a
-    snapshot. This read-and-decode form stays available for callers that hold a
-    path.
+    snapshot. This read-and-decode form is a test helper for a caller that holds
+    a path; it is not part of the parse path.
     """
     return _decode_bytes_for_parse(path.read_bytes())
 

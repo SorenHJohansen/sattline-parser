@@ -96,8 +96,9 @@ character offsets are shifted by the payload's absolute start. That keeps the
 work linear in the expression length rather than in the file offset. Binding
 spans and picture-display path-row spans use the same absolute coordinates. A
 failure to parse an expression becomes a `GraphicsMessage`, not an exception.
-The failure set matches the source parser's classification: a grammar error, a
-recursion limit, or a transformer `ValueError`, `TypeError`, or `IndexError`.
+The expression-level failure set matches the source parser's classification: a
+grammar error, a recursion limit, or a transformer `ValueError`, `TypeError`, or
+`IndexError`.
 
 ## Records
 

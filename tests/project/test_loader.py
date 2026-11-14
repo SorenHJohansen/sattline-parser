@@ -1033,6 +1033,28 @@ def test_parallel_parse_falls_back_when_a_pool_cannot_be_created(
     assert not [d for d in project.diagnostics() if d.kind is LoadDiagnosticKind.LOAD_SKIPPED]
 
 
+def test_a_body_specific_skip_is_not_reused_for_another_root(tmp_path: Path) -> None:
+    """The negative cache is per requester directory, because the body can differ."""
+    first = tmp_path / "first"
+    second = tmp_path / "second"
+    write_file(first, "Util.s", _CODE)
+    (first / "Util.l").write_bytes(b"\x81")
+    write_file(second, "Util.s", _CODE)
+    write_file(second, "Util.l", "Dep\n")
+    write_file(second, "Dep.s", _CODE)
+    write_file(first, "Main1.s", _CODE)
+    write_file(first, "Main1.l", "Util\n")
+    write_file(second, "Main2.s", _CODE)
+    write_file(second, "Main2.l", "Util\n")
+
+    project = SattLineProject.load(roots=[first, second], mode=LoadMode.DRAFT, targets=("Main1", "Main2"), strict=False)
+
+    skipped = [d for d in project.diagnostics() if d.kind is LoadDiagnosticKind.LOAD_SKIPPED]
+    assert [d.program for d in skipped] == ["Util"]
+    assert "requested by Main1" in skipped[0].detail
+    assert project.get("Util").resolved_base == second
+
+
 def test_parse_code_file_reads_but_never_writes_the_ast_cache(tmp_path: Path) -> None:
     """A worker reads the cache and leaves every write to the parent."""
     code = write_file(tmp_path, "Cached.s", _CODE)
