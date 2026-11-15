@@ -142,6 +142,8 @@ def register(subparsers: argparse._SubParsersAction[argparse.ArgumentParser]) ->
 
 def run(args: argparse.Namespace) -> int:
     require_plain_output(args)
+    if args.sarif and (args.of is not None or args.graph):
+        raise CliError("--sarif cannot be combined with --of or --graph")
     try:
         project = _load(args)
     except CliError:

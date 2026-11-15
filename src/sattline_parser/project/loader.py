@@ -31,56 +31,25 @@ from __future__ import annotations
 from collections.abc import Callable, Sequence
 from pathlib import Path
 
-from sattline_parser.source_io import parse_source_bytes, private_cache_dir
+from sattline_parser.source_io import private_cache_dir
 
-from . import executor as _executor
 from . import parallel as _parallel
-from . import plan as _plan_module
 from .assembler import ProjectAssembler
-from .ast_cache import FileASTCache, source_snapshot
+from .ast_cache import FileASTCache
 from .discovery import ProjectLookup
 from .executor import ParseExecutor
 from .lookup_cache import FileLookupCache
 from .models import (
-    GraphicsModel,
     LoadDiagnostic,
     LoadDiagnosticKind,
     LoadMode,
     LoadValidation,
     SattLineProgram,
 )
-from .plan import ResolvedArtifact as _ResolvedArtifact
 from .planner import ProjectPlanner, read_dependency_names
 from .scope import ProjectValidator
 
 __all__ = ["ProjectLoader", "read_dependency_names"]
-
-#: Historical names for the worker machinery and the plan key. They are aliases,
-#: not copies, so a monkeypatched alias is the callable the loader uses.
-_ParseFailure = _executor.ParseFailure
-_ParseOutcome = _executor.ParseOutcome
-_parse_failure_record = _executor.parse_failure_record
-_rebuild_parse_failure = _executor.rebuild_parse_failure
-
-
-def _parse_code_file(task: tuple[str, str, str | None, bool]) -> _executor.ParseOutcome:  # pyright: ignore[reportUnusedFunction]
-    """Worker entry point through this module's own parse and snapshot names.
-
-    The real pool uses the executor's function directly. This wrapper keeps the
-    loader's historical call site, including a caller that substitutes the
-    parser or the snapshot function for a test.
-    """
-    return _executor.parse_code_file(
-        task,
-        parse_bytes=parse_source_bytes,
-        snapshot=source_snapshot,
-    )
-
-
-_plan_key = _plan_module.plan_key
-_pool_allowed = _parallel.pool_allowed
-_process_pool = _parallel.process_pool
-_start_method = _parallel.start_method
 
 
 class ProjectLoader:
@@ -118,7 +87,6 @@ class ProjectLoader:
             mode=mode,
             debug=debug,
             diagnose=self._diagnose,
-            artifact_resolver=self._resolve_artifact,
         )
         #: Plan key -> the assembled unit. The public view keeps one unit per
         #: folded name; this registry keeps every resolved body.
@@ -134,7 +102,6 @@ class ProjectLoader:
             registry=self._registry,
             validator=self._validator,
             debug=debug,
-            companion_loader=self._load_companion,
         )
         self._executor = ParseExecutor(
             mode=mode,
@@ -143,19 +110,13 @@ class ProjectLoader:
             debug=debug,
             ast_cache=self._ast_cache,
             secure_cache_dir=secure_cache_dir,
-            pool_factory=_process_pool,
-            parse_bytes=parse_source_bytes,
-            snapshot_factory=source_snapshot,
+            pool_factory=_parallel.process_pool,
         )
 
     @property
     def diagnostics(self) -> tuple[LoadDiagnostic, ...]:
         """Non-fatal load findings, in discovery then assembly order."""
         return tuple(self._diagnostics)
-
-    @property
-    def _resolved_dependencies(self) -> dict[str, tuple[str, ...]]:
-        return self._planner.resolved_dependencies
 
     def _diagnose(self, kind: LoadDiagnosticKind, program: str, detail: str, path: Path | None = None) -> None:
         diagnostic = LoadDiagnostic(kind=kind, program=program, detail=detail, path=path)
@@ -172,11 +133,7 @@ class ProjectLoader:
         try:
             self._planner.resolve(targets)
             outcomes = self._executor.parse(self._planner.plans)
-            self._assembler.assemble(
-                self._planner.plans,
-                resolved_dependencies=self._planner.resolved_dependencies,
-                outcomes=outcomes,
-            )
+            self._assembler.assemble(self._planner.plans, outcomes=outcomes)
             self._assert_registry_post_order()
             self._validator.assert_no_moduletype_cycles()
             if self._validate is LoadValidation.INVOKED:
@@ -185,32 +142,6 @@ class ProjectLoader:
         finally:
             if self._lookup_cache is not None:
                 self._lookup_cache.flush()
-
-    def _resolve_artifact(
-        self,
-        name: str,
-        *,
-        program_name: str,
-        dependency: str | None,
-    ) -> _ResolvedArtifact:
-        """Delegate to the planner, keeping the historical patch point."""
-        return self._planner.resolve_artifact(name, program_name=program_name, dependency=dependency)
-
-    def _load_companion(
-        self,
-        code_path: Path,
-        *,
-        name: str,
-        program_name: str,
-        dependency: str | None,
-    ) -> tuple[Path | None, GraphicsModel | None]:
-        """Delegate to the assembler, keeping the historical patch point."""
-        return self._assembler._load_companion(  # pyright: ignore[reportPrivateUsage]
-            code_path,
-            name=name,
-            program_name=program_name,
-            dependency=dependency,
-        )
 
     def _name_registry(self) -> dict[str, SattLineProgram]:
         """The public registry: one unit per folded name, first resolution wins.
@@ -230,16 +161,10 @@ class ProjectLoader:
         """Assert that every loaded dependency precedes its consumer."""
         seen: set[str] = set()
         for key, program in self._registry.items():
-            for dependency_key in self._resolved_dependencies.get(key, ()):
+            for dependency_key in self._planner.resolved_dependencies.get(key, ()):
                 if dependency_key in self._registry and dependency_key not in seen:
                     dependency_name = self._registry[dependency_key].name
                     raise RuntimeError(
                         f"loader registry is not in post-order: {program.name!r} precedes dependency {dependency_name!r}"
                     )
             seen.add(key)
-
-
-# The worker machinery lives in ``executor`` and the plan types in ``plan``.
-# These aliases keep the historical import paths working for a consumer that
-# reaches into the loader module, and they are the names this module's own tests
-# have always used.

@@ -35,8 +35,13 @@ from sattline_parser.project import (
 from sattline_parser.project import executor as executor_module
 from sattline_parser.project import loader as project_loader
 from sattline_parser.project import parallel as project_loader_parallel
+from sattline_parser.project import plan as plan_module
+from sattline_parser.project.assembler import ProjectAssembler
 from sattline_parser.project.ast_cache import FileASTCache, SourceSnapshot, source_snapshot
+from sattline_parser.project.executor import ParseFailure, parse_code_file, rebuild_parse_failure
 from sattline_parser.project.models import LoadDiagnosticKind, SidecarState
+from sattline_parser.project.parallel import start_method
+from sattline_parser.project.planner import ProjectPlanner
 
 from ._support import write_file
 
@@ -126,13 +131,13 @@ class _RecordingPool:
 
 def _record_dispatched(monkeypatch: pytest.MonkeyPatch) -> list[str]:
     """Patch the pool factory so the parent records every dispatched body."""
-    real_factory = project_loader._process_pool
+    real_factory = project_loader_parallel.process_pool
     seen: list[str] = []
 
     def factory(max_workers: int) -> _RecordingPool:
         return _RecordingPool(real_factory(max_workers), seen)
 
-    monkeypatch.setattr(project_loader, "_process_pool", factory)
+    monkeypatch.setattr(project_loader_parallel, "process_pool", factory)
     return seen
 
 
@@ -343,7 +348,7 @@ def test_worker_and_in_process_failures_have_the_same_cause(tmp_path: Path) -> N
     ],
 )
 def test_rebuild_parse_failure_keeps_the_worker_type(type_name: str, expected_type: type[BaseException]) -> None:
-    record = project_loader._ParseFailure(
+    record = ParseFailure(
         type_name=type_name,
         message="boom",
         line=4,
@@ -351,13 +356,13 @@ def test_rebuild_parse_failure_keeps_the_worker_type(type_name: str, expected_ty
         pos_in_stream=11,
     )
 
-    rebuilt = project_loader._rebuild_parse_failure(record)
+    rebuilt = rebuild_parse_failure(record)
 
     assert type(rebuilt) is expected_type
 
 
 def test_rebuild_parse_failure_keeps_the_source_depth_limit() -> None:
-    record = project_loader._ParseFailure(
+    record = ParseFailure(
         type_name="SourceTooDeepError",
         message="too deep",
         line=4,
@@ -366,7 +371,7 @@ def test_rebuild_parse_failure_keeps_the_source_depth_limit() -> None:
         limit=200,
     )
 
-    rebuilt = project_loader._rebuild_parse_failure(record)
+    rebuilt = rebuild_parse_failure(record)
 
     assert isinstance(rebuilt, SourceTooDeepError)
     assert rebuilt.limit == 200
@@ -374,13 +379,13 @@ def test_rebuild_parse_failure_keeps_the_source_depth_limit() -> None:
 
 
 def test_rebuild_parse_failure_keeps_a_decode_error() -> None:
-    record = project_loader._ParseFailure(
+    record = ParseFailure(
         type_name="UnicodeDecodeError",
         message="bad byte",
         unicode_error=("utf-8", b"\xff", 0, 1, "invalid start byte"),
     )
 
-    rebuilt = project_loader._rebuild_parse_failure(record)
+    rebuilt = rebuild_parse_failure(record)
 
     assert isinstance(rebuilt, UnicodeDecodeError)
     assert rebuilt.start == 0
@@ -413,7 +418,7 @@ def test_parse_code_file_reports_an_unreadable_body(tmp_path: Path) -> None:
     code_path = tmp_path / "Main.s"
     code_path.chmod(0)
 
-    outcome = project_loader._parse_code_file((str(code_path), "draft", None, False))
+    outcome = parse_code_file((str(code_path), "draft", None, False))
 
     assert outcome.ast is None
     assert outcome.failure_record is not None
@@ -477,7 +482,7 @@ def test_load_debug_callback(tmp_path: Path) -> None:
 
 @contextmanager
 def _spy_on_parse(call_count: list[int]) -> Generator[None]:
-    with patch.object(project_loader, "parse_source_bytes", side_effect=_counting_parse(call_count)):
+    with patch.object(executor_module, "parse_source_bytes", side_effect=_counting_parse(call_count)):
         yield
 
 
@@ -918,7 +923,7 @@ def test_parallel_parse_falls_back_when_the_pool_cannot_start_workers(
         del max_workers
         return UnstartablePool()
 
-    monkeypatch.setattr(project_loader, "_process_pool", unstartable)
+    monkeypatch.setattr(project_loader_parallel, "process_pool", unstartable)
     project = _load(tmp_path, workers=2)
 
     assert tuple(project.programs()) == ("lib", "main")
@@ -1138,7 +1143,7 @@ def test_parallel_parse_falls_back_when_a_pool_cannot_be_created(
     def unavailable(max_workers: int) -> object:
         raise OSError(f"cannot start {max_workers} workers here")
 
-    monkeypatch.setattr(project_loader, "_process_pool", unavailable)
+    monkeypatch.setattr(project_loader_parallel, "process_pool", unavailable)
     project = _load(tmp_path, workers=2)
 
     assert tuple(project.programs()) == ("lib", "main")
@@ -1150,8 +1155,8 @@ def test_parse_code_file_reads_but_never_writes_the_ast_cache(tmp_path: Path) ->
     cache_dir = tmp_path / "cache"
     task = (str(code), LoadMode.DRAFT.value, str(cache_dir), True)
 
-    first = project_loader._parse_code_file(task)
-    second = project_loader._parse_code_file(task)
+    first = parse_code_file(task)
+    second = parse_code_file(task)
 
     assert first.ast is not None and first.failure is None
     assert second.ast is not None and second.failure is None
@@ -1164,7 +1169,7 @@ def test_parse_code_file_reads_but_never_writes_the_ast_cache(tmp_path: Path) ->
 def test_parse_code_file_reports_a_parse_failure_as_text(tmp_path: Path) -> None:
     code = write_file(tmp_path, "Broken.s", _BROKEN)
 
-    outcome = project_loader._parse_code_file((str(code), LoadMode.DRAFT.value, None, True))
+    outcome = parse_code_file((str(code), LoadMode.DRAFT.value, None, True))
 
     assert outcome.ast is None
     assert outcome.failure
@@ -1178,8 +1183,8 @@ def test_parse_code_file_serves_a_warm_entry_without_reparsing(tmp_path: Path, m
     def refuse(*args: object, **kwargs: object) -> object:
         raise AssertionError("a warm entry must not be reparsed")
 
-    monkeypatch.setattr(project_loader, "parse_source_bytes", refuse)
-    outcome = project_loader._parse_code_file((str(code), LoadMode.DRAFT.value, str(cache_dir), True))
+    monkeypatch.setattr(executor_module, "parse_source_bytes", refuse)
+    outcome = parse_code_file((str(code), LoadMode.DRAFT.value, str(cache_dir), True))
 
     assert outcome.ast is not None
     assert outcome.cached
@@ -1193,7 +1198,7 @@ def test_structural_error_during_assembly_fails_the_load(tmp_path: Path, monkeyp
     def structural(*args: object, **kwargs: object) -> object:
         raise DependencyCycleError(("main", "main"))
 
-    monkeypatch.setattr(project_loader.ProjectLoader, "_load_companion", structural)
+    monkeypatch.setattr(ProjectAssembler, "_load_companion", structural)
     with pytest.raises(DependencyCycleError):
         _load(tmp_path)
 
@@ -1234,7 +1239,7 @@ def test_a_shared_dependency_is_parsed_once(tmp_path: Path, workers: int, monkey
 def test_start_method_never_forks_a_threaded_or_modern_process(
     methods: list[str], threaded: bool, platform: str, version: tuple[int, int], expected: str | None
 ) -> None:
-    assert project_loader._start_method(methods, threaded=threaded, platform=platform, version=version) == expected
+    assert start_method(methods, threaded=threaded, platform=platform, version=version) == expected
 
 
 def test_a_daemonic_parent_parses_in_process(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -1261,8 +1266,8 @@ def test_parse_code_file_returns_a_cached_body_without_parsing(tmp_path: Path, m
     def no_parse(*args: object, **kwargs: object) -> None:
         raise AssertionError("a cached body must not be parsed again")
 
-    monkeypatch.setattr(project_loader, "parse_source_bytes", no_parse)
-    outcome = project_loader._parse_code_file((str(code), LoadMode.DRAFT.value, str(cache_dir), True))
+    monkeypatch.setattr(executor_module, "parse_source_bytes", no_parse)
+    outcome = parse_code_file((str(code), LoadMode.DRAFT.value, str(cache_dir), True))
 
     assert outcome.ast is not None and outcome.failure is None
 
@@ -1294,9 +1299,9 @@ def test_a_dead_worker_pool_falls_back_to_this_process(
     write_file(tmp_path, "Main.s", _CODE)
     write_file(tmp_path, "Main.l", "Lib\n")
 
-    monkeypatch.setattr(project_loader, "_process_pool", _failing_pool)
+    monkeypatch.setattr(project_loader_parallel, "process_pool", _failing_pool)
     events: list[str] = []
-    with caplog.at_level("WARNING", logger="sattline_parser.project.loader"):
+    with caplog.at_level("WARNING", logger="sattline_parser.project.executor"):
         project = _load(tmp_path, workers=2, debug=events)
 
     assert tuple(project.programs()) == ("lib", "main")
@@ -1385,7 +1390,7 @@ def test_a_body_that_changes_during_the_parse_is_not_cached(tmp_path: Path, monk
     def stale_snapshot(_path: Path, _raw_bytes: bytes | None = None) -> SourceSnapshot:
         return SourceSnapshot(mtime_ns=0, size=0, sha256="0" * 64)
 
-    monkeypatch.setattr(project_loader, "source_snapshot", stale_snapshot)
+    monkeypatch.setattr(executor_module, "source_snapshot", stale_snapshot)
 
     project = _load(tmp_path, cache_dir=tmp_path / "cache")
 
@@ -1428,7 +1433,7 @@ def test_an_interrupted_parallel_load_cancels_the_queued_bodies(
     write_file(tmp_path, "Main.l", "Lib\n")
 
     _SHUTDOWNS.clear()
-    monkeypatch.setattr(project_loader, "_process_pool", _interrupted_pool)
+    monkeypatch.setattr(project_loader_parallel, "process_pool", _interrupted_pool)
 
     with pytest.raises(KeyboardInterrupt):
         _load(tmp_path, workers=2)
@@ -1608,7 +1613,7 @@ def test_plan_key_falls_back_to_the_raw_path_when_resolve_fails(monkeypatch: pyt
 
     monkeypatch.setattr(Path, "resolve", _raise)
 
-    assert project_loader._plan_key(Path("/missing/Prog.s")) == str(Path("/missing/Prog.s"))
+    assert plan_module.plan_key(Path("/missing/Prog.s")) == str(Path("/missing/Prog.s"))
 
 
 def test_a_structural_error_escapes_the_load(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -1617,7 +1622,7 @@ def test_a_structural_error_escapes_the_load(tmp_path: Path, monkeypatch: pytest
     def _raise(*_args: object, **_kwargs: object) -> object:
         raise StructuralProjectError("Main", "structural")
 
-    monkeypatch.setattr(project_loader.ProjectLoader, "_resolve_artifact", _raise)
+    monkeypatch.setattr(ProjectPlanner, "resolve_artifact", _raise)
 
     with pytest.raises(StructuralProjectError, match="structural"):
         _load(tmp_path)

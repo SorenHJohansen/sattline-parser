@@ -363,12 +363,13 @@ for a code-scanning service. The mapping is fixed:
 | `results[].ruleId` | the `SL-V###` id for a validation finding, or the synthetic finding id |
 | `results[].level` | the finding severity, `error` or `warning` |
 | `results[].message` | the finding message, with `hint` folded into a `markdown` variant when present |
-| `results[].locations[]` | the finding file as an artifact URI, with `startLine` and `startColumn` when known |
+| `results[].locations[]` | the finding file as a repository-relative, percent-encoded artifact URI when it is under the working directory, otherwise an absolute file URI; `startLine` and `startColumn` when known |
 
 A result without a location still appears, so a project-load failure is not
-dropped. `--sarif` is exclusive with `--json` and `--jsonl`: asking for both is
-a usage error, because SARIF is a complete document of its own. `--max-findings`
-does not apply to it, and the exit code is the same as for text output.
+dropped. `--sarif` is exclusive with `--json` and `--jsonl`, and on `project` it
+also refuses `--of` and `--graph`: asking for two output shapes, or for a
+SARIF document of one graph slice, is a usage error. `--max-findings` does not
+apply to it, and the exit code is the same as for text output.
 
 ## Shared flags
 

@@ -115,7 +115,7 @@ class ModuleLayoutMixin:
         return InterimCoords(
             (nums[0], nums[1]),
             tails or None,
-            coord_tails=_coordinate_tail_groups(items),
+            coord_tails=_coordinate_tail_groups(items)[:2],
         )
 
     def origo_size_pair(self, items: list[TransformerItem]) -> InterimCoords:

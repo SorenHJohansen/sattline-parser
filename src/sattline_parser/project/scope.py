@@ -193,7 +193,9 @@ class ProjectValidator:
     @staticmethod
     def _invoked_view(basepicture: BasePicture, names: set[str]) -> BasePicture:
         """A copy that contains only the invoked module types from one file."""
-        selected = [moduletype for moduletype in basepicture.moduletype_defs if moduletype.name.casefold() in names]
+        selected = [
+            moduletype for moduletype in basepicture.moduletype_defs if fold_identifier(moduletype.name) in names
+        ]
         return replace(
             basepicture,
             moduletype_defs=selected,

@@ -12,10 +12,10 @@ cycle, and two different names that resolve to one file cannot hide one. The
 diagnostic still reports the logical names that formed the loop, because that
 is what a reader can act on.
 
-Requester-relative resolution is supported: a dependency is resolved from the
-declaring unit's own base first, so one name may resolve to different files
-under different requesters. That is exactly why the stack cannot be keyed by
-name.
+A dependency is resolved through the caller's ordered roots, so one name reaches
+one body in a load. The stack is keyed by artifact, not name, because two
+different names can resolve to one file (an alias or a symlink), which a name
+key would miss.
 """
 
 from __future__ import annotations

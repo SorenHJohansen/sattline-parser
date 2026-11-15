@@ -720,7 +720,7 @@ def test_registry_post_order_assertion_catches_a_consumer_first(tmp_path: Path) 
     dependency = parse_source_text(_source("B"))
     loader._registry["a"] = SattLineProgram(name="A", code=consumer, dependencies=("B",))
     loader._registry["b"] = SattLineProgram(name="B", code=dependency)
-    loader._resolved_dependencies["a"] = ("b",)
+    loader._planner.resolved_dependencies["a"] = ("b",)
     with pytest.raises(RuntimeError, match="not in post-order"):
         loader._assert_registry_post_order()
 

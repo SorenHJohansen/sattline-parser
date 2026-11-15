@@ -32,7 +32,14 @@ from sattline_parser.models.clauses import (
 )
 from sattline_parser.models.expressions import VarRef
 from sattline_parser.models.tails import VarTail
-from sattline_parser.transformer._module_shared import CoordTail, GroupConnInfo, InterimCoords, flatten_items, meta_span
+from sattline_parser.transformer._module_shared import (
+    GLOBAL_KEYWORD,
+    CoordTail,
+    GroupConnInfo,
+    InterimCoords,
+    flatten_items,
+    meta_span,
+)
 from sattline_parser.transformer._payloads import ClipValue, CoordinateClipping, Zoomable
 from sattline_parser.transformer.sl_transformer import _is_tree
 
@@ -166,7 +173,7 @@ def test_modules_mixin_coordinate_helpers_preserve_pairs_tails_and_clipping_tree
     assert mixin.coord_invar_tail(Meta(), [Token("COMMA", ","), "WidthSource"]) == CoordTail("WidthSource")
     assert clipping == CoordinateClipping((ClipValue(1.0),))
 
-    assert mixin.coordinates([1, 2, 3]).coord_tails == ((), (), ())
+    assert mixin.coordinates([1, 2, 3]).coord_tails == ((), ())
 
     with pytest.raises(ValueError, match="coordinates missing REAL values"):
         mixin.coordinates([1])
@@ -293,7 +300,7 @@ def test_modules_mixin_variable_group_and_mapping_helpers_preserve_modifiers_and
         SimpleNamespace(line=9, column=3, start_pos=90, end_pos=100),
         [
             parsed_name,
-            True,
+            GLOBAL_KEYWORD,
             parser_const.GRAMMAR_VALUE_DURATION_VALUE,
             VarRef("SourceVar"),
         ],
@@ -301,7 +308,7 @@ def test_modules_mixin_variable_group_and_mapping_helpers_preserve_modifiers_and
     variables = mixin.variable_group(
         [
             ("Alpha", "desc", SourceSpan(start=4, end=5, line=4, column=1)),
-            True,
+            GLOBAL_KEYWORD,
             "integer",
             parser_const.GRAMMAR_VALUE_CONST_KW,
             parser_const.GRAMMAR_VALUE_STATE_KW,
@@ -313,7 +320,7 @@ def test_modules_mixin_variable_group_and_mapping_helpers_preserve_modifiers_and
     list_tree = mixin.variable_list([variables])
     params_tree = mixin.moduleparameters([list_tree])
     locals_tree = mixin.localvariables([list_tree])
-    scan_group = mixin.scan_group([True, parsed_name])
+    scan_group = mixin.scan_group([GLOBAL_KEYWORD, parsed_name])
 
     assert parsed_name == VarRef("Pump.State", state="old", span=SourceSpan(start=90, end=100, line=9, column=3))
     assert mapping.target == VarRef("Pump.State", state="old", span=SourceSpan(start=90, end=100, line=9, column=3))
@@ -358,7 +365,7 @@ TYPEDEFINITIONS
    ClippingBounds = ( -1.0 , -1.0 ) ( 1.0 , 1.0 )
    ENDDEF (*MT*);
 SUBMODULES
-   A Invocation ( 0.0,0.0,0.0,1.0,1.0 ) : MT ( P => False, P => 0, P => \"\");
+   A Invocation ( 0.0,0.0,0.0,1.0,1.0 ) : MT ( P => False, P => True, P => 0, P => \"\");
 ModuleDef
 ClippingBounds = ( -1.0 , -1.0 ) ( 1.0 , 1.0 )
 ENDDEF (*BasePicture*);
@@ -368,4 +375,5 @@ ENDDEF (*BasePicture*);
 
     instance = picture.submodules[0]
     assert isinstance(instance, ModuleTypeInstance)
-    assert [mapping.source_literal for mapping in instance.parametermappings] == [False, 0, ""]
+    assert [mapping.source_literal for mapping in instance.parametermappings] == [False, True, 0, ""]
+    assert not any(mapping.is_source_global for mapping in instance.parametermappings)

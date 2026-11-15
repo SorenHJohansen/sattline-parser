@@ -377,3 +377,24 @@ def test_graph_and_interact_coordinate_tails_are_written_after_their_values() ->
 
     assert 'RectangleObject ( 0.0 , 0.0 ) ( 1.0 , 1.0 : InVar_ "Anchor" )' in text
     assert 'TextBox_ ( 0.0 , 0.0 : InVar_ "Anchor" )' in text
+
+
+def test_a_header_with_a_partially_grouped_tail_raises() -> None:
+    tail = VarTail("in", "PosX")
+    picture = _picture()
+    picture.header.invoke_coord_tails = [tail]
+    picture.header.coordinate_tails = ((), (), (), (), ())
+    picture.moduledef = None
+    picture.modulecode = None
+
+    with pytest.raises(UnsupportedFormattingError, match="coordinate tails"):
+        format_source(picture)
+
+
+def test_a_clipping_clause_with_a_partially_grouped_tail_raises() -> None:
+    tail = VarTail("in", "ClipX")
+
+    with pytest.raises(UnsupportedFormattingError, match="clipping tails"):
+        format_module(
+            ModuleDef(clipping=ClippingClause(((-1.0, -1.0), (1.0, 1.0)), (tail,), corner_tails=((), (), (), ())))
+        )

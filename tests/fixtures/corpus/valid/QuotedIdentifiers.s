@@ -1,9 +1,10 @@
 "Syntax version 2.23, date: 2026-04-23-12:00:00.000 N"
 "Original file date: ---"
 "Program date: 2026-04-23-12:00:00.000, name: QuotedIdentifiers"
-(* Covers quoted identifier syntax (up to 20 chars) and extended-Latin identifiers.
+(* Covers quoted identifier syntax and extended-Latin identifiers.
    Quoted identifiers allow spaces and special characters in variable names.
-   The maximum allowed length for a quoted identifier body is 20 characters.
+   A declared identifier may have at most 20 characters; a longer spelling
+   parses and reports SL-V038 rather than failing in the lexer.
    Keyword-prefixed identifiers (e.g. IFState, ANDFailed) are valid because
    keywords are only tokenized as standalone words.
    Expected: strict syntax-check passes. *)

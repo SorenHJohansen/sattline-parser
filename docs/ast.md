@@ -346,8 +346,9 @@ changing how the parser stores it.
 | `InteractorPropertySpec` | `(name, kind, datatype, summary)` |
 | `InteractorPropertyKind` | `SELECT`, `RANGE`, `COUNTER`, `BOOLEAN`, `NUMERIC`, `TEXT`, `EVENT` |
 
-A spec's `datatype` is the written value's scalar type when the spelling fixes
-it, and `None` when any value is accepted. The catalogue is vocabulary, not a
+A spec's `datatype` is advisory vocabulary: it names the value type the spelling
+implies, and the grammar still accepts any value, so `Int_Value = "text"` parses
+and is not a finding. The catalogue is vocabulary, not a
 runtime guarantee: a property is still stored as the `FlagClause` or
 `AssignClause` the source wrote, and an unknown spelling appears with
 `spec is None` instead of being dropped. Both container shapes are read: an
@@ -659,6 +660,8 @@ Property payloads are visited in a fixed order:
 | `GraphObject` | `colours`, `enable_tail`, `width`, `value_fraction`, `format_string`, `alignments`, `connection_node`, `points`, `tails` |
 | `InteractObject` | `procedure`, `assigns`, `enables`, `flags`, `colours`, `body`, `tails` |
 
+`coord_tails` keeps its place in both order tuples but is a grouping view: it yields no nodes, and the flat `tails` list emits each tail once. A key is in the order tuple because the table must cover every property key, not because the walker descends into it.
+
 `ModuleHeader.arguments` is walked as a node, so a consumer reaches `enable`,
 `module_in_view`, `zoom_limits`, `markers`, and `assigns` through it.
 `ModuleDef.clipping` owns the clipping tails, so they are emitted through the
@@ -690,10 +693,11 @@ walker decision, but they produce no nodes. `text_vars` holds `VarRef` values,
 which are nodes, and the walk visits them after the clauses.
 
 The flat `properties["tails"]` list is a derived view. A tail owned by a clause,
-a polygon point, or a text-object clause is emitted through that owner, and only
-the unowned (coordinate) tails are emitted from the flat list. Every tail node
-therefore appears once, and a query or validation pass does not need to
-deduplicate shared payloads.
+a polygon point, or a text-object clause is emitted through that owner, and the
+coordinate tails, which have no node owner, are emitted from the flat list.
+Every tail node therefore appears once, and a query or validation pass does not
+need to deduplicate shared payloads. `coord_tails` is not walked: it holds the
+same coordinate tails, and walking it would either duplicate or suppress them.
 
 `walk` uses an explicit stack and keeps ancestors as a persistent chain.
 `WalkEvent.parents` expands its sequence view only when read, so a deep tree is
@@ -713,10 +717,14 @@ collect variable references. Rule-specific validation walks stay in
 ## Formatting
 
 `formatting/formatter.py` renders AST nodes for `__str__`, message text, and
-debugging. `sattline_parser.formatting` is a supported import surface for the
-function names and their documented signatures; the exact rendered string is
-display output, not a serialization contract. Use the CLI or a consumer
-serializer when you need machine-readable output.
+debugging. `formatting/source.py` renders a whole file: `format_source` takes a
+`BasePicture` and `format_module` takes one `ModuleDef` block, and their output
+parses back to an equal tree for every corpus fixture. `UnsupportedFormattingError`
+marks the few shapes whose written place or spelling is not in the model.
+`sattline_parser.formatting` is a supported import surface for the function
+names and their documented signatures; the exact layout is display output, not a
+serialization contract. Use `sattline_parser.serialization` when you need
+machine-readable data.
 
 `format_expr` renders an expression or statement in source spelling, so the
 output parses back to the same node: a `VarRef` state is written `:Old`/`:New`,
@@ -737,6 +745,8 @@ keywords; only `format_expr` output is round-trip parseable.
 | `tests/parser/test_parser_core_module_definitions.py` | Layout and graphics fields |
 | `tests/parser/test_models_walk.py` | Field coverage, node order, field and indices, ancestry, pruning, leave events, literal leaves, visitor dispatch |
 | `tests/parser/test_formatter.py` | Expression rendering in source spelling, SFC footers, round-trip parsing |
+| `tests/parser/test_format_source.py` | Whole-file round trip for every corpus fixture, idempotence, graphics properties |
+| `tests/parser/test_serialization.py` | JSON-friendly data for scalars, spans, containers, and a whole picture |
 | `tests/parser/test_models_boundary.py` | The model layer imports no Lark module |
 | `tests/parser/test_ast_namespace.py` | Every node type and model dataclass is on the `sattline_parser.ast` surface |
 | `tests/parser/test_layout_metadata.py` | Every span and geometry field is classified as layout |

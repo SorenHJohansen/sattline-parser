@@ -149,8 +149,8 @@ serialization format.
 | `format_list` | `(items, indent="    ", align_variables=True, inline_if_singleline=False)` | list text |
 | `format_optional` | `(obj)` | `str(obj)` or `"None"` |
 | `format_seq_nodes` | `(nodes, indent="    ")` | sequence text |
-| `format_source` | `(picture, indent="    ")` | canonical source text for a whole `BasePicture` |
-| `format_module` | `(module, indent="    ")` | source text for one `ModuleDef` block |
+| `format_source` | `(picture, *, indent="    ")` | canonical source text for a whole `BasePicture` |
+| `format_module` | `(module, *, indent="    ")` | source text for one `ModuleDef` block |
 | `UnsupportedFormattingError` | `(message)` | raised when a hand-built model carries a tail without its position |
 
 `format_source` renders a parsed file back to canonical SattLine source that
@@ -163,9 +163,14 @@ mappings.
 A parsed model always records where a tail was written: `ModuleHeader.coordinate_tails`,
 `ClippingClause.corner_tails`, `GraphObject.properties["coord_tails"]`, and
 `InteractProperties["coord_tails"]` group the tails per value. The formatter
-raises `UnsupportedFormattingError` only for a hand-assembled model that carries
-a tail without that grouping, or a mapping whose literal is genuinely absent,
-because writing it somewhere would move it.
+raises `UnsupportedFormattingError` for four shapes it cannot place or spell:
+
+| Shape | Why |
+| --- | --- |
+| a hand-assembled model with a tail but no positional grouping | the value the tail followed is unknown |
+| a parameter mapping with no source literal | the written literal is absent from the model |
+| named sequence layers (`ModuleDef.seq_layers` as a mapping) | `Two_Layers_` and named layers share one field |
+| a `time_value` payload with more than one key | the written keyword is not modelled |
 
 The output is display text, not a supported interchange format.
 
@@ -280,10 +285,16 @@ wraps it in `ArtifactLoadError` or `DependencyParseError`. See
 
 `SattLineProject.index` is a `ProjectIndex` answering "who defines X" through
 `definitions_of(name)` and "who uses Y" through `usages_of(name)`, case
-insensitively, with a `DefinitionSite` or `UsageSite` per place. `invoked_moduletypes`
-is the reachability walk the loader uses to scope dependency validation, now
-exported for a consumer that wants the same answer. See
+insensitively, with a `DefinitionSite` or `UsageSite` per place. See
 [project.md](project.md#symbol-index).
+
+`invoked_moduletypes(programs, targets, *, closure_of=None)` is the reachability
+walk the loader uses to scope dependency validation. Its keys are the mapping
+keys the caller supplied: the loader passes its plan-key registry, while a
+caller that passes `SattLineProject.programs()` gets folded unit-name keys when
+`closure_of` is omitted. Its values are module-type names folded with
+`fold_identifier`. `closure_of(key)` must answer in the same key space as
+`programs`; mixing the two modes returns an empty result rather than raising.
 
 `parse_distribution_file`, `parse_distribution_text`, and
 `resolve_distribution_companion_path` are also re-exported by the top-level

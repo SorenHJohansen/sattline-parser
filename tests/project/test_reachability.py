@@ -8,6 +8,7 @@ from sattline_parser.models.ast_model import (
     ModuleTypeInstance,
     SingleModule,
 )
+from sattline_parser.names import fold_identifier
 from sattline_parser.project.models import SattLineProgram
 from sattline_parser.project.reachability import invoked_moduletypes, iter_moduletype_refs, visible_program_keys
 
@@ -73,4 +74,4 @@ def test_invoked_moduletypes_walks_declared_dependencies_by_default() -> None:
         "b": _program("B", moduletypes=(ModuleTypeDef(name="BType"),)),
     }
 
-    assert invoked_moduletypes(programs, ["a"]) == {"b": {"btype"}}
+    assert invoked_moduletypes(programs, ["a"]) == {"b": {fold_identifier("BType")}}

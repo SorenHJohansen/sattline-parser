@@ -310,9 +310,9 @@ to `0xC0-0xD6`, `0xF8-0xFE` to `0xD8-0xDE`, and `0xFF` to `0x9F`. Everything
 else is identity, so `ß` does not fold and `Straße` never equals `STRASSE`.
 Quoted identifiers compare including their quotes, with folding applied inside.
 
-The project layer uses `str.casefold` for filesystem identity. That is a
-different question from language identity, which always uses
-`fold_identifier`.
+The project layer compares filesystem paths with the platform's own rule
+(`os.path.normcase` through `ArtifactIdentity`), which is a different question
+from language identity.
 
 ### Keywords are case-insensitive
 

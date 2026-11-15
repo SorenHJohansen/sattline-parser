@@ -28,6 +28,8 @@ from sattline_parser.models.ast_model import (
 )
 
 from ._module_shared import (
+    GLOBAL_KEYWORD,
+    GlobalKeyword,
     GroupConnInfo,
     ModuleInvocation,
     PrivateMarker,
@@ -393,11 +395,9 @@ class ModuleAssemblyMixin:
         is_global = False
         if idx < len(items):
             global_raw = items[idx]
-            # ``GLOBAL_KW`` transforms to the literal ``True``. A source value
-            # such as ``False`` is also a bool, so the presence test must be an
-            # identity check, or the value would be consumed as the absent
-            # keyword and the mapping would lose it.
-            if global_raw is True:
+            # ``GLOBAL_KW`` has its own payload, so a boolean source value can
+            # never be mistaken for the absent keyword.
+            if isinstance(global_raw, GlobalKeyword):
                 is_global = True
                 idx += 1
 
@@ -450,7 +450,7 @@ class ModuleAssemblyMixin:
 
     def scan_group(self, items: list[TransformerItem]) -> GroupConnInfo:
         """Grammar scan_group -> group connection info with VarRef and global flag."""
-        is_global = any(isinstance(it, bool) and it for it in items)
+        is_global = any(it is GLOBAL_KEYWORD for it in items)
         var: VarRef | None = None
         for it in items:
             if isinstance(it, VarRef):
@@ -505,7 +505,7 @@ class ModuleAssemblyMixin:
             return []
 
         global_flag = False
-        if idx < len(items) and items[idx] is True:
+        if idx < len(items) and isinstance(items[idx], GlobalKeyword):
             global_flag = True
             idx += 1
 

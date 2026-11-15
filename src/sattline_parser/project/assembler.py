@@ -64,16 +64,9 @@ class ProjectAssembler:
         self,
         plans: Sequence[Plan],
         *,
-        resolved_dependencies: Mapping[str, tuple[str, ...]],
         outcomes: Mapping[str, ParseOutcome],
     ) -> None:
-        """Attach every parsed plan to the registry, in plan order.
-
-        ``resolved_dependencies`` is passed for the validation phase, which the
-        validator holds by reference; it is accepted here only so the phase
-        boundary names every input.
-        """
-        del resolved_dependencies
+        """Attach every parsed plan to the registry, in plan order."""
         for plan in plans:
             self._assemble_one(plan, outcomes[plan.key])
 

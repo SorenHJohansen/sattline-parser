@@ -122,6 +122,7 @@ _INVALID_VALIDATION_FIXTURES: dict[str, str] = {
     "TemporalVsTemporalCompare": "SL-V028",
     "OpSaveConstCombined": "SL-V031",
     "WriteToOldState": "SL-V035",
+    "IdentifierTooLong": "SL-V038",
     "AssignmentFamilyMismatch": "SL-V029",
     "IfConditionNotBoolean": "SL-V030",
     "EnableTailNotBoolean": "SL-V030",

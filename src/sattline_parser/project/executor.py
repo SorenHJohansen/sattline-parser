@@ -226,8 +226,6 @@ class ParseExecutor:
         ast_cache: FileASTCache | None,
         secure_cache_dir: Path | None,
         pool_factory: Callable[[int], ProcessPoolExecutor],
-        parse_bytes: Callable[..., BasePicture] = parse_source_bytes,
-        snapshot_factory: Callable[..., SourceSnapshot | None] = source_snapshot,
     ) -> None:
         self._mode = mode
         self._workers = max(1, workers)
@@ -236,8 +234,6 @@ class ParseExecutor:
         self._ast_cache = ast_cache
         self._secure_cache_dir = secure_cache_dir
         self._pool_factory = pool_factory
-        self._parse_bytes = parse_bytes
-        self._snapshot_factory = snapshot_factory
         #: Plan key -> the parsed body or the failure that stopped it.
         self.outcomes: dict[str, ParseOutcome] = {}
 
@@ -363,10 +359,10 @@ class ParseExecutor:
                 f"unable to read dependency {dependency!r}",
                 dependency=dependency,
             ) from exc
-        snapshot = self._snapshot_factory(code_path, raw_bytes)
+        snapshot = source_snapshot(code_path, raw_bytes)
         self._dbg(f"Parsing: {code_path}")
         try:
-            basepicture = self._parse_bytes(
+            basepicture = parse_source_bytes(
                 raw_bytes,
                 source_path=code_path,
                 debug=self._debug,

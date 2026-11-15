@@ -19,6 +19,8 @@ The mapping is mechanical and documented rather than clever:
 from __future__ import annotations
 
 from collections.abc import Sequence
+from pathlib import Path
+from urllib.parse import quote
 
 from sattline_parser.validation import Rule, find_rule
 
@@ -38,7 +40,8 @@ __all__ = ["SARIF_SCHEMA", "SARIF_VERSION", "sarif_document", "sarif_json"]
 SARIF_VERSION = "2.1.0"
 SARIF_SCHEMA = "https://json.schemastore.org/sarif-2.1.0.json"
 _TOOL_URI = "https://github.com/SorenHJohansen/sattline-parser"
-_DOCS_URI = f"{_TOOL_URI}/blob/main/docs/validation.md"
+_RULE_DOCS_URI = f"{_TOOL_URI}/blob/main/docs/validation.md#diagnostics"
+_FINDING_DOCS_URI = f"{_TOOL_URI}/blob/main/docs/cli.md#the-finding-shape"
 
 #: Summaries for the finding ids that are not validation rules.
 _SYNTHETIC_RULES: dict[str, str] = {
@@ -101,7 +104,7 @@ def _rule_descriptors(findings: Sequence[Finding]) -> list[dict[str, object]]:
             "id": rule_id,
             "name": rule.name if rule is not None else rule_id,
             "shortDescription": {"text": summary},
-            "helpUri": f"{_DOCS_URI}#{rule_id.lower()}",
+            "helpUri": _RULE_DOCS_URI if rule is not None else _FINDING_DOCS_URI,
         }
         if rule is not None and rule.details:  # pragma: no cover - no active rule carries details today
             descriptor["fullDescription"] = {"text": rule.details}
@@ -129,11 +132,28 @@ def _result(finding: Finding) -> dict[str, object]:
     return result
 
 
+def _artifact_uri(file: str) -> str:
+    """A SARIF artifact URI for a finding path.
+
+    A path under the working directory becomes a repository-relative,
+    percent-encoded reference, which is what a code-scanning service maps to a
+    tracked file. Anything else keeps its absolute file URI.
+    """
+    path = Path(file)
+    if not path.is_absolute():
+        return quote(path.as_posix(), safe="/")
+    try:
+        relative = path.resolve().relative_to(Path.cwd().resolve())
+    except ValueError:
+        return path.resolve().as_uri()
+    return quote(relative.as_posix(), safe="/")
+
+
 def _location(finding: Finding) -> dict[str, object] | None:
     if finding.file is None:
         return None
     physical: dict[str, object] = {
-        "artifactLocation": {"uri": finding.file.replace("\\", "/")},
+        "artifactLocation": {"uri": _artifact_uri(finding.file)},
     }
     if finding.line is not None and finding.line >= 1:
         region: dict[str, object] = {"startLine": finding.line}

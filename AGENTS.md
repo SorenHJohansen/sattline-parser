@@ -40,6 +40,8 @@
 | `src/sattline_parser/ast.py` | Supported AST surface: every node, clause, tail, `SourceSpan`, and the walker |
 | `src/sattline_parser/source_io.py` | Parser cache, source decoding, and the source→`BasePicture` pipeline |
 | `src/sattline_parser/names.py` | Identifier identity: the CP1252 fold table used by every layer |
+| `src/sattline_parser/serialization.py` | Public AST serializer (`to_jsonable`, `to_json`) |
+| `src/sattline_parser/formatting/source.py` | Whole-file formatter (`format_source`, `format_module`) |
 | `src/sattline_parser/grammar/` | Lark grammar (`sattline.lark`), `constants.py`, `sattline_lexer.py` |
 | `src/sattline_parser/models/` | AST models (`ast_model.py`) |
 | `src/sattline_parser/transformer/` | Transformer mixins, `SLTransformer`, and the interim `_payloads.py` |

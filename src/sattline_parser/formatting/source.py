@@ -5,18 +5,18 @@ canonical SattLine text that parses back to an equal tree. It is a formatter,
 not a lossless printer: the model keeps structure and spelling where the
 language cares, not the original whitespace, so the output is normalised.
 
-The model itself lost a few associations, and the formatter refuses those
-instead of moving a value to a different place:
+Every parsed corpus fixture round-trips, including graphics and interactor
+bodies. A tail is written after the value it followed, using the positional
+views ``ModuleHeader.coordinate_tails``, ``ClippingClause.corner_tails``, and
+the graph and interact ``coord_tails`` property key.
 
-* a module header's coordinate tails are a flat list, so the model cannot say
-  which of the five coordinates a tail was attached to;
-* a clipping clause's tails are a flat list across all four corners;
-* ``ModuleDef.seq_layers`` folds both the ``Two_Layers_`` and the named-layer
-  forms into one field.
+Four shapes are refused rather than written somewhere they did not appear:
 
-Each of those raises :class:`UnsupportedFormattingError`. Everything else,
-including the graphics and interactor property maps, is written from the typed
-clauses, so a round trip keeps both the structure and the meaning.
+* a hand-assembled model that carries a tail without its positional grouping;
+* a parameter mapping whose source literal is absent;
+* named sequence layers, because ``ModuleDef.seq_layers`` folds the
+  ``Two_Layers_`` and named-layer forms into one field;
+* a multi-key ``time_value`` payload, whose written keyword is not modelled.
 
 The output is display text: it is not guaranteed to be byte-identical to any
 particular editor's layout, and it is not a supported interchange format.
@@ -148,7 +148,7 @@ def format_source(picture: BasePicture, *, indent: str = "    ") -> str:
     if description is not None:
         printer.emit(0, description.text)
     datecode = f" DateCode_ {picture.datecode}" if picture.datecode is not None else ""
-    header = _module_header(picture.header, printer, level=0, invocation=True)
+    header = _module_header(picture.header)
     printer.emit(0, f"{header} : MODULEDEFINITION{datecode}")
     _emit_scan_group(printer, picture.header, 0)
     _emit_body(printer, picture, 0)
@@ -200,9 +200,16 @@ def _emit_body(printer: _Printer, picture: BasePicture, level: int) -> None:
 
 
 def _emit_scan_group(printer: _Printer, header: ModuleHeader, level: int) -> None:
-    if header.groupconn is not None:
-        global_keyword = "GLOBAL " if header.groupconn_global else ""
-        printer.emit(level, f"(GroupConn = {global_keyword}{header.groupconn.name})")
+    text = _scan_group_text(header)
+    if text:
+        printer.emit(level, text)
+
+
+def _scan_group_text(header: ModuleHeader) -> str:
+    if header.groupconn is None:
+        return ""
+    global_keyword = "GLOBAL " if header.groupconn_global else ""
+    return f" (GroupConn = {global_keyword}{header.groupconn.name})"
 
 
 def _emit_definitions(
@@ -349,15 +356,16 @@ def _datatype_text(datatype: ScalarDatatype | str) -> str:
 
 def _emit_submodule(printer: _Printer, submodule: SingleModule | FrameModule | ModuleTypeInstance, level: int) -> None:
     if isinstance(submodule, ModuleTypeInstance):
-        header = _module_header(submodule.header, printer, level=level, invocation=False)
+        header = _module_header(submodule.header)
         mappings = ", ".join(_mapping_text(mapping) for mapping in submodule.parametermappings)
         tail = f" ({mappings})" if mappings else ""
         printer.emit(level, f"{header} : {submodule.moduletype_name}{tail};")
         return
-    header = _module_header(submodule.header, printer, level=level, invocation=True)
+    header = _module_header(submodule.header)
     frame = " (Frame_Module)" if isinstance(submodule, FrameModule) else ""
     datecode = f" DateCode_ {submodule.datecode}" if submodule.datecode is not None else ""
-    printer.emit(level, f"{header} : MODULEDEFINITION{datecode}{frame}")
+    scan_group = _scan_group_text(submodule.header)
+    printer.emit(level, f"{header} : MODULEDEFINITION{datecode}{frame}{scan_group}")
     _emit_variables(printer, const.GRAMMAR_VALUE_MODULEPARAMETERS, submodule.moduleparameters, level + 1)
     _emit_variables(printer, const.GRAMMAR_VALUE_LOCALVARIABLES, submodule.localvariables, level + 1)
     if submodule.submodules:
@@ -404,7 +412,8 @@ def _emit_clipping(printer: _Printer, clipping: ClippingClause, level: int) -> N
     (x1, y1), (x2, y2) = clipping.bounds
     values = (x1, y1, x2, y2)
     groups = clipping.corner_tails
-    if clipping.tails and not groups:
+    grouped = {id(tail) for group in groups for tail in group}
+    if any(id(tail) not in grouped for tail in clipping.tails):
         raise UnsupportedFormattingError(
             "clipping tails: this clause carries tails without their corners, "
             "so the corner each tail belonged to is not known"
@@ -413,10 +422,10 @@ def _emit_clipping(printer: _Printer, clipping: ClippingClause, level: int) -> N
     printer.emit(level, f"ClippingBounds = ( {rendered[0]} , {rendered[1]} ) ( {rendered[2]} , {rendered[3]} )")
 
 
-def _module_header(header: ModuleHeader, printer: _Printer, *, level: int, invocation: bool) -> str:
-    del printer, level, invocation
+def _module_header(header: ModuleHeader) -> str:
     groups = header.coordinate_tails
-    if header.invoke_coord_tails and not groups:
+    grouped = {id(tail) for group in groups for tail in group}
+    if any(id(tail) not in grouped for tail in header.invoke_coord_tails):
         raise UnsupportedFormattingError(
             "module header coordinate tails: this header carries tails without their "
             "coordinates, so the coordinate each tail belonged to is not known"

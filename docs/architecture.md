@@ -68,7 +68,8 @@ flowchart TB
     VALIDATION --> BUILTINS
     VALIDATION --> NAMES
     BUILTINS --> NAMES
-    FORMATTING --> MODELS
+    FORMAT["sattline_parser.formatting"] --> MODELS
+    SERIAL["sattline_parser.serialization"] --> MODELS
 
     SOURCE_IO --> TRANSFORMER
     SOURCE_IO --> MODELS
@@ -135,6 +136,7 @@ The important import-direction rules:
 | `src/sattline_parser/validation/` | Strict single-source rules, scopes, typing | You add a rule |
 | `src/sattline_parser/builtins/` | Generated function catalogue and record specs | You change builtin facts |
 | `src/sattline_parser/formatting/` | `__str__`, public expression rendering, and whole-file source formatting | You change rendered output |
+| `src/sattline_parser/serialization.py` | JSON-friendly data for the model | You export AST data |
 | `src/sattline_parser/project/` | Discovery, identity, planning, parsing, assembly, validation scope, graphics, distribution, caches | You change project behaviour |
 | `src/sattline_parser/project/planner.py` | Resolve names into post-order plans; artifact-keyed cycle detection | You change dependency discovery |
 | `src/sattline_parser/project/executor.py` | Parse planned bodies, worker pool, AST cache, failure records | You change parsing or parallelism |

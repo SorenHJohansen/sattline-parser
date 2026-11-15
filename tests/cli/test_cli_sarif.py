@@ -117,3 +117,43 @@ def test_project_sarif_reports_a_load_failure(tmp_path: Path, capsys) -> None:
     result = log["runs"][0]["results"][0]
     assert result["ruleId"] == "PROJECT_LOAD_ERROR"
     assert "locations" not in result
+
+
+def test_sarif_uri_is_repository_relative_and_encoded(tmp_path: Path, capsys, monkeypatch) -> None:
+    write_source(tmp_path, "Steps one.s", CONSECUTIVE_STEPS_SOURCE)
+    monkeypatch.chdir(tmp_path)
+
+    assert main(["check", "Steps one.s", "--sarif"]) == ExitCode.FINDINGS
+    log = _run_json(capsys)
+
+    uri = log["runs"][0]["results"][0]["locations"][0]["physicalLocation"]["artifactLocation"]["uri"]
+    assert uri == "Steps%20one.s"
+
+
+def test_sarif_rule_descriptor_links_to_the_rule_table(capsys, tmp_path: Path) -> None:
+    source = write_source(tmp_path, "Steps.s", CONSECUTIVE_STEPS_SOURCE)
+
+    assert main(["check", str(source), "--sarif"]) == ExitCode.FINDINGS
+    log = _run_json(capsys)
+
+    descriptor = log["runs"][0]["tool"]["driver"]["rules"][0]
+    assert descriptor["helpUri"].endswith("docs/validation.md#diagnostics")
+
+
+def test_project_sarif_refuses_graph_selection(tmp_path: Path, capsys) -> None:
+    write_source(tmp_path, "Clean.s", VALID_SOURCE)
+
+    assert main(["project", str(tmp_path), "--sarif", "--of", "Clean"]) == ExitCode.USAGE
+    assert "--of" in capsys.readouterr().err
+    assert main(["project", str(tmp_path), "--sarif", "--graph"]) == ExitCode.USAGE
+
+
+def test_sarif_uri_makes_an_absolute_path_repository_relative(tmp_path: Path, capsys, monkeypatch) -> None:
+    source = write_source(tmp_path, "Steps.s", CONSECUTIVE_STEPS_SOURCE)
+    monkeypatch.chdir(tmp_path)
+
+    assert main(["check", str(source), "--sarif"]) == ExitCode.FINDINGS
+    log = _run_json(capsys)
+
+    uri = log["runs"][0]["results"][0]["locations"][0]["physicalLocation"]["artifactLocation"]["uri"]
+    assert uri == "Steps.s"

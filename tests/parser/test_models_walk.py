@@ -7,7 +7,7 @@ import dataclasses
 from pathlib import Path
 
 import sattline_parser.models as models_package
-from sattline_parser import NodeVisitor, parse_source_file, walk
+from sattline_parser import NodeVisitor, parse_source_file, parse_source_text, walk
 from sattline_parser.models import ast_model, clauses, expressions, iter_child_nodes, tails
 from sattline_parser.models import ast_model as m
 from sattline_parser.models.clauses import (
@@ -721,3 +721,28 @@ def test_node_visitor_dispatches_and_descends_on_request() -> None:
     assert any(collector.variables for collector in collectors)
     assert any(collector.calls for collector in collectors)
     assert all(isinstance(name, str) for collector in collectors for name in collector.calls)
+
+
+def test_walk_visits_a_grouped_coordinate_tail_through_the_flat_list() -> None:
+    """``coord_tails`` is a grouping view; the flat ``tails`` list owns the visit."""
+    source = """"Syntax version"
+"Original file date: ---"
+"Program date: ---, name: T"
+BasePicture Invocation ( 0.0,0.0,0.0,1.0,1.0 ) : MODULEDEFINITION DateCode_ 1
+ModuleDef
+ClippingBounds = ( -1.0 , -1.0 ) ( 1.0 , 1.0 )
+GraphObjects :
+   RectangleObject ( 0.0 : InVar_ "XMin" , 0.0 ) ( 1.0 , 1.0 )
+ENDDEF (*BasePicture*);
+"""
+    picture = parse_source_text(source, log_failures=False)
+    assert picture.moduledef is not None
+    graph_object = picture.moduledef.graph_objects[0]
+    groups = graph_object.properties.get("coord_tails")
+    assert groups
+    tail = groups[0][0]
+
+    events = [event for event in walk(picture) if event.node is tail]
+
+    assert len(events) == 1
+    assert events[0].relation == "properties.tails[0]"

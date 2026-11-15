@@ -625,8 +625,12 @@ def _property_entries(node: m.GraphObject | m.InteractObject) -> Iterator[_Child
         value = properties.get(key)
         if value is None:
             continue
-        if key == "tails":
-            yield from _unowned_tail_entries(value, owned)
+        if key in {"tails", "coord_tails"}:
+            # Both are views of tails that another key or the flat list owns.
+            # ``coord_tails`` is grouped, so it yields no nodes itself; the flat
+            # ``tails`` list emits each tail once.
+            if key == "tails":
+                yield from _unowned_tail_entries(value, owned)
             continue
         _collect_tail_ids(value, owned)
         if isinstance(value, _NODE_TYPES):

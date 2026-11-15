@@ -73,8 +73,8 @@ entries win.
 `parse_search_path(r"LibA\UnitLib,LibB\UnitLib", base=Path("/sattline"))` yields the
 two roots in the written order, relative entries resolved under the base,
 backslashes accepted, empty entries and duplicates dropped. Duplicate detection
-compares the resolved path with `casefold`, so a case-only difference counts as
-one root on every platform.
+compares the resolved path with the platform's rule, so a case-only difference
+is two roots on a case-sensitive filesystem and one root on Windows.
 
 Each root is indexed once by `SourceIndex`:
 
@@ -206,12 +206,15 @@ real bugs. They now have names.
 | --- | --- | --- |
 | Unit name in the project view | `str.casefold()` | `programs()` keys, `get`, `__contains__`, graph node and edge names |
 | Language identity inside a unit | `fold_identifier` (CP1252 table) | record, module-type, field, and variable lookup; the symbol index |
-| Artifact identity | `ArtifactIdentity`, resolved path compared with `os.path.normcase` | roots, plan keys, the cycle stack, cache identity |
+| Artifact identity | `ArtifactIdentity`, resolved path compared with `os.path.normcase` | roots, plan keys, the cycle stack |
 | Logical spelling | `SattLineProgram.name`, `UnitIdentity.spelling` | what a diagnostic quotes |
 
 `programs()` keys are the project view's canonical spelling, which is
 `str.casefold`; `get` and `__contains__` fold the caller's spelling with the
-same rule. Inside a unit, the symbol table uses the language's own name table
+same rule. That key is a view key, not the language name table: two language
+names that differ only outside the CP1252 fold can share one key. Module-type,
+record, field, and variable lookup inside a unit use `fold_identifier` and keep
+them apart. Inside a unit, the symbol table uses the language's own name table
 (`fold_identifier`), which is not Unicode case folding. A filesystem path is
 never case-folded unconditionally: `ArtifactIdentity` resolves it and lets the
 platform decide, so `/lib` and `/Lib` are two roots on a case-sensitive
@@ -231,10 +234,10 @@ raises `DependencyCycleError` with the canonical cycle path, for example
 formed the loop, folded, because that is what a reader can act on. The error is
 structural: a cycle inside an unparseable dependency still fails the load.
 
-Following artifacts rather than names matters in both directions. Two different
-names for one body, such as a symlink alias, still form a cycle, and two units
-that merely share a spelling in different requesters do not. The diagnostics
-section of [identity](#identity) names the comparison each layer uses.
+Following artifacts rather than names matters because two different names for
+one body, such as a symlink alias, still form a cycle even though no name
+repeats. The diagnostics section of [identity](#identity) names the comparison
+each layer uses.
 
 A cycle is identified by its directed node sequence, not by its member set.
 Rotations of the same sequence describe the same cycle, so every path is
@@ -454,7 +457,10 @@ has a usage site, and validation is what reports it.
 `invoked_moduletypes(programs, targets, *, closure_of=None)` is exported from
 `sattline_parser.project`. It returns the module types each unit actually
 reaches, which is why a dependency file is validated only for the parts a target
-invokes. See [validation scopes](#validation-scopes).
+invokes. Its keys are the mapping keys the caller supplied (the loader passes
+plan keys), its values are module-type names folded with `fold_identifier`, and
+`closure_of` must answer in the same key space as `programs`. See
+[validation scopes](#validation-scopes).
 
 ## Caches
 
@@ -705,8 +711,8 @@ on the worker count: discovery fixes the plan order before any parse runs.
 - If a pool cannot be created (a restricted sandbox, a bootstrap failure), the
   load logs and parses in this process rather than failing.
 - A worker that dies mid-load, for example under memory pressure, breaks the
-  pool. The load logs that at warning level and reparses the remaining bodies in
-  the parent instead of failing, because parsing is the load rather than an
+  pool. The load logs that at warning level and reparses the closure in the
+  parent instead of failing, because parsing is the load rather than an
   optimisation. The warning names the pool failure, so a run that silently lost
   its parallelism does not look like a clean parallel load.
 - `workers > 1` and a warm cache do not add up: the parent must still receive
