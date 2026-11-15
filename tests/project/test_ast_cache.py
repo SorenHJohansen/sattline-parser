@@ -77,7 +77,9 @@ ENDDEF (*BasePicture*);
 
 def _write_code(tmp_path: Path, name: str = "Prog.s") -> Path:
     path = tmp_path / name
-    path.write_text(_MINIMAL_SOURCE, encoding="utf-8")
+    # Write bytes so Windows does not translate the fixture's LF endings into
+    # CRLF, which would make a same-length edit look like a size change.
+    path.write_bytes(_MINIMAL_SOURCE.encode("utf-8"))
     return path
 
 

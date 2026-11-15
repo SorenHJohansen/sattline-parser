@@ -469,14 +469,19 @@ def test_lookup_refuses_an_absolute_dependency_name(tmp_path: Path) -> None:
         ("D:ExternalProgram", False),
         ("\\\\server\\share\\Prog", False),
         ("Main.s", False),
-        ("CON", True),
-        ("com1", True),
         ("Name ", False),
         ("Name.", False),
     ],
 )
 def test_unit_names_are_validated_as_sattline_identifiers(name: str, safe: bool) -> None:
     assert _is_safe_name(name) is safe
+
+
+@pytest.mark.parametrize("name", ["CON", "prn", "COM1", "lpt9"])
+def test_windows_reserved_device_names_are_safe_on_posix(name: str, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("sattline_parser.project.discovery._IS_WINDOWS", False)
+
+    assert _is_safe_name(name) is True
 
 
 @pytest.mark.parametrize("name", ["CON", "prn", "COM1", "lpt9"])
