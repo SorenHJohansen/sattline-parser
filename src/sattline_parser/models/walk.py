@@ -90,7 +90,7 @@ from .tails import LitStringTail, VarTail, is_expression_tail
 __all__ = ["LiteralLeaf", "NodeVisitor", "WalkEvent", "iter_child_nodes", "iter_literal_leaves", "walk"]
 
 #: Model classes that count as AST nodes. Literals and leaves such as
-#: ``SourceSpan`` and ``Simple_DataType`` are deliberately absent.
+#: ``SourceSpan`` and ``ScalarDatatype`` are deliberately absent.
 _NODE_TYPES: tuple[type[object], ...] = (
     m.BasePicture,
     m.CodeComment,
@@ -571,7 +571,7 @@ def _descend(field: str, value: object, relation: str, indices: tuple[int, ...])
 def _literal_scalar(value: object) -> bool | int | float | str | None:
     """Return ``value`` when it is a plain literal, otherwise ``None``.
 
-    Enum members are excluded: a ``Simple_DataType`` or ``MappingSource`` value
+    Enum members are excluded: a ``ScalarDatatype`` or ``MappingSource`` value
     is a symbol, not a literal, even when the enum subclasses ``str``.
     """
     if isinstance(value, Enum):

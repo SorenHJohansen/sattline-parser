@@ -16,7 +16,7 @@ mappings entirely; only the mappings that are present are checked.
 
 from __future__ import annotations
 
-from sattline_parser.models.ast_model import ParameterMapping, Simple_DataType, Variable
+from sattline_parser.models.ast_model import ParameterMapping, ScalarDatatype, Variable
 from sattline_parser.names import fold_identifier
 from sattline_parser.validation.diagnostics import Diagnostic, DiagnosticCode
 from sattline_parser.validation.symbols import Scope
@@ -65,7 +65,7 @@ def check_parameter_mappings(
         # The formals are known, so the source must resolve even when the target
         # field itself is opaque. The check runs before the target rules so a
         # typo is not hidden behind an unproven target shape.
-        source_datatype: Simple_DataType | str | None = None
+        source_datatype: ScalarDatatype | str | None = None
         if mapping.source is not None and not mapping.is_source_global:
             source_datatype = resolve_ref_datatype(mapping.source, scope, type_graph)
             if source_datatype is None and unresolved_reference_is_a_defect(mapping.source, scope, type_graph):
@@ -92,7 +92,7 @@ def check_parameter_mappings(
 
         target_datatype = resolve_variable_field_datatype(target_variable, field_path, type_graph)
         if field_path and target_datatype is None:
-            if isinstance(target_variable.datatype, Simple_DataType):
+            if isinstance(target_variable.datatype, ScalarDatatype):
                 errors.append(
                     Diagnostic(
                         code=DiagnosticCode.PARAMETER_MAPPING_TARGET_UNKNOWN,
@@ -137,9 +137,9 @@ def check_parameter_mappings(
 
 def _mapping_source_datatype(
     mapping: ParameterMapping,
-    source_datatype: Simple_DataType | str | None,
+    source_datatype: ScalarDatatype | str | None,
     errors: list[Diagnostic],
-) -> tuple[Simple_DataType | str | None, str | None]:
+) -> tuple[ScalarDatatype | str | None, str | None]:
     if mapping.source_literal is not None:
         literal = mapping.source_literal
         if mapping.is_duration and not is_valid_duration_literal(literal):

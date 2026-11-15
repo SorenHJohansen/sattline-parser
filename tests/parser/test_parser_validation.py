@@ -30,6 +30,7 @@ from sattline_parser.models.ast_model import (
     ModuleTypeDef,
     ModuleTypeInstance,
     ParameterMapping,
+    ScalarDatatype,
     Sequence,
     SFCAlternative,
     SFCCodeBlocks,
@@ -39,7 +40,6 @@ from sattline_parser.models.ast_model import (
     SFCSubsequence,
     SFCTransition,
     SFCTransitionSub,
-    Simple_DataType,
     SingleModule,
     SourceSpan,
     Variable,
@@ -2189,13 +2189,13 @@ def test_system_datatype_declarations_resolve_to_declared_fields():
 
     graph = TypeGraph.from_basepicture(picture_ast)
     high = graph.field("Timer", "High")
-    assert high is not None and high.datatype is Simple_DataType.INTEGER
+    assert high is not None and high.datatype is ScalarDatatype.INTEGER
     block = graph.field("StepStatus", "block")
     assert block is None
     transit = graph.field("StepStatus", "transit")
-    assert transit is not None and transit.datatype is Simple_DataType.BOOLEAN
+    assert transit is not None and transit.datatype is ScalarDatatype.BOOLEAN
     group_object = graph.field("ScanGroupInfo", "ScanGroupName")
-    assert group_object is not None and group_object.datatype is Simple_DataType.STRING
+    assert group_object is not None and group_object.datatype is ScalarDatatype.STRING
 
 
 def test_frame_modules_inherit_the_enclosing_scope():

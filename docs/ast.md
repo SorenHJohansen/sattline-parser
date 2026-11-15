@@ -125,7 +125,7 @@ holds only the tails attached to the five invocation coordinates.
 classDiagram
     class Variable {
         name: str
-        datatype: Simple_DataType | str
+        datatype: ScalarDatatype | str
         global_var: bool | None
         const: bool | None
         state: bool | None
@@ -164,18 +164,20 @@ classDiagram
     ParameterMapping --> VarRef
 ```
 
-`Variable.datatype` is normalized at construction. A recognized builtin name
-becomes a `Simple_DataType` member through `fold_identifier`, so `INTEGER`,
-`Integer`, and `integer` are one datatype. An unrecognized name stays a `str`,
-which is how a user-defined record type is represented.
+`Variable.datatype` is normalized at construction. A recognized scalar name
+becomes a `ScalarDatatype` member through `fold_identifier`, so `INTEGER`,
+`Integer`, and `integer` are one datatype. Every other name stays a `str`:
+that is how a user-defined record type is represented, and `AnyType` stays a
+string too. It is a wildcard the validator resolves, not a scalar value, so it
+is not a member of the enum.
 
 `Variable.datatype_text` is the only safe accessor for the written datatype
 name. It returns the enum member's value for a builtin and the string itself for
 a user-defined record, so a consumer compares through `datatype_text` rather
 than against the raw union field.
 
-`Simple_DataType` is a plain `Enum`, while `MappingSource` is a `StrEnum`. The
-asymmetry is deliberate. `Simple_DataType` members are language datatypes and
+`ScalarDatatype` is a plain `Enum`, while `MappingSource` is a `StrEnum`. The
+asymmetry is deliberate. `ScalarDatatype` members are language datatypes and
 must not compare equal to arbitrary strings. A `MappingSource` member is part of
 the parsed spelling (`"variable_name"` or `"value"`) and is stored as that
 string. Neither type should be converted to the other style.

@@ -19,15 +19,15 @@ from sattline_parser.builtins.functions import (
     BuiltinParameter,
     get_function_signature,
 )
-from sattline_parser.models.ast_model import Simple_DataType
+from sattline_parser.models.ast_model import ScalarDatatype
 from sattline_parser.names import fold_identifier
 from sattline_parser.validation.typing import suggest_datatype_name
 
 #: Canonical (casefolded) names of all primitive datatypes. ``Variable`` normalises
-#: recognised names to ``Simple_DataType`` at init; anything left as ``str`` after
+#: recognised names to ``ScalarDatatype`` at init; anything left as ``str`` after
 #: parsing is a custom (record) type name, so only those strings are candidates for a
 #: built-in-name typo.
-BUILTIN_DATATYPE_NAMES: Final[frozenset[str]] = frozenset(member.value for member in Simple_DataType)
+BUILTIN_DATATYPE_NAMES: Final[frozenset[str]] = frozenset(member.value for member in ScalarDatatype)
 
 
 @dataclass(frozen=True, slots=True)
@@ -94,7 +94,7 @@ def builtin_datatype_typo(datatype: str) -> str | None:
     """Return the built-in datatype name a custom datatype string seems to misspell.
 
     Only fires for names that are not exact matches (those are already normalised
-    to ``Simple_DataType`` by ``Variable``) and that sit within the bounded edit
+    to ``ScalarDatatype`` by ``Variable``) and that sit within the bounded edit
     distance of exactly one built-in; otherwise ``None``.
     """
     return suggest_datatype_name(datatype, sorted(_FOLDED_DATATYPE_NAMES.values()))

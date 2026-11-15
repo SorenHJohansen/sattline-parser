@@ -16,7 +16,7 @@ _REQUIRED_CONSUMER_NAMES = (
 _EXPECTED_ALL = {
     "FieldGraph",
     "FieldSpec",
-    "Simple_DataType",
+    "ScalarDatatype",
     "TypeFamily",
     "assignment_type_matches",
     "builtin_type_matches",

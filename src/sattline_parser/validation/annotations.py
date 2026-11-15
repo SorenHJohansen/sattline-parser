@@ -105,7 +105,7 @@ def _check_coordinate_real(
 ) -> None:
     """A coordinate position must be real, never integer (SL-V032)."""
     inferred = infer_expr_type(tail, scope, records, type_graph)
-    if inferred is not None and fold_identifier(inferred) != fold_identifier(m.Simple_DataType.REAL.value):
+    if inferred is not None and fold_identifier(inferred) != fold_identifier(m.ScalarDatatype.REAL.value):
         errors.append(
             Diagnostic(
                 code=DiagnosticCode.COORDINATE_NOT_REAL,

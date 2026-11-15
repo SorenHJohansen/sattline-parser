@@ -24,6 +24,7 @@ from sattline_parser.models.ast_model import (
     ModuleCode,
     ModuleHeader,
     ModuleTypeInstance,
+    ScalarDatatype,
     SFCAlternative,
     SFCBodyItem,
     SFCParallel,
@@ -31,7 +32,6 @@ from sattline_parser.models.ast_model import (
     SFCSubsequence,
     SFCTransition,
     SFCTransitionSub,
-    Simple_DataType,
     SingleModule,
     SourceSpan,
     Variable,
@@ -43,7 +43,7 @@ from sattline_parser.validation.diagnostics import Diagnostic, DiagnosticCode
 Submodule = SingleModule | FrameModule | ModuleTypeInstance
 
 # Datatype names the SattLine language accepts that are not modelled as
-# Simple_DataType nor declared via TYPEDEFINITIONS. GroupData is the reserved
+# ScalarDatatype nor declared via TYPEDEFINITIONS. GroupData is the reserved
 # scan-group connection type used by module definitions with a GroupConn tail.
 #: System datatypes the language accepts without a local definition and without a
 #: field table. Every other system datatype resolves through
@@ -293,7 +293,7 @@ def _check_datatype_reference(
     *,
     allow_unresolved_external_datatypes: bool = False,
 ) -> None:
-    if isinstance(variable.datatype, Simple_DataType):
+    if isinstance(variable.datatype, ScalarDatatype):
         return
     name = variable.datatype_text
     folded = fold_identifier(name)

@@ -113,15 +113,15 @@ validation scope stays internal behind `validate_basepicture`.
 
 | Group | Names |
 | --- | --- |
-| Core type | `Simple_DataType` |
+| Core type | `ScalarDatatype` |
 | Families | `TypeFamily`, `datatype_family`, `family_of`, `is_numeric`, `is_numeric_datatype`, `is_boolean`, `is_boolean_datatype`, `is_string_simple_type`, `is_anytype_datatype` |
 | Datatype names | `normalize_builtin_datatype`, `format_datatype`, `suggest_datatype_name` |
 | Dotted names and records | `split_dotted_name`, `resolve_variable_field_datatype`, `FieldGraph`, `FieldSpec` |
 | Literals | `infer_literal_datatype`, `literal_matches_expected_datatype`, `is_valid_duration_literal`, `is_valid_time_literal`, `has_time_literal_marker`, `extract_time_literal`, `expression_is_zero_literal` |
 | Compatibility | `assignment_type_matches`, `builtin_type_matches`, `merge_numeric_types`, `merge_compatible_types` |
 
-`infer_literal_datatype` returns `Simple_DataType | str | None`. A time literal
-returns the grammar marker string `"Time_Value"`, not `Simple_DataType.TIME`,
+`infer_literal_datatype` returns `ScalarDatatype | str | None`. A time literal
+returns the grammar marker string `"Time_Value"`, not `ScalarDatatype.TIME`,
 because the marker is compared against the declared datatype before the value
 is parsed. Use `has_time_literal_marker`, or compare through
 `literal_matches_expected_datatype`, when the distinction matters.

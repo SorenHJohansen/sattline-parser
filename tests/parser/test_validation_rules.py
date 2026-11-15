@@ -10,12 +10,12 @@ from sattline_parser.models.ast_model import (
     Equation,
     ModuleCode,
     ModuleHeader,
+    ScalarDatatype,
     Sequence,
     SFCBodyItem,
     SFCCodeBlocks,
     SFCStep,
     SFCTransition,
-    Simple_DataType,
     Variable,
 )
 from sattline_parser.models.expressions import (
@@ -33,7 +33,7 @@ from sattline_parser.validation import validate_basepicture
 from sattline_parser.validation.code import _temporal_numeric_pair
 
 
-def _var(name: str, datatype: Simple_DataType | str) -> Variable:
+def _var(name: str, datatype: ScalarDatatype | str) -> Variable:
     return Variable(name=name, datatype=datatype)
 
 

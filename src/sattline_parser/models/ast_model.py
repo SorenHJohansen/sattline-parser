@@ -94,8 +94,8 @@ __all__ = [
     "SFCTransitionSub",
     "SLExpression",
     "SLStmt",
+    "ScalarDatatype",
     "Sequence",
-    "Simple_DataType",
     "SingleModule",
     "SourceSpan",
     "TernaryOp",
@@ -157,7 +157,16 @@ class FloatLiteral(float):
         return (type(self), (float(self), self.span))
 
 
-class Simple_DataType(Enum):
+class ScalarDatatype(Enum):
+    """The language's built-in scalar datatypes.
+
+    A recognized datatype name normalizes to a member through :meth:`from_any`
+    and :func:`sattline_parser.names.fold_identifier`, so ``INTEGER``,
+    ``Integer``, and ``integer`` are one datatype. A user-defined record type
+    stays a plain ``str``; the validator resolves its fields through the type
+    graph.
+    """
+
     STRING = "string"
     BOOLEAN = "boolean"
     INTEGER = "integer"
@@ -170,12 +179,12 @@ class Simple_DataType(Enum):
     REAL = "real"
 
     @classmethod
-    def from_any(cls, value: object) -> Simple_DataType:
+    def from_any(cls, value: object) -> ScalarDatatype:
         # Use the concrete class in isinstance for proper type narrowing in type checkers.
-        if isinstance(value, Simple_DataType):
+        if isinstance(value, ScalarDatatype):
             return value
         if not isinstance(value, str):
-            raise TypeError("Expected Simple_DataType or str")
+            raise TypeError("Expected ScalarDatatype or str")
         # Identifiers fold through the same CP1252 table as every other name in
         # the language, so ``INTEGER``/``Integer``/``integer`` are one datatype.
         folded = fold_identifier(value)
@@ -188,7 +197,7 @@ class Simple_DataType(Enum):
 @dataclass
 class Variable:
     name: str
-    datatype: Simple_DataType | str  # accept either at init; we'll normalize
+    datatype: ScalarDatatype | str  # accept either at init; we'll normalize
     global_var: bool | None = False
     const: bool | None = False
     state: bool | None = False
@@ -209,12 +218,12 @@ class Variable:
     @property
     def datatype_text(self) -> str:
         # Always return a string representation
-        return self.datatype.value if isinstance(self.datatype, Simple_DataType) else str(self.datatype)
+        return self.datatype.value if isinstance(self.datatype, ScalarDatatype) else str(self.datatype)
 
     def __post_init__(self):
         # Accept DataType or any-case string
         try:
-            self.datatype = Simple_DataType.from_any(self.datatype)
+            self.datatype = ScalarDatatype.from_any(self.datatype)
         except ValueError:
             if not isinstance(self.datatype, str):
                 raise

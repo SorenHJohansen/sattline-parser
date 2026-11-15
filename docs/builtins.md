@@ -143,7 +143,7 @@ not evidence that the callee accepts a value there.
 
 `builtin_datatype_typo` suggests a builtin datatype name when a custom datatype
 string is within a bounded edit distance of exactly one builtin. It never fires
-for an exact match, which is already normalized to `Simple_DataType` by
+for an exact match, which is already normalized to `ScalarDatatype` by
 `Variable`.
 
 ## Public surface

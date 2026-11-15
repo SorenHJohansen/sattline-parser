@@ -12,7 +12,7 @@ from dataclasses import dataclass
 from functools import cache
 
 from sattline_parser.builtins.records import BUILTIN_RECORD_SPECS
-from sattline_parser.models.ast_model import BasePicture, DataType, Simple_DataType, Variable
+from sattline_parser.models.ast_model import BasePicture, DataType, ScalarDatatype, Variable
 from sattline_parser.names import fold_identifier
 
 
@@ -21,7 +21,7 @@ class FieldDef:
     """One field of a record datatype."""
 
     name: str
-    datatype: Simple_DataType | str
+    datatype: ScalarDatatype | str
     state: bool | None = False
 
 
@@ -109,18 +109,18 @@ class TypeGraph:
             return None
         return record.fields_by_key.get(fold_identifier(field_name))
 
-    def field_type(self, record_type: str, field_name: str) -> Simple_DataType | str | None:
+    def field_type(self, record_type: str, field_name: str) -> ScalarDatatype | str | None:
         field = self.field(record_type, field_name)
         return field.datatype if field is not None else None
 
-    def iter_leaf_field_paths(self, root_type: Simple_DataType | str) -> Iterator[tuple[str, ...]]:
+    def iter_leaf_field_paths(self, root_type: ScalarDatatype | str) -> Iterator[tuple[str, ...]]:
         """Yield field paths from a type down to leaf (simple) datatypes.
 
         A simple datatype yields the empty path. A record yields paths such as
         ``("I", "WT001", "value")``. Unknown external types and cycles are
         treated as leaves so expansion always terminates.
         """
-        if isinstance(root_type, Simple_DataType):
+        if isinstance(root_type, ScalarDatatype):
             yield ()
             return
 
@@ -137,7 +137,7 @@ class TypeGraph:
             next_ancestors = ancestors | {type_key}
             for field in record.fields_by_key.values():
                 new_prefix = (*prefix, field.name)
-                if isinstance(field.datatype, Simple_DataType):
+                if isinstance(field.datatype, ScalarDatatype):
                     yield new_prefix
                 else:
                     stack.append((str(field.datatype), new_prefix, next_ancestors))

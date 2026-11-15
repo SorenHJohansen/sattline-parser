@@ -8,7 +8,7 @@ from sattline_parser.builtins import (
     FIELDLESS_BUILTIN_RECORD_NAMES,
     OPAQUE_BUILTIN_RECORD_NAMES,
 )
-from sattline_parser.models.ast_model import Simple_DataType
+from sattline_parser.models.ast_model import ScalarDatatype
 
 
 def test_record_specs_and_declared_names_are_complete() -> None:
@@ -18,7 +18,7 @@ def test_record_specs_and_declared_names_are_complete() -> None:
 
 
 def test_declared_names_start_with_the_scalar_datatypes() -> None:
-    scalars = [datatype.value for datatype in Simple_DataType]
+    scalars = [datatype.value for datatype in ScalarDatatype]
     assert list(BUILTIN_DECLARED_DATATYPE_NAMES[: len(scalars)]) == scalars
     assert set(scalars) <= set(BUILTIN_DECLARED_DATATYPE_NAMES)
 
@@ -52,25 +52,25 @@ def test_record_types_with_a_declared_shape_are_not_treated_as_opaque() -> None:
 
 def test_timer_records_share_the_running_and_counter_shape() -> None:
     assert BUILTIN_RECORD_SPECS["Timer"] == (
-        ("Running", Simple_DataType.BOOLEAN),
-        ("Holding", Simple_DataType.BOOLEAN),
-        ("High", Simple_DataType.INTEGER),
-        ("Low", Simple_DataType.INTEGER),
+        ("Running", ScalarDatatype.BOOLEAN),
+        ("Holding", ScalarDatatype.BOOLEAN),
+        ("High", ScalarDatatype.INTEGER),
+        ("Low", ScalarDatatype.INTEGER),
     )
     assert BUILTIN_RECORD_SPECS["AcofTimerType"] == (
-        ("Running", Simple_DataType.BOOLEAN),
-        ("Hold", Simple_DataType.BOOLEAN),
-        ("High", Simple_DataType.INTEGER),
-        ("Low", Simple_DataType.INTEGER),
+        ("Running", ScalarDatatype.BOOLEAN),
+        ("Hold", ScalarDatatype.BOOLEAN),
+        ("High", ScalarDatatype.INTEGER),
+        ("Low", ScalarDatatype.INTEGER),
     )
 
 
 def test_sorted_event_record_nests_the_sort_record() -> None:
     assert BUILTIN_RECORD_SPECS["SortedEventType"] == (
-        ("EventCondName", Simple_DataType.TAGSTRING),
-        ("EventState", Simple_DataType.INTEGER),
+        ("EventCondName", ScalarDatatype.TAGSTRING),
+        ("EventState", ScalarDatatype.INTEGER),
         ("SortRecord", "EventSortRecType"),
-        ("FormattedInfo", Simple_DataType.MAXSTRING),
+        ("FormattedInfo", ScalarDatatype.MAXSTRING),
     )
     assert len(BUILTIN_RECORD_SPECS["EventSortRecType"]) == 5
 
@@ -82,18 +82,18 @@ def test_time_record_uses_the_millisecond_field_spelling_sources_write() -> None
 
 def test_scan_group_data_carries_the_group_object_handle() -> None:
     assert BUILTIN_RECORD_SPECS["GroupData"] == (
-        ("Executing", Simple_DataType.BOOLEAN),
+        ("Executing", ScalarDatatype.BOOLEAN),
         ("GroupObject", "tObject"),
-        ("WarmStarting", Simple_DataType.BOOLEAN),
+        ("WarmStarting", ScalarDatatype.BOOLEAN),
     )
 
 
 def test_record_specs_are_ordered_field_datatype_pairs() -> None:
     spec = BUILTIN_RECORD_SPECS["BooleanSignal"]
     assert spec == (
-        ("Value", Simple_DataType.BOOLEAN),
-        ("IoValue", Simple_DataType.BOOLEAN),
-        ("Forced", Simple_DataType.BOOLEAN),
+        ("Value", ScalarDatatype.BOOLEAN),
+        ("IoValue", ScalarDatatype.BOOLEAN),
+        ("Forced", ScalarDatatype.BOOLEAN),
     )
 
 
@@ -105,4 +105,4 @@ def test_every_field_spec_is_a_named_datatype_pair() -> None:
     for spec in BUILTIN_RECORD_SPECS.values():
         for field_name, datatype in spec:
             assert isinstance(field_name, str) and field_name
-            assert isinstance(datatype, Simple_DataType | str)
+            assert isinstance(datatype, ScalarDatatype | str)

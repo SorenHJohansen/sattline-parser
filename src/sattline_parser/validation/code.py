@@ -21,6 +21,7 @@ from sattline_parser.models.ast_model import (
     FrameModule,
     ModuleCode,
     ModuleTypeInstance,
+    ScalarDatatype,
     Sequence,
     SFCAlternative,
     SFCBodyItem,
@@ -30,7 +31,6 @@ from sattline_parser.models.ast_model import (
     SFCSubsequence,
     SFCTransition,
     SFCTransitionSub,
-    Simple_DataType,
     SingleModule,
     SourceSpan,
     Variable,
@@ -574,7 +574,7 @@ def _check_assignment(assignment: Assignment, context: ValidationContext) -> Non
         )
     _check_old_new(assignment.target, resolved, context.errors)
     _check_old_write_target(assignment.target, resolved, context.errors)
-    if resolved.datatype == Simple_DataType.STRING:
+    if resolved.datatype == ScalarDatatype.STRING:
         context.errors.append(
             Diagnostic(
                 code=DiagnosticCode.STRING_ASSIGNMENT_NOT_ALLOWED,
