@@ -11,12 +11,10 @@ program's diagnostics are computed against a complete prefix of its closure.
 The loader asserts that invariant. Invoked-scope validation runs after the graph
 is complete because it needs the whole invocation graph.
 
-A plan is keyed by the resolved code path, not by the folded name. One root's
-``Util.s`` and another root's ``Util.s`` are therefore two plans with two
-bodies, and each requester's closure follows the body its own ordered lookup
-resolved. The public registry still holds one program per folded name; when one
-name resolves to different bodies for different requesters, the loader keeps
-the first and reports a ``NAME_RESOLUTION_CONFLICT`` diagnostic.
+A plan is keyed by the resolved code path, and every name resolves through the
+same ordered path, so one folded name always reaches one body. When two roots
+hold ``Util.s``, the earlier root wins and the later body is never planned,
+parsed, or validated.
 
 Loading fails fast on a missing or unparseable artifact: a load is all or
 nothing, so no diagnostic is ever marked tentative. Validation findings never
@@ -100,7 +98,6 @@ class _ResolvedArtifact:
     deps_path: Path | None
     sidecar: SidecarState
     dependencies: tuple[str, ...]
-    dependency_requester: Path
 
 
 @dataclass(frozen=True, slots=True)
@@ -266,12 +263,10 @@ class ProjectLoader:
         self._workers = max(1, workers)
         self._secure_cache_dir = secure_cache_dir
         #: Discovery order is post-order, so assembly is a single pass. Plans
-        #: are keyed by resolved code path, so a same-named unit in another
-        #: root is a second plan rather than a silent alias.
+        #: are keyed by resolved code path; the ordered path decides which body
+        #: a name resolves to, so a later same-named body is never planned.
         self._plans: list[_Plan] = []
         self._planned: set[str] = set()
-        #: Folded name -> the plan key that first resolved it.
-        self._plan_key_by_name: dict[str, str] = {}
         #: Plan key -> the plan keys of its resolved dependencies.
         self._resolved_dependencies: dict[str, tuple[str, ...]] = {}
         self._parsed: dict[str, _ParseOutcome] = {}
@@ -323,7 +318,7 @@ class ProjectLoader:
         self._resolved = True
         try:
             for target in targets:
-                self._target_plan_keys.add(self._visit(target, requester_dir=None, declared_by=None))
+                self._target_plan_keys.add(self._visit(target, declared_by=None))
             self._parse_planned()
             self._assemble()
             self._assert_registry_post_order()
@@ -378,7 +373,7 @@ class ProjectLoader:
                     )
             seen.add(key)
 
-    def _visit(self, name: str, *, requester_dir: Path | None, declared_by: str | None) -> str:
+    def _visit(self, name: str, *, declared_by: str | None) -> str:
         """Plan one program and return its plan key."""
         key = name.casefold()
         if key in self._loading:
@@ -388,11 +383,11 @@ class ProjectLoader:
             raise DependencyCycleError(canonical_cycle((*loading[start:], key)))
         self._loading[key] = None
         try:
-            return self._discover(name, requester_dir=requester_dir, declared_by=declared_by)
+            return self._discover(name, declared_by=declared_by)
         finally:
             del self._loading[key]
 
-    def _discover(self, name: str, *, requester_dir: Path | None, declared_by: str | None) -> str:
+    def _discover(self, name: str, *, declared_by: str | None) -> str:
         """Resolve one program's artifacts and recurse into its dependencies.
 
         Discovery is path resolution and sidecar reads only: it never parses a
@@ -401,33 +396,22 @@ class ProjectLoader:
         post-order sequence the assembly phase needs.
 
         A name that resolves to a body this load already planned reuses that
-        plan. A name that resolves to a *different* body is a second plan, and
-        the conflict is reported when that body assembles, because the two
-        requesters really did resolve two different units.
+        plan. The ordered path is the same for every name, so a name cannot
+        resolve to two bodies in one load.
         """
         program_name = declared_by if declared_by is not None else name
         dependency = None if declared_by is None else name
         self._dbg(f"Visiting: {name}")
         artifact = self._resolve_artifact(
             name,
-            requester_dir=requester_dir,
             program_name=program_name,
             dependency=dependency,
         )
         plan_key = _plan_key(artifact.code_path)
-        name_key = name.casefold()
-        self._plan_key_by_name.setdefault(name_key, plan_key)
         if plan_key in self._planned:
             return plan_key
         self._planned.add(plan_key)
-        resolved = tuple(
-            self._visit(
-                declared,
-                requester_dir=artifact.dependency_requester,
-                declared_by=name,
-            )
-            for declared in artifact.dependencies
-        )
+        resolved = tuple(self._visit(declared, declared_by=name) for declared in artifact.dependencies)
         self._plans.append(
             _Plan(
                 key=plan_key,
@@ -439,23 +423,6 @@ class ProjectLoader:
         )
         self._resolved_dependencies[plan_key] = resolved
         return plan_key
-
-    def _record_shared_name(self, name: str, plan_key: str) -> None:
-        """Report one folded name resolving to different bodies for different requesters.
-
-        Called when a body assembles, so the diagnostic only ever describes two
-        bodies that really did load.
-        """
-        first = self._plan_key_by_name.get(name.casefold())
-        if first is None or first == plan_key:
-            return
-        self._diagnose(
-            LoadDiagnosticKind.NAME_RESOLUTION_CONFLICT,
-            name,
-            f"name {name!r} resolves to {first} for one requester and {plan_key} for another; "
-            f"both bodies load, and the project registry keeps {first}",
-            Path(plan_key),
-        )
 
     def _parse_planned(self) -> None:
         """Parse every planned body, in parallel when ``workers`` allows it.
@@ -568,7 +535,6 @@ class ProjectLoader:
         name = plan.name
         program_name = _program_name(plan)
         dependency = _dependency(plan)
-        self._record_shared_name(name, plan.key)
         diagnostics = self._artifact_diagnostics(
             basepicture,
             key=plan.key,
@@ -619,12 +585,11 @@ class ProjectLoader:
         self,
         name: str,
         *,
-        requester_dir: Path | None,
         program_name: str,
         dependency: str | None,
     ) -> _ResolvedArtifact:
         """Find the body, its sidecar, and the declared dependencies."""
-        resolved = self._lookup.find_code_with_base(name, requester_dir=requester_dir)
+        resolved = self._lookup.find_code_with_base(name)
         if resolved is None:
             raise DependencyNotFoundError(
                 program_name,
@@ -635,14 +600,14 @@ class ProjectLoader:
         library = resolved_base.name
         # The sidecar belongs to the selected body's prefix; see
         # ProjectLookup.find_deps_beside.
-        deps_path = self._lookup.find_deps_beside(code_path, name, requester_dir=requester_dir)
+        deps_path = self._lookup.find_deps_beside(code_path, name)
         sidecar = SidecarState.ABSENT
         if deps_path is None:
             # A sidecar in the other family sits at the body's own prefix. Probe
             # for it directly, because a mode-filtered root-ordered search never
             # sees the other family and official mode would report a plain miss.
             same_prefix = find_companion_beside(code_path, sorted(ALL_DEPS_EXTENSIONS))
-            stray = self._lookup.find_deps(name, requester_dir=requester_dir)
+            stray = self._lookup.find_deps(name)
             if same_prefix is not None:
                 self._diagnose(
                     LoadDiagnosticKind.SIDECAR_FAMILY_MISMATCH,
@@ -665,7 +630,6 @@ class ProjectLoader:
                     f"no dependency sidecar beside {code_path.name!r}",
                     code_path,
                 )
-        dependency_requester = deps_path.parent if deps_path is not None else code_path.parent
         dependencies = self._read_deps(name, deps_path, program_name, dependency)
         if deps_path is not None:
             sidecar = SidecarState.PRESENT if dependencies else SidecarState.EMPTY
@@ -683,7 +647,6 @@ class ProjectLoader:
             deps_path=deps_path,
             sidecar=sidecar,
             dependencies=dependencies,
-            dependency_requester=dependency_requester,
         )
 
     def _artifact_diagnostics(

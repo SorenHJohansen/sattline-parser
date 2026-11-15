@@ -17,7 +17,7 @@ from typing import cast
 from ._atomic import TEMP_SUFFIX, temp_file_is_abandoned
 from ._atomic import temp_path_for as _temp_path_for
 
-LOOKUP_CACHE_VERSION = 1
+LOOKUP_CACHE_VERSION = 2
 
 DEFAULT_LOOKUP_CACHE_FLUSH_INTERVAL = 25
 

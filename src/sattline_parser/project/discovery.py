@@ -1,9 +1,10 @@
-"""SattLine artifact discovery across ordered search roots.
+"""SattLine artifact discovery across an ordered search path.
 
-Per-root indexing, requester-relative ordered lookup, the per-artifact
-draft→official fallback, and the parser-owned file-lookup cache integration.
-This is the file-discovery layer; program loading and dependency resolution
-build on it.
+Per-root indexing, ordered lookup, the per-artifact draft→official fallback, and
+the parser-owned file-lookup cache integration. The caller's root order is the
+lookup order: an earlier root wins, exactly like the path list a SattLine
+installation searches. This is the file-discovery layer; program loading and
+dependency resolution build on it.
 """
 
 from __future__ import annotations
@@ -46,18 +47,6 @@ def _is_relative_to(path: Path | None, root: Path | None) -> bool:
     except ValueError:
         return False
     return True
-
-
-def _first_branch_under(root: Path, path: Path | None) -> str | None:
-    resolved_root = _resolved(root)
-    resolved_path = _resolved(path)
-    if resolved_root is None or resolved_path is None:
-        return None
-    try:
-        relative_parts = resolved_path.relative_to(resolved_root).parts
-    except ValueError:
-        return None
-    return relative_parts[0] if relative_parts else None
 
 
 def _is_allowed_base(roots: Sequence[Path], base: Path) -> bool:
@@ -133,91 +122,53 @@ class SourceIndex:
         index.setdefault(name.casefold(), {})[path.suffix.lower()] = path
 
 
-def shared_lookup_root_for(requester_dir: Path | None, roots: Sequence[Path]) -> Path | None:
-    """The shared cluster root hosting the requester and >= 2 sibling roots.
+def ordered_lookup_bases(roots: Sequence[Path]) -> tuple[Path, ...]:
+    """The lookup path, in the caller's order, with each root resolved once.
 
-    Walks up from the requester to the highest ancestor under which at least two
-    other roots land in distinct first-level branches; ``None`` when no such
-    cluster exists.
+    Earlier entries win. A repeated root is dropped, keeping its first position,
+    so ``[A, B, A]`` searches ``A`` then ``B``.
     """
-    requester = _resolved(requester_dir)
-    if requester is None:
-        return None
-    candidate_dirs = [resolved for root in roots if (resolved := _resolved(root)) is not None and resolved != requester]
-    current = requester
-    while True:
-        branches: set[str] = set()
-        for source_dir in candidate_dirs:
-            if not _is_relative_to(source_dir, current):
-                continue
-            branch = _first_branch_under(current, source_dir)
-            if branch is None:
-                continue
-            branches.add(branch)
-            if len(branches) > 1:
-                return current
-        parent = current.parent
-        if parent == current:
-            break
-        current = parent
-    return None
-
-
-def ordered_lookup_bases(roots: Sequence[Path], requester_dir: Path | None) -> tuple[Path, ...]:
-    """Ordered lookup bases honoring the requester and shared-cluster order.
-
-    Precedence: the requester itself (when it is a configured root), then roots
-    sharing the requester's cluster — same branch before sibling branches — then
-    every remaining root in configured order. The terminal (last) root acts as
-    the fallback library and is always tried last.
-    """
-    resolved_roots = [resolved for root in roots if (resolved := _resolved(root)) is not None]
-    requester = _resolved(requester_dir)
     ordered: list[Path] = []
     seen: set[str] = set()
-
-    def add(path: Path) -> None:
-        key = _lookup_path_key(path)
+    for resolved in (path for root in roots if (path := _resolved(root)) is not None):
+        key = _lookup_path_key(resolved)
         if key in seen:
-            return
+            continue
         seen.add(key)
-        ordered.append(path)
-
-    if requester is not None and _is_allowed_base(resolved_roots, requester):
-        add(requester)
-
-    terminal_root = resolved_roots[-1] if resolved_roots else None
-    cluster_root = shared_lookup_root_for(requester, resolved_roots) if requester is not None else None
-    if cluster_root is not None and requester is not None:
-        requester_branch = _first_branch_under(cluster_root, requester)
-        same_branch: list[Path] = []
-        sibling_branch: list[Path] = []
-        for resolved in resolved_roots:
-            if resolved == requester or (terminal_root is not None and resolved == terminal_root):
-                continue
-            if not _is_relative_to(resolved, cluster_root):
-                continue
-            branch = _first_branch_under(cluster_root, resolved)
-            if requester_branch is not None and branch == requester_branch:
-                same_branch.append(resolved)
-            else:
-                sibling_branch.append(resolved)
-        for source_dir in sorted(same_branch, key=_lookup_path_key):
-            add(source_dir)
-        for source_dir in sorted(sibling_branch, key=_lookup_path_key):
-            add(source_dir)
-
-    for resolved in resolved_roots:
-        add(resolved)
+        ordered.append(resolved)
     return tuple(ordered)
+
+
+def parse_search_path(text: str, *, base: Path | None = None) -> tuple[Path, ...]:
+    """Parse a comma-separated search path into an ordered tuple of roots.
+
+    Entries are trimmed, empty entries are ignored, and ``\\`` is accepted as the
+    separator the Windows-style path list uses. A relative entry is resolved
+    under *base* when one is given, otherwise under the current directory. The
+    result keeps the written order and drops duplicates; an empty path raises
+    ``ValueError``.
+    """
+    roots: list[Path] = []
+    for raw in text.split(","):
+        entry = raw.strip()
+        if not entry:
+            continue
+        path = Path(entry.replace("\\", "/"))
+        if base is not None and not path.is_absolute():
+            path = base / path
+        roots.append(path.resolve())
+    if not roots:
+        raise ValueError("search path has no entries")
+    return ordered_lookup_bases(roots)
 
 
 class ProjectLookup:
     """Resolves a program's artifacts across ordered roots.
 
     The mode selects candidate extensions; each artifact falls back per artifact
-    (``.s`` → ``.x`` etc. in draft mode) and across roots in
-    ``ordered_lookup_bases`` order. An optional parser-owned ``FileLookupCache``
+    (``.s`` → ``.x`` etc. in draft mode) and across roots in the caller's order.
+    Path order dominates extension preference: earlier roots are scanned before
+    any later root is considered. An optional parser-owned ``FileLookupCache``
     short-circuits the ordered scan: a cached resolution is trusted only when
     its base is still a configured root, is still present in the current ordered
     bases, and the artifact still exists, and after confirming no
@@ -243,6 +194,9 @@ class ProjectLookup:
         debug: Callable[[str], None] | None = None,
     ) -> None:
         self._roots = tuple(Path(root) for root in roots)
+        #: The lookup path. It does not depend on the requester, so one lookup
+        #: resolves every name in the same order.
+        self._ordered = ordered_lookup_bases(self._roots)
         self._mode = mode
         self._index = index if index is not None else SourceIndex(self._roots)
         self._cache = cache
@@ -285,9 +239,9 @@ class ProjectLookup:
 
         The cached base must be a configured root that is still present in the
         ordered bases, and no higher-precedence (earlier) base may hold the
-        artifact. This preserves requester-relative precedence while skipping the
-        scan of every base after the cached one. On any failure the entry is
-        forgotten and the caller falls through to the full ordered scan.
+        artifact. This preserves path precedence while skipping the scan of
+        every base after the cached one. On any failure the entry is forgotten
+        and the caller falls through to the full ordered scan.
         """
         if self._cache is None:
             return None
@@ -330,13 +284,7 @@ class ProjectLookup:
         if self._cache is not None:
             self._cache.set(kind, name, self._mode.value, base, ext)
 
-    def _find_with_base(
-        self,
-        name: str,
-        kind: ArtifactKind,
-        *,
-        requester_dir: Path | None = None,
-    ) -> tuple[Path, Path] | None:
+    def _find_with_base(self, name: str, kind: ArtifactKind) -> tuple[Path, Path] | None:
         """Resolve ``name`` and return ``(path, resolving_base)``, or ``None``."""
         if kind in self._BODY_ANCHORED_KINDS:
             raise ValueError(
@@ -345,18 +293,17 @@ class ProjectLookup:
             )
         extensions = candidate_extensions(kind, self._mode)
         kind_value = kind.value
-        ordered = ordered_lookup_bases(self._roots, requester_dir)
-        cached = self._find_in_cached_base(kind_value, name, extensions, ordered=ordered)
+        cached = self._find_in_cached_base(kind_value, name, extensions, ordered=self._ordered)
         if cached is not None:
             return cached
-        for base in ordered:
+        for base in self._ordered:
             found = self._find_in_base(name, extensions, base, kind=kind_value)
             if found is not None:
                 return found, base
         self._dbg(f"No {kind_value} file found for {name!r} in mode={self._mode.value}")
         return None
 
-    def find(self, name: str, kind: ArtifactKind, *, requester_dir: Path | None = None) -> Path | None:
+    def find(self, name: str, kind: ArtifactKind) -> Path | None:
         """Resolve ``name`` of ``kind`` across the ordered roots, or ``None``.
 
         The cache is consulted first (when present) so a stable layout skips the
@@ -366,49 +313,43 @@ class ProjectLookup:
         Raises ``ValueError`` for a graphics or distribution companion, which has
         no root-ordered meaning.
         """
-        result = self._find_with_base(name, kind, requester_dir=requester_dir)
+        result = self._find_with_base(name, kind)
         return None if result is None else result[0]
 
-    def find_code(self, name: str, *, requester_dir: Path | None = None) -> Path | None:
-        return self.find(name, ArtifactKind.CODE, requester_dir=requester_dir)
+    def find_code(self, name: str) -> Path | None:
+        return self.find(name, ArtifactKind.CODE)
 
-    def find_code_with_base(
-        self,
-        name: str,
-        *,
-        requester_dir: Path | None = None,
-    ) -> tuple[Path, Path] | None:
+    def find_code_with_base(self, name: str) -> tuple[Path, Path] | None:
         """Resolve a code file and the root directory that resolved it."""
-        return self._find_with_base(name, ArtifactKind.CODE, requester_dir=requester_dir)
+        return self._find_with_base(name, ArtifactKind.CODE)
 
-    def find_deps_beside(self, code_path: Path, name: str, *, requester_dir: Path | None = None) -> Path | None:
+    def find_deps_beside(self, code_path: Path, name: str) -> Path | None:
         """Resolve the dependency sidecar at the selected body's own prefix.
 
         A SattLine library is a body plus a sidecar at *one* prefix.
         Resolving the sidecar through the whole ordered root list can pair a
-        body with an unrelated library's sidecar, so the body prefix decides and
-        *requester_dir* is ignored here. :meth:`find_deps` keeps the
-        requester-relative behaviour for consumers that want it.
+        body with an unrelated library's sidecar, so the body prefix decides.
+        :meth:`find_deps` keeps the ordered-root search for a caller that wants
+        it.
 
         The body's own suffix selects the artifact family, so a ``.s`` body
         looks only for ``.l`` and an ``.x`` body only for ``.z``. A sidecar from
         the other family is never paired. A name that carries a path separator
         or a parent reference is refused rather than resolved beside the body.
         """
-        del requester_dir  # the body prefix, not the requester, decides
         if not _is_safe_name(name):
             self._dbg(f"Refusing deps name {name!r}: a unit name may not carry a path")
             return None
         extensions = deps_extensions_for_code(code_path.suffix, self._mode)
         return self._find_in_base(name, extensions, code_path.parent, kind=ArtifactKind.DEPS.value)
 
-    def find_deps(self, name: str, *, requester_dir: Path | None = None) -> Path | None:
-        return self.find(name, ArtifactKind.DEPS, requester_dir=requester_dir)
+    def find_deps(self, name: str) -> Path | None:
+        return self.find(name, ArtifactKind.DEPS)
 
 
 __all__ = [
     "ProjectLookup",
     "SourceIndex",
     "ordered_lookup_bases",
-    "shared_lookup_root_for",
+    "parse_search_path",
 ]

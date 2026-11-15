@@ -159,6 +159,75 @@ def test_default_cache_dir_honours_an_absolute_xdg_cache_home(tmp_path, monkeypa
     assert project_cmd._default_cache_dir() == tmp_path / "sattline-parser" / "project"
 
 
+def test_search_path_notation_uses_the_written_order(tmp_path, capsys) -> None:
+    gc = tmp_path / "GC" / "UnitLib"
+    ha = tmp_path / "HA" / "UnitLib"
+    gc.mkdir(parents=True)
+    ha.mkdir(parents=True)
+    _program(gc, "Program1")
+    _program(ha, "Program1")
+
+    assert (
+        main(
+            [
+                "project",
+                "--search-path",
+                r"GC\UnitLib,HA\UnitLib",
+                "--search-path-base",
+                str(tmp_path),
+                "--targets",
+                "Program1",
+                "--json",
+            ]
+        )
+        == ExitCode.OK
+    )
+
+    payload = json.loads(capsys.readouterr().out)
+    assert [row["resolved_base"] for row in payload["programs"]] == [str(gc.resolve())]
+
+
+def test_positional_roots_use_the_written_order(tmp_path, capsys) -> None:
+    gc = tmp_path / "GC" / "UnitLib"
+    ha = tmp_path / "HA" / "UnitLib"
+    gc.mkdir(parents=True)
+    ha.mkdir(parents=True)
+    _program(gc, "Program1")
+    _program(ha, "Program1")
+
+    assert main(["project", str(ha), str(gc), "--targets", "Program1", "--json"]) == ExitCode.OK
+    payload = json.loads(capsys.readouterr().out)
+    assert [row["resolved_base"] for row in payload["programs"]] == [str(ha.resolve())]
+
+    assert main(["project", str(gc), str(ha), "--targets", "Program1", "--json"]) == ExitCode.OK
+    payload = json.loads(capsys.readouterr().out)
+    assert [row["resolved_base"] for row in payload["programs"]] == [str(gc.resolve())]
+
+
+def test_search_path_and_positional_roots_are_mutually_exclusive(tmp_path, capsys) -> None:
+    _program(tmp_path, "Program1")
+
+    assert main(["project", str(tmp_path), "--search-path", str(tmp_path)]) == ExitCode.USAGE
+    assert "either ROOT... or --search-path" in capsys.readouterr().err
+
+
+def test_search_path_base_requires_search_path(tmp_path, capsys) -> None:
+    _program(tmp_path, "Program1")
+
+    assert main(["project", str(tmp_path), "--search-path-base", str(tmp_path)]) == ExitCode.USAGE
+    assert "--search-path-base requires --search-path" in capsys.readouterr().err
+
+
+def test_search_path_with_no_entries_is_a_usage_error(tmp_path, capsys) -> None:
+    assert main(["project", "--search-path", " , ,, "]) == ExitCode.USAGE
+    assert "no entries" in capsys.readouterr().err
+
+
+def test_project_without_a_root_is_a_usage_error(capsys) -> None:
+    assert main(["project"]) == ExitCode.USAGE
+    assert "expected at least one root" in capsys.readouterr().err
+
+
 def test_missing_root_and_empty_tree_are_usage_errors(tmp_path, capsys) -> None:
     assert main(["project", str(tmp_path / "Absent")]) == ExitCode.USAGE
     assert "cannot read" in capsys.readouterr().err
@@ -431,8 +500,8 @@ def test_workers_flag_defaults_to_cpu_count_capped(monkeypatch) -> None:
     assert project_cmd._default_workers() == 1
 
 
-def test_two_roots_with_a_shared_unit_name_report_the_conflict(tmp_path, capsys) -> None:
-    """The CLI surfaces the ambiguity instead of hiding the second body."""
+def test_two_roots_with_a_shared_unit_name_use_the_first_root(tmp_path, capsys) -> None:
+    """The earlier root wins; the later body is not loaded and not reported."""
     first = tmp_path / "r1"
     second = tmp_path / "r2"
     first.mkdir()
@@ -446,6 +515,6 @@ def test_two_roots_with_a_shared_unit_name_report_the_conflict(tmp_path, capsys)
 
     payload = json.loads(capsys.readouterr().out)
     kinds = [row["kind"] for row in payload["diagnostics"]]
-    assert "name-resolution-conflict" in kinds
-    conflict = next(row for row in payload["diagnostics"] if row["kind"] == "name-resolution-conflict")
-    assert "Util" in conflict["detail"]
+    assert "name-resolution-conflict" not in kinds
+    util = next(row for row in payload["programs"] if row["name"] == "Util")
+    assert util["resolved_base"] == str(first.resolve())

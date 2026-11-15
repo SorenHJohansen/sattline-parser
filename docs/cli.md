@@ -154,7 +154,9 @@ sattline project programs/ libs/ --validate full --fail-on error
 ```
 
 A root is a library directory: the loader indexes artifacts directly inside it.
-When `--targets` is omitted, every source directly under each root is a target.
+Roots are searched in the order written, and an earlier root wins: when two
+roots hold a unit with the same name, only the earlier body is loaded. When
+`--targets` is omitted, every source directly under each root is a target.
 A missing or unparseable artifact is a load failure: the command reports
 `cannot load project` with the underlying error and exits `1`, whatever
 `--fail-on` says. A recursive `.l`/`.z` dependency
@@ -170,6 +172,8 @@ empty list. See [project.md](project.md#distribution-companion).
 
 | Flag | Meaning |
 | --- | --- |
+| `--search-path PATH` | Comma-separated roots in lookup order, as an alternative to positional `ROOT...`; backslashes are accepted |
+| `--search-path-base DIR` | Resolve relative `--search-path` entries under `DIR` |
 | `--mode draft\|official` | Which artifacts to resolve. Default `draft` |
 | `--targets A,B` | Only load these program names. Default: every source under the roots |
 | `--workers N` | Parse bodies in `N` processes. Default `min(8, cpu_count)`; `1` parses in this process |
@@ -320,7 +324,7 @@ diffs.
 | --- | --- |
 | `programs` | One row per loaded artifact: `name`, `code`, `graphics`, `deps`, `distribution`, `sidecar`, `dependencies`, `source`, `library`, `resolved_base`, `has_executing_system`, `executing_systems` |
 | `edges` | `{"from": dependent, "to": dependency}` over casefolded names |
-| `diagnostics` | One row per non-fatal load condition: `kind` (`sidecar-missing`, `sidecar-elsewhere`, `sidecar-empty`, `sidecar-family-mismatch`, or `name-resolution-conflict`), `program`, `detail`, `path` |
+| `diagnostics` | One row per non-fatal load condition: `kind` (`sidecar-missing`, `sidecar-elsewhere`, `sidecar-empty`, or `sidecar-family-mismatch`), `program`, `detail`, `path` |
 | `validation` | One row per diagnostic: `program`, `code` (`SL-V###`), `message`, `line`, `column` |
 | `findings` | Present only when the tree could not be loaded at all: one `Finding` with rule `PROJECT_LOAD_ERROR` |
 

@@ -17,6 +17,7 @@ from sattline_parser.project import (
     SattLineProgram,
     SattLineProject,
     code_ext_candidates,
+    parse_search_path,
 )
 
 from .._errors import CliError
@@ -59,7 +60,12 @@ def register(subparsers: argparse._SubParsersAction[argparse.ArgumentParser]) ->
     parser: argparse.ArgumentParser = subparsers.add_parser(
         "project", help="load a project tree: programs, artifacts, dependencies"
     )
-    parser.add_argument("root", metavar="ROOT", nargs="+", help="project root(s)")
+    parser.add_argument(
+        "root",
+        metavar="ROOT",
+        nargs="*",
+        help="project root(s), in lookup order; earlier roots win",
+    )
     add_output_flags(parser)
     parser.add_argument(
         "--mode",
@@ -71,6 +77,19 @@ def register(subparsers: argparse._SubParsersAction[argparse.ArgumentParser]) ->
         "--targets",
         metavar="A,B",
         help="only load these program names (default: every source under the roots)",
+    )
+    parser.add_argument(
+        "--search-path",
+        metavar="PATH",
+        help=(
+            "comma-separated roots, in lookup order (earlier wins); accepts backslashes, "
+            "an alternative to the positional roots"
+        ),
+    )
+    parser.add_argument(
+        "--search-path-base",
+        metavar="DIR",
+        help="resolve relative --search-path entries under DIR",
     )
     parser.add_argument(
         "--cache-dir",
@@ -154,8 +173,25 @@ def _debug_sink(message: str) -> None:
     print(f"debug: {message}", file=sys.stderr)
 
 
+def _roots(args: argparse.Namespace) -> list[Path]:
+    """The lookup roots, from the positional form or the path-list notation."""
+    if args.search_path and args.root:
+        raise CliError("use either ROOT... or --search-path, not both")
+    if args.search_path_base and not args.search_path:
+        raise CliError("--search-path-base requires --search-path")
+    if args.search_path:
+        base = Path(args.search_path_base) if args.search_path_base else None
+        try:
+            return list(parse_search_path(args.search_path, base=base))
+        except ValueError as exc:
+            raise CliError(str(exc)) from exc
+    if not args.root:
+        raise CliError("expected at least one root, or --search-path")
+    return [Path(root) for root in args.root]
+
+
 def _load(args: argparse.Namespace) -> SattLineProject:
-    roots = [Path(root) for root in args.root]
+    roots = _roots(args)
     for root in roots:
         try:
             present = root.exists()

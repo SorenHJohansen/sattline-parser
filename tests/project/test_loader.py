@@ -223,7 +223,8 @@ def test_load_targets_canonicalized_by_case(tmp_path: Path) -> None:
     assert project.get("mAiN").name == "Main"
 
 
-def test_load_resolves_dependencies_across_roots(tmp_path: Path) -> None:
+def test_load_resolves_dependencies_through_the_path_order(tmp_path: Path) -> None:
+    """A dependency resolves through the same path, not beside its consumer."""
     consumer = tmp_path / "consumer"
     library = tmp_path / "library"
     write_file(consumer, "Client.s", _CODE)
@@ -239,10 +240,30 @@ def test_load_resolves_dependencies_across_roots(tmp_path: Path) -> None:
 
     project = SattLineProject.load([consumer, library], LoadMode.DRAFT, ["Client"])
 
-    assert project.dependencies_of("Client") == ("LibA",)
+    assert project.get("LibB").resolved_base == consumer.resolve()
     assert project.dependencies_of("LibA") == ("LibB",)
+    assert project.dependencies_of("LibB") == ("ConsumerSide",)
+
+
+def test_load_dependency_path_order_follows_the_reversed_roots(tmp_path: Path) -> None:
+    """With the library first, the same names resolve to the library's bodies."""
+    consumer = tmp_path / "consumer"
+    library = tmp_path / "library"
+    write_file(consumer, "Client.s", _CODE)
+    write_file(consumer, "Client.l", "LibA\n")
+    write_file(library, "LibA.s", _CODE)
+    write_file(library, "LibA.l", "LibB\n")
+    write_file(consumer, "LibB.s", _CODE)
+    write_file(consumer, "LibB.l", "ConsumerSide\n")
+    write_file(library, "LibB.s", _CODE)
+    write_file(library, "LibB.l", "LibrarySide\n")
+    write_file(consumer, "ConsumerSide.s", _CODE)
+    write_file(library, "LibrarySide.s", _CODE)
+
+    project = SattLineProject.load([library, consumer], LoadMode.DRAFT, ["Client"])
+
+    assert project.get("LibB").resolved_base == library.resolve()
     assert project.dependencies_of("LibB") == ("LibrarySide",)
-    assert project.dependencies_of("LibrarySide") == ()
 
 
 def test_load_missing_dependency_raises(tmp_path: Path) -> None:
@@ -1297,7 +1318,10 @@ _RECORD_TYPE = (
 
 
 def _two_roots_with_a_shared_unit(tmp_path: Path) -> tuple[Path, Path]:
-    """Two roots, each with its own ``Util`` body, and one consumer per root."""
+    """Two roots, each with its own ``Util`` body, and one consumer per root.
+
+    The two ``Util`` bodies differ: only the first root's declares ``SharedType``.
+    """
     first = tmp_path / "r1"
     second = tmp_path / "r2"
     write_file(first, "Util.s", _source("Util", typedefs=_RECORD_TYPE))
@@ -1312,49 +1336,30 @@ def _two_roots_with_a_shared_unit(tmp_path: Path) -> tuple[Path, Path]:
     return first, second
 
 
-def test_a_same_named_unit_in_two_roots_is_not_served_to_the_other_requester(tmp_path: Path) -> None:
-    """Each requester is validated against the body its own lookup resolved."""
+def test_a_same_named_unit_in_two_roots_resolves_to_the_first_root(tmp_path: Path) -> None:
+    """Earlier roots win; the later body is never planned, parsed, or validated."""
     first, second = _two_roots_with_a_shared_unit(tmp_path)
 
     project = SattLineProject.load([first, second], LoadMode.DRAFT, ["Main1", "Main2"])
 
     assert set(project.programs()) == {"main1", "main2", "util"}
-    # Main1's Util declares SharedType; Main2's does not.
+    assert project.get("Util").resolved_base == first.resolve()
+    # Both consumers validate against the first root's Util, which declares
+    # SharedType, so neither reports an unknown datatype.
     assert project.get("Main1").diagnostics == ()
-    assert [diagnostic.code.value for diagnostic in project.get("Main2").diagnostics] == ["SL-V020"]
+    assert project.get("Main2").diagnostics == ()
 
 
-@pytest.mark.parametrize("targets", [("Main1", "Main2"), ("Main2", "Main1")])
-def test_a_shared_unit_name_conflict_is_reported_whatever_the_target_order(
-    tmp_path: Path, targets: tuple[str, str]
-) -> None:
+@pytest.mark.parametrize("first_named", ["first", "second"])
+def test_root_order_decides_which_same_named_body_wins(tmp_path: Path, first_named: str) -> None:
     first, second = _two_roots_with_a_shared_unit(tmp_path)
+    roots = [first, second] if first_named == "first" else [second, first]
+    winning = roots[0]
 
-    project = SattLineProject.load([first, second], LoadMode.DRAFT, targets)
+    project = SattLineProject.load(roots, LoadMode.DRAFT, ["Main1", "Main2"])
 
-    conflicts = [d for d in project.diagnostics() if d.kind is LoadDiagnosticKind.NAME_RESOLUTION_CONFLICT]
-    assert len(conflicts) == 1
-    assert str((first / "Util.s").resolve()) in conflicts[0].detail
-    assert str((second / "Util.s").resolve()) in conflicts[0].detail
-    # The registry exposes the body the first requester resolved.
-    expected_base = first.resolve() if targets[0] == "Main1" else second.resolve()
-    assert project.get("Util").resolved_base == expected_base
-
-
-@pytest.mark.parametrize(
-    ("targets", "expected_base"),
-    [(("Main2", "Util"), "second"), (("Util", "Main2"), "first")],
-)
-def test_a_shared_unit_that_is_also_a_target_keeps_the_first_resolution(
-    tmp_path: Path, targets: tuple[str, str], expected_base: str
-) -> None:
-    """The exposed body is the one the first requested target resolved."""
-    first, second = _two_roots_with_a_shared_unit(tmp_path)
-
-    project = SattLineProject.load([first, second], LoadMode.DRAFT, targets)
-
-    expected = first if expected_base == "first" else second
-    assert project.get("Util").resolved_base == expected.resolve()
+    assert project.get("Util").resolved_base == winning.resolve()
+    assert project.get("Util").source_path == winning / "Util.s"
 
 
 def _datecode_moduletype(datecode: int) -> str:

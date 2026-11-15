@@ -56,21 +56,23 @@ companions can pair with it.
 
 ## Discovery
 
-`ProjectLookup` resolves a name across ordered roots.
+`ProjectLookup` resolves a name across the caller's roots, in the caller's order.
 
 ```mermaid
-flowchart TB
-    R["requester_dir"] --> P1["1. requester itself<br/>when it is a configured root"]
-    P1 --> P2["2. same cluster branch<br/>sorted by path"]
-    P2 --> P3["3. sibling branches<br/>sorted by path"]
-    P3 --> P4["4. every remaining root<br/>in configured order"]
-    P4 --> P5["5. terminal root last<br/>the fallback library"]
+flowchart LR
+    R1["1. first root"] --> R2["2. second root"] --> R3["3. ..."] --> R4["N. last root"]
 ```
 
-`ordered_lookup_bases` implements that order. The shared cluster root is the
-nearest ancestor of the requester under which at least two other roots land in
-distinct first-level branches. When no such cluster exists, only rules 1 and 4
-apply.
+`ordered_lookup_bases` is that order: it resolves each entry, keeps the first
+position of a repeated root, and does nothing else. There is no requester
+precedence, no cluster sorting, and no special last root. `SattLineProject.load`
+and the CLI both pass an ordered sequence, so the rule is one rule: earlier
+entries win.
+
+`parse_search_path` turns the path-list notation into that sequence:
+`parse_search_path(r"GC\UnitLib,HA\UnitLib", base=Path("/sattline"))` yields the
+two roots in the written order, relative entries resolved under the base,
+backslashes accepted, empty entries and duplicates dropped.
 
 Each root is indexed once by `SourceIndex`:
 
@@ -99,11 +101,11 @@ a program only through `resolve_graphics_companion_path` and
 `resolve_distribution_companion_path`, which anchor to the selected body.
 
 `find_deps_beside(code_path, name)` is deliberately different from
-`find_deps(name, requester_dir)`. A SattLine library is a body plus a sidecar
-at **one** prefix. Resolving the sidecar through the whole root list could pair
-a body with an unrelated library's sidecar, so the body's own directory decides
-and the requester is ignored. The body's suffix also decides which sidecar
-extension may pair, through `deps_extensions_for_code`.
+`find_deps(name)`. A SattLine library is a body plus a sidecar at **one**
+prefix. Resolving the sidecar through the whole root list could pair a body with
+an unrelated library's sidecar, so the body's own directory decides. The body's
+suffix also decides which sidecar extension may pair, through
+`deps_extensions_for_code`.
 
 ## Loading
 
@@ -117,19 +119,18 @@ sequenceDiagram
     participant VAL as validate_basepicture
 
     Note over L: phase 1: discover, sequential, I/O only
-    L->>V: visit(target, requester_dir=None, declared_by=None)
+    L->>V: visit(target, declared_by=None)
     V->>V: already loading? raise DependencyCycleError
     V->>V: push the folded name on _loading
-    V->>F: find_code_with_base(name, requester_dir)
+    V->>F: find_code_with_base(name)
     F-->>V: code_path, resolved_base
     V->>V: plan key = resolved code path
     V->>V: plan key already planned? reuse it
-    V->>V: same folded name, other body? report NAME_RESOLUTION_CONFLICT
     V->>F: find_deps_beside(code_path, name)
     F-->>V: deps_path or None
     V->>V: read dependency names
     loop each dependency
-        V->>V: visit(dep, requester_dir=sidecar dir, declared_by=name)
+        V->>V: visit(dep, declared_by=name)
     end
     V->>V: append a _Plan, so plans come out post-order
     Note over L: phase 2: parse every planned body
@@ -154,16 +155,12 @@ is what makes the parse phase parallel: the whole closure is known before any
 parse starts, so a worker needs nothing but a path, and the assembled registry
 does not depend on which worker finished first.
 
-A plan is identified by its **resolved code path**, not by its folded name. Two
-roots that each hold a `Util.s` are two plans with two bodies, and each
-requester's closure follows the body its own ordered lookup resolved. Within one
-resolved body a name is still parsed once, so the single-root case is unchanged.
-
-The project registry keeps one program per folded name. When one name resolves to
-different bodies for different requesters, both bodies load and are validated,
-the first resolution is the one `programs()` exposes, and the
-load reports a `NAME_RESOLUTION_CONFLICT` diagnostic naming both bodies. The
-conflict is reported once for each additional body, whatever the target order.
+A plan is identified by its **resolved code path**. Because every name resolves
+through the same ordered path, one folded name reaches one body per load. When
+two roots hold `Util.s`, the body in the earlier root is planned, parsed, and
+validated; the later body is never read. There is no ambiguity to report and no
+second body to expose, so the registry holds one program per name by
+construction.
 
 Post-order is an invariant: the registry is built dependencies-first, so a
 program's diagnostics are computed against a complete prefix of its closure.
@@ -180,10 +177,10 @@ observable orders:
   `A`'s broken body even when `A` was requested first. Structural errors win
   over everything.
 - **Diagnostics.** `SattLineProject.diagnostics()` reports only the non-fatal
-  load conditions: a missing or empty sidecar, a sidecar elsewhere, a sidecar
-  from the other artifact family, and a name that resolved to two bodies. A
-  failure to resolve or parse raises instead. Discovery rows come first, in
-  discovery order, then assembly rows in plan order.
+  load conditions: a missing or empty sidecar, a sidecar elsewhere, and a
+  sidecar from the other artifact family. A failure to resolve or parse raises
+  instead. Discovery rows come first, in discovery order, then assembly rows in
+  plan order.
 
 `validate=INVOKED` runs **after** the graph is complete, because it needs the
 whole invocation graph. The loader first builds the registry, then walks
@@ -612,7 +609,7 @@ discovery fixes the plan order before any parse runs.
 
 | Test | What it protects |
 | --- | --- |
-| `tests/project/test_discovery.py` | Ordered lookup and cluster precedence |
+| `tests/project/test_discovery.py` | Ordered lookup and path-list notation |
 | `tests/project/test_formats.py` | Extension selection and companion pairing |
 | `tests/project/test_loader.py` | Recursive loading and post-order |
 | `tests/project/test_project_layer.py` | `SattLineProject` views and graph |

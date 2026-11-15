@@ -194,7 +194,7 @@ sequenceDiagram
     Caller->>P: load(roots, mode, targets, validate)
     P->>L: ProjectLoader(...).resolve(targets)
     loop each dependency, depth first
-        L->>D: find_code_with_base(name, requester_dir)
+        L->>D: find_code_with_base(name)
         D->>FS: indexed or stat lookup in ordered roots
         FS-->>D: code path and resolving base
         L->>D: find_deps_beside(code_path, name)
