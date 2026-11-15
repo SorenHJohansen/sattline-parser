@@ -1,8 +1,9 @@
-"""Real companion fixtures: one synthetic file per artifact kind.
+"""On-disk companion fixtures: one synthetic file per artifact kind.
 
 Every other project test writes companion text into ``tmp_path``. These
-fixtures keep one small file per extension in the repository, so the resolver
-and both parsers are exercised against a real file and a real encoding path.
+fixtures keep one small, synthetically written file per extension in the
+repository, so the resolver and both parsers are exercised against an actual
+file and an actual encoding path.
 """
 
 from __future__ import annotations

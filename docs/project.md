@@ -639,4 +639,4 @@ on the worker count: discovery fixes the plan order before any parse runs.
 | `tests/project/test_graphics_parsing.py` | Companion parsing |
 | `tests/project/test_distribution.py` | Distribution companion parsing and pairing |
 | `tests/project/test_graphics_records.py` | Composite and picture display records |
-| `tests/project/test_companion_fixtures.py` | Real `.l`/`.z`/`.g`/`.y`/`.p`/`.q` fixtures and CP1252 sidecars |
+| `tests/project/test_companion_fixtures.py` | Committed `.l`/`.z`/`.g`/`.y`/`.p`/`.q` fixtures written from synthetic examples, and CP1252 sidecars |

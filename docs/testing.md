@@ -16,7 +16,7 @@ the focused test passes, then the wider gates pass.
 | `benchmarks/` | pytest-benchmark parse, validation, and traversal timings, outside the coverage suite |
 | `tests/fixtures/corpus/` | Every fixture is a `.s` source, grouped by expected behaviour |
 | `tests/fixtures/validation/expectations.json` | Golden expectations for validation findings |
-| `tests/fixtures/project/companions/` | One real companion file per artifact kind, plus a CP1252 sidecar |
+| `tests/fixtures/project/companions/` | One committed companion file per artifact kind, written from a synthetic example, plus a CP1252 sidecar |
 | `tests/conftest.py` | Shared pytest configuration |
 | `tests/*/_support.py` | Helpers shared inside one test directory |
 
