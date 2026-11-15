@@ -53,6 +53,8 @@ from .formats import (
     preferred_extension,
 )
 from .graphics_parsing import parse_graphics_file, parse_graphics_text, resolve_graphics_companion_path
+from .identity import ArtifactIdentity, UnitIdentity
+from .index import DefinitionSite, ProjectIndex, SymbolKind, UsageSite
 from .loader import ProjectLoader, read_dependency_names
 from .lookup_cache import DEFAULT_LOOKUP_CACHE_FLUSH_INTERVAL, LOOKUP_CACHE_VERSION, FileLookupCache
 from .models import (
@@ -74,13 +76,16 @@ from .models import (
     SidecarState,
 )
 from .project import SattLineProject
+from .reachability import invoked_moduletypes
 
 __all__ = [
     "DEFAULT_LOOKUP_CACHE_FLUSH_INTERVAL",
     "FILE_AST_CACHE_VERSION",
     "LOOKUP_CACHE_VERSION",
+    "ArtifactIdentity",
     "ArtifactKind",
     "ArtifactLoadError",
+    "DefinitionSite",
     "DependencyCycleError",
     "DependencyGraph",
     "DependencyNotFoundError",
@@ -102,6 +107,7 @@ __all__ = [
     "LoadValidation",
     "ModuleTypeCycleError",
     "ProgramFormat",
+    "ProjectIndex",
     "ProjectLoadError",
     "ProjectLoader",
     "ProjectLookup",
@@ -110,6 +116,9 @@ __all__ = [
     "SidecarState",
     "SourceIndex",
     "StructuralProjectError",
+    "SymbolKind",
+    "UnitIdentity",
+    "UsageSite",
     "body_mode",
     "candidate_extensions",
     "code_ext",
@@ -123,6 +132,7 @@ __all__ = [
     "find_companion_beside",
     "graphics_ext",
     "graphics_ext_candidates",
+    "invoked_moduletypes",
     "ordered_lookup_bases",
     "parse_distribution_file",
     "parse_distribution_text",

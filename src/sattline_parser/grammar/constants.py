@@ -67,6 +67,8 @@ KEY_SEQ_CONTROL_OPS: Final = "seq_control_opt"
 
 #: Keys written into the typed property maps (see ``models/properties.py``).
 KEY_COORDS: Final = "coords"
+#: Per-value groups for the coordinate run: one tuple of tails per REAL.
+KEY_COORD_TAILS: Final = "coord_tails"
 KEY_SEGMENT_POINT: Final = "segment_point"
 KEY_POLYGON_TYPE: Final = "polygon_type"
 KEY_POINTS: Final = "points"
@@ -299,12 +301,12 @@ _NAME_EXCLUDED_KEYWORDS: Final = (
 _NAME_EXCLUDED: Final = "|".join(_NAME_EXCLUDED_KEYWORDS)
 
 GRAMMAR_REGEX_NAME: Final = (
-    r"/(?i:'[^']{1,20}'|"
+    r"/(?i:'[^']+'|"
     r"(?!"
     rf"(?:{_NAME_EXCLUDED})"
     rf"(?![{GRAMMAR_CHARSET_NAME}])"
     r")"
-    rf"[{GRAMMAR_CHARSET_NAME}][{GRAMMAR_CHARSET_NAME}]{{0,19}}"
+    rf"[{GRAMMAR_CHARSET_NAME}]+"
     rf"(?![{GRAMMAR_CHARSET_NAME}]))/"
 )
 

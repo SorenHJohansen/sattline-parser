@@ -231,7 +231,8 @@ or transition. A `Layer_ = <int>` after the `OBJSIZE` pair is stored on
   `Name = value` assignments;
 - `groupconn` and `groupconn_global` from `GroupConn=`;
 - `invoke_coord_tails` for the tails attached to the five invocation
-  coordinates only. Argument tails stay on their clause under `arguments`;
+  coordinates only, plus `coordinate_tails` with the same tails grouped by
+  coordinate. Argument tails stay on their clause under `arguments`;
 - description comments.
 
 The singular header names (`layer_info`, `enable`, `enable_tail`,

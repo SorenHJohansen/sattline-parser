@@ -4,10 +4,14 @@
 from __future__ import annotations
 
 import json
+from concurrent.futures.process import BrokenProcessPool
 from pathlib import Path
+
+import pytest
 
 from sattline_parser.cli import main
 from sattline_parser.cli._exit import ExitCode
+from sattline_parser.cli.cmds import corpus as corpus_command
 
 from ._cli_support import CONSECUTIVE_STEPS_SOURCE, VALID_SOURCE, write_source
 
@@ -205,9 +209,25 @@ def test_corpus_jobs_match_a_serial_run(tmp_path, capsys) -> None:
     assert main(["corpus", str(tmp_path), "--jobs", "1", "--json"]) == ExitCode.FINDINGS
     serial = json.loads(capsys.readouterr().out)
     assert main(["corpus", str(tmp_path), "--jobs", "4", "--json"]) == ExitCode.FINDINGS
-    threaded = json.loads(capsys.readouterr().out)
+    pooled = json.loads(capsys.readouterr().out)
 
-    assert threaded == serial
+    assert pooled == serial
+
+
+def test_corpus_falls_back_when_a_pool_cannot_start(tmp_path, capsys, monkeypatch: pytest.MonkeyPatch) -> None:
+    from sattline_parser.cli.cmds import corpus as corpus_command  # noqa: PLC0415
+
+    write_source(tmp_path, "Clean.s", VALID_SOURCE)
+    write_source(tmp_path, "Other.s", VALID_SOURCE)
+
+    def unavailable(max_workers: int) -> object:
+        raise OSError("no fork today")
+
+    monkeypatch.setattr(corpus_command, "process_pool", unavailable)
+
+    assert main(["corpus", str(tmp_path), "--jobs", "2", "--json"]) == ExitCode.OK
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["files"] == 2
 
 
 def test_corpus_rejects_removed_fail_on_values(tmp_path, capsys) -> None:
@@ -240,3 +260,55 @@ def test_corpus_needs_a_directory(tmp_path, capsys) -> None:
 
     assert main(["corpus", str(tmp_path), "--jobs", "1000"]) == ExitCode.USAGE
     assert "or less" in capsys.readouterr().err
+
+
+def test_corpus_falls_back_when_the_pool_dies(tmp_path, capsys, monkeypatch: pytest.MonkeyPatch) -> None:
+    write_source(tmp_path, "Clean.s", VALID_SOURCE)
+    write_source(tmp_path, "Other.s", VALID_SOURCE)
+
+    class DeadPool:
+        def map(self, function, iterable, chunksize: int = 1):
+            raise BrokenProcessPool("a worker died")
+
+        def shutdown(self, wait: bool = True, *, cancel_futures: bool = False) -> None:
+            return None
+
+    def dead_pool(max_workers: int) -> DeadPool:
+        return DeadPool()
+
+    monkeypatch.setattr(corpus_command, "process_pool", dead_pool)
+
+    assert main(["corpus", str(tmp_path), "--jobs", "2", "--json"]) == ExitCode.OK
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["files"] == 2
+
+
+def test_corpus_cancels_a_dead_pool_on_interrupt(tmp_path, capsys, monkeypatch: pytest.MonkeyPatch) -> None:
+    write_source(tmp_path, "Clean.s", VALID_SOURCE)
+    write_source(tmp_path, "Other.s", VALID_SOURCE)
+    shutdowns: list[dict[str, object]] = []
+
+    class InterruptedPool:
+        def map(self, function, iterable, chunksize: int = 1):
+            raise KeyboardInterrupt
+
+        def shutdown(self, wait: bool = True, *, cancel_futures: bool = False) -> None:
+            shutdowns.append({"wait": wait, "cancel_futures": cancel_futures})
+
+    def interrupted_pool(max_workers: int) -> InterruptedPool:
+        return InterruptedPool()
+
+    monkeypatch.setattr(corpus_command, "process_pool", interrupted_pool)
+
+    assert main(["corpus", str(tmp_path), "--jobs", "2"]) == ExitCode.INTERRUPTED
+    assert shutdowns == [{"wait": False, "cancel_futures": True}]
+
+
+def test_corpus_stays_in_process_in_a_daemonic_parent(tmp_path, capsys, monkeypatch: pytest.MonkeyPatch) -> None:
+    write_source(tmp_path, "Clean.s", VALID_SOURCE)
+    write_source(tmp_path, "Other.s", VALID_SOURCE)
+    monkeypatch.setattr(corpus_command, "pool_allowed", lambda: False)
+
+    assert main(["corpus", str(tmp_path), "--jobs", "2", "--json"]) == ExitCode.OK
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["files"] == 2

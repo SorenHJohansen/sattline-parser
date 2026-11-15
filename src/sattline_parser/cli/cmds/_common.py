@@ -12,22 +12,26 @@ from ...validation.rules import RuleStatus, UnknownRuleError, require_rule
 from .._errors import CliError
 from .._findings import Finding
 from .._json import SCHEMA_PREFIX, dumps
+from .._sarif import sarif_json
 
 __all__ = [
     "FAIL_ON_CHOICES",
     "add_fail_on",
     "add_finding_filters",
     "add_output_flags",
+    "add_sarif_flag",
     "add_source_flags",
     "bounded_positive_int",
     "emit_findings",
     "emit_payload",
+    "emit_sarif",
     "fail_on_value",
     "fails_on",
     "finding_fields",
     "positive_int",
     "reject_companion",
     "require_companion",
+    "require_plain_output",
     "resolve_rule_filters",
     "selected_findings",
 ]
@@ -143,6 +147,29 @@ def add_output_flags(parser: argparse.ArgumentParser) -> None:
     group = parser.add_mutually_exclusive_group()
     group.add_argument("--json", action="store_true", help="emit one JSON document")
     group.add_argument("--jsonl", action="store_true", help="emit one JSON object per line")
+
+
+def add_sarif_flag(parser: argparse.ArgumentParser) -> None:
+    parser.add_argument(
+        "--sarif",
+        action="store_true",
+        help="emit a SARIF 2.1.0 log for code scanning instead of text or JSON",
+    )
+
+
+def require_plain_output(args: argparse.Namespace) -> None:
+    """Refuse ``--sarif`` combined with the tool's own JSON output.
+
+    SARIF is a complete document of its own, so mixing the two would leave one
+    silently ignored. The combination is a usage error instead.
+    """
+    if getattr(args, "sarif", False) and (getattr(args, "json", False) or getattr(args, "jsonl", False)):
+        raise CliError("--sarif cannot be combined with --json or --jsonl")
+
+
+def emit_sarif(findings: Sequence[Finding], *, version: str) -> None:
+    """Write a SARIF log for *findings* to stdout."""
+    print(sarif_json(findings, version=version))
 
 
 def add_finding_filters(parser: argparse.ArgumentParser) -> None:

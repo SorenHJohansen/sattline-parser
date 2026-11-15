@@ -67,6 +67,10 @@ class GraphProperties(TypedDict, total=False):
 
     #: ``KEY_COORDS``
     coords: CoordPair | CoordBox
+    #: ``KEY_COORD_TAILS``: one tuple of tails per coordinate REAL, in the same
+    #: order as the values in ``coords`` (or ``coords`` then ``segment_point``).
+    #: The flat ``tails`` view lists the same objects, never copies.
+    coord_tails: tuple[tuple[Tail, ...], ...]
     #: ``KEY_SEGMENT_POINT``
     segment_point: CoordPair
     #: ``KEY_POLYGON_TYPE``
@@ -102,6 +106,9 @@ class InteractProperties(TypedDict, total=False):
 
     #: ``KEY_COORDS``
     coords: list[CoordPair | CoordBox] | None
+    #: ``KEY_COORD_TAILS``: one tuple of tails per coordinate REAL, across the
+    #: whole coordinate run in written order.
+    coord_tails: tuple[tuple[Tail, ...], ...]
     #: ``KEY_TAILS``
     tails: list[Tail]
     #: ``KEY_BODY``

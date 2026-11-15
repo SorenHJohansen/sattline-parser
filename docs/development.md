@@ -92,6 +92,26 @@ The repository follows the global rules in `AGENTS.md`:
 - This project is unofficial. Use "SattLine" only to name the file format; do
   not imply affiliation with ABB.
 
+## Code shape and complexity
+
+Prefer splitting a module when the parts have different responsibilities. Do not
+split a function only to lower a complexity number.
+
+Two shapes stay deliberately long:
+
+- A **grammar-production handler** in `transformer/` mirrors one production:
+  each branch attaches one optional section in the order the grammar writes it.
+  `base_picture_module`, `invocation_new_module`, `moduletype_definition`, and
+  `sequence` are the largest. Moving a branch into a helper would scatter one
+  production's assembly order across functions, so the handler stays whole.
+- An **exhaustive dispatcher** over AST node types, such as `format_expr`,
+  `format_seq_nodes`, `_emit_graph_object`, and `_emit_sfc_item`. Its branches
+  are one line each, and a new node type must be added in one visible place.
+
+The recursive helpers that used to carry a branch pile were split along their
+real boundary instead: `_rebase_expression_spans` now separates span arithmetic,
+literal rebuilding, container traversal, and dataclass rebuilding.
+
 ## AI-first documentation
 
 This repository is maintained by AI agents. These conventions keep the

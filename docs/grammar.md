@@ -281,9 +281,16 @@ The `NAME` terminal:
 
 - does not match any keyword (`IF`, `THEN`, `ELSE`, `ELSIF`, `ENDIF`, `AND`,
   `OR`, `NOT`, `True`, `False`, `On`, `Off`, `SUBSEQSTEP`);
-- accepts a quoted identifier `'...'` of 1 to 20 characters;
+- accepts a quoted identifier `'...'`;
 - accepts letters, marks, digits, `_`, `'`, and every printable CP1252 byte;
-- is limited to 20 characters.
+- accepts an identifier of any length.
+
+The language limits a declared identifier to 20 characters, so a longer spelling
+is a validation finding (`SL-V038`) with the declaration's span, not a lexer
+error. Keeping the lexer permissive means the source parses and the finding says
+what is wrong, instead of pointing at the twenty-first character as an
+unexpected one. A sidecar dependency name is still capped at 20 characters,
+because that name builds a filesystem path and is not a parsed declaration.
 
 Identifier comparison is not Unicode case folding. `names.fold_identifier`
 implements the CP1252 byte table used by the language:

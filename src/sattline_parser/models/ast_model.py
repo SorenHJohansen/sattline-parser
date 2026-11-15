@@ -416,6 +416,11 @@ class ModuleHeader:
     groupconn: VarRef | None = None
     groupconn_global: bool = False
     description_comments: list[CodeComment] = field(default_factory=code_comment_list)
+    #: The same tails, one group per ``invoke_coord`` value, so a reader can
+    #: place each one where it was written. Empty when the header was assembled
+    #: without position information. The tails are the same objects as
+    #: ``invoke_coord_tails``, never copies.
+    coordinate_tails: tuple[tuple[Tail, ...], ...] = ()
 
     @property
     def invocation_arguments(self) -> tuple[str, ...]:

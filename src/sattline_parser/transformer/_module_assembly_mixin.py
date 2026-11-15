@@ -393,8 +393,12 @@ class ModuleAssemblyMixin:
         is_global = False
         if idx < len(items):
             global_raw = items[idx]
-            if isinstance(global_raw, bool):
-                is_global = global_raw
+            # ``GLOBAL_KW`` transforms to the literal ``True``. A source value
+            # such as ``False`` is also a bool, so the presence test must be an
+            # identity check, or the value would be consumed as the absent
+            # keyword and the mapping would lose it.
+            if global_raw is True:
+                is_global = True
                 idx += 1
 
         is_duration = False

@@ -77,13 +77,14 @@ def test_debug_prints_the_traceback(monkeypatch: pytest.MonkeyPatch, capsys: pyt
     assert "Traceback" in capsys.readouterr().err
 
 
-def test_interrupt_is_a_usage_exit(monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
+def test_interrupt_is_a_dedicated_exit(monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
     def interrupted(_args: object) -> int:
         raise KeyboardInterrupt
 
     monkeypatch.setattr(check_command, "run", interrupted)
 
-    assert main(["check", "nowhere.s"]) == ExitCode.USAGE
+    assert main(["check", "nowhere.s"]) == ExitCode.INTERRUPTED
+    assert int(ExitCode.INTERRUPTED) == 130
     assert "interrupted" in capsys.readouterr().err
 
 

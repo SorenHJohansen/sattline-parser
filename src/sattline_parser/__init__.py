@@ -47,6 +47,7 @@ from .project import (
     resolve_distribution_companion_path,
     resolve_graphics_companion_path,
 )
+from .serialization import to_json, to_jsonable
 
 __all__ = [
     "MAX_SOURCE_DEPTH",
@@ -89,6 +90,8 @@ __all__ = [
     "render_ide_text",
     "resolve_distribution_companion_path",
     "resolve_graphics_companion_path",
+    "to_json",
+    "to_jsonable",
     "validate_basepicture",
     "walk",
 ]

@@ -163,7 +163,7 @@ def test_typed_tail_nodes_survive_a_pickle_round_trip() -> None:
     assert restored.moduledef.span == span
     assert restored.moduledef.graph_objects[0].span == span
     assert restored.moduledef.interact_objects[0].span == span
-    assert FILE_AST_CACHE_VERSION == 12
+    assert FILE_AST_CACHE_VERSION == 13
 
 
 def test_envelope_round_trip() -> None:

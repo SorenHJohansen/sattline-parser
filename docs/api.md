@@ -4,6 +4,7 @@ The supported public surface is the names listed in
 `sattline_parser.__all__`, `sattline_parser.api.__all__`,
 `sattline_parser.ast.__all__`, `sattline_parser.models.__all__`,
 `sattline_parser.types.__all__`, `sattline_parser.formatting.__all__`,
+`sattline_parser.serialization.__all__`,
 `sattline_parser.preprocessing.__all__`, `sattline_parser.validation.__all__`,
 `sattline_parser.project.__all__`, and `sattline_parser.builtins.__all__`, plus
 the documented `sattline` command and its JSON schemas. Submodule paths not
@@ -21,14 +22,16 @@ flowchart LR
     FAÇADE["sattline_parser.api"] --> CORE
     FAÇADE --> VALID["validate_basepicture"]
     FACTS["sattline_parser.types<br/>scalar type facts"] --> VALIDATION["validation type facts"]
-    FORMAT["sattline_parser.formatting<br/>AST rendering"] --> MODELS
+    FORMAT["sattline_parser.formatting<br/>AST rendering and source"] --> MODELS
+    SERIAL["sattline_parser.serialization<br/>JSON-friendly data"] --> MODELS
 ```
 
 Use the top-level package for ordinary parsing. Use `sattline_parser.api` when
 you want the parser pipeline in one import. Use `sattline_parser.ast` when you
 need the model itself. Use `sattline_parser.types` for scalar type facts and
-literal inference, and `sattline_parser.formatting` to render expressions and
-statements.
+literal inference, `sattline_parser.formatting` to render expressions, statements,
+and whole files, and `sattline_parser.serialization` to turn the model into
+JSON-friendly data.
 
 ## Parse and preprocess
 
@@ -37,7 +40,7 @@ statements.
 | `parse_source_text` | both | `(src, *, parser=None, transformer=None, debug=None, source_path=None, log_failures=True)` | `BasePicture` |
 | `parse_source_file` | both | `(path, *, parser=None, transformer=None, debug=None, log_failures=True)` | `BasePicture` |
 | `parse_source_bytes` | both | `(raw_bytes, *, parser=None, transformer=None, debug=None, source_path=None, log_failures=True)` | `BasePicture` |
-| `parse_and_validate` | both | same options as `parse_source_text` | `(BasePicture, tuple[Diagnostic, ...])` |
+| `parse_and_validate` | both | same options as `parse_source_text`, plus `external_datatypes=()`, `external_moduletype_defs=()`, `allow_unresolved_external_datatypes=False` | `(BasePicture, tuple[Diagnostic, ...])` |
 | `create_parser` | both | `()` | `Lark` |
 | `build_lark_parser` | `api` | `(*, start="start", propagate_positions=True)` | `Lark` |
 | `describe_parse_error` | both | `(exc, source_text, *, source_document=None)` | `ParseErrorDetails` |
@@ -146,6 +149,45 @@ serialization format.
 | `format_list` | `(items, indent="    ", align_variables=True, inline_if_singleline=False)` | list text |
 | `format_optional` | `(obj)` | `str(obj)` or `"None"` |
 | `format_seq_nodes` | `(nodes, indent="    ")` | sequence text |
+| `format_source` | `(picture, indent="    ")` | canonical source text for a whole `BasePicture` |
+| `format_module` | `(module, indent="    ")` | source text for one `ModuleDef` block |
+| `UnsupportedFormattingError` | `(message)` | raised when a hand-built model carries a tail without its position |
+
+`format_source` renders a parsed file back to canonical SattLine source that
+parses to an equal tree. It is a formatter, not a lossless printer: whitespace
+and numeric spelling are normalised, and the model keeps structure rather than
+layout. Every parsed fixture in the corpus round-trips, including graphics,
+interactor bodies, coordinate tails, clipping tails, and falsy parameter
+mappings.
+
+A parsed model always records where a tail was written: `ModuleHeader.coordinate_tails`,
+`ClippingClause.corner_tails`, `GraphObject.properties["coord_tails"]`, and
+`InteractProperties["coord_tails"]` group the tails per value. The formatter
+raises `UnsupportedFormattingError` only for a hand-assembled model that carries
+a tail without that grouping, or a mapping whose literal is genuinely absent,
+because writing it somewhere would move it.
+
+The output is display text, not a supported interchange format.
+
+## Serialization
+
+`sattline_parser.serialization` turns the model into JSON-friendly data, so a
+consumer does not need its own walker. The conversion is structural: every
+dataclass field is emitted under its own name, so a model field appears without
+a serializer change. The output is a data view, not a supported file format;
+the documented JSON schemas of the CLI are the stable contract.
+
+| Name | Signature summary | Returns |
+| --- | --- | --- |
+| `to_jsonable` | `(value, *, depth=None)` | plain `dict`/`list`/scalar data |
+| `to_json` | `(value, *, depth=None, compact=False)` | JSON text |
+
+`to_jsonable` and `to_json` are re-exported by `sattline_parser`. Scalars, enums,
+paths, and `SourceSpan` values are emitted in full; dataclasses and containers
+recurse. `depth` counts composite levels, and at the limit a composite value
+becomes a placeholder such as `"<ModuleDef>"` or `"<12 items>"` instead of
+disappearing. `None`, the default, means no limit. A `WalkEvent` serialises with
+its `parents` expanded, so serialise `event.node` when only the node matters.
 
 ## AST types
 
@@ -163,6 +205,7 @@ clause payload, and tail type together with the traversal helpers:
 | `GraphObject`, `InteractObject` | Graphics and interact AST nodes, visited by `walk` |
 | `GraphicsBinding` | Project graphics value carried by `GraphicsModel.bindings`; not an AST node and never visited by `walk` |
 | `GraphProperties`, `InteractProperties` | Typed property maps carried by graphics and interact nodes |
+| `interactor_property_catalogue`, `find_interactor_property`, `typed_interactor_properties`, `InteractorPropertySpec`, `TypedInteractorProperty`, `InteractorPropertyKind` | The catalogue of interactor spellings the grammar accepts as generic flags and assignments |
 | `PolygonPoint` | One polygon coordinate pair with the tails written after each value |
 | `AssignClause`, `EnableClause`, `TailedClause`, `ColourSpec`, `PickButton`, `Alignment`, `InteractBodyEntry`, and the other clause payloads | Typed clause payloads and the interactor body union |
 | `VarTail`, `LitStringTail`, `Tail` | Bound and computed tails |
@@ -218,6 +261,8 @@ wheel, and the top-level package does not re-export them. Import
 | --- | --- |
 | Loading | `SattLineProject` (including `from_programs`), `ProjectLoader`, `LoadMode`, `LoadValidation` |
 | Models | `SattLineProgram`, `DependencyGraph`, `ProgramFormat`, `SidecarState` |
+| Identity | `UnitIdentity`, `ArtifactIdentity` |
+| Index | `ProjectIndex`, `DefinitionSite`, `UsageSite`, `SymbolKind`, `invoked_moduletypes` |
 | Diagnostics | `LoadDiagnostic`, `LoadDiagnosticKind` |
 | Errors | `ProjectLoadError`, `StructuralProjectError`, `DependencyCycleError`, `ModuleTypeCycleError`, `ArtifactLoadError`, `DependencyNotFoundError`, `DependencyParseError` |
 | Discovery | `ProjectLookup`, `SourceIndex`, `ordered_lookup_bases`, `parse_search_path`, `read_dependency_names` |
@@ -232,6 +277,13 @@ the missing case: `None` when no companion was found. `DistributionParseError`
 is a `ValueError` raised by the parser, not a `ProjectLoadError`; the loader
 wraps it in `ArtifactLoadError` or `DependencyParseError`. See
 [project.md](project.md#distribution-companion).
+
+`SattLineProject.index` is a `ProjectIndex` answering "who defines X" through
+`definitions_of(name)` and "who uses Y" through `usages_of(name)`, case
+insensitively, with a `DefinitionSite` or `UsageSite` per place. `invoked_moduletypes`
+is the reachability walk the loader uses to scope dependency validation, now
+exported for a consumer that wants the same answer. See
+[project.md](project.md#symbol-index).
 
 `parse_distribution_file`, `parse_distribution_text`, and
 `resolve_distribution_companion_path` are also re-exported by the top-level

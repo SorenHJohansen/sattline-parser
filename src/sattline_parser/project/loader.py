@@ -1,352 +1,90 @@
-"""Recursive program loading, dependency resolution, and project validation.
+"""Recursive project resolution: the orchestrator over four load phases.
 
-The loader resolves a target across ordered roots, reads its dependency sidecar,
-loads dependencies first, parses the body, and (when validation runs) runs the
-single-file validator with the definitions visible from already-loaded programs.
-``validate=INVOKED`` validates each target in full and limits dependency files
-to the module types that target invokes, transitively.
+A load has four phases with different failure modes, and each lives in its own
+module:
 
-Post-order is an invariant: the registry is built dependencies-first, so a
-program's diagnostics are computed against a complete prefix of its closure.
-The loader asserts that invariant. Invoked-scope validation runs after the graph
-is complete because it needs the whole invocation graph.
+:mod:`~sattline_parser.project.planner`
+    Resolve names to artifacts and dependencies into post-order plans. No
+    parsing, no registry.
+:mod:`~sattline_parser.project.executor`
+    Parse the planned bodies, in this process or in a worker pool. Owns the AST
+    cache and the picklable failure record.
+:mod:`~sattline_parser.project.assembler`
+    Turn a parsed body into a ``SattLineProgram``: origin, diagnostics,
+    companions, registry entry.
+:mod:`~sattline_parser.project.scope`
+    Validation scope and diagnostic aggregation over the assembled registry.
 
-A plan is keyed by the resolved code path, and every name resolves through the
-same ordered path, so one folded name always reaches one body. When two roots
-hold ``Util.s``, the earlier root wins and the later body is never planned,
-parsed, or validated.
+``ProjectLoader`` wires them together, owns the non-fatal load diagnostics and
+the two caches, and runs the three cross-phase invariants: registry post-order,
+module-type recursion, and validation. A load is all or nothing: a missing or
+unparseable artifact raises, and the two structural errors (a recursive sidecar
+chain and a self-instantiating module type) are fatal in the same way.
 
-Loading fails fast on a missing or unparseable artifact: a load is all or
-nothing, so no diagnostic is ever marked tentative. Validation findings never
-raise, because they are findings and not load failures. Two structural errors
-are always fatal: a recursive sidecar chain and a module type that instantiates
-itself.
+A ``ProjectLoader`` resolves one load. Discovery plans, parse outcomes, and the
+registry are per-load state, so a second ``resolve()`` call raises rather than
+doubling the plans over an existing registry.
 """
 
 from __future__ import annotations
 
-import multiprocessing
-import sys
-import threading
 from collections.abc import Callable, Sequence
-from concurrent.futures import ProcessPoolExecutor
-from concurrent.futures.process import BrokenProcessPool
-from dataclasses import dataclass, replace
 from pathlib import Path
-from typing import Any, cast
 
-from lark import Token
-from lark.exceptions import UnexpectedCharacters, UnexpectedEOF, UnexpectedInput, UnexpectedToken
+from sattline_parser.source_io import parse_source_bytes, private_cache_dir
 
-from sattline_parser.errors import PARSE_FAILURES, SourceTooDeepError
-from sattline_parser.models.ast_model import (
-    BasePicture,
-    DataType,
-    ModuleTypeDef,
-    SourceSpan,
-)
-from sattline_parser.names import fold_identifier
-from sattline_parser.preprocessing.compressed import PreprocessError
-from sattline_parser.source_io import parse_source_bytes, private_cache_dir, read_text_cp1252
-from sattline_parser.validation import validate_basepicture
-from sattline_parser.validation.diagnostics import Diagnostic, DiagnosticCode
-
-from ._cycles import canonical_cycle, first_cycle
-from .ast_cache import FileASTCache, SourceSnapshot, source_snapshot
+from . import executor as _executor
+from . import parallel as _parallel
+from . import plan as _plan_module
+from .assembler import ProjectAssembler
+from .ast_cache import FileASTCache, source_snapshot
 from .discovery import ProjectLookup
-from .distribution import (
-    DistributionParseError,
-    parse_distribution_file,
-    resolve_distribution_companion_path,
-)
-from .errors import (
-    ArtifactLoadError,
-    DependencyCycleError,
-    DependencyNotFoundError,
-    DependencyParseError,
-    ModuleTypeCycleError,
-    ProjectLoadError,
-)
-from .formats import ALL_DEPS_EXTENSIONS, body_mode, find_companion_beside
-from .graphics_parsing import GraphicsParseError, parse_graphics_file, resolve_graphics_companion_path
+from .executor import ParseExecutor
 from .lookup_cache import FileLookupCache
 from .models import (
-    DistributionData,
     GraphicsModel,
     LoadDiagnostic,
     LoadDiagnosticKind,
     LoadMode,
     LoadValidation,
-    ProgramFormat,
     SattLineProgram,
-    SidecarState,
 )
-from .reachability import invoked_moduletypes, iter_moduletype_refs
+from .plan import ResolvedArtifact as _ResolvedArtifact
+from .planner import ProjectPlanner, read_dependency_names
+from .scope import ProjectValidator
+
+__all__ = ["ProjectLoader", "read_dependency_names"]
+
+#: Historical names for the worker machinery and the plan key. They are aliases,
+#: not copies, so a monkeypatched alias is the callable the loader uses.
+_ParseFailure = _executor.ParseFailure
+_ParseOutcome = _executor.ParseOutcome
+_parse_failure_record = _executor.parse_failure_record
+_rebuild_parse_failure = _executor.rebuild_parse_failure
 
 
-def read_dependency_names(deps_path: Path) -> tuple[str, ...]:
-    """Read a ``.l`` / ``.z`` dependency file into declared dependency names.
+def _parse_code_file(task: tuple[str, str, str | None, bool]) -> _executor.ParseOutcome:  # pyright: ignore[reportUnusedFunction]
+    """Worker entry point through this module's own parse and snapshot names.
 
-    Each non-blank line is one dependency name; lines are trimmed, blank lines
-    are ignored, and declaration order is preserved.
+    The real pool uses the executor's function directly. This wrapper keeps the
+    loader's historical call site, including a caller that substitutes the
+    parser or the snapshot function for a test.
     """
-    text = read_text_cp1252(deps_path)
-    return tuple(line.strip() for line in text.splitlines() if line.strip())
-
-
-@dataclass(frozen=True, slots=True)
-class _ResolvedArtifact:
-    """The resolved files and dependency metadata for one program name."""
-
-    code_path: Path
-    resolved_base: Path
-    library: str
-    deps_path: Path | None
-    sidecar: SidecarState
-    dependencies: tuple[str, ...]
-
-
-@dataclass(frozen=True, slots=True)
-class _Plan:
-    """One discovered program, resolved and ready to parse.
-
-    Discovery fills a plan without parsing anything, so the whole closure is
-    known before parse work starts. Assembly consumes plans in plan order,
-    which is post-order: every dependency precedes its consumer. ``key`` is the
-    resolved code path, so two roots holding a same-named unit are two plans.
-    ``dependencies`` holds the plan key of each resolved dependency, in
-    declaration order.
-    """
-
-    key: str
-    name: str
-    declared_by: str | None
-    artifact: _ResolvedArtifact
-    dependencies: tuple[str, ...] = ()
-
-
-def _plan_key(code_path: Path) -> str:
-    """The unique plan identity for a resolved body: its resolved code path."""
-    try:
-        return str(code_path.resolve())
-    except OSError:
-        return str(code_path)
-
-
-@dataclass(frozen=True, slots=True)
-class _ParseFailure:
-    """A picklable description of a parse failure raised in a worker.
-
-    The exception object itself is not sent across the process boundary: Lark
-    exceptions carry parser state and tokens. The record keeps the facts the
-    parent needs to rebuild the same exception type and source position.
-    """
-
-    type_name: str
-    message: str
-    line: int | None = None
-    column: int | None = None
-    pos_in_stream: int | None = None
-    token_type: str | None = None
-    token_value: str | None = None
-    expected: tuple[str, ...] = ()
-    char: str | None = None
-    limit: int | None = None
-    unicode_error: tuple[str, bytes, int, int, str] | None = None
-
-
-@dataclass(frozen=True, slots=True)
-class _ParseOutcome:
-    """A parsed body, or the text of the failure that stopped it."""
-
-    ast: BasePicture | None = None
-    failure: str | None = None
-    #: The original parse failure, kept when the parse ran in this process so a
-    #: caller can still reach a ``SourceTooDeepError`` limit or a decode
-    #: offset through ``__cause__``. A worker returns ``failure_record``.
-    error: BaseException | None = None
-    failure_record: _ParseFailure | None = None
-    #: The exact source revision the worker parsed, so the parent can refuse to
-    #: cache an AST when the file changed while the worker was reading it.
-    snapshot: SourceSnapshot | None = None
-    #: The AST came from the cache, so it has nothing to store.
-    cached: bool = False
-
-
-def _parse_failure_record(exc: BaseException) -> _ParseFailure:
-    """Describe *exc* without pickling parser state."""
-    token = getattr(exc, "token", None)
-    expected = getattr(exc, "expected", None) or getattr(exc, "allowed", ())
-    unicode_error = (
-        (exc.encoding, exc.object, exc.start, exc.end, exc.reason) if isinstance(exc, UnicodeDecodeError) else None
-    )
-    return _ParseFailure(
-        type_name=type(exc).__name__,
-        message=str(exc) or type(exc).__name__,
-        line=_optional_int(getattr(exc, "line", None)),
-        column=_optional_int(getattr(exc, "column", None)),
-        pos_in_stream=_optional_int(getattr(exc, "pos_in_stream", None)),
-        token_type=str(token.type) if isinstance(token, Token) else None,
-        token_value=str(token) if isinstance(token, Token) else None,
-        expected=tuple(sorted(str(item) for item in expected)),
-        char=getattr(exc, "char", None),
-        limit=_optional_int(getattr(exc, "limit", None)),
-        unicode_error=unicode_error,
+    return _executor.parse_code_file(
+        task,
+        parse_bytes=parse_source_bytes,
+        snapshot=source_snapshot,
     )
 
 
-def _optional_int(value: object) -> int | None:
-    return value if isinstance(value, int) and not isinstance(value, bool) else None
-
-
-def _rebuild_parse_failure(record: _ParseFailure) -> BaseException:
-    """Rebuild a worker failure so ``__cause__`` matches an in-process parse."""
-    line = record.line if record.line is not None else 1
-    column = record.column if record.column is not None else 1
-    pos = record.pos_in_stream if record.pos_in_stream is not None else 0
-    if record.unicode_error is not None:
-        return UnicodeDecodeError(*record.unicode_error)
-    if record.type_name == "SourceTooDeepError" and record.limit is not None:
-        return SourceTooDeepError(
-            record.limit,
-            line=record.line,
-            column=record.column,
-            pos_in_stream=record.pos_in_stream,
-        )
-    if record.type_name == "UnexpectedToken" and record.token_type is not None:
-        token = Token(record.token_type, record.token_value or "")
-        token.line = line
-        token.column = column
-        token.start_pos = pos
-        token.end_pos = pos + len(str(token))
-        return UnexpectedToken(token, list(record.expected))
-    if record.type_name == "UnexpectedCharacters":
-        sequence = " " * pos + (record.char or " ")
-        return UnexpectedCharacters(sequence, pos, line, column, allowed=list(record.expected) or None)
-    if record.type_name == "UnexpectedEOF":
-        return UnexpectedEOF(list(record.expected))
-    if record.type_name == "UnexpectedInput":
-        error = UnexpectedInput(record.message)
-        error.line = line
-        error.column = column
-        cast(Any, error).pos_in_stream = pos
-        return error
-    if record.type_name == "PreprocessError":
-        return PreprocessError(record.message)
-    if record.type_name in {"UnicodeError", "UnicodeDecodeError"}:
-        return UnicodeError(record.message)
-    if record.type_name == "ValueError":
-        return ValueError(record.message)
-    if record.type_name == "OSError":
-        return OSError(record.message)
-    return RuntimeError(record.message)
-
-
-def _program_name(plan: _Plan) -> str:
-    return plan.declared_by if plan.declared_by is not None else plan.name
-
-
-def _dependency(plan: _Plan) -> str | None:
-    return None if plan.declared_by is None else plan.name
-
-
-def _parse_failure(program_name: str, code_name: str, dependency: str | None) -> ProjectLoadError:
-    """The load error for a body that did not parse."""
-    if dependency is None:
-        return ArtifactLoadError(program_name, f"failed to parse {code_name}")
-    return DependencyParseError(
-        program_name,
-        f"failed to parse dependency {dependency!r}",
-        dependency=dependency,
-    )
-
-
-#: One cache handle per worker process. Constructing a handle per task would
-#: re-run the private-directory check and the startup prune for every file.
-_WORKER_CACHES: dict[str, FileASTCache] = {}
-
-
-def _worker_cache(cache_text: str) -> FileASTCache:
-    cache = _WORKER_CACHES.get(cache_text)
-    if cache is None:
-        cache = FileASTCache(Path(cache_text))
-        _WORKER_CACHES[cache_text] = cache
-    return cache
-
-
-def _parse_code_file(task: tuple[str, str, str | None, bool]) -> _ParseOutcome:
-    """Parse one code file into an AST.
-
-    Runs in a child process when ``workers`` is greater than one, so it must not
-    touch the loader or its registry. It reads the AST cache but never writes
-    it: the parent owns every write, so the per-user cache key is created and
-    the entries are signed by a single process. A failure comes back as text,
-    because the error type and wording depend on the dependency edge and the
-    parent owns both. ``log_failures`` mirrors the parent's choice: a plain load
-    keeps stderr for the structured finding, and ``--debug`` keeps the parser
-    traceback.
-    """
-    code_text, mode, cache_text, log_failures = task
-    code_path = Path(code_text)
-    if cache_text is not None:
-        cached = _worker_cache(cache_text).load(code_path, mode)
-        if cached is not None:
-            return _ParseOutcome(ast=cached, cached=True)
-    try:
-        raw_bytes = code_path.read_bytes()
-    except OSError as exc:
-        return _ParseOutcome(failure=str(exc), failure_record=_parse_failure_record(exc))
-    snapshot = source_snapshot(code_path, raw_bytes)
-    try:
-        picture = parse_source_bytes(raw_bytes, source_path=code_path, log_failures=log_failures)
-    except PARSE_FAILURES as exc:
-        return _ParseOutcome(
-            failure=str(exc) or type(exc).__name__,
-            failure_record=_parse_failure_record(exc),
-        )
-    return _ParseOutcome(ast=picture, snapshot=snapshot)
-
-
-def _start_method(
-    methods: Sequence[str],
-    *,
-    threaded: bool,
-    platform: str = sys.platform,
-    version: tuple[int, int] = sys.version_info[:2],
-) -> str | None:
-    """The preferred pool start method, or ``None`` for the platform default.
-
-    A single-threaded process on Linux before Python 3.14 prefers ``fork``: the
-    caller needs no ``__main__`` guard. Forking a process with other threads is
-    deprecated in CPython and can inherit a lock another thread held at fork
-    time, so a threaded host prefers ``forkserver``, then ``spawn``. Python 3.14
-    moved the Linux default away from ``fork`` for the same reason, and macOS
-    defaults to ``spawn``, so both keep the platform default instead of forcing
-    ``fork``. Platforms that offer only ``fork`` still get it through that
-    default: this is a preference, not a guarantee.
-    """
-    if threaded:
-        for candidate in ("forkserver", "spawn"):
-            if candidate in methods:
-                return candidate
-    if not threaded and platform.startswith("linux") and version < (3, 14) and "fork" in methods:
-        return "fork"
-    return None
-
-
-def _pool_allowed() -> bool:
-    """A daemonic process may not start children, so a nested load stays in this one."""
-    return not multiprocessing.current_process().daemon
-
-
-def _process_pool(max_workers: int) -> ProcessPoolExecutor:
-    """A process pool shaped for the current process."""
-    method = _start_method(multiprocessing.get_all_start_methods(), threaded=threading.active_count() > 1)
-    return ProcessPoolExecutor(max_workers=max_workers, mp_context=multiprocessing.get_context(method))
+_plan_key = _plan_module.plan_key
+_pool_allowed = _parallel.pool_allowed
+_process_pool = _parallel.process_pool
+_start_method = _parallel.start_method
 
 
 class ProjectLoader:
-    """Recursive resolver producing the canonical program registry for a load."""
+    """Orchestrate one load: plan, parse, assemble, validate."""
 
     def __init__(
         self,
@@ -364,50 +102,60 @@ class ProjectLoader:
         secure_cache_dir = private_cache_dir(cache_dir) if cache_dir is not None else None
         self._lookup_cache = FileLookupCache(secure_cache_dir) if secure_cache_dir is not None else None
         self._ast_cache = FileASTCache(secure_cache_dir) if secure_cache_dir is not None else None
-        self._lookup = ProjectLookup(roots, mode, cache=self._lookup_cache, debug=debug)
-        self._mode = mode
-        self._debug = debug
+        lookup = ProjectLookup(roots, mode, cache=self._lookup_cache, debug=debug)
         #: The parser logs a failure with its traceback. A plain load reports the
         #: problem once as a structured finding, so only a debug run asks for the
         #: parser's own log line and stack.
-        self._log_failures = debug is not None
+        log_failures = debug is not None
         self._validate = validate
-        self._workers = max(1, workers)
-        self._secure_cache_dir = secure_cache_dir
-        #: Discovery order is post-order, so assembly is a single pass. Plans
-        #: are keyed by resolved code path; the ordered path decides which body
-        #: a name resolves to, so a later same-named body is never planned.
-        self._plans: list[_Plan] = []
-        self._planned: set[str] = set()
-        #: Plan key -> the plan keys of its resolved dependencies.
-        self._resolved_dependencies: dict[str, tuple[str, ...]] = {}
-        self._parsed: dict[str, _ParseOutcome] = {}
         self._resolved = False
-        #: Plan key -> the assembled program. The public view keeps one program
-        #: per folded name; this registry keeps every resolved body.
-        self._registry: dict[str, SattLineProgram] = {}
-        #: Insertion-ordered set of folded names currently being loaded.
-        self._loading: dict[str, None] = {}
+        #: Non-fatal load findings, and the set that keeps them unique.
         self._diagnostics: list[LoadDiagnostic] = []
         self._diagnostic_set: set[LoadDiagnostic] = set()
-        #: Plan keys of the explicitly requested programs.
-        self._target_plan_keys: set[str] = set()
-        #: name -> datecode -> program keys declaring it. Conflict checks are
-        #: scoped to a program's visible closure, so unrelated programs that
-        #: happen to declare the same name never conflict with each other.
-        self._moduletype_versions: dict[str, dict[int, set[str]]] = {}
-        self._datatype_versions: dict[str, dict[int, set[str]]] = {}
-        #: program key -> source label used in diagnostics.
-        self._labels: dict[str, str] = {}
 
-    def _dbg(self, message: str) -> None:
-        if self._debug is not None:
-            self._debug(message)
+        self._planner = ProjectPlanner(
+            lookup=lookup,
+            mode=mode,
+            debug=debug,
+            diagnose=self._diagnose,
+            artifact_resolver=self._resolve_artifact,
+        )
+        #: Plan key -> the assembled unit. The public view keeps one unit per
+        #: folded name; this registry keeps every resolved body.
+        self._registry: dict[str, SattLineProgram] = {}
+        self._validator = ProjectValidator(
+            validate=validate,
+            registry=self._registry,
+            resolved_dependencies=self._planner.resolved_dependencies,
+            target_plan_keys=self._planner.target_plan_keys,
+        )
+        self._assembler = ProjectAssembler(
+            mode=mode,
+            registry=self._registry,
+            validator=self._validator,
+            debug=debug,
+            companion_loader=self._load_companion,
+        )
+        self._executor = ParseExecutor(
+            mode=mode,
+            workers=workers,
+            log_failures=log_failures,
+            debug=debug,
+            ast_cache=self._ast_cache,
+            secure_cache_dir=secure_cache_dir,
+            pool_factory=_process_pool,
+            parse_bytes=parse_source_bytes,
+            snapshot_factory=source_snapshot,
+        )
 
     @property
     def diagnostics(self) -> tuple[LoadDiagnostic, ...]:
-        """Non-fatal findings recorded during this load, in discovery order."""
+        """Non-fatal load findings, in discovery then assembly order."""
         return tuple(self._diagnostics)
+
+    @property
+    def _resolved_dependencies(self) -> dict[str, tuple[str, ...]]:
+        return self._planner.resolved_dependencies
 
     def _diagnose(self, kind: LoadDiagnosticKind, program: str, detail: str, path: Path | None = None) -> None:
         diagnostic = LoadDiagnostic(kind=kind, program=program, detail=detail, path=path)
@@ -417,61 +165,66 @@ class ProjectLoader:
         self._diagnostic_set.add(diagnostic)
 
     def resolve(self, targets: Sequence[str]) -> dict[str, SattLineProgram]:
-        """Resolve ``targets`` into the canonical registry for this load.
-
-        A loader accumulates one registry: discovery plans, parse outcomes, and
-        the registry itself are per-load state, so a second call would double
-        the plans and re-assemble over the first result. One loader resolves
-        once; construct another for another load. The returned mapping holds one
-        program per folded name, which is the documented project identity.
-        """
+        """Load every target and its dependencies; return the folded registry."""
         if self._resolved:
-            raise RuntimeError("ProjectLoader.resolve() resolves one load; construct another loader")
+            raise RuntimeError("this ProjectLoader has already resolved a load; construct another loader")
         self._resolved = True
         try:
-            for target in targets:
-                self._target_plan_keys.add(self._visit(target, declared_by=None))
-            self._parse_planned()
-            self._assemble()
+            self._planner.resolve(targets)
+            outcomes = self._executor.parse(self._planner.plans)
+            self._assembler.assemble(
+                self._planner.plans,
+                resolved_dependencies=self._planner.resolved_dependencies,
+                outcomes=outcomes,
+            )
             self._assert_registry_post_order()
-            self._assert_no_moduletype_cycles()
+            self._validator.assert_no_moduletype_cycles()
             if self._validate is LoadValidation.INVOKED:
-                self._validate_invoked()
+                self._validator.validate_invoked()
             return self._name_registry()
         finally:
             if self._lookup_cache is not None:
                 self._lookup_cache.flush()
 
+    def _resolve_artifact(
+        self,
+        name: str,
+        *,
+        program_name: str,
+        dependency: str | None,
+    ) -> _ResolvedArtifact:
+        """Delegate to the planner, keeping the historical patch point."""
+        return self._planner.resolve_artifact(name, program_name=program_name, dependency=dependency)
+
+    def _load_companion(
+        self,
+        code_path: Path,
+        *,
+        name: str,
+        program_name: str,
+        dependency: str | None,
+    ) -> tuple[Path | None, GraphicsModel | None]:
+        """Delegate to the assembler, keeping the historical patch point."""
+        return self._assembler._load_companion(  # pyright: ignore[reportPrivateUsage]
+            code_path,
+            name=name,
+            program_name=program_name,
+            dependency=dependency,
+        )
+
     def _name_registry(self) -> dict[str, SattLineProgram]:
-        """The public registry: one program per folded name, first resolution wins.
+        """The public registry: one unit per folded name, first resolution wins.
 
         Every planned body assembles, so the first resolution is always the
-        exposed one.
+        exposed one. The key is ``str.casefold``, the project view's own
+        canonical spelling, and ``SattLineProject`` looks up by the same rule.
+        Language identity inside a unit uses the CP1252 table
+        (``fold_identifier``); artifact identity uses :class:`ArtifactIdentity`.
         """
         registry: dict[str, SattLineProgram] = {}
         for program in self._registry.values():
             registry.setdefault(program.name.casefold(), program)
         return registry
-
-    def _assert_no_moduletype_cycles(self) -> None:
-        """Reject a module type whose instantiation chain returns to itself.
-
-        Each program is checked against its visible closure, and a node is one
-        *definition* (owning program plus folded name), so two libraries that
-        reuse a name are two nodes, not one. A reference resolves to the
-        referencing file's own definition first, then to any definition in the
-        checked program's closure, which keeps a library that shadows a
-        dependency's type name from looking recursive. Only the first cycle
-        matters, and a graph can hold exponentially many elementary cycles, so
-        the search stops as soon as it finds one.
-        """
-        for key in self._registry:
-            visible_keys = self._visible_plan_keys(key)
-            edges, labels, owners = _moduletype_edges(self._registry, visible_keys)
-            cycle = first_cycle(edges)
-            if cycle is not None:
-                display = tuple(labels[node] for node in cycle)
-                raise ModuleTypeCycleError(owners[cycle[0]], display)
 
     def _assert_registry_post_order(self) -> None:
         """Assert that every loaded dependency precedes its consumer."""
@@ -485,710 +238,8 @@ class ProjectLoader:
                     )
             seen.add(key)
 
-    def _visit(self, name: str, *, declared_by: str | None) -> str:
-        """Plan one program and return its plan key."""
-        key = name.casefold()
-        if key in self._loading:
-            # A dependency loop has no finite load order. It is structural.
-            loading = tuple(self._loading)
-            start = loading.index(key)
-            raise DependencyCycleError(canonical_cycle((*loading[start:], key)))
-        self._loading[key] = None
-        try:
-            return self._discover(name, declared_by=declared_by)
-        finally:
-            del self._loading[key]
 
-    def _discover(self, name: str, *, declared_by: str | None) -> str:
-        """Resolve one program's artifacts and recurse into its dependencies.
-
-        Discovery is path resolution and sidecar reads only: it never parses a
-        body, so the whole closure is known before any parse work starts. The
-        plan is appended after the recursion, which makes ``self._plans`` the
-        post-order sequence the assembly phase needs.
-
-        A name that resolves to a body this load already planned reuses that
-        plan. The ordered path is the same for every name, so a name cannot
-        resolve to two bodies in one load.
-        """
-        program_name = declared_by if declared_by is not None else name
-        dependency = None if declared_by is None else name
-        self._dbg(f"Visiting: {name}")
-        artifact = self._resolve_artifact(
-            name,
-            program_name=program_name,
-            dependency=dependency,
-        )
-        plan_key = _plan_key(artifact.code_path)
-        if plan_key in self._planned:
-            return plan_key
-        self._planned.add(plan_key)
-        resolved = tuple(self._visit(declared, declared_by=name) for declared in artifact.dependencies)
-        self._plans.append(
-            _Plan(
-                key=plan_key,
-                name=name,
-                declared_by=declared_by,
-                artifact=artifact,
-                dependencies=resolved,
-            )
-        )
-        self._resolved_dependencies[plan_key] = resolved
-        return plan_key
-
-    def _parse_planned(self) -> None:
-        """Parse every planned body, in parallel when ``workers`` allows it.
-
-        A failure is carried to the assembly phase, which raises it with the
-        dependency edge and the program name that the worker cannot know.
-        """
-        if not self._plans:
-            return
-        if self._workers <= 1 or len(self._plans) == 1:
-            for plan in self._plans:
-                self._parsed[plan.key] = self._parse_in_process(plan)
-            return
-        if not _pool_allowed():
-            # A daemonic process cannot start children. Parsing here is slower
-            # but correct, and the caller already owns a pool to run us on.
-            self._dbg("Parsing in this process: a daemonic process cannot start workers")
-            for plan in self._plans:
-                self._parsed[plan.key] = self._parse_in_process(plan)
-            return
-
-        cache_text = None if self._secure_cache_dir is None else str(self._secure_cache_dir)
-        tasks = [
-            (str(plan.artifact.code_path), self._mode.value, cache_text, self._log_failures) for plan in self._plans
-        ]
-        workers = min(self._workers, len(tasks))
-        self._dbg(f"Parsing {len(tasks)} bodies in {workers} processes")
-        try:
-            pool = _process_pool(workers)
-        except (OSError, RuntimeError, ValueError) as exc:
-            # A pool cannot always be created (no worker start method, a
-            # restricted sandbox). Parsing is the load, not an optimisation
-            # detail, so fall back to this process rather than failing.
-            self._dbg(f"Parallel parsing unavailable ({exc}); parsing in this process")
-            for plan in self._plans:
-                self._parsed[plan.key] = self._parse_in_process(plan)
-            return
-        try:
-            outcomes = list(pool.map(_parse_code_file, tasks, chunksize=1))
-        except (BrokenProcessPool, OSError) as exc:
-            # ``ProcessPoolExecutor`` starts its workers on the first submit, so
-            # a missing worker start method, a denied fork, or an exhausted
-            # process limit surfaces here rather than from the constructor. A
-            # dead worker is the same story. Parsing is the load, not an
-            # optimisation detail, so fall back to this process.
-            pool.shutdown(wait=True, cancel_futures=True)
-            self._dbg(f"Worker pool failed ({exc}); parsing in this process")
-            for plan in self._plans:
-                self._parsed[plan.key] = self._parse_in_process(plan)
-            return
-        except BaseException:
-            # Interrupt: cancel the queued bodies before waiting for anything,
-            # so a Ctrl-C does not have to drain the rest of the tree.
-            pool.shutdown(wait=False, cancel_futures=True)
-            raise
-        else:
-            pool.shutdown(wait=True)
-        for plan, outcome in zip(self._plans, outcomes, strict=True):
-            self._parsed[plan.key] = outcome
-            self._save_cached(plan, outcome)
-
-    def _parse_in_process(self, plan: _Plan) -> _ParseOutcome:
-        """Parse one plan through the loader's own cache, parser, and errors."""
-        try:
-            ast = self._load_ast(
-                plan.artifact.code_path,
-                program_name=_program_name(plan),
-                dependency=_dependency(plan),
-            )
-        except ProjectLoadError as exc:
-            # ``_load_ast`` wraps the parser exception in a load error for its
-            # other callers. Keep the parser exception itself as the cause, so
-            # the in-process and worker paths expose the same chain.
-            return _ParseOutcome(failure=str(exc), error=exc.__cause__ or exc)
-        return _ParseOutcome(ast=ast)
-
-    def _save_cached(self, plan: _Plan, outcome: _ParseOutcome) -> None:
-        """Store a body the worker parsed and did not cache itself.
-
-        A worker never writes the cache, so the per-user key and the entry
-        signatures stay single-process. A parse that came from the cache has
-        nothing to store, and a body whose source changed while the worker was
-        reading it is left uncached rather than stored under newer metadata.
-        """
-        if outcome.ast is None or outcome.cached or self._ast_cache is None:
-            return
-        code_path = plan.artifact.code_path
-        try:
-            self._ast_cache.save(code_path, self._mode.value, outcome.ast, snapshot=outcome.snapshot)
-        except OSError as exc:
-            # The cache is an optimisation: a failed write must not turn a
-            # successful parse into a load failure.
-            self._dbg(f"Cache write failed for {code_path}: {exc}")
-
-    def _assemble(self) -> None:
-        """Turn the parsed plans into the canonical registry, in post-order."""
-        for plan in self._plans:
-            self._assemble_one(plan)
-
-    def _assemble_one(self, plan: _Plan) -> None:
-        artifact = plan.artifact
-        outcome = self._parsed[plan.key]
-        basepicture = outcome.ast
-        if basepicture is None:
-            error = _parse_failure(_program_name(plan), artifact.code_path.name, _dependency(plan))
-            cause = outcome.error
-            if cause is None and outcome.failure_record is not None:
-                cause = _rebuild_parse_failure(outcome.failure_record)
-            raise error from (cause or RuntimeError(outcome.failure))
-        _set_origin(basepicture, file_name=artifact.code_path.name, library=artifact.library)
-        self._assemble_body(plan, basepicture)
-
-    def _assemble_body(self, plan: _Plan, basepicture: BasePicture) -> None:
-        """Attach diagnostics, definitions, and companion, then register."""
-        artifact = plan.artifact
-        name = plan.name
-        program_name = _program_name(plan)
-        dependency = _dependency(plan)
-        diagnostics = self._artifact_diagnostics(
-            basepicture,
-            key=plan.key,
-            artifact=artifact,
-        )
-        self._remember_definitions(
-            basepicture,
-            library=artifact.library,
-            file_name=artifact.code_path.name,
-            program_key=plan.key,
-        )
-
-        graphics_path, graphics = self._load_companion(
-            artifact.code_path,
-            name=name,
-            program_name=program_name,
-            dependency=dependency,
-        )
-        distribution_path, distribution = self._load_distribution(
-            artifact.code_path,
-            name=name,
-            program_name=program_name,
-            dependency=dependency,
-        )
-        self._registry[plan.key] = SattLineProgram(
-            name=name,
-            code=basepicture,
-            graphics=graphics,
-            dependencies=artifact.dependencies,
-            format=ProgramFormat(
-                mode=body_mode(artifact.code_path.suffix, self._mode),
-                code_ext=artifact.code_path.suffix.lower(),
-                graphics_ext=graphics_path.suffix.lower() if graphics_path is not None else None,
-                deps_ext=artifact.deps_path.suffix.lower() if artifact.deps_path is not None else None,
-                distribution_ext=distribution_path.suffix.lower() if distribution_path is not None else None,
-            ),
-            source_path=artifact.code_path,
-            deps_path=artifact.deps_path,
-            sidecar=artifact.sidecar,
-            library=artifact.library,
-            resolved_base=artifact.resolved_base,
-            distribution_path=distribution_path,
-            distribution=distribution,
-            diagnostics=diagnostics,
-        )
-
-    def _resolve_artifact(
-        self,
-        name: str,
-        *,
-        program_name: str,
-        dependency: str | None,
-    ) -> _ResolvedArtifact:
-        """Find the body, its sidecar, and the declared dependencies."""
-        resolved = self._lookup.find_code_with_base(name)
-        if resolved is None:
-            raise DependencyNotFoundError(
-                program_name,
-                f"missing code file for {name!r}",
-                dependency=dependency,
-            )
-        code_path, resolved_base = resolved
-        library = resolved_base.name
-        # The sidecar belongs to the selected body's prefix; see
-        # ProjectLookup.find_deps_beside.
-        deps_path = self._lookup.find_deps_beside(code_path, name)
-        sidecar = SidecarState.ABSENT
-        if deps_path is None:
-            # A sidecar in the other family sits at the body's own prefix. Probe
-            # for it directly, because a mode-filtered root-ordered search never
-            # sees the other family and official mode would report a plain miss.
-            same_prefix = find_companion_beside(code_path, sorted(ALL_DEPS_EXTENSIONS))
-            stray = self._lookup.find_deps(name)
-            if same_prefix is not None:
-                self._diagnose(
-                    LoadDiagnosticKind.SIDECAR_FAMILY_MISMATCH,
-                    program_name,
-                    f"sidecar {same_prefix.name!r} does not match the artifact family of body "
-                    f"{code_path.name!r}; not paired",
-                    same_prefix,
-                )
-            elif stray is not None:
-                self._diagnose(
-                    LoadDiagnosticKind.SIDECAR_ELSEWHERE,
-                    program_name,
-                    f"sidecar {stray.name!r} is not beside body {code_path.name!r}; not paired",
-                    stray,
-                )
-            else:
-                self._diagnose(
-                    LoadDiagnosticKind.SIDECAR_MISSING,
-                    program_name,
-                    f"no dependency sidecar beside {code_path.name!r}",
-                    code_path,
-                )
-        dependencies = self._read_deps(name, deps_path, program_name, dependency)
-        if deps_path is not None:
-            sidecar = SidecarState.PRESENT if dependencies else SidecarState.EMPTY
-            if sidecar is SidecarState.EMPTY:
-                self._diagnose(
-                    LoadDiagnosticKind.SIDECAR_EMPTY,
-                    program_name,
-                    f"sidecar {deps_path.name!r} declares no dependencies",
-                    deps_path,
-                )
-        return _ResolvedArtifact(
-            code_path=code_path,
-            resolved_base=resolved_base,
-            library=library,
-            deps_path=deps_path,
-            sidecar=sidecar,
-            dependencies=dependencies,
-        )
-
-    def _artifact_diagnostics(
-        self,
-        basepicture: BasePicture,
-        *,
-        key: str,
-        artifact: _ResolvedArtifact,
-    ) -> tuple[Diagnostic, ...]:
-        if self._validate is not LoadValidation.INVOKED:
-            return self._program_diagnostics(
-                basepicture,
-                dependencies=self._resolved_dependencies.get(key, ()),
-                library=artifact.library,
-                file_name=artifact.code_path.name,
-                key=key,
-            )
-        # Module diagnostics need the whole graph. Datecode findings belong to
-        # an explicitly selected program; a library import is not the place to
-        # report its own version drift. Ownership comes from the target set, not
-        # from discovery order, so a target that was first reached as a
-        # dependency still reports its own conflict whatever the target order.
-        if key not in self._target_plan_keys:
-            return ()
-        return tuple(
-            self._datecode_conflicts(
-                basepicture,
-                library=artifact.library,
-                file_name=artifact.code_path.name,
-                visible=self._visible_plan_keys(key),
-            )
-        )
-
-    def _load_companion(
-        self,
-        code_path: Path,
-        *,
-        name: str,
-        program_name: str,
-        dependency: str | None,
-    ) -> tuple[Path | None, GraphicsModel | None]:
-        graphics_path = resolve_graphics_companion_path(code_path, mode=self._mode)
-        if graphics_path is None:
-            return None, None
-        graphics = _load_graphics(
-            self._dbg,
-            graphics_path,
-            program_name=program_name,
-            dependency=dependency,
-            name=name,
-        )
-        return graphics_path, graphics
-
-    def _load_distribution(
-        self,
-        code_path: Path,
-        *,
-        name: str,
-        program_name: str,
-        dependency: str | None,
-    ) -> tuple[Path | None, DistributionData | None]:
-        """Read the distribution companion beside the selected body.
-
-        A missing companion answers "unknown" and stays silent: distribution data
-        is optional. A companion that exists but does not parse is an artifact
-        failure, because an unreadable file must never be reported as "no
-        executing system".
-        """
-        distribution_path = resolve_distribution_companion_path(code_path, mode=self._mode)
-        if distribution_path is None:
-            return None, None
-        self._dbg(f"Parsing distribution: {distribution_path}")
-        try:
-            distribution = parse_distribution_file(distribution_path)
-        except (OSError, UnicodeError, DistributionParseError) as exc:
-            if dependency is None:
-                raise ArtifactLoadError(
-                    program_name,
-                    f"failed to parse distribution companion {distribution_path.name} for {name!r}: {exc}",
-                ) from exc
-            raise DependencyParseError(
-                program_name,
-                f"failed to parse distribution companion for dependency {dependency!r}: {exc}",
-                dependency=dependency,
-            ) from exc
-        return distribution_path, distribution
-
-    def _closure(self, dependencies: Sequence[str]) -> frozenset[str]:
-        """Plan keys of every program a set of resolved dependencies reaches."""
-        closure: set[str] = set()
-        pending = list(dependencies)
-        while pending:
-            key = pending.pop()
-            if key in closure:
-                continue
-            closure.add(key)
-            pending.extend(self._resolved_dependencies.get(key, ()))
-        return frozenset(closure)
-
-    def _visible_plan_keys(self, key: str) -> frozenset[str]:
-        """Keys of every program *key* can see: itself plus its transitive deps."""
-        return frozenset({key}) | self._closure(self._resolved_dependencies.get(key, ()))
-
-    def _visible_definitions(
-        self, dependencies: Sequence[str]
-    ) -> tuple[tuple[DataType, ...], tuple[ModuleTypeDef, ...]]:
-        """Definitions from this program's transitive dependency closure.
-
-        The registry is dependency-first, so filtering it by the closure keeps
-        a deterministic order. Using the whole registry here would let an
-        unrelated target's types hide an unknown-name finding.
-        """
-        closure = self._closure(dependencies)
-        datatypes: list[DataType] = []
-        moduletypes: list[ModuleTypeDef] = []
-        for key, program in self._registry.items():
-            if key not in closure:
-                continue
-            datatypes.extend(program.code.datatype_defs)
-            moduletypes.extend(program.code.moduletype_defs)
-        return tuple(datatypes), tuple(moduletypes)
-
-    def _validate_invoked(self) -> None:
-        """Add diagnostics for the module types each target actually invokes."""
-        reachable = invoked_moduletypes(
-            self._registry,
-            self._target_plan_keys,
-            closure_of=self._visible_plan_keys,
-        )
-        for key, program in list(self._registry.items()):
-            dependencies = self._resolved_dependencies.get(key, ())
-            if key in self._target_plan_keys:
-                module_diagnostics = self._validate_code(program.code, dependencies=dependencies)
-            else:
-                names = reachable.get(key)
-                if not names:
-                    continue
-                module_diagnostics = self._validate_code(
-                    self._invoked_view(program.code, names),
-                    dependencies=dependencies,
-                )
-            diagnostics = [*program.diagnostics, *module_diagnostics]
-            self._registry[key] = replace(program, diagnostics=tuple(diagnostics))
-
-    def _validate_code(self, code: BasePicture, *, dependencies: Sequence[str]) -> tuple[Diagnostic, ...]:
-        visible_datatypes, visible_moduletypes = self._visible_definitions(dependencies)
-        return validate_basepicture(
-            code,
-            external_datatypes=visible_datatypes,
-            external_moduletype_defs=visible_moduletypes,
-        )
-
-    @staticmethod
-    def _invoked_view(basepicture: BasePicture, names: set[str]) -> BasePicture:
-        """A copy that contains only the invoked module types from one file."""
-        selected = [moduletype for moduletype in basepicture.moduletype_defs if moduletype.name.casefold() in names]
-        return replace(
-            basepicture,
-            moduletype_defs=selected,
-            submodules=[],
-            moduledef=None,
-            modulecode=None,
-            localvariables=[],
-        )
-
-    def _program_diagnostics(
-        self,
-        basepicture: BasePicture,
-        *,
-        dependencies: Sequence[str],
-        library: str,
-        file_name: str,
-        key: str,
-    ) -> tuple[Diagnostic, ...]:
-        if self._validate is LoadValidation.NONE:
-            return ()
-        visible_datatypes, visible_moduletypes = self._visible_definitions(dependencies)
-        diagnostics = list(
-            validate_basepicture(
-                basepicture,
-                external_datatypes=visible_datatypes,
-                external_moduletype_defs=visible_moduletypes,
-            )
-        )
-        diagnostics.extend(
-            self._datecode_conflicts(
-                basepicture,
-                library=library,
-                file_name=file_name,
-                visible=self._visible_plan_keys(key),
-            )
-        )
-        return tuple(diagnostics)
-
-    def _versions_in_scope(
-        self,
-        table: dict[str, dict[int, set[str]]],
-        name: str,
-        visible: frozenset[str],
-    ) -> dict[int, set[str]] | None:
-        """Datecodes declared for *name* by programs in *visible*."""
-        entry = table.get(fold_identifier(name))
-        if not entry:
-            return None
-        known: dict[int, set[str]] = {}
-        for datecode, keys in entry.items():
-            in_scope = keys & visible
-            if in_scope:
-                known[datecode] = {self._labels[key] for key in in_scope if key in self._labels}
-        return known or None
-
-    def _datecode_conflicts(
-        self,
-        basepicture: BasePicture,
-        *,
-        library: str,
-        file_name: str,
-        visible: frozenset[str],
-    ) -> list[Diagnostic]:
-        source_label = f"{library}/{file_name}"
-        conflicts: list[Diagnostic] = []
-        for moduletype in basepicture.moduletype_defs:
-            conflict = _datecode_conflict(
-                "moduletype",
-                moduletype.name,
-                moduletype.datecode,
-                self._versions_in_scope(self._moduletype_versions, moduletype.name, visible),
-                source_label=source_label,
-                span=moduletype.declaration_span,
-            )
-            if conflict is not None:
-                conflicts.append(conflict)
-        for datatype in basepicture.datatype_defs:
-            conflict = _datecode_conflict(
-                "datatype",
-                datatype.name,
-                datatype.datecode,
-                self._versions_in_scope(self._datatype_versions, datatype.name, visible),
-                source_label=source_label,
-                span=datatype.declaration_span,
-            )
-            if conflict is not None:
-                conflicts.append(conflict)
-        return conflicts
-
-    def _remember_definitions(
-        self,
-        basepicture: BasePicture,
-        *,
-        library: str,
-        file_name: str,
-        program_key: str,
-    ) -> None:
-        self._labels[program_key] = f"{library}/{file_name}"
-        for moduletype in basepicture.moduletype_defs:
-            if moduletype.datecode is not None:
-                self._moduletype_versions.setdefault(fold_identifier(moduletype.name), {}).setdefault(
-                    moduletype.datecode, set()
-                ).add(program_key)
-        for datatype in basepicture.datatype_defs:
-            if datatype.datecode is not None:
-                self._datatype_versions.setdefault(fold_identifier(datatype.name), {}).setdefault(
-                    datatype.datecode, set()
-                ).add(program_key)
-
-    def _read_deps(
-        self,
-        name: str,
-        deps_path: Path | None,
-        program_name: str,
-        dependency: str | None,
-    ) -> tuple[str, ...]:
-        if deps_path is None:
-            return ()
-        try:
-            return read_dependency_names(deps_path)
-        except (OSError, UnicodeError) as exc:
-            raise DependencyParseError(
-                program_name,
-                f"unable to read dependency file {deps_path.name} for {name!r}",
-                dependency=dependency,
-            ) from exc
-
-    def _load_ast(self, code_path: Path, *, program_name: str, dependency: str | None) -> BasePicture:
-        if self._ast_cache is not None:
-            cached = self._ast_cache.load(code_path, self._mode.value)
-            if cached is not None:
-                self._dbg(f"Using cached AST for: {code_path}")
-                return cached
-        # Read the source once and hash those bytes: the entry written below then
-        # describes exactly the revision that was parsed, never a later stat.
-        try:
-            raw_bytes = code_path.read_bytes()
-        except OSError as exc:
-            if dependency is None:
-                raise ArtifactLoadError(program_name, f"unable to read {code_path.name}") from exc
-            raise DependencyParseError(
-                program_name,
-                f"unable to read dependency {dependency!r}",
-                dependency=dependency,
-            ) from exc
-        snapshot = source_snapshot(code_path, raw_bytes)
-        self._dbg(f"Parsing: {code_path}")
-        try:
-            basepicture = parse_source_bytes(
-                raw_bytes,
-                source_path=code_path,
-                debug=self._debug,
-                log_failures=self._log_failures,
-            )
-        except PARSE_FAILURES as exc:
-            if dependency is None:
-                raise ArtifactLoadError(program_name, f"failed to parse {code_path.name}") from exc
-            raise DependencyParseError(
-                program_name,
-                f"failed to parse dependency {dependency!r}",
-                dependency=dependency,
-            ) from exc
-        if self._ast_cache is not None:
-            try:
-                self._ast_cache.save(code_path, self._mode.value, basepicture, snapshot=snapshot)
-            except OSError as exc:
-                # The cache is an optimisation: a failed write must not turn a
-                # successful parse into a load failure.
-                self._dbg(f"Cache write failed for {code_path}: {exc}")
-        return basepicture
-
-
-def _moduletype_edges(
-    programs: dict[str, SattLineProgram],
-    visible_keys: frozenset[str],
-) -> tuple[list[tuple[str, str]], dict[str, str], dict[str, str]]:
-    """The instantiation edges among the definitions visible from one program.
-
-    A node is one definition, identified by its owning program and folded name,
-    so two programs may each define a type of the same name without becoming a
-    cycle. Returns the edges plus the display name and owning program of every
-    node the cycle report needs.
-    """
-    index: dict[str, list[tuple[str, ModuleTypeDef]]] = {}
-    for visible_key in sorted(visible_keys):
-        program = programs[visible_key]
-        for moduletype in program.code.moduletype_defs:
-            index.setdefault(fold_identifier(moduletype.name), []).append((visible_key, moduletype))
-    labels: dict[str, str] = {}
-    owners: dict[str, str] = {}
-    edges: list[tuple[str, str]] = []
-
-    def node_for(owner_key: str, moduletype: ModuleTypeDef) -> str:
-        node = f"{owner_key}\x00{fold_identifier(moduletype.name)}"
-        labels.setdefault(node, moduletype.name)
-        owners.setdefault(node, programs[owner_key].name)
-        return node
-
-    for folded_name in sorted(index):
-        for owner_key, moduletype in index[folded_name]:
-            node = node_for(owner_key, moduletype)
-            for reference in iter_moduletype_refs(moduletype.submodules):
-                folded = fold_identifier(reference)
-                candidates = index.get(folded, ())
-                # A local definition wins, then any visible definition: the
-                # check asks whether this closure's definitions instantiate
-                # themselves, not whether every edge is load-order legal.
-                local = [entry for entry in candidates if entry[0] == owner_key] or candidates
-                for target_key, target in local:
-                    edges.append((node, node_for(target_key, target)))
-    return edges, labels, owners
-
-
-def _set_origin(basepicture: BasePicture, *, file_name: str, library: str) -> None:
-    basepicture.origin_file = file_name
-    basepicture.origin_lib = library
-    for moduletype in basepicture.moduletype_defs:
-        moduletype.origin_file = file_name
-        moduletype.origin_lib = library
-    for datatype in basepicture.datatype_defs:
-        datatype.origin_file = file_name
-        datatype.origin_lib = library
-
-
-def _datecode_conflict(
-    kind: str,
-    name: str,
-    datecode: int | None,
-    known: dict[int, set[str]] | None,
-    *,
-    source_label: str,
-    span: SourceSpan | None,
-) -> Diagnostic | None:
-    if datecode is None or not known:
-        return None
-    others = {version: labels for version, labels in known.items() if version != datecode}
-    if not others:
-        return None
-    detail = ", ".join(f"{version} in {', '.join(sorted(labels))}" for version, labels in sorted(others.items()))
-    return Diagnostic(
-        code=DiagnosticCode.DATECODE_CONFLICT,
-        message=f"{kind} {name!r} datecode {datecode} in {source_label} conflicts with {detail}",
-        span=span,
-    )
-
-
-def _load_graphics(
-    debug: Callable[[str], None],
-    graphics_path: Path,
-    *,
-    program_name: str,
-    dependency: str | None,
-    name: str,
-) -> GraphicsModel:
-    debug(f"Parsing graphics: {graphics_path}")
-    try:
-        return parse_graphics_file(graphics_path)
-    except (OSError, UnicodeError, GraphicsParseError) as exc:
-        if dependency is None:
-            raise ArtifactLoadError(
-                program_name,
-                f"failed to read graphics companion {graphics_path.name} for {name!r}: {exc}",
-            ) from exc
-        raise DependencyParseError(
-            program_name,
-            f"failed to read graphics companion for dependency {dependency!r}: {exc}",
-            dependency=dependency,
-        ) from exc
-
-
-__all__ = ["ProjectLoader", "read_dependency_names"]
+# The worker machinery lives in ``executor`` and the plan types in ``plan``.
+# These aliases keep the historical import paths working for a consumer that
+# reaches into the loader module, and they are the names this module's own tests
+# have always used.

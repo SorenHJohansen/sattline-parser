@@ -6,6 +6,7 @@ import pytest
 from lark import Token, Tree
 from lark.tree import Meta
 
+from sattline_parser import parse_source_text
 from sattline_parser.grammar import constants as parser_const
 from sattline_parser.models.ast_model import (
     BasePicture,
@@ -154,14 +155,18 @@ def test_modules_mixin_coordinate_helpers_preserve_pairs_tails_and_clipping_tree
         coords=((1.0, 2.0), (3.0, 4.0)),
         tails=[VarTail("in", "PanelResize"), VarTail("in", "PanelScale")],
     )
-    assert invoke == InterimCoords(coords=(1.0, 2.0, 3.0, 4.0, 5.0), tails=[VarTail("in", "PanelResize")])
+    assert invoke == InterimCoords(
+        coords=(1.0, 2.0, 3.0, 4.0, 5.0),
+        tails=[VarTail("in", "PanelResize")],
+        coord_tails=((), (), (), (), (VarTail("in", "PanelResize"),)),
+    )
     assert mixin.origo_size_pair([InterimCoords(coords=(1.0, 2.0)), InterimCoords(coords=(3.0, 4.0))]) == (
         InterimCoords(coords=((1.0, 2.0), (3.0, 4.0)), tails=None)
     )
     assert mixin.coord_invar_tail(Meta(), [Token("COMMA", ","), "WidthSource"]) == CoordTail("WidthSource")
     assert clipping == CoordinateClipping((ClipValue(1.0),))
 
-    assert mixin.coordinates([1, 2, 3]).coord_tails is None
+    assert mixin.coordinates([1, 2, 3]).coord_tails == ((), (), ())
 
     with pytest.raises(ValueError, match="coordinates missing REAL values"):
         mixin.coordinates([1])
@@ -338,3 +343,29 @@ def test_modules_mixin_variable_group_and_mapping_helpers_preserve_modifiers_and
         ],
     )
     assert suffix_state_name == VarRef("Pump.State", state="old", span=SourceSpan(start=70, end=80, line=11, column=3))
+
+
+def test_a_falsy_parameter_mapping_literal_is_kept() -> None:
+    source = """\"Syntax version\"
+\"Original file date: ---\"
+\"Program date: ---, name: T\"
+BasePicture Invocation ( 0.0,0.0,0.0,1.0,1.0 ) : MODULEDEFINITION DateCode_ 1
+TYPEDEFINITIONS
+   MT = MODULEDEFINITION DateCode_ 1
+   MODULEPARAMETERS
+      P: integer;
+   ModuleDef
+   ClippingBounds = ( -1.0 , -1.0 ) ( 1.0 , 1.0 )
+   ENDDEF (*MT*);
+SUBMODULES
+   A Invocation ( 0.0,0.0,0.0,1.0,1.0 ) : MT ( P => False, P => 0, P => \"\");
+ModuleDef
+ClippingBounds = ( -1.0 , -1.0 ) ( 1.0 , 1.0 )
+ENDDEF (*BasePicture*);
+"""
+
+    picture = parse_source_text(source, log_failures=False)
+
+    instance = picture.submodules[0]
+    assert isinstance(instance, ModuleTypeInstance)
+    assert [mapping.source_literal for mapping in instance.parametermappings] == [False, 0, ""]

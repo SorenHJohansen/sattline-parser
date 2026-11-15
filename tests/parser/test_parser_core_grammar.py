@@ -3,8 +3,8 @@ from typing import Any, cast
 
 import pytest
 from lark import Token
-from lark.exceptions import UnexpectedCharacters
 
+from sattline_parser import parse_and_validate
 from sattline_parser import parse_source_text as parser_core_parse_source_text
 from sattline_parser import source_io as parser_api
 from sattline_parser.api import create_parser
@@ -14,6 +14,7 @@ from sattline_parser.models.ast_model import BasePicture, IntLiteral, ModuleType
 from sattline_parser.models.clauses import Alignment, AssignClause
 from sattline_parser.models.expressions import Assignment, BinOp, TernaryOp, VarRef
 from sattline_parser.models.tails import VarTail
+from sattline_parser.validation import DiagnosticCode
 
 from ._parser_core_test_support import _parse_to_basepicture, _repo_path
 
@@ -62,7 +63,7 @@ ENDDEF (*BasePicture*);
     assert else_expr.right.name.casefold() == "d"
 
 
-def test_quoted_identifier_length_is_limited_to_20_chars():
+def test_quoted_identifier_longer_than_20_chars_is_a_validation_finding():
     long_name = "'QuotedIdentifierLength21'"  # 25 chars without quotes
     code = f"""
 "SyntaxVersion"
@@ -78,9 +79,35 @@ ModuleCode
         {long_name} = 1;
 ENDDEF (*BasePicture*);
 """
-    parser = create_parser()
-    with pytest.raises(UnexpectedCharacters):
-        parser.parse(code)
+    picture, diagnostics = parse_and_validate(code)
+
+    assert any(variable.name == long_name for variable in picture.localvariables)
+    codes = [diagnostic.code for diagnostic in diagnostics]
+    assert codes.count(DiagnosticCode.IDENTIFIER_TOO_LONG) == 1
+
+
+def test_unquoted_identifier_longer_than_20_chars_is_a_validation_finding():
+    long_name = "A" * 21
+    code = f"""
+"SyntaxVersion"
+"OriginalFileDate"
+"ProgramDate"
+BasePicture Invocation (0.0,0.0,0.0,1.0,1.0) : MODULEDEFINITION DateCode_ 1
+LOCALVARIABLES
+    {long_name}: integer := 0;
+ModuleDef
+ClippingBounds = ( -1.0 , -1.0 ) ( 1.0 , 1.0 )
+ModuleCode
+    EQUATIONBLOCK Main COORD 0.0, 0.0 OBJSIZE 1.0, 1.0 :
+        {long_name} = 1;
+ENDDEF (*BasePicture*);
+"""
+    _, diagnostics = parse_and_validate(code)
+
+    finding = next(diagnostic for diagnostic in diagnostics if diagnostic.code is DiagnosticCode.IDENTIFIER_TOO_LONG)
+    assert finding.message == f"Variable name {long_name!r} exceeds 20 characters"
+    assert finding.span is not None
+    assert finding.span.line == 7
 
 
 def test_parser_core_preserves_invocation_argument_flags():

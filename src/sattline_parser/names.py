@@ -13,8 +13,9 @@ the reference name table. The table is not Unicode case folding:
   ``Straße`` never equals ``STRASSE``.
 
 Quoted identifiers compare *including* their quote delimiters, but case folding
-still applies inside them. Physical filesystem identity is a different question
-and keeps using :meth:`str.casefold` in the project layer.
+still applies inside them. Physical filesystem identity is a different question:
+the project layer compares resolved paths with :func:`os.path.normcase`, which
+is the platform's own rule rather than this table.
 """
 
 from __future__ import annotations

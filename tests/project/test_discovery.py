@@ -127,6 +127,19 @@ def test_ordered_lookup_bases_empty() -> None:
     assert ordered_lookup_bases([]) == ()
 
 
+def test_ordered_lookup_bases_keeps_case_distinct_roots_on_a_case_sensitive_filesystem(tmp_path: Path) -> None:
+    upper = tmp_path / "Library"
+    lower = tmp_path / "library"
+    upper.mkdir()
+    lower.mkdir()
+    if upper.resolve() == lower.resolve():
+        pytest.skip("filesystem is case-insensitive")
+
+    ordered = ordered_lookup_bases([upper, lower])
+
+    assert ordered == (upper.resolve(), lower.resolve())
+
+
 def test_parse_search_path_accepts_backslashes_and_whitespace(tmp_path: Path) -> None:
     base = tmp_path / "sattline"
 

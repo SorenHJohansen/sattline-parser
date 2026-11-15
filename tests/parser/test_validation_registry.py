@@ -86,9 +86,10 @@ def test_active_rules_are_the_only_enabled_ones() -> None:
 
 
 def test_active_rules_have_an_emit_site() -> None:
+    root = Path(__file__).resolve().parents[2] / "src" / "sattline_parser"
     sources = [
-        *Path(__file__).resolve().parents[2].glob("src/sattline_parser/validation/*.py"),
-        Path(__file__).resolve().parents[2] / "src" / "sattline_parser" / "project" / "loader.py",
+        *root.glob("validation/*.py"),
+        *root.glob("project/*.py"),
     ]
     text = "\n".join(
         source.read_text(encoding="utf-8") for source in sources if source.name not in {"rules.py", "diagnostics.py"}

@@ -85,10 +85,28 @@ def _tails_of(node: object) -> list[Tail]:
     return []
 
 
-def _box_coords(items: list[TransformerItem]) -> CoordBox | None:
+def _coordinate_groups(items: list[TransformerItem]) -> tuple[tuple[Tail, ...], ...]:
+    """Every coordinate group among *items*, in written order.
+
+    Interactors take one or more ``origo_size_pair`` runs, so their groups are
+    the concatenation of each run's groups. Returns an empty tuple when any run
+    did not record its split, because a partial grouping would be a guess.
+    """
+    groups: list[tuple[Tail, ...]] = []
+    for item in items:
+        if not isinstance(item, InterimCoords):
+            continue
+        if item.coord_tails is None:
+            return ()
+        groups.extend(item.coord_tails)
+    return tuple(groups)
+
+
+def _box_item(items: list[TransformerItem]) -> InterimCoords | None:
+    """The coordinate box payload among *items*, with its per-value tails."""
     for item in items:
         if isinstance(item, InterimCoords) and _is_coord_box(item.coords):
-            return item.coords
+            return item
     return None
 
 
@@ -307,9 +325,11 @@ class _GraphicsInteractMixin:
 
     def _box_graph_object(self, object_type: str, items: list[TransformerItem]) -> GraphObject:
         go = GraphObject(object_type)
-        box = _box_coords(items)
+        box = _box_item(items)
         if box is not None:
-            go.properties[const.KEY_COORDS] = box
+            go.properties[const.KEY_COORDS] = cast("CoordPair | CoordBox", box.coords)
+            if box.coord_tails:
+                go.properties[const.KEY_COORD_TAILS] = box.coord_tails
         tails = _tails_of(items)
         if tails:
             go.properties[const.KEY_TAILS] = tails
@@ -340,9 +360,11 @@ class _GraphicsInteractMixin:
     def text_object(self, items: list[TransformerItem]) -> GraphObject:
         """Grammar text_object -> GraphObject (TEXTOBJECT with its typed clauses)."""
         go = GraphObject(const.GRAMMAR_VALUE_TEXTOBJECT)
-        box = _box_coords(items)
+        box = _box_item(items)
         if box is not None:
-            go.properties[const.KEY_COORDS] = box
+            go.properties[const.KEY_COORDS] = cast("CoordPair | CoordBox", box.coords)
+            if box.coord_tails:
+                go.properties[const.KEY_COORD_TAILS] = box.coord_tails
         tails = _tails_of(items)
         if tails:
             go.properties[const.KEY_TAILS] = tails
@@ -391,8 +413,15 @@ class _GraphicsInteractMixin:
         return go
 
     def segment_object(self, items: list[TransformerItem]) -> GraphObject:
-        """Grammar segment_object -> GraphObject (SEGMENTOBJECT)."""
+        """Grammar segment_object -> GraphObject (SEGMENTOBJECT).
+
+        A segment is one coordinate pair followed by a second one, so its
+        per-value tail groups are the concatenation of both pairs'. The flat
+        ``coords``/``segment_point`` keys keep the same split as before.
+        """
         go = GraphObject(const.GRAMMAR_VALUE_SEGMENTOBJECT)
+        groups: list[tuple[Tail, ...]] = []
+        complete = True
         for item in items:
             if not isinstance(item, InterimCoords):
                 continue
@@ -400,6 +429,12 @@ class _GraphicsInteractMixin:
                 go.properties[const.KEY_COORDS] = item.coords
             elif _is_coord_pair(item.coords) and const.KEY_SEGMENT_POINT not in go.properties:
                 go.properties[const.KEY_SEGMENT_POINT] = item.coords
+            if item.coord_tails is None:
+                complete = False
+            else:
+                groups.extend(item.coord_tails)
+        if complete and groups:
+            go.properties[const.KEY_COORD_TAILS] = tuple(groups)
         tails = _tails_of(items)
         if tails:
             go.properties[const.KEY_TAILS] = tails
@@ -517,6 +552,9 @@ class _GraphicsInteractMixin:
                 colours.append(item)
 
         properties: InteractProperties = {const.KEY_COORDS: coords or None}
+        groups = _coordinate_groups(items)
+        if groups:
+            properties[const.KEY_COORD_TAILS] = groups
         if procedure is not None:
             properties[const.KEY_PROCEDURE] = procedure
         if layers:

@@ -93,6 +93,7 @@ class ModuleHeaderMixin:
         name: str | None = None
         coords5: tuple[float, float, float, float, float] | None = None
         coord_tails: list[Tail] = []
+        coordinate_tails: tuple[tuple[Tail, ...], ...] = ()
         arguments = ModuleArguments()
         description_comments: list[CodeComment] = []
 
@@ -107,6 +108,7 @@ class ModuleHeaderMixin:
                 if coords is not None:
                     coords5 = cast(tuple[float, float, float, float, float], coords)
                     coord_tails.extend(it.tails or ())
+                    coordinate_tails = it.coord_tails or ()
             elif isinstance(it, ModuleArguments):
                 arguments = it
 
@@ -120,6 +122,7 @@ class ModuleHeaderMixin:
             arguments=arguments,
             invoke_coord_tails=coord_tails,
             description_comments=description_comments,
+            coordinate_tails=coordinate_tails,
         )
 
 

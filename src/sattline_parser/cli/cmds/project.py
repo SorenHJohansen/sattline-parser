@@ -8,6 +8,7 @@ import sys
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 
+from sattline_parser.__version__ import __version__
 from sattline_parser.project import (
     DistributionTarget,
     LoadDiagnostic,
@@ -27,10 +28,13 @@ from .._json import SCHEMA_PREFIX, dumps
 from ._common import (
     add_fail_on,
     add_output_flags,
+    add_sarif_flag,
     bounded_positive_int,
     emit_findings,
+    emit_sarif,
     fails_on,
     positive_int,
+    require_plain_output,
 )
 
 __all__ = ["register", "run"]
@@ -78,6 +82,7 @@ def register(subparsers: argparse._SubParsersAction[argparse.ArgumentParser]) ->
         help="project root(s), in lookup order; earlier roots win",
     )
     add_output_flags(parser)
+    add_sarif_flag(parser)
     parser.add_argument(
         "--mode",
         choices=("draft", "official"),
@@ -136,6 +141,7 @@ def register(subparsers: argparse._SubParsersAction[argparse.ArgumentParser]) ->
 
 
 def run(args: argparse.Namespace) -> int:
+    require_plain_output(args)
     try:
         project = _load(args)
     except CliError:
@@ -144,10 +150,9 @@ def run(args: argparse.Namespace) -> int:
         # A tree that cannot be loaded is a finding about the tree. Anything
         # else is a bug in this tool and must reach main()'s internal-error path.
         finding = Finding(severity="error", message=f"cannot load project: {exc}", rule=PROJECT_LOAD_RULE)
-        emit_findings(
+        _report_findings(
             [finding],
             args=args,
-            schema="project",
             extra={"programs": [], "edges": [], "diagnostics": [], "validation": []},
         )
         return int(ExitCode.FINDINGS)
@@ -160,20 +165,54 @@ def run(args: argparse.Namespace) -> int:
             message=f"program {args.of!r} is not in the loaded graph",
             rule=PROJECT_QUERY_RULE,
         )
-        emit_findings(
+        _report_findings(
             [finding],
             args=args,
-            schema="project",
             extra={"programs": [], "edges": [], "diagnostics": [], "validation": []},
         )
         return int(ExitCode.FINDINGS)
     edges = _edges(project, args)
-    if args.graph:
+    if args.sarif:
+        emit_sarif(_sarif_findings(programs), version=__version__)
+    elif args.graph:
         _emit_graph(edges, validation_rows, args=args)
     else:
         _emit_programs(programs, edges, load_diagnostics, validation_rows, args=args)
     failing = _validation_fails(validation_rows, args.fail_on)
     return int(ExitCode.FINDINGS if failing else ExitCode.OK)
+
+
+def _report_findings(findings: Sequence[Finding], *, args: argparse.Namespace, extra: Mapping[str, object]) -> None:
+    """Emit one-off findings as SARIF, JSON, JSON lines, or text."""
+    if args.sarif:
+        emit_sarif(findings, version=__version__)
+        return
+    emit_findings(findings, args=args, schema="project", extra=extra)
+
+
+def _sarif_findings(programs: Mapping[str, SattLineProgram]) -> list[Finding]:
+    """Validation findings for a SARIF log, with each program's source path.
+
+    The JSON rows carry the program name rather than the path, because a graph
+    view is about units. SARIF annotates files, so the source path is the
+    location here.
+    """
+    findings: list[Finding] = []
+    for program in programs.values():
+        location = str(program.source_path) if program.source_path is not None else None
+        for diagnostic in program.diagnostics:
+            span = diagnostic.span
+            findings.append(
+                Finding(
+                    severity="error",
+                    message=diagnostic.message,
+                    rule=diagnostic.code.value,
+                    file=location,
+                    line=None if span is None else span.line,
+                    column=None if span is None else span.column,
+                )
+            )
+    return findings
 
 
 def _validation_rows(programs: Mapping[str, SattLineProgram]) -> list[dict[str, object]]:

@@ -138,6 +138,10 @@ class ClippingClause:
     bounds: CoordBox = field(compare=False, metadata={"layout": True})
     tails: tuple[Tail, ...] = ()
     span: SourceSpan | None = field(default=None, compare=False, metadata={"layout": True})
+    #: The same tails as ``tails``, one group per corner in ``bounds`` order, so
+    #: each one can be placed where it was written. Empty for a clause assembled
+    #: without position information.
+    corner_tails: tuple[tuple[Tail, ...], ...] = ()
 
 
 @dataclass(frozen=True)

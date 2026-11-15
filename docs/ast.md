@@ -44,6 +44,7 @@ classDiagram
         groupconn: VarRef | None
         groupconn_global: bool
         description_comments: list[CodeComment]
+        coordinate_tails: tuple
     }
 
     class SingleModule {
@@ -117,7 +118,10 @@ such as an empty picture or a dependency stub.
 arguments, and `Name = value` assignments. The singular names `layer_info`,
 `enable`, `enable_tail`, `module_in_view`, `zoom_limits`, `zoomable`, and
 `invocation_arguments` are read-only views over that field. `invoke_coord_tails`
-holds only the tails attached to the five invocation coordinates.
+is the flat list of tails attached to the five invocation coordinates, and
+`coordinate_tails` is the same tails grouped by coordinate (index-aligned with
+`invoke_coord`), so a reader can place each one. The two views hold the same
+objects, never copies.
 
 ## Declarations
 
@@ -270,8 +274,9 @@ written value is preserved and absence stays `None`.
 
 `ModuleDef.clipping` holds the whole `ClippingBounds` clause, so the resolved
 corners and the tails attached to them live in one payload. `clipping_bounds`
-and `clipping_tails` are read-only views over it. The block has no separate
-property map.
+and `clipping_tails` are read-only views over it. `ClippingClause.tails` is the
+flat list of corner tails and `corner_tails` groups the same objects by corner,
+in `bounds` order. The block has no separate property map.
 
 ## Typed property maps
 
@@ -300,6 +305,7 @@ than by drawing effect:
 | Key | Node type | Source |
 | --- | --- | --- |
 | `coords` | `tuple` pair or box | a box object's `(x, y) (w, h)` pairs |
+| `coord_tails` | `tuple` of tail groups | the tails written after each coordinate value |
 | `segment_point` | `tuple` pair | a `SegmentObject`'s third pair |
 | `polygon_type` | `list[str]` | `Polyline`, `Spline`, `Connection` |
 | `points` | `list[PolygonPoint]` | every polygon coordinate pair |
@@ -313,13 +319,39 @@ than by drawing effect:
 | `layer` | `int` | `Layer_ = <int>` |
 
 A `PolygonPoint` holds `x`, `y`, `x_tails`, and `y_tails`, so a tail written
-after one value stays attached to that value. A polygon whose coordinate carries
-a nested `ClippingBounds` annotation folds that annotation's tails into the same
-coordinate. The flat `tails` view lists the same tail objects, never copies.
+after one value stays attached to that value. Every other coordinate run uses
+`coord_tails`, one group per REAL, in the same order as the values; an
+`InteractObject` has the same key for its coordinate run. A polygon whose
+coordinate carries a nested `ClippingBounds` annotation folds that annotation's
+tails into the same coordinate. The flat `tails` view lists the same tail
+objects, never copies.
 
 A text-object clause keeps its value and its tail in one payload, so a literal
 and its `InVar_` binding are read together. Compare a clause by `key` and
 `value`, and read `tail` only when the binding matters.
+
+## Interactor property catalogue
+
+An interactor body accepts any `NAME` as a bare flag or as `NAME = value`, so an
+unknown property still parses. `models/interactor_properties.py` names the
+spellings the scanner enum defines and says what each one is for, without
+changing how the parser stores it.
+
+| Name | Meaning |
+| --- | --- |
+| `interactor_property_catalogue` | `Mapping[str, InteractorPropertySpec]` keyed by folded name |
+| `find_interactor_property` | `(name)` returns the spec, or `None` for an unknown spelling |
+| `typed_interactor_properties` | `(obj: InteractObject)` returns `TypedInteractorProperty` values in written order |
+| `TypedInteractorProperty` | `(clause, spec)` with `name` and `value` views |
+| `InteractorPropertySpec` | `(name, kind, datatype, summary)` |
+| `InteractorPropertyKind` | `SELECT`, `RANGE`, `COUNTER`, `BOOLEAN`, `NUMERIC`, `TEXT`, `EVENT` |
+
+A spec's `datatype` is the written value's scalar type when the spelling fixes
+it, and `None` when any value is accepted. The catalogue is vocabulary, not a
+runtime guarantee: a property is still stored as the `FlagClause` or
+`AssignClause` the source wrote, and an unknown spelling appears with
+`spec is None` instead of being dropped. Both container shapes are read: an
+ordered `body`, and the flat `flags` and `assigns` lists a `ComButProc_` uses.
 
 Every payload that reaches the parsed tree (the interact body clauses,
 coordinate and header tails, `ClippingClause`, `ModuleArguments`, graphics and
