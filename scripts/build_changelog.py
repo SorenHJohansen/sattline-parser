@@ -9,7 +9,7 @@ Usage::
 
     python scripts/build_changelog.py --check
     python scripts/build_changelog.py
-    python scripts/build_changelog.py --release 2026.12.0 --date 2026-12-01
+    python scripts/build_changelog.py --release 2026.11.6 --date 2026-11-15
 """
 
 from __future__ import annotations
@@ -38,7 +38,7 @@ SECTION_TITLES: dict[str, str] = {
 }
 
 _FRAGMENT_NAME = re.compile(r"^(?P<slug>[a-z0-9]+(?:-[a-z0-9]+)*)\.(?P<kind>[a-z]+)$")
-_VERSION = re.compile(r"^\d{4}\.\d{1,2}\.\d{1,2}$")
+_VERSION = re.compile(r"^(?P<year>\d{4})\.(?P<month>\d{1,2})\.(?P<slot>\d{1,2})$")
 _NEXT_SECTION = "\n## "
 
 
@@ -144,9 +144,24 @@ def build(fragment_dir: Path, changelog_path: Path) -> None:
 
 
 def release(fragment_dir: Path, changelog_path: Path, version: str, date: str) -> None:
-    """Move every fragment into a dated version section and delete the fragments."""
-    if _VERSION.fullmatch(version) is None:
-        raise ChangelogError(f"invalid version {version!r}; expected YYYY.M.D")
+    """Move every fragment into a dated version section and delete the fragments.
+
+    The version's year and month must be the release date's. Calendar versioning
+    names the release month, so a November release is ``2026.11.N`` even when it
+    carries a breaking change.
+    """
+    match = _VERSION.fullmatch(version)
+    if match is None:
+        raise ChangelogError(f"invalid version {version!r}; expected YYYY.M.N")
+    try:
+        release_date = dt.date.fromisoformat(date)
+    except ValueError as exc:
+        raise ChangelogError(f"invalid release date {date!r}; expected YYYY-MM-DD") from exc
+    if int(match["year"]) != release_date.year or int(match["month"]) != release_date.month:
+        raise ChangelogError(
+            f"version {version} does not match release date {date}: "
+            "the year and month must name the month the release is published"
+        )
     fragments = load_fragments(fragment_dir)
     if not fragments:
         raise ChangelogError("no fragments to release")

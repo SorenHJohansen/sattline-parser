@@ -164,6 +164,10 @@ other agents.
 ## Versioning and release
 
 - Releases use calendar versioning: `YYYY.M.N`.
+- The year and month name the month the release is published. A November
+  release is `2026.11.N` even when it carries a breaking change; `N` increments
+  within the month. `scripts/build_changelog.py --release` refuses a version
+  whose year or month differs from the release date.
 - The version orders releases; it is not a semantic-version compatibility
   contract.
 - The public surface is the set of documented `__all__` lists, the `sattline`
