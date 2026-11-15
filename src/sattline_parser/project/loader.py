@@ -292,7 +292,10 @@ def _parse_code_file(task: tuple[str, str, str | None, bool]) -> _ParseOutcome:
         cached = _worker_cache(cache_text).load(code_path, mode)
         if cached is not None:
             return _ParseOutcome(ast=cached, cached=True)
-    raw_bytes = code_path.read_bytes()
+    try:
+        raw_bytes = code_path.read_bytes()
+    except OSError as exc:
+        return _ParseOutcome(failure=str(exc), failure_record=_parse_failure_record(exc))
     snapshot = source_snapshot(code_path, raw_bytes)
     try:
         picture = parse_source_bytes(raw_bytes, source_path=code_path, log_failures=log_failures)
@@ -1053,7 +1056,16 @@ class ProjectLoader:
                 return cached
         # Read the source once and hash those bytes: the entry written below then
         # describes exactly the revision that was parsed, never a later stat.
-        raw_bytes = code_path.read_bytes()
+        try:
+            raw_bytes = code_path.read_bytes()
+        except OSError as exc:
+            if dependency is None:
+                raise ArtifactLoadError(program_name, f"unable to read {code_path.name}") from exc
+            raise DependencyParseError(
+                program_name,
+                f"unable to read dependency {dependency!r}",
+                dependency=dependency,
+            ) from exc
         snapshot = source_snapshot(code_path, raw_bytes)
         self._dbg(f"Parsing: {code_path}")
         try:

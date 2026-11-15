@@ -325,6 +325,9 @@ Every payload that reaches the parsed tree (the interact body clauses,
 coordinate and header tails, `ClippingClause`, `ModuleArguments`, graphics and
 interact objects, and module definitions) carries a `span`
 (`SourceSpan | None`) recording the source range of the rule that produced it.
+Two nested payloads are exceptions: a `PolygonPoint` and a text object's
+`ConnectionNode` are built without a meta span, so their `.span` is `None` for
+parsed sources.
 A span is layout metadata: it does not participate in equality, so two
 structurally identical payloads from different files compare equal. Read
 `.span` when you need the provenance. A bound tail exposes the written name

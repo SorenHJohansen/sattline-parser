@@ -3,7 +3,7 @@
   wins, matching the path list the real tool searches. Requester-relative
   precedence, cluster sorting by branch, and the terminal-root fallback are
   removed, and `ProjectLookup` computes one order instead of one per requester.
-  `parse_search_path` reads the `GC\UnitLib,HA\UnitLib` notation, and
+  `parse_search_path` reads the `LibA\UnitLib,LibB\UnitLib` notation, and
   `sattline project` gains `--search-path` and `--search-path-base`; positional
   roots and `--search-path` cannot be combined. Because one path order resolves
   every name, one folded name can no longer reach two bodies:

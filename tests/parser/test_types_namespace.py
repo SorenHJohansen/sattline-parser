@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import sattline_parser.ast as sl_ast
 import sattline_parser.types as sl_types
 from sattline_parser.validation import typing
 
@@ -57,6 +58,11 @@ def test_export_set_matches_the_documented_surface() -> None:
 def test_every_export_resolves_to_the_implementation() -> None:
     for name in sl_types.__all__:
         assert getattr(sl_types, name) is getattr(typing, name), name
+
+
+def test_the_old_scalar_enum_name_is_not_an_alias() -> None:
+    assert not hasattr(sl_types, "Simple_DataType")
+    assert not hasattr(sl_ast, "Simple_DataType")
 
 
 def test_all_names_are_unique_and_sorted() -> None:

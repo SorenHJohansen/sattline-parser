@@ -94,12 +94,13 @@ sattline parse M.s --json --compact
 
 The default output is a structural summary: program name, encoding, and counts
 of module types, submodules, local variables, sequences, equation blocks (the
-`equationblocks` key), graph objects, and interact objects. The counts cover the whole module tree, so a
-nested submodule's declarations and code blocks are included, and the summary
-agrees with a `walk` over the picture. `diff` compares the same counts. `--tree` emits the AST as JSON, bounded by
-`--depth` (default 5). At the limit a composite value is replaced by a
-placeholder such as `<ModuleDef>` or `<12 items>`, so nothing silently
-disappears. `--compact` prints JSON on one line instead of indented.
+`equationblocks` key), graph objects, and interact objects. The counts cover the
+whole module tree, so a nested submodule's declarations and code blocks are
+included, and the summary agrees with a `walk` over the picture. `diff` compares
+the same counts. `--tree` emits the AST as JSON, bounded by `--depth` (default
+5). At the limit a composite value is replaced by a placeholder such as
+`<ModuleDef>` or `<12 items>`, so nothing silently disappears. `--compact`
+prints JSON on one line instead of indented.
 
 ### `query`
 
@@ -349,7 +350,7 @@ A validation row has no `severity`, because every row it carries is an error.
 
 | Flag | Applies to | Meaning |
 | --- | --- | --- |
-| `--debug` | top level | Print a traceback for internal errors. It comes before the command |
+| `--debug` | top level | Print loader progress, the parser failure log, and a traceback for internal errors. It comes before the command |
 | `--stdin-name PATH` | source commands | Required when reading `-`, so findings are attributable; a companion suffix here is refused like a companion path |
 | `--paths given\|absolute` | source commands | How to render paths, in findings and in the document-level `file` key. Default `given` |
 | `--rule RULE` | `check` | Filter by rule id or enum name, repeatable; only this command's own synthetic ids (`PARSE_ERROR`, `DECODE_ERROR`) are accepted |

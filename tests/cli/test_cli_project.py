@@ -160,8 +160,8 @@ def test_default_cache_dir_honours_an_absolute_xdg_cache_home(tmp_path, monkeypa
 
 
 def test_search_path_notation_uses_the_written_order(tmp_path, capsys) -> None:
-    gc = tmp_path / "GC" / "UnitLib"
-    ha = tmp_path / "HA" / "UnitLib"
+    gc = tmp_path / "LibA" / "UnitLib"
+    ha = tmp_path / "LibB" / "UnitLib"
     gc.mkdir(parents=True)
     ha.mkdir(parents=True)
     _program(gc, "Program1")
@@ -172,7 +172,7 @@ def test_search_path_notation_uses_the_written_order(tmp_path, capsys) -> None:
             [
                 "project",
                 "--search-path",
-                r"GC\UnitLib,HA\UnitLib",
+                r"LibA\UnitLib,LibB\UnitLib",
                 "--search-path-base",
                 str(tmp_path),
                 "--targets",
@@ -188,8 +188,8 @@ def test_search_path_notation_uses_the_written_order(tmp_path, capsys) -> None:
 
 
 def test_positional_roots_use_the_written_order(tmp_path, capsys) -> None:
-    gc = tmp_path / "GC" / "UnitLib"
-    ha = tmp_path / "HA" / "UnitLib"
+    gc = tmp_path / "LibA" / "UnitLib"
+    ha = tmp_path / "LibB" / "UnitLib"
     gc.mkdir(parents=True)
     ha.mkdir(parents=True)
     _program(gc, "Program1")
@@ -330,6 +330,16 @@ def test_targets_flag_limits_the_load(tmp_path, capsys) -> None:
     out = capsys.readouterr().out
     assert "programs: 2" in out
     assert "Child" in out
+
+
+@pytest.mark.skipif(os.name == "nt" or os.geteuid() == 0, reason="needs POSIX permissions as a non-root user")
+def test_an_unreadable_body_is_a_finding_not_an_internal_error(tmp_path, capsys) -> None:
+    _program(tmp_path, "Broken")
+    (tmp_path / "Broken.s").chmod(0)
+
+    assert main(["project", str(tmp_path), "--json"]) == ExitCode.FINDINGS
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["findings"][0]["rule"] == "PROJECT_LOAD_ERROR"
 
 
 def test_bad_target_is_a_finding(tmp_path, capsys) -> None:

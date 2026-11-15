@@ -76,7 +76,6 @@ def check_parameter_mappings(
                         span=mapping.span,
                     )
                 )
-                continue
 
         base_name, field_path = split_dotted_name(target_name)
         target_variable = expected_parameters.get(fold_identifier(base_name))

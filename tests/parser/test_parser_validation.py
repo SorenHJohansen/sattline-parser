@@ -51,6 +51,7 @@ from sattline_parser.models.clauses import (
     EnableClause,
     ModuleArguments,
     ModuleInViewClause,
+    PolygonPoint,
     TailedClause,
 )
 from sattline_parser.models.expressions import (
@@ -1088,6 +1089,23 @@ def test_param_transfer_undefined_source_is_reported():
     assert "NoSuchVariable" in diagnostics[0].message
 
 
+def test_an_undefined_source_does_not_hide_an_unknown_target():
+    moduletype = ModuleTypeDef(name="T", moduleparameters=[_var("EnableFlag", "boolean")])
+    bp = _base_picture()
+    bp.moduletype_defs = [moduletype]
+    bp.submodules = [
+        ModuleTypeInstance(
+            header=_module_header("Inst"),
+            moduletype_name="T",
+            parametermappings=[_transfer("MissingFlag", "NoSuchVariable")],
+        )
+    ]
+
+    codes = [d.code.value for d in validate_basepicture(bp)]
+
+    assert codes == ["SL-V019", "SL-V048"]
+
+
 def test_single_module_undefined_mapping_source_is_reported():
     child = _single_module("Child", [_var("EnableFlag", "boolean")], [_transfer("EnableFlag", "NoSuchVariable")])
     bp = _base_picture()
@@ -1921,6 +1939,19 @@ def test_bound_tail_names_are_not_diagnosed_in_annotations():
     )
 
     assert [d.code.value for d in validate_basepicture(bp)] == []
+
+
+def test_a_polygon_point_expression_tail_is_walked():
+    """A point tail is an ordinary expression, so an undefined name is reported."""
+    point = PolygonPoint(1.0, 2.0, x_tails=(NotOp(VarRef("MissingPointTail")),))
+    bp = _base_picture()
+    bp.moduledef = ModuleDef(
+        graph_objects=[
+            GraphObject("PolygonObject", properties={"points": [point]}),
+        ]
+    )
+
+    assert "SL-V019" in [diagnostic.code.value for diagnostic in validate_basepicture(bp)]
 
 
 def test_clipping_tail_is_checked_once():

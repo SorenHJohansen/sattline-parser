@@ -164,9 +164,10 @@ policy are documented in the README.
   display text, not source keywords.
 
 - **Keyword separators are explicit.** An underscore-suffixed keyword such as
-  `DateCode_` or `PRIVATE_` must be separated from the identifier that follows
-  it. `DateCode_1` remains a single identifier, and the grammar doc states the
-  rule.
+  `PRIVATE_` must be separated from the identifier that follows it.
+  `DateCode_` is the exception: a digit may follow it in the datecode slot,
+  while `DateCode_1` remains a single identifier outside that slot. The
+  grammar doc states the rule.
 
 - **Retired rules and identifier resolution.** `DATATYPE_TOO_FEW_FIELDS` and
   `SEQUENCE_REQUIRES_INIT_STEP` are retired because the corpus shows the
@@ -413,7 +414,7 @@ policy are documented in the README.
   keyword a digit may follow directly, because the rule after it starts with a
   number. A letter or underscore still blocks the keyword, so
   `PRIVATE_MODULEDEFINITION` stays one name and `Enable_1` is still a variable.
-  A name spelled `DateCode_<digit>` can no longer be declared.
+  Outside the datecode slot, `DateCode_1` is a single identifier.
 
 - **Mapping sources and record fields are checked.** A parameter mapping whose
   source is not a declared variable now reports `UNDEFINED_VARIABLE` at the
@@ -449,6 +450,7 @@ policy are documented in the README.
   argument checked, and an integer pins both bounds to that count. The generator
   rejects an untyped entry that omits the field and an `arity` on a typed
   entry.
+
 ## [2026.11.4] - 2026-11-05
 
 ### Added

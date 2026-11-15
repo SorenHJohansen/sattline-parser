@@ -130,32 +130,39 @@ def test_ordered_lookup_bases_empty() -> None:
 def test_parse_search_path_accepts_backslashes_and_whitespace(tmp_path: Path) -> None:
     base = tmp_path / "sattline"
 
-    roots = parse_search_path(r" GC\UnitLib , HA/UnitLib ,, ", base=base)
+    roots = parse_search_path(r" LibA\UnitLib , LibB/UnitLib ,, ", base=base)
 
-    assert roots == ((base / "GC/UnitLib").resolve(), (base / "HA/UnitLib").resolve())
+    assert roots == ((base / "LibA/UnitLib").resolve(), (base / "LibB/UnitLib").resolve())
 
 
 def test_parse_search_path_resolves_relative_entries_under_a_base(tmp_path: Path) -> None:
     base = tmp_path / "sattline"
     absolute = tmp_path / "elsewhere" / "Lib"
 
-    roots = parse_search_path(f"GC/UnitLib,{absolute}", base=base)
+    roots = parse_search_path(f"LibA/UnitLib,{absolute}", base=base)
 
-    assert roots == ((base / "GC/UnitLib").resolve(), absolute.resolve())
+    assert roots == ((base / "LibA/UnitLib").resolve(), absolute.resolve())
+
+
+@pytest.mark.skipif(os.name == "nt", reason="the POSIX rule is for non-Windows hosts")
+@pytest.mark.parametrize("entry", [r"C:\SattLine\Lib", r"\\server\share\Lib"])
+def test_parse_search_path_rejects_a_windows_absolute_entry_on_posix(entry: str, tmp_path: Path) -> None:
+    with pytest.raises(ValueError, match="Windows path"):
+        parse_search_path(entry, base=tmp_path)
 
 
 def test_parse_search_path_drops_duplicates_and_rejects_an_empty_path(tmp_path: Path) -> None:
     base = tmp_path / "sattline"
 
-    assert parse_search_path(r"GC\UnitLib,GC/UnitLib", base=base) == ((base / "GC/UnitLib").resolve(),)
+    assert parse_search_path(r"LibA\UnitLib,LibA/UnitLib", base=base) == ((base / "LibA/UnitLib").resolve(),)
     with pytest.raises(ValueError, match="no entries"):
         parse_search_path(" , ,, ", base=base)
 
 
 def test_lookup_path_order_wins_over_a_later_root(tmp_path: Path) -> None:
-    """Program1 in GC and in HA resolves to GC; the HA body never wins."""
-    gc = tmp_path / "GC" / "UnitLib"
-    ha = tmp_path / "HA" / "UnitLib"
+    """Program1 in LibA and in LibB resolves to LibA; the LibB body never wins."""
+    gc = tmp_path / "LibA" / "UnitLib"
+    ha = tmp_path / "LibB" / "UnitLib"
     write_file(gc, "Program1.s")
     write_file(ha, "Program1.s")
 
@@ -165,8 +172,8 @@ def test_lookup_path_order_wins_over_a_later_root(tmp_path: Path) -> None:
 
 
 def test_lookup_path_order_wins_in_both_directions(tmp_path: Path) -> None:
-    gc = tmp_path / "GC" / "UnitLib"
-    ha = tmp_path / "HA" / "UnitLib"
+    gc = tmp_path / "LibA" / "UnitLib"
+    ha = tmp_path / "LibB" / "UnitLib"
     write_file(gc, "Program1.s")
     write_file(ha, "Program1.s")
 
@@ -175,13 +182,13 @@ def test_lookup_path_order_wins_in_both_directions(tmp_path: Path) -> None:
 
 
 def test_a_requester_inside_a_later_root_does_not_override_the_path_order(tmp_path: Path) -> None:
-    gc = tmp_path / "GC" / "UnitLib"
-    ha = tmp_path / "HA" / "UnitLib"
+    gc = tmp_path / "LibA" / "UnitLib"
+    ha = tmp_path / "LibB" / "UnitLib"
     write_file(gc, "Dep.s")
     write_file(ha, "Dep.s")
 
-    # HA is the second entry, so its body is the requester's own root; the path
-    # order still decides, and GC is scanned first.
+    # LibB is the second entry, so its body is the requester's own root; the path
+    # order still decides, and LibA is scanned first.
     lookup = ProjectLookup([gc, ha], LoadMode.DRAFT)
 
     assert lookup.find_code("Dep") == gc / "Dep.s"
@@ -564,8 +571,8 @@ def test_an_unreadable_root_is_a_load_error(tmp_path: Path) -> None:
 def test_warm_cache_preserves_cold_extension_precedence(tmp_path: Path) -> None:
     """A warm lookup must not shadow a preferred extension that appeared later.
 
-    Gap P10: the cache recorded ``.x`` for this prefix; a ``.s`` then appeared.
-    Draft mode prefers ``.s``, so warm and cold lookups must agree.
+    The cache recorded ``.x`` for this prefix; a ``.s`` then appeared. Draft
+    mode prefers ``.s``, so warm and cold lookups must agree.
     """
     root = tmp_path / "p"
     cache_dir = tmp_path / "cache"

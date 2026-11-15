@@ -180,6 +180,27 @@ def test_parser_core_accepts_clipping_bounds_and_interact_tail_sequences():
     assert len(bp.moduledef.interact_objects) == 1
 
 
+def test_a_datecode_prefixed_digit_is_a_name_outside_the_datecode_slot():
+    code = (
+        '"SyntaxVersion"\n'
+        '"OriginalFileDate"\n'
+        '"ProgramDate"\n'
+        "BasePicture Invocation (0.0,0.0,0.0,1.0,1.0) : MODULEDEFINITION DateCode_ 1\n"
+        "LOCALVARIABLES\n"
+        "   DateCode_1: integer := 0;\n"
+        "ModuleDef\n"
+        "ClippingBounds = ( -1.0 , -1.0 ) ( 1.0 , 1.0 )\n"
+        "ModuleCode\n"
+        "EQUATIONBLOCK Main COORD 0.0, 0.0 OBJSIZE 1.0, 1.0 :\n"
+        "   DateCode_1 = 1;\n"
+        "ENDDEF;\n"
+    )
+
+    bp = parser_core_parse_source_text(code)
+
+    assert [variable.name for variable in bp.localvariables] == ["DateCode_1"]
+
+
 def test_parser_core_accepts_center_aligned_interactor_body():
     code = (
         '"SyntaxVersion"\n'

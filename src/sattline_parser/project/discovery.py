@@ -9,6 +9,7 @@ dependency resolution build on it.
 
 from __future__ import annotations
 
+import ntpath
 import os
 from collections.abc import Callable, Sequence
 from pathlib import Path
@@ -177,6 +178,8 @@ def parse_search_path(text: str, *, base: Path | None = None) -> tuple[Path, ...
         entry = raw.strip()
         if not entry:
             continue
+        if os.name != "nt" and ntpath.splitdrive(entry)[0]:
+            raise ValueError(f"search path entry {entry!r} is a Windows path; use a POSIX path on this platform")
         path = Path(entry.replace("\\", "/"))
         if base is not None and not path.is_absolute():
             path = base / path
@@ -291,7 +294,7 @@ class ProjectLookup:
         # Extension *preference* wins over the extension recorded in the cache:
         # an artifact that appeared after the cache was written must not be
         # shadowed by the cached one, or a warm lookup would disagree with a cold
-        # one (gap P10). The name is resolved through the same case-insensitive
+        # one. The name is resolved through the same case-insensitive
         # index the cold scan uses, because a literal path check would miss a
         # file whose case differs from the dependency spelling and silently
         # fall through to a coarser extension. A stale index only costs a full

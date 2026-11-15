@@ -385,6 +385,50 @@ def test_rebuild_parse_failure_keeps_a_decode_error() -> None:
     assert rebuilt.reason == "invalid start byte"
 
 
+@pytest.mark.skipif(os.name == "nt" or os.geteuid() == 0, reason="needs POSIX permissions as a non-root user")
+@pytest.mark.parametrize("workers", [1, 2])
+def test_load_unreadable_body_is_a_project_error(tmp_path: Path, workers: int) -> None:
+    write_file(tmp_path, "Main.s", _CODE)
+    (tmp_path / "Main.s").chmod(0)
+
+    with pytest.raises(ArtifactLoadError):
+        _load(tmp_path, workers=workers)
+
+
+@pytest.mark.skipif(os.name == "nt" or os.geteuid() == 0, reason="needs POSIX permissions as a non-root user")
+def test_load_unreadable_body_in_a_worker_is_a_project_error(tmp_path: Path) -> None:
+    write_file(tmp_path, "Main.s", _CODE)
+    write_file(tmp_path, "Lib.s", _CODE)
+    (tmp_path / "Main.s").chmod(0)
+
+    with pytest.raises(ArtifactLoadError):
+        _load(tmp_path, targets=("Main", "Lib"), workers=2)
+
+
+@pytest.mark.skipif(os.name == "nt" or os.geteuid() == 0, reason="needs POSIX permissions as a non-root user")
+def test_parse_code_file_reports_an_unreadable_body(tmp_path: Path) -> None:
+    write_file(tmp_path, "Main.s", _CODE)
+    code_path = tmp_path / "Main.s"
+    code_path.chmod(0)
+
+    outcome = project_loader._parse_code_file((str(code_path), "draft", None, False))
+
+    assert outcome.ast is None
+    assert outcome.failure_record is not None
+    assert outcome.failure_record.type_name == "PermissionError"
+
+
+@pytest.mark.skipif(os.name == "nt" or os.geteuid() == 0, reason="needs POSIX permissions as a non-root user")
+def test_load_unreadable_dependency_body_is_a_dependency_error(tmp_path: Path) -> None:
+    write_file(tmp_path, "Main.s", _CODE)
+    write_file(tmp_path, "Main.l", "Broken\n")
+    write_file(tmp_path, "Broken.s", _CODE)
+    (tmp_path / "Broken.s").chmod(0)
+
+    with pytest.raises(DependencyParseError):
+        _load(tmp_path)
+
+
 def test_load_unreadable_deps_file_raises(tmp_path: Path) -> None:
     write_file(tmp_path, "Main.s", _CODE)
     (tmp_path / "Main.l").mkdir(exist_ok=True)

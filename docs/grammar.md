@@ -43,10 +43,10 @@ is one name rather than the `PRIVATE_` and `MODULEDEFINITION` keywords.
 `DateCode_` is the one exception: its rule is `DATECODE_PREFIX SL_DATECODE`, so
 a digit after it is the datecode and not part of a longer word. The rewriter
 uses `(?![^\W\d])` after that literal: a letter or underscore still blocks the
-keyword, a digit does not. `DateCode_1` is therefore the keyword and `1`, while
-`DateCode_x` stays one name. The accepted spelling costs the identifier: a name
-spelled `DateCode_<digit>` can no longer be declared, because the prefix always
-wins in that position.
+keyword, a digit does not. `DateCode_1` is therefore the keyword and `1` in the
+datecode slot, while `DateCode_x` stays one name there. In an identifier
+position the contextual lexer does not accept `DATECODE_PREFIX`, so
+`DateCode_1` is one identifier again.
 
 ## Grammar shape
 

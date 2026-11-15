@@ -70,9 +70,11 @@ and the CLI both pass an ordered sequence, so the rule is one rule: earlier
 entries win.
 
 `parse_search_path` turns the path-list notation into that sequence:
-`parse_search_path(r"GC\UnitLib,HA\UnitLib", base=Path("/sattline"))` yields the
+`parse_search_path(r"LibA\UnitLib,LibB\UnitLib", base=Path("/sattline"))` yields the
 two roots in the written order, relative entries resolved under the base,
-backslashes accepted, empty entries and duplicates dropped.
+backslashes accepted, empty entries and duplicates dropped. Duplicate detection
+compares the resolved path with `casefold`, so a case-only difference counts as
+one root on every platform.
 
 Each root is indexed once by `SourceIndex`:
 

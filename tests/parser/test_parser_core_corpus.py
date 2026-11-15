@@ -13,6 +13,7 @@ import pytest
 from lark.exceptions import UnexpectedInput
 
 from sattline_parser import parse_source_text as parser_core_parse_source_text
+from sattline_parser.api import parse_source_file
 from sattline_parser.models.ast_model import BasePicture, CodeComment, SFCStep, SFCTransition
 from sattline_parser.models.clauses import AssignClause, EnableClause
 from sattline_parser.models.expressions import Compare, VarRef
@@ -58,6 +59,13 @@ def test_fixture_module_def_with_code():
     assert bp.modulecode is not None
     assert bp.moduledef.clipping_bounds == ((-1.0, -1.0), (1.0, 1.0))
     assert [eq.name for eq in (bp.modulecode.equationblocks or [])] == ["Lower"]
+
+
+def test_every_valid_fixture_has_a_module_definition():
+    valid = _repo_path("tests", "fixtures", "corpus", "valid")
+    for path in sorted(valid.glob("*.s")):
+        bp = parse_source_file(path)
+        assert bp.moduledef is not None, path.name
 
 
 def test_fixture_repeated_moduledef_blocks_is_rejected():

@@ -26,6 +26,7 @@ from sattline_parser.models.clauses import (
     EnableClause,
     FlagClause,
     ModuleInViewClause,
+    PolygonPoint,
     ProcedureCall,
     TailedClause,
 )
@@ -92,6 +93,9 @@ def _tail_context(event: WalkEvent) -> str | None:
 
     if isinstance(parent, ClippingClause):
         return _COORDINATE if field == "tails" else None
+
+    if isinstance(parent, PolygonPoint):
+        return _COORDINATE if field in {"x_tails", "y_tails"} else None
 
     return None
 
