@@ -33,7 +33,7 @@ from sattline_parser.models.ast_model import (
     SFCSubsequence,
     SourceSpan,
 )
-from sattline_parser.models.clauses import ClippingClause, Grid, ModuleMarker, ModuleOptions, SeqLayers
+from sattline_parser.models.clauses import ClippingClause, ModuleMarker
 from sattline_parser.models.expressions import IfStmt, VarRef
 from sattline_parser.models.tails import VarTail
 from sattline_parser.source_document import SourceDocument
@@ -50,6 +50,7 @@ from sattline_parser.transformer._module_shared import (  # used below
     float_tuple,
     groupconn_value,
 )
+from sattline_parser.transformer._payloads import Grid, ModuleOptions, SeqLayers
 from sattline_parser.transformer._sfc_mixin import SFCMixin
 from sattline_parser.transformer._tokens_mixin import TokensMixin
 

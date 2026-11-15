@@ -203,7 +203,7 @@ Rotations of the same sequence describe the same cycle, so every path is
 rotated to start at its smallest node name before it is reported.
 
 `SattLineProject.cycles()` stays available for a project built directly with
-`_from_programs`: it enumerates the cycles in the declared graph edges.
+`from_programs`: it enumerates the cycles in the declared graph edges.
 `SattLineProject.load` never returns one because the loader has already raised.
 Enumeration is linear on a DAG because the search is confined to strongly
 connected components. It is exponential in the worst case for a dense component
@@ -303,6 +303,7 @@ dependency still reports its own conflict in either target order.
 ```mermaid
 classDiagram
     class SattLineProject {
+        from_programs(programs)
         get(name)
         programs()
         diagnostics()
@@ -367,7 +368,7 @@ endpoints are canonical casefolded identities.
 
 `graph()` returns every declared edge. In a loaded project every declared
 dependency is also loaded, because a missing one fails the load. A project
-assembled directly with `_from_programs` may declare an edge to a program it does
+assembled directly with `from_programs` may declare an edge to a program it does
 not hold; the graph keeps that edge, because it describes the declared structure,
 not just the resolved closure.
 

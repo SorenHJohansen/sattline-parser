@@ -13,8 +13,8 @@ import pytest
 from lark.exceptions import UnexpectedEOF, UnexpectedInput
 
 from sattline_parser import parse_source_text as parser_core_parse_source_text
-from sattline_parser import source_io as parser_api
 from sattline_parser.api import create_parser, parse_source_file
+from sattline_parser.errors import describe_parse_error
 from sattline_parser.models.ast_model import BasePicture, CodeComment
 from sattline_parser.models.expressions import Assignment
 from sattline_parser.preprocessing import preprocess_source
@@ -308,7 +308,7 @@ def test_parse_compressed_source_error_maps_to_original_source():
     original_lines = bad.splitlines()
     assert exc.line == len(original_lines)
     assert exc.column is not None
-    details = parser_api.describe_parse_error(exc, bad)
+    details = describe_parse_error(exc, bad)
     assert details.line == len(original_lines)
     assert original_lines[details.line - 1] == " THIS IS GARBAGE !!!"
 
@@ -341,7 +341,7 @@ def test_describe_parse_error_maps_untagged_exception_with_source_document():
     except UnexpectedInput as exc:
         # Raw exception carries normalized coordinates and is not tagged.
         assert not is_remapped(exc)
-        details = parser_api.describe_parse_error(exc, bad, source_document=source_doc)
+        details = describe_parse_error(exc, bad, source_document=source_doc)
         assert details.line == len(bad.splitlines())
         assert bad.splitlines()[details.line - 1] == " THIS IS GARBAGE !!!"
     else:
@@ -376,7 +376,7 @@ def test_describe_parse_error_with_source_document_but_no_offset():
         def __str__(self) -> LiteralString:
             return "Unexpected end of input"
 
-    details = parser_api.describe_parse_error(
+    details = describe_parse_error(
         FakeUnexpectedInput(),
         _PROGRAM,
         source_document=SourceDocument.identity(_PROGRAM),
@@ -468,7 +468,7 @@ def test_compressed_source_parser_error_at_eof_maps_into_original_source():
     mapped = doc.map_position(getattr(exc, "pos_in_stream", -1) or 0)
     assert mapped is not None
     assert 0 <= mapped <= len(truncated)
-    details = parser_api.describe_parse_error(exc, truncated, source_document=doc)
+    details = describe_parse_error(exc, truncated, source_document=doc)
     assert details.line is not None
     assert 1 <= details.line <= len(truncated.splitlines())
     assert details.column is not None

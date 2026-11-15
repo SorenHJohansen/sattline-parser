@@ -36,35 +36,15 @@ from sattline_parser.transformer.sl_transformer import SLTransformer
 from sattline_parser.validation import Diagnostic, validate_basepicture
 
 from .errors import (
-    ParseErrorDetails,
     SourceTooDeepError,
     _log_parser_failure,  # pyright: ignore[reportPrivateUsage]  # imported for internal use
-    describe_parse_error,
 )
 from .grammar.resolved import grammar_fingerprint
 from .grammar.resolved import resolved_grammar as _resolved_grammar
 from .grammar.sattline_lexer import SattLineLexer, compact_provenance
-from .preprocessing import is_coded, is_compressed, preprocess_source, render_ide_text
+from .preprocessing import is_coded, is_compressed, preprocess_source
 from .preprocessing.coded import decode_coded_stream
 from .preprocessing.compressed import closed_comment_spans
-
-__all__ = [
-    "MAX_SOURCE_DEPTH",
-    "ParseErrorDetails",
-    "SourceTooDeepError",
-    "build_lark_parser",
-    "create_parser",
-    "decode_source_bytes",
-    "describe_parse_error",
-    "load_source_text",
-    "parse_and_validate",
-    "parse_source_file",
-    "parse_source_text",
-    "read_text_cp1252",
-    "render_ide_text",
-    "source_text_for_parse",
-    "validate_basepicture",
-]
 
 _CACHE_DIR_MODE = 0o700
 _CACHE_DIR_NAME = "sattline-parser"

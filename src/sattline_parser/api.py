@@ -5,7 +5,7 @@ This façade re-exports the parse pipeline from
 validation, so consumers have one door for parsing.
 
 The dependency direction is downward only: this module builds on ``source_io``,
-``errors`` and ``validation``, and knows nothing about
+``errors``, ``preprocessing``, and ``validation``, and knows nothing about
 :mod:`sattline_parser.project`. The package root in
 :mod:`sattline_parser` composes this façade with the project layer, and the
 project layer loads files through ``source_io`` rather than back through here,
@@ -15,6 +15,7 @@ so no import cycle exists at any point.
 from __future__ import annotations
 
 from .errors import ParseErrorDetails, SourceTooDeepError, describe_parse_error
+from .preprocessing import render_ide_text
 from .source_io import (
     MAX_SOURCE_DEPTH,
     build_lark_parser,
@@ -25,7 +26,6 @@ from .source_io import (
     parse_source_file,
     parse_source_text,
     read_text_cp1252,
-    render_ide_text,
     source_text_for_parse,
 )
 from .validation import validate_basepicture

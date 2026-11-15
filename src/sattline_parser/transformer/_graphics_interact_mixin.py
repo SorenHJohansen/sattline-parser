@@ -16,7 +16,6 @@ from sattline_parser.models.clauses import (
     Alignment,
     AssignClause,
     ColourSpec,
-    CommonProperties,
     CoordBox,
     CoordPair,
     EnableClause,
@@ -33,6 +32,7 @@ from sattline_parser.models.tails import Tail
 
 from ._comments_mixin import code_comments_from_run, is_comment_tree
 from ._module_shared import InterimCoords, TextContent, TransformerItem, TransformerTree, meta_span, v_args
+from ._payloads import CommonProperties
 
 
 def _is_coord_pair(value: object) -> TypeGuard[CoordPair]:

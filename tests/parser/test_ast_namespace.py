@@ -38,6 +38,25 @@ def test_every_exported_model_dataclass_is_exported() -> None:
                 assert getattr(sl_ast, name) is value, name
 
 
+_INTERIM_PAYLOADS = (
+    "CommonProperties",
+    "ModuleOptions",
+    "TwoLayers",
+    "Grid",
+    "SeqLayers",
+    "Zoomable",
+    "ClipValue",
+    "CoordinateClipping",
+)
+
+
+def test_interim_payloads_are_not_on_the_model_surface() -> None:
+    for name in _INTERIM_PAYLOADS:
+        assert not hasattr(sl_ast, name), name
+        assert name not in clauses.__all__, name
+        assert name not in tails.__all__, name
+
+
 def test_type_aliases_are_exported() -> None:
     for name in _TYPE_ALIASES:
         assert name in sl_ast.__all__, name

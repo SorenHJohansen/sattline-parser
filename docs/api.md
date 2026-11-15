@@ -210,7 +210,7 @@ wheel, and the top-level package does not re-export them. Import
 
 | Group | Names |
 | --- | --- |
-| Loading | `SattLineProject`, `ProjectLoader`, `LoadMode`, `LoadValidation` |
+| Loading | `SattLineProject` (including `from_programs`), `ProjectLoader`, `LoadMode`, `LoadValidation` |
 | Models | `SattLineProgram`, `DependencyGraph`, `ProgramFormat`, `SidecarState` |
 | Diagnostics | `LoadDiagnostic`, `LoadDiagnosticKind` |
 | Errors | `ProjectLoadError`, `StructuralProjectError`, `DependencyCycleError`, `ModuleTypeCycleError`, `ArtifactLoadError`, `DependencyNotFoundError`, `DependencyParseError` |

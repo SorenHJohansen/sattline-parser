@@ -24,8 +24,6 @@ if TYPE_CHECKING:
 
 __all__ = [
     "EXPRESSION_NODE_TYPES",
-    "ClipValue",
-    "CoordinateClipping",
     "LitStringTail",
     "Tail",
     "VarTail",
@@ -70,29 +68,6 @@ class VarTail:
         if isinstance(value, str):
             return value
         return None
-
-
-@dataclass(frozen=True)
-class ClipValue:
-    """One numeric value in a nested ``ClippingBounds = ...`` coordinate tail."""
-
-    value: float
-    tail: Tail | None = None
-
-
-@dataclass(frozen=True)
-class CoordinateClipping:
-    """A nested ``ClippingBounds = <values>`` annotation on a coordinate.
-
-    The form still belongs to the coordinate position; its per-value tails are
-    folded into the coordinate's flat tail list.
-    """
-
-    values: tuple[ClipValue, ...]
-
-    @property
-    def tails(self) -> tuple[Tail, ...]:
-        return tuple(value.tail for value in self.values if value.tail is not None)
 
 
 #: Every tail shape a coordinate, header, or clause can carry.

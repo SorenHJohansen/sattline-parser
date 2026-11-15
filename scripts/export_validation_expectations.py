@@ -8,7 +8,7 @@ silent pass.
 
 Usage::
 
-    python scripts/export_parity_expectations.py
+    python scripts/export_validation_expectations.py
 """
 
 from __future__ import annotations
@@ -65,7 +65,7 @@ def main(argv: list[str] | None = None) -> int:
 
     fixtures = _build_fixtures()
     document = {
-        "generated_by": "scripts/export_parity_expectations.py",
+        "generated_by": "scripts/export_validation_expectations.py",
         "validator": "parser",
         "fixtures": fixtures,
     }

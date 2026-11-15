@@ -7,7 +7,7 @@ from lark.exceptions import UnexpectedCharacters, UnexpectedEOF, UnexpectedInput
 
 from sattline_parser import errors as parser_errors
 from sattline_parser import parse_source_text as parser_core_parse_source_text
-from sattline_parser import source_io as parser_api
+from sattline_parser.errors import ParseErrorDetails, describe_parse_error
 
 
 def _parse_failure(expected: set[str], *, token: object, line: int = 4) -> Any:
@@ -87,7 +87,7 @@ def test_parse_error_hints_are_actionable():
 
 def test_describe_parse_error_reports_structured_parts():
     failure = _parse_failure({"SEMICOLON"}, token=Token("$END", ""), line=1)
-    details = parser_api.describe_parse_error(failure, "ENDDEF (*BasePicture*)")
+    details = describe_parse_error(failure, "ENDDEF (*BasePicture*)")
 
     assert details.found is None
     assert details.expected == ("';'",)
@@ -115,9 +115,9 @@ def test_describe_parse_error_includes_context_for_unexpected_input():
             assert span == 40
             return "line context\n"
 
-    details = parser_api.describe_parse_error(FakeUnexpectedInput(), "IF X THEN")
+    details = describe_parse_error(FakeUnexpectedInput(), "IF X THEN")
 
-    assert details == parser_api.ParseErrorDetails(
+    assert details == ParseErrorDetails(
         message=(
             "unexpected end of file; expected 'ENDIF'\n"
             "help: the unit ends unexpectedly; the last construct is incomplete\n"
@@ -146,7 +146,7 @@ def test_describe_parse_error_on_a_real_unit_names_the_missing_terminator():
     with pytest.raises(UnexpectedInput) as exc_info:
         parser_core_parse_source_text(source)
 
-    details = parser_api.describe_parse_error(exc_info.value, source)
+    details = describe_parse_error(exc_info.value, source)
 
     assert details.line == 7
     assert "Token(" not in details.message
@@ -163,7 +163,7 @@ def test_describe_parse_error_falls_back_to_plain_exception_message():
             self.line = 7
             self.column = 11
 
-    details = parser_api.describe_parse_error(PlainFailureError(), "ignored")
+    details = describe_parse_error(PlainFailureError(), "ignored")
 
     assert details.message == "plain failure"
     assert details.line == 7
@@ -199,7 +199,7 @@ ENDDEF (*BasePicture*);
         def __str__(self) -> LiteralString:
             return "Unexpected end of input"
 
-    details = parser_api.describe_parse_error(FakeUnexpectedInput(), source)
+    details = describe_parse_error(FakeUnexpectedInput(), source)
 
     assert details.line == 9
     assert details.column == original_column
@@ -232,7 +232,7 @@ def test_describe_parse_error_source_line_agrees_with_a_lone_cr_in_a_string():
     source = '"a\rb"\nsecond\nthird\n'
     failure = _parse_failure({"SEMICOLON"}, token=Token("$END", ""), line=2)
 
-    details = parser_api.describe_parse_error(failure, source)
+    details = describe_parse_error(failure, source)
 
     assert details.source_line == "second"
 

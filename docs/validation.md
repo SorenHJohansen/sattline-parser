@@ -248,8 +248,8 @@ The full code table lives in the rule registry, not in the enum. Every
 enum name, a scope, a status, a summary, and optional details. `status` is one
 `RuleStatus` value, so a rule cannot be both retired and unimplemented. It is
 `active` when the validator emits the rule, `retired` when the form was proved
-to load and the check was withdrawn, and `unimplemented` when a code was
-reserved but no check exists yet.
+to load and the check was withdrawn or another rule already covers it, and
+`unimplemented` when a code was reserved but no check exists yet.
 
 `RULES`, `RULES_BY_ID`, and `RULES_BY_NAME` are the lookup tables. `find_rule`
 accepts either `SL-V019` or `UNDEFINED_VARIABLE`, case-insensitively.
@@ -301,7 +301,7 @@ here. `sattline rules` exposes the same data on the command line.
 | `SL-V039` | `RESERVED_KEYWORD_NAME` | active | declarations | A declaration may not use a reserved SattLine keyword as its name. |
 | `SL-V040` | `DATATYPE_TOO_FEW_FIELDS` | retired | declarations | A DATATYPE declaration must declare at least one field. |
 | `SL-V041` | `COMPARE_INCOMPATIBLE_OPERANDS` | active | code | Comparison operators require compatible operand datatypes. |
-| `SL-V042` | `DIVISION_BY_ZERO` | unimplemented | code | Division by a literal zero is rejected. |
+| `SL-V042` | `DIVISION_BY_ZERO` | retired | code | Division by a literal zero is rejected. |
 | `SL-V043` | `LOGICAL_OPERAND_NOT_BOOLEAN` | active | code | Logical operators require boolean operands. |
 | `SL-V044` | `TERNARY_BRANCH_TYPES_INCOMPATIBLE` | active | code | IF-expression branches must have compatible datatypes. |
 | `SL-V045` | `STRING_ASSIGNMENT_NOT_ALLOWED` | active | code | A string variable is copied with CopyString or CopyVar, not assigned directly. |
@@ -311,8 +311,8 @@ here. `sattline rules` exposes the same data on the command line.
 | `SL-V049` | `PARAMETER_MAPPING_DUPLICATE_TARGET` | active | mappings | A module-type instance may map each parameter target only once. |
 | `SL-V050` | `PARAMETER_MAPPING_TYPE_MISMATCH` | active | mappings | A module-type instance mapping value must match the parameter datatype. |
 | `SL-V051` | `STEP_AUTO_VARIABLE_UNAVAILABLE` | active | code | A step or sequence accessor requires the matching SeqControl or SeqTimer flag. |
-| `SL-V052` | `SEQUENCE_TRANSITION_AFTER_TRANSITION` | unimplemented | sfc | A transition may not directly follow another transition. |
-| `SL-V053` | `PARALLEL_BRANCH_INCOMPLETE` | unimplemented | sfc | A parallel branch must contain a complete step sequence. |
+| `SL-V052` | `SEQUENCE_TRANSITION_AFTER_TRANSITION` | retired | sfc | A transition may not directly follow another transition. |
+| `SL-V053` | `PARALLEL_BRANCH_INCOMPLETE` | retired | sfc | A parallel branch must contain a complete step sequence. |
 | `SL-V054` | `SUBSEQTRANSITION_STARTS_WITH_STEP` | active | sfc | A SUBSEQTRANSITION body must start with a SEQTRANSITION. |
 | `SL-V055` | `SEQUENCE_REQUIRES_INIT_STEP` | retired | sfc | A closed sequence must contain an init step. |
 | `SL-V056` | `SEQUENCE_AMBIGUOUS_FORK_TARGET` | active | sfc | A SEQFORK target may not be declared more than once in a module. |
@@ -323,11 +323,12 @@ here. `sattline rules` exposes the same data on the command line.
 ### Retired and unimplemented codes
 
 `RETIRED_CODES` in `validation/rules.py` records the retired rules and why they
-are not enforced. Each was implemented, then disproved by loading the same
-source directly. The editor's UI refused to *create* such a declaration, but the
-file loaded and parsed from disk. A UI guard is not a parser rule. The enum
-members stay so existing imports and stored diagnostics remain valid, but
-nothing emits them:
+are not enforced. The enum members stay so existing imports and stored
+diagnostics remain valid, but nothing emits them.
+
+Disproved by loading the same source directly. The editor's UI refused to
+*create* such a declaration, but the file loaded and parsed from disk. A UI
+guard is not a parser rule:
 
 - duplicate datatype, module-type, variable, and record-field names;
 - shadowing a builtin datatype;
@@ -335,16 +336,21 @@ nothing emits them:
 - init value of a different datatype;
 - bare duration or time init;
 - malformed duration or time literal;
-- misplaced or missing init step.
+- misplaced or missing init step;
+- a literal zero divisor (`DIVISION_BY_ZERO`): the valid full-grammar fixture
+  divides by a literal zero, which is runtime semantics.
+
+Superseded by a rule that already covers the shape:
+
+- `SEQUENCE_TRANSITION_AFTER_TRANSITION` is covered by
+  `SEQUENCE_POSITION_INVALID`;
+- `PARALLEL_BRANCH_INCOMPLETE` is covered by `SFC_PARALLEL_BRANCH_START` and
+  the position rules.
 
 Do not reintroduce one of these without new, reproducible evidence.
 
-A rule marked `unimplemented` is a reserved code with no check at all. It is not
-a statement about the language; it is a gap in the validator. The registry
-records the gap so it cannot be mistaken for an enforced rule. Three codes are
-reserved and not enforced today: `DIVISION_BY_ZERO`, so a literal zero divisor is
-not reported; `SEQUENCE_TRANSITION_AFTER_TRANSITION`; and
-`PARALLEL_BRANCH_INCOMPLETE`.
+No code is `unimplemented` today. The status is reserved for a code with no
+check at all, so a future gap cannot be mistaken for an enforced rule.
 
 ## Relation to the project loader
 

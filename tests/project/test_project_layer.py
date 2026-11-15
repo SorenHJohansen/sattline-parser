@@ -107,13 +107,28 @@ def test_sattline_program_fully_specified() -> None:
 
 
 def test_project_get_contains_programs_case_insensitive() -> None:
-    project = SattLineProject._from_programs({"P1": SattLineProgram(name="P1", code=_code())})
+    project = SattLineProject.from_programs({"P1": SattLineProgram(name="P1", code=_code())})
     assert "P1" in project
     assert "p1" in project
     assert "nope" not in project
     assert project.get("p1").name == "P1"
     assert list(project.programs()) == ["p1"]
     assert project.programs()["p1"].name == "P1"
+
+
+def test_from_programs_rejects_a_key_that_disagrees_with_the_program_name() -> None:
+    program = SattLineProgram(name="B", code=_code())
+
+    with pytest.raises(ValueError, match="does not match program name"):
+        SattLineProject.from_programs({"A": program})
+
+
+def test_from_programs_rejects_two_keys_that_fold_together() -> None:
+    first = SattLineProgram(name="Util", code=_code())
+    second = SattLineProgram(name="UTIL", code=_code())
+
+    with pytest.raises(ValueError, match="fold to"):
+        SattLineProject.from_programs({"Util": first, "UTIL": second})
 
 
 def test_project_get_missing_raises_key_error() -> None:
@@ -125,7 +140,7 @@ def test_project_get_missing_raises_key_error() -> None:
 def test_project_dependencies_and_dependents() -> None:
     a = SattLineProgram(name="A", code=_code(), dependencies=("B",))
     b = SattLineProgram(name="B", code=_code())
-    project = SattLineProject._from_programs({"A": a, "B": b})
+    project = SattLineProject.from_programs({"A": a, "B": b})
     assert project.dependencies_of("A") == ("B",)
     assert project.dependencies_of("a") == ("B",)
     assert project.dependents_of("b") == ("A",)
@@ -136,7 +151,7 @@ def test_project_graph_derives_nodes_and_edges() -> None:
     a = SattLineProgram(name="A", code=_code(), dependencies=("B",))
     b = SattLineProgram(name="B", code=_code())
     c = SattLineProgram(name="C", code=_code())
-    project = SattLineProject._from_programs({"A": a, "B": b, "C": c})
+    project = SattLineProject.from_programs({"A": a, "B": b, "C": c})
     graph = project.graph()
     assert graph.nodes == ("a", "b", "c")
     assert graph.edges == (("a", "b"),)

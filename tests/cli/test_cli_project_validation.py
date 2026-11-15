@@ -43,10 +43,10 @@ def test_project_fail_on_none_does_not_hide_a_load_failure(tmp_path, capsys) -> 
     assert [row["rule"] for row in payload["findings"]] == ["PROJECT_LOAD_ERROR"]
 
 
-def test_project_no_validate_skips_validation(tmp_path, capsys) -> None:
+def test_project_validate_none_skips_validation(tmp_path, capsys) -> None:
     write_source(tmp_path, "Sample.s", CONSECUTIVE_STEPS_SOURCE)
 
-    assert main(["project", str(tmp_path), "--json", "--no-validate"]) == ExitCode.OK
+    assert main(["project", str(tmp_path), "--json", "--validate", "none"]) == ExitCode.OK
 
     payload = json.loads(capsys.readouterr().out)
     assert payload["validation"] == []

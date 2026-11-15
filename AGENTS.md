@@ -36,13 +36,13 @@
 | `.github/pull_request_template.md` | PR checklist for boundary, tests, docs, generated files |
 | `scripts/check_docs.py` | Link, prose, and Mermaid checks for the docs set |
 | `.github/workflows/docs.yml` | Docs CI: links, prose, and Mermaid rendering |
-| `src/sattline_parser/api.py` | Public façade: re-exports the parse pipeline from `source_io` and `validate_basepicture` |
+| `src/sattline_parser/api.py` | Public façade: re-exports the parse pipeline from `source_io`, `render_ide_text` from `preprocessing`, and `validate_basepicture` |
 | `src/sattline_parser/ast.py` | Supported AST surface: every node, clause, tail, `SourceSpan`, and the walker |
 | `src/sattline_parser/source_io.py` | Parser cache, source decoding, and the source→`BasePicture` pipeline |
 | `src/sattline_parser/names.py` | Identifier identity: the CP1252 fold table used by every layer |
 | `src/sattline_parser/grammar/` | Lark grammar (`sattline.lark`), `constants.py`, `sattline_lexer.py` |
 | `src/sattline_parser/models/` | AST models (`ast_model.py`) |
-| `src/sattline_parser/transformer/` | Transformer mixins and `SLTransformer` |
+| `src/sattline_parser/transformer/` | Transformer mixins, `SLTransformer`, and the interim `_payloads.py` |
 | `fuzzing/fuzz_harness.py` | Standalone fuzz harness |
 | `src/sattline_parser/cli/` | `sattline` command line (never edits a source tree): one module per subcommand in `cli/cmds/` |
 | `src/sattline_parser/project/` | Project layer: discovery, resolution, `.g`/`.y` graphics and `.p`/`.q` distribution companions, per-program validation, provenance, caches, `SattLineProject` |

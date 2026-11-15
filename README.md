@@ -318,8 +318,7 @@ if program.graphics is not None:  # GraphicsMessage values, never raised
   transitively, so an imported library's unused module types are never checked
   on the consumer's behalf. `FULL` validates every loaded program, which is what
   a whole-tree audit wants; `NONE` parses only. On the command line this is
-  `--validate invoked|full|none`, and `--no-validate` stays as an alias for
-  `none`.
+  `--validate invoked|full|none`.
 - `cache_dir=...` optionally enables the parser-owned lookup and per-file AST
   caches (`FileLookupCache` / `FileASTCache`) so repeated loads skip
   re-discovery and re-parsing. When `cache_dir=None` (default) the load is

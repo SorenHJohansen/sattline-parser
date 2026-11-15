@@ -23,24 +23,18 @@ __all__ = [
     "AssignClause",
     "ClippingClause",
     "ColourSpec",
-    "CommonProperties",
     "CoordBox",
     "CoordPair",
     "EnableClause",
     "FlagClause",
-    "Grid",
     "ModuleArguments",
     "ModuleInViewClause",
     "ModuleMarker",
-    "ModuleOptions",
     "PickButton",
     "ProcedureCall",
     "ScaleSelector",
-    "SeqLayers",
     "TailedClause",
-    "TwoLayers",
     "ZoomLimits",
-    "Zoomable",
 ]
 
 type CoordPair = tuple[float, float]
@@ -120,25 +114,6 @@ class ColourSpec:
 
 
 @dataclass(frozen=True)
-class CommonProperties:
-    """The ``common_properties`` run shared by graphics objects."""
-
-    layer: int | None = None
-    enable: EnableClause | None = None
-    colours: tuple[ColourSpec, ...] = ()
-
-    @property
-    def tails(self) -> tuple[Tail, ...]:
-        """Every tail carried by the enable or colour clauses."""
-        tails: list[Tail] = []
-        if self.enable is not None and self.enable.tail is not None:
-            tails.append(self.enable.tail)
-        for colour in self.colours:
-            tails.extend(colour.tails)
-        return tuple(tails)
-
-
-@dataclass(frozen=True)
 class ClippingClause:
     """A resolved ``ClippingBounds`` pair and the tails on its corners."""
 
@@ -187,71 +162,11 @@ class ZoomLimits:
 
 
 @dataclass(frozen=True)
-class Zoomable:
-    """The ``Zoomable`` marker argument."""
-
-
-@dataclass(frozen=True)
 class ModuleMarker:
     """A marker-only invocation argument, e.g. ``SymbolModule``."""
 
     kind: str
     span: SourceSpan | None = field(default=None, compare=False, metadata={"layout": True})
-
-
-@dataclass(frozen=True)
-class TwoLayers:
-    """``Two_Layers_ LayerLimit_ = <real>``."""
-
-    layer_limit: float
-
-
-@dataclass(frozen=True)
-class Grid:
-    """``Grid = <real>``."""
-
-    spacing: float
-
-
-@dataclass(frozen=True)
-class SeqLayers:
-    """A ``seq_layers`` payload: one real or a layer mapping."""
-
-    value: float | dict[str, float]
-
-
-@dataclass(frozen=True)
-class ModuleOptions:
-    """Every ``moduledef_option`` merged into one payload."""
-
-    layer_limit: float | None = None
-    zoom_limits: ZoomLimits | None = None
-    zoomable: bool = False
-    grid: float | None = None
-
-    @classmethod
-    def from_option(cls, option: object) -> ModuleOptions:
-        """Wrap one typed option rule result as a ``ModuleOptions`` delta."""
-        if isinstance(option, TwoLayers):
-            return cls(layer_limit=option.layer_limit)
-        if isinstance(option, ZoomLimits):
-            return cls(zoom_limits=option)
-        if isinstance(option, Zoomable):
-            return cls(zoomable=True)
-        if isinstance(option, Grid):
-            return cls(grid=option.spacing)
-        if isinstance(option, (int, float)):
-            return cls(grid=float(option))
-        return cls()
-
-    def merge(self, other: ModuleOptions) -> ModuleOptions:
-        """Return the combination, letting ``other`` win where it sets a field."""
-        return ModuleOptions(
-            layer_limit=other.layer_limit if other.layer_limit is not None else self.layer_limit,
-            zoom_limits=other.zoom_limits if other.zoom_limits is not None else self.zoom_limits,
-            zoomable=self.zoomable or other.zoomable,
-            grid=other.grid if other.grid is not None else self.grid,
-        )
 
 
 @dataclass(frozen=True)

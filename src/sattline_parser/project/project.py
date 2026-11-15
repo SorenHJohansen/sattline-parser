@@ -2,8 +2,8 @@
 
 Phases 3-4 wire ``load`` end to end: file discovery, recursive dependency
 resolution, and ``.g`` / ``.y`` graphics companion parsing via the project
-loader. The phase-1 internal ``_from_programs`` builder remains for tests and
-schema-only construction.
+loader. The public ``from_programs`` builder covers tests and consumers that already
+hold parsed programs.
 """
 
 from __future__ import annotations
@@ -30,14 +30,27 @@ class SattLineProject:
         self._diagnostics: tuple[LoadDiagnostic, ...] = ()
 
     @classmethod
-    def _from_programs(cls, programs: Mapping[str, SattLineProgram]) -> SattLineProject:
+    def from_programs(cls, programs: Mapping[str, SattLineProgram]) -> SattLineProject:
         """Build a project directly from a name-to-program mapping.
 
-        Schema-only seam for tests and consumers that already hold resolved
-        programs. Names are casefolded into canonical keys.
+        For a consumer that already holds parsed programs, or a test that wants
+        to exercise the graph views without a filesystem. Each mapping key must
+        be the program's own name, compared case-insensitively, because the
+        project keys programs by folded name. A key that disagrees with
+        ``program.name``, or two keys that fold together, raise ``ValueError``.
+        Unlike ``load``, this path does not reject a cycle, which is what makes
+        ``cycles`` useful.
         """
         project = cls()
-        project._programs = {name.casefold(): program for name, program in programs.items()}
+        registry: dict[str, SattLineProgram] = {}
+        for key, program in programs.items():
+            canonical = key.casefold()
+            if canonical != program.name.casefold():
+                raise ValueError(f"mapping key {key!r} does not match program name {program.name!r}")
+            if canonical in registry:
+                raise ValueError(f"two mapping keys fold to {canonical!r}")
+            registry[canonical] = program
+        project._programs = registry
         return project
 
     @classmethod
