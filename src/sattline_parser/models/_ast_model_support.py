@@ -129,7 +129,7 @@ def render_module_code(module_code: ModuleCode) -> str:
         "ModuleCode{\n"
         + textwrap.indent("Sequences:\n" + textwrap.indent("\n\n".join(seq_lines), "    "), "    ")
         + "\n\n"
-        + textwrap.indent("Equations:\n" + textwrap.indent("\n\n".join(eq_lines), "    "), "    ")
+        + textwrap.indent("Equation blocks:\n" + textwrap.indent("\n\n".join(eq_lines), "    "), "    ")
         + "\n}"
     )
 

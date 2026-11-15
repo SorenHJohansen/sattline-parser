@@ -132,7 +132,7 @@ GRAMMAR_VALUE_MINUS: Final = "-"
 GRAMMAR_VALUE_MULTIPLY: Final = "*"
 GRAMMAR_VALUE_DIVIDE: Final = "/"
 
-# Sequences and equations
+# Sequences and equation blocks
 GRAMMAR_VALUE_SEQCONTROL: Final = "SeqControl"
 GRAMMAR_VALUE_SEQTIMER: Final = "SeqTimer"
 GRAMMAR_VALUE_COORD_KW: Final = "COORD"

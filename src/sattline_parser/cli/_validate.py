@@ -63,8 +63,8 @@ def summarise(name: str, text: str, picture: BasePicture, *, coded: bool = False
     """A structural summary of one unit (used by ``parse`` and ``diff``).
 
     The counts cover the whole module tree: nested submodules and module-type
-    bodies contribute their declarations, sequences, equations, and objects, so
-    the summary agrees with a walk over the picture.
+    bodies contribute their declarations, sequences, equation blocks, and
+    objects, so the summary agrees with a walk over the picture.
     """
     module_nodes = _module_nodes(picture)
     return {

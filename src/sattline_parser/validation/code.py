@@ -1,6 +1,6 @@
 """Module-code and SFC validation rules for a parsed BasePicture.
 
-Walks equations/sequences/SFC bodies with a scope chain and flags intra-file
+Walks equation blocks, sequences, and SFC bodies with a scope chain and flags intra-file
 findings: :Old/:New on non-State symbols, writes to Const variables (direct
 targets and built-in output arguments), references to undefined variables,
 built-in call arity/direction errors, string-literal call arguments, sequence

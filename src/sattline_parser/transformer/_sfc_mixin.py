@@ -2,7 +2,7 @@
 
 """SFC (Sequence Function Chart) mixin for SLTransformer.
 
-Handles sequence elements, transitions, steps, equations, and related SFC constructs.
+Handles sequence elements, transitions, steps, equation blocks, and related SFC constructs.
 """
 
 from __future__ import annotations
@@ -145,10 +145,10 @@ class SFCMixin:
         )
 
     def modulecode(self, items: list[TransformerItem]) -> ModuleCode:
-        """Grammar modulecode -> ModuleCode with sequences and equations."""
+        """Grammar modulecode -> ModuleCode with sequences and equation blocks."""
         module_code = ModuleCode()
         sequences: list[Sequence] = []
-        equations: list[Equation] = []
+        equation_blocks: list[Equation] = []
 
         for item in items:
             if isinstance(item, Token):
@@ -156,14 +156,14 @@ class SFCMixin:
             if isinstance(item, Sequence):
                 sequences.append(item)
             elif isinstance(item, Equation):
-                equations.append(item)
+                equation_blocks.append(item)
             else:
                 raise ValueError(f"modulecode expected Sequence/Equation; got: {type(item).__name__}: {item!r}")
 
         if sequences:
             module_code.sequences = sequences
-        if equations:
-            module_code.equationblocks = equations
+        if equation_blocks:
+            module_code.equationblocks = equation_blocks
 
         return module_code
 

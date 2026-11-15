@@ -258,8 +258,11 @@ classDiagram
     Equation --> CodeItem
 ```
 
-`Equation.kind` is `"equationblock"` or `"equations"`. The two keywords are
+`ModuleCode.equationblocks` holds the `Equation` nodes, in source order, and the
+same name is the JSON count key. `Equation.kind` is `"equationblock"` or
+`"equations"`, because the rule accepts both keywords. The two spellings are
 kept distinct; their effect is not modelled, so only the spelling is preserved.
+`"equations"` here is a keyword value, not a second field.
 
 `Sequence.layer_info` and `Equation.layer_info` keep the `Layer_ = <int>` value
 written after the `OBJSIZE` pair. The drawing effect is not modelled, but the
