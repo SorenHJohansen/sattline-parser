@@ -230,6 +230,7 @@ _FIELD_SPECS: _FieldSpecs = {
         "groupconn": "node",
         "groupconn_global": "leaf",
         "description_comments": "node",
+        "coordinate_tails": "leaf",
     },
     m.ModuleTypeDef: {
         "name": "leaf",
@@ -317,7 +318,7 @@ _FIELD_SPECS: _FieldSpecs = {
     Assignment: {"target": "node", "value": "value", "span": "leaf"},
     BinOp: {"left": "value", "op": "leaf", "right": "value", "span": "leaf"},
     BoolOp: {"op": "leaf", "operands": "value", "span": "leaf"},
-    ClippingClause: {"bounds": "leaf", "tails": "value", "span": "leaf"},
+    ClippingClause: {"bounds": "leaf", "tails": "value", "span": "leaf", "corner_tails": "leaf"},
     ColourSpec: {
         "kind": "leaf",
         "width": "node",
@@ -361,6 +362,7 @@ _FIELD_SPECS: _FieldSpecs = {
 #: The non-node keys stay in the tuple so a property added to the TypedDict
 #: forces a decision here; a test compares the tuple with the annotation keys.
 _GRAPH_PROPERTY_ORDER: tuple[str, ...] = (
+    "coord_tails",
     "colours",
     "enable_tail",
     "width",
@@ -380,6 +382,7 @@ _GRAPH_PROPERTY_ORDER: tuple[str, ...] = (
 
 #: Node-bearing keys of ``InteractProperties`` in walk order.
 _INTERACT_PROPERTY_ORDER: tuple[str, ...] = (
+    "coord_tails",
     "procedure",
     "assigns",
     "enables",
@@ -622,8 +625,12 @@ def _property_entries(node: m.GraphObject | m.InteractObject) -> Iterator[_Child
         value = properties.get(key)
         if value is None:
             continue
-        if key == "tails":
-            yield from _unowned_tail_entries(value, owned)
+        if key in {"tails", "coord_tails"}:
+            # Both are views of tails that another key or the flat list owns.
+            # ``coord_tails`` is grouped, so it yields no nodes itself; the flat
+            # ``tails`` list emits each tail once.
+            if key == "tails":
+                yield from _unowned_tail_entries(value, owned)
             continue
         _collect_tail_ids(value, owned)
         if isinstance(value, _NODE_TYPES):

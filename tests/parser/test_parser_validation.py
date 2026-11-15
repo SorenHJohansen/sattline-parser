@@ -122,6 +122,7 @@ _INVALID_VALIDATION_FIXTURES: dict[str, str] = {
     "TemporalVsTemporalCompare": "SL-V028",
     "OpSaveConstCombined": "SL-V031",
     "WriteToOldState": "SL-V035",
+    "IdentifierTooLong": "SL-V038",
     "AssignmentFamilyMismatch": "SL-V029",
     "IfConditionNotBoolean": "SL-V030",
     "EnableTailNotBoolean": "SL-V030",
@@ -1363,6 +1364,51 @@ def test_local_datatype_wins_over_an_external_definition_of_the_same_name():
         datatypes=[external_boolean],
     )
     assert [d.code.value for d in validate_basepicture(file_boolean, external_datatypes=[local_integer])] == ["SL-V029"]
+
+
+def test_parse_and_validate_accepts_external_definitions():
+    """A consumer with loaded dependency definitions resolves them in one call."""
+    source = """"SyntaxVersion"
+"OriginalFileDate"
+"ProgramDate"
+BasePicture Invocation (0.0,0.0,0.0,1.0,1.0) : MODULEDEFINITION DateCode_ 1
+LOCALVARIABLES
+    Rec: Reading;
+ModuleDef
+ClippingBounds = ( -1.0 , -1.0 ) ( 1.0 , 1.0 )
+ModuleCode
+    EQUATIONBLOCK Main COORD 0.0, 0.0 OBJSIZE 1.0, 1.0 :
+        Rec.Field = 1;
+ENDDEF (*BasePicture*);
+"""
+    reading = DataType(name="Reading", description=None, datecode=1, var_list=[_var("Field", "integer")])
+
+    _, without = parse_and_validate(source)
+    _, with_external = parse_and_validate(source, external_datatypes=[reading])
+
+    assert DiagnosticCode.UNKNOWN_DATATYPE_NAME in {diagnostic.code for diagnostic in without}
+    assert without and with_external == ()
+
+
+def test_parse_and_validate_can_allow_unresolved_external_datatypes():
+    """The single-file escape hatch is reachable without calling the validator."""
+    source = """"SyntaxVersion"
+"OriginalFileDate"
+"ProgramDate"
+BasePicture Invocation (0.0,0.0,0.0,1.0,1.0) : MODULEDEFINITION DateCode_ 1
+LOCALVARIABLES
+    Rec: Reading;
+ModuleDef
+ClippingBounds = ( -1.0 , -1.0 ) ( 1.0 , 1.0 )
+ModuleCode
+    EQUATIONBLOCK Main COORD 0.0, 0.0 OBJSIZE 1.0, 1.0 :
+        Rec.Field = 1;
+ENDDEF (*BasePicture*);
+"""
+
+    _, diagnostics = parse_and_validate(source, allow_unresolved_external_datatypes=True)
+
+    assert DiagnosticCode.UNKNOWN_DATATYPE_NAME not in {diagnostic.code for diagnostic in diagnostics}
 
 
 def test_const_propagates_through_a_dotted_write_target():

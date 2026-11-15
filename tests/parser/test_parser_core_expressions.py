@@ -22,6 +22,7 @@ from sattline_parser.models.expressions import (
     VarRef,
 )
 from sattline_parser.models.tails import LitStringTail, VarTail
+from sattline_parser.transformer._module_shared import GlobalKeyword
 from sattline_parser.transformer._tokens_mixin import DEFAULT_INIT
 
 from ._parser_core_test_support import _ExpressionsHarness, _parse_to_basepicture, _repo_path, _TokensHarness
@@ -51,7 +52,7 @@ def test_tokens_mixin_coerces_supported_terminals_and_keywords():
     assert mixin.BOOL(Token("BOOL", "Off")) is False
     assert mixin.BOOL_NOTAIL(Token("BOOL_NOTAIL", "ON")) is True
 
-    assert mixin.GLOBAL_KW(None) is True
+    assert isinstance(mixin.GLOBAL_KW(None), GlobalKeyword)
     assert mixin.CONST_KW(None) == "Const"
     assert mixin.STATE_KW(None) == "State"
     assert mixin.OPSAVE_KW(None) == "OpSave"

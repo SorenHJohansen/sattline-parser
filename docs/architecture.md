@@ -68,7 +68,8 @@ flowchart TB
     VALIDATION --> BUILTINS
     VALIDATION --> NAMES
     BUILTINS --> NAMES
-    FORMATTING --> MODELS
+    FORMAT["sattline_parser.formatting"] --> MODELS
+    SERIAL["sattline_parser.serialization"] --> MODELS
 
     SOURCE_IO --> TRANSFORMER
     SOURCE_IO --> MODELS
@@ -91,7 +92,10 @@ flowchart TB
 The important import-direction rules:
 
 - `source_io` imports neither `api` nor `project`. It is the shared floor.
-- `project/loader.py` imports `source_io.parse_source_file` and
+- `project/` is layered internally: `planner` resolves, `executor` parses,
+  `assembler` registers, `scope` validates. `loader.py` is the orchestrator
+  over those four, and `identity.py` names the comparison rules they share.
+  The package imports `source_io.parse_source_bytes` and
   `validation.validate_basepicture`. It never imports `api`.
 - `api.py` re-exports `source_io`, `errors`, `preprocessing`, and `validation`.
   It is a façade, not an implementation. The top-level package re-exports the graphics entry
@@ -120,6 +124,7 @@ The important import-direction rules:
 | `src/sattline_parser/api.py` | Public façade over `source_io`, `errors`, and `validation` | You add a public parse or validation entry point |
 | `src/sattline_parser/ast.py` | Supported AST surface: every node, clause, tail, and the walker | You import or document the model |
 | `src/sattline_parser/types.py` | Public scalar type facts and literal inference | You import a type fact in a consumer |
+| `src/sattline_parser/serialization.py` | JSON-friendly data for the model | You export AST data |
 | `src/sattline_parser/source_io.py` | Parser cache, decoding, the source-to-`BasePicture` pipeline | You change parse orchestration |
 | `src/sattline_parser/source_document.py` | Original/normalized text and offset mapping | You change positions |
 | `src/sattline_parser/errors.py` | Parse-error sentences, structured details, logging | You change diagnostics |
@@ -130,8 +135,15 @@ The important import-direction rules:
 | `src/sattline_parser/transformer/` | `SLTransformer` and responsibility mixins | You change tree construction |
 | `src/sattline_parser/validation/` | Strict single-source rules, scopes, typing | You add a rule |
 | `src/sattline_parser/builtins/` | Generated function catalogue and record specs | You change builtin facts |
-| `src/sattline_parser/formatting/` | `__str__` and public expression rendering for AST nodes, called by the model renderers at display time | You change rendered output |
-| `src/sattline_parser/project/` | Discovery, formats, loading, graphics, distribution, caches | You change project behaviour |
+| `src/sattline_parser/formatting/` | `__str__`, public expression rendering, and whole-file source formatting | You change rendered output |
+| `src/sattline_parser/serialization.py` | JSON-friendly data for the model | You export AST data |
+| `src/sattline_parser/project/` | Discovery, identity, planning, parsing, assembly, validation scope, graphics, distribution, caches | You change project behaviour |
+| `src/sattline_parser/project/planner.py` | Resolve names into post-order plans; artifact-keyed cycle detection | You change dependency discovery |
+| `src/sattline_parser/project/executor.py` | Parse planned bodies, worker pool, AST cache, failure records | You change parsing or parallelism |
+| `src/sattline_parser/project/assembler.py` | Registry entries, origins, companions | You change what a loaded unit carries |
+| `src/sattline_parser/project/scope.py` | Validation scope, datecode conflicts, module-type recursion | You change a project-level rule |
+| `src/sattline_parser/project/identity.py` | Language and filesystem identity types | You compare a name or a path |
+| `src/sattline_parser/project/index.py` | Project-wide definition and usage index | You answer "who defines X" |
 | `src/sattline_parser/cli/` | The `sattline` command | You change the interface |
 | `fuzzing/fuzz_harness.py` | Hard-timeout fuzzing and corpus regression | You change fuzzing |
 | `tests/` | Parser, project, CLI, builtins, packaging suites | You verify a change |
@@ -186,32 +198,37 @@ sequenceDiagram
     participant Caller
     participant P as SattLineProject
     participant L as ProjectLoader
+    participant PL as ProjectPlanner
     participant D as ProjectLookup
     participant FS as filesystem
+    participant X as ParseExecutor
     participant S as source_io
-    participant V as validation
+    participant A as ProjectAssembler
+    participant V as ProjectValidator
 
     Caller->>P: load(roots, mode, targets, validate)
     P->>L: ProjectLoader(...).resolve(targets)
     loop each dependency, depth first
-        L->>D: find_code_with_base(name)
+        L->>PL: resolve targets
+        PL->>D: find_code_with_base(name)
         D->>FS: indexed or stat lookup in ordered roots
         FS-->>D: code path and resolving base
-        L->>D: find_deps_beside(code_path, name)
-        D-->>L: .l/.z path or None
-        L->>L: read dependency names
-        L->>L: visit each dependency first
-        L->>S: parse_source_file(code_path)
-        S-->>L: BasePicture
-        L->>L: record origin, datecodes, sidecar state
-        L->>L: parse graphics companion when present
-        L->>L: parse distribution companion when present
+        PL->>D: find_deps_beside(code_path, name)
+        D-->>PL: .l/.z path or None
+        PL->>PL: read dependency names
+        PL->>PL: visit each dependency first
+        PL->>PL: append the plan after its dependencies
     end
+    L->>X: parse(plans)
+    X->>S: parse_source_bytes(code_path)
+    S-->>X: BasePicture
+    L->>A: assemble(plans, outcomes)
+    A->>A: record origin, datecodes, sidecar state
+    A->>A: parse graphics and distribution companions when present
     alt validate=INVOKED
-        L->>L: invoked_moduletypes(registry, targets)
-        L->>V: validate target, and only invoked library module types
+        L->>V: validate targets, and only invoked library module types
     else validate=FULL
-        L->>V: validate every loaded program
+        L->>V: validate every loaded unit
     end
     L-->>P: registry, diagnostics
     P-->>Caller: SattLineProject

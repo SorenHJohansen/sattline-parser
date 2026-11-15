@@ -25,9 +25,12 @@ Draft is `.s`, `.l`, `.g`, `.p`; official is `.x`, `.z`, `.y`, `.q`. See
 | Graphics and distribution companion parsing and data models | `project/graphics_*.py`, `project/distribution.py`, `project/models.py` | `parse_graphics_file`, `parse_distribution_file` |
 | SattLine project discovery | `project/discovery.py`, `project/formats.py` | `ProjectLookup` |
 | Draft/official resolution | `project/formats.py` | `LoadMode` |
-| Dependency resolution and project loading | `project/loader.py`, `project/project.py` | `SattLineProject.load` |
+| Dependency resolution and project loading | `project/planner.py`, `project/executor.py`, `project/assembler.py`, `project/scope.py`, `project/loader.py`, `project/project.py` | `SattLineProject.load` |
 | Language-level structural validation | `validation/` | `validate_basepicture` |
 | Scalar type facts and literal inference | `validation/typing.py`, `types.py` | `sattline_parser.types` |
+| Cell rendering and whole-file formatting | `formatting/` | `format_expr`, `format_source` |
+| JSON-friendly model data | `serialization.py` | `to_jsonable`, `to_json` |
+| Project-wide definition and usage index | `project/index.py` | `SattLineProject.index` |
 | Generic parser and project introspection | `cli/` | the `sattline` command |
 
 `preprocess_source` and `SourceDocument` are both importable from

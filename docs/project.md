@@ -73,8 +73,8 @@ entries win.
 `parse_search_path(r"LibA\UnitLib,LibB\UnitLib", base=Path("/sattline"))` yields the
 two roots in the written order, relative entries resolved under the base,
 backslashes accepted, empty entries and duplicates dropped. Duplicate detection
-compares the resolved path with `casefold`, so a case-only difference counts as
-one root on every platform.
+compares the resolved path with the platform's rule, so a case-only difference
+is two roots on a case-sensitive filesystem and one root on Windows.
 
 Each root is indexed once by `SourceIndex`:
 
@@ -119,41 +119,44 @@ suffix also decides which sidecar extension may pair, through
 sequenceDiagram
     autonumber
     participant L as ProjectLoader
-    participant V as _discover
+    participant PL as ProjectPlanner
     participant F as ProjectLookup
-    participant P as _parse_code_file
-    participant VAL as validate_basepicture
+    participant X as ParseExecutor
+    participant A as ProjectAssembler
+    participant VAL as ProjectValidator
 
     Note over L: phase 1: discover, sequential, I/O only
-    L->>V: visit(target, declared_by=None)
-    V->>V: already loading? raise DependencyCycleError
-    V->>V: push the folded name on _loading
-    V->>F: find_code_with_base(name)
-    F-->>V: code_path, resolved_base
-    V->>V: plan key = resolved code path
-    V->>V: plan key already planned? reuse it
-    V->>F: find_deps_beside(code_path, name)
-    F-->>V: deps_path or None
-    V->>V: read dependency names
+    L->>PL: resolve(targets)
+    PL->>PL: resolve the artifact before it recurses
+    PL->>PL: identity already on the active artifact stack? raise DependencyCycleError
+    PL->>F: find_code_with_base(name)
+    F-->>PL: code_path, resolved_base
+    PL->>PL: plan key = resolved code path
+    PL->>PL: plan key already planned? reuse it
+    PL->>F: find_deps_beside(code_path, name)
+    F-->>PL: deps_path or None
+    PL->>PL: read dependency names
     loop each dependency
-        V->>V: visit(dep, declared_by=name)
+        PL->>PL: visit(dep, declared_by=name)
     end
-    V->>V: append a _Plan, so plans come out post-order
+    PL->>PL: append a Plan, so plans come out post-order
     Note over L: phase 2: parse every planned body
+    L->>X: parse(plans)
     alt workers > 1
-        L->>P: one task per plan, in workers processes
-        P-->>L: BasePicture, or the text of the failure
+        X->>X: one task per plan, in workers processes
     else workers = 1
-        L->>L: parse in this process
+        X->>X: parse in this process
     end
     Note over L: phase 3: assemble, sequential, plan order
-    L->>L: set origin_file and origin_lib
-    L->>L: record datecodes
-    L->>L: resolve and parse graphics companion
-    L->>L: resolve and parse distribution companion
+    L->>A: assemble(plans, outcomes)
+    A->>A: set origin_file and origin_lib
+    A->>A: record datecodes
+    A->>A: resolve and parse graphics companion
+    A->>A: resolve and parse distribution companion
+    A->>A: store SattLineProgram in registry
+    Note over L: phase 4: validate the assembled registry
     L->>VAL: validate when scope is INVOKED or FULL
     VAL-->>L: diagnostics
-    L->>L: store SattLineProgram in registry
 ```
 
 Discovery resolves paths and reads sidecars; it never parses a body. That split
@@ -161,12 +164,13 @@ is what makes the parse phase parallel: the whole closure is known before any
 parse starts, so a worker needs nothing but a path, and the assembled registry
 does not depend on which worker finished first.
 
-A plan is identified by its **resolved code path**. Because every name resolves
-through the same ordered path, one folded name reaches one body per load. When
-two roots hold `Util.s`, the body in the earlier root is planned, parsed, and
-validated; the later body is never read. There is no ambiguity to report and no
-second body to expose, so the registry holds one program per name by
-construction.
+A plan is identified by its **resolved artifact identity**
+(`ArtifactIdentity`), which is the resolved code path compared by the platform's
+own rule. Because every name resolves through the same ordered path, one name
+reaches one body per load. When two roots hold `Util.s`, the body in the earlier
+root is planned, parsed, and validated; the later body is never read. There is
+no ambiguity to report and no second body to expose, so the registry holds one
+unit per name by construction.
 
 Post-order is an invariant: the registry is built dependencies-first, so a
 program's diagnostics are computed against a complete prefix of its closure.
@@ -193,13 +197,47 @@ whole invocation graph. The loader first builds the registry, then walks
 `invoked_moduletypes` and replaces each program with a copy that carries the
 invoked-scope diagnostics.
 
+## Identity
+
+Three comparisons run through the project layer, and conflating them has caused
+real bugs. They now have names.
+
+| Identity | Type or rule | Used for |
+| --- | --- | --- |
+| Unit name in the project view | `str.casefold()` | `programs()` keys, `get`, `__contains__`, graph node and edge names |
+| Language identity inside a unit | `fold_identifier` (CP1252 table) | record, module-type, field, and variable lookup; the symbol index |
+| Artifact identity | `ArtifactIdentity`, resolved path compared with `os.path.normcase` | roots, plan keys, the cycle stack |
+| Logical spelling | `SattLineProgram.name`, `UnitIdentity.spelling` | what a diagnostic quotes |
+
+`programs()` keys are the project view's canonical spelling, which is
+`str.casefold`; `get` and `__contains__` fold the caller's spelling with the
+same rule. That key is a view key, not the language name table: two language
+names that differ only outside the CP1252 fold can share one key. Module-type,
+record, field, and variable lookup inside a unit use `fold_identifier` and keep
+them apart. Inside a unit, the symbol table uses the language's own name table
+(`fold_identifier`), which is not Unicode case folding. A filesystem path is
+never case-folded unconditionally: `ArtifactIdentity` resolves it and lets the
+platform decide, so `/lib` and `/Lib` are two roots on a case-sensitive
+filesystem and one directory on Windows.
+
+`UnitIdentity.of(name)` and `ArtifactIdentity.of(path)` are exported for a
+consumer that needs the same comparisons. Equality and hashing use the key, so
+two spellings of one identity are equal.
+
 ## Cycles
 
-A recursive dependency has no finite load order, so the loader rejects it. When
-`_visit` sees a key already in `_loading`, it raises `DependencyCycleError`
-with the canonical cycle path, for example `("alpha", "beta", "alpha")`. The
-error is structural: a cycle inside an unparseable dependency still fails the
-load.
+A recursive dependency has no finite load order, so the loader rejects it. The
+planner resolves an artifact before it recurses, so the cycle check follows
+physical files: when the resolved artifact is already on the active stack, it
+raises `DependencyCycleError` with the canonical cycle path, for example
+`("alpha", "beta", "alpha")`. The names in the path are the logical names that
+formed the loop, folded, because that is what a reader can act on. The error is
+structural: a cycle inside an unparseable dependency still fails the load.
+
+Following artifacts rather than names matters because two different names for
+one body, such as a symlink alias, still form a cycle even though no name
+repeats. The diagnostics section of [identity](#identity) names the comparison
+each layer uses.
 
 A cycle is identified by its directed node sequence, not by its member set.
 Rotations of the same sequence describe the same cycle, so every path is
@@ -315,6 +353,7 @@ classDiagram
         dependencies_of(name)
         dependents_of(name)
         graph()
+        index
     }
     class SattLineProgram {
         name: str
@@ -346,6 +385,11 @@ classDiagram
         nodes: tuple[str, ...]
         edges: tuple[tuple[str, str], ...]
     }
+    class ProjectIndex {
+        definitions_of(name)
+        usages_of(name)
+        defined_names()
+    }
     class ProgramFormat {
         mode: LoadMode
         code_ext: str | None
@@ -356,6 +400,7 @@ classDiagram
 
     SattLineProject --> SattLineProgram
     SattLineProject --> DependencyGraph
+    SattLineProject --> ProjectIndex
     SattLineProgram --> ProgramFormat
     SattLineProgram --> DistributionData
     DistributionData --> DistributionTarget
@@ -374,6 +419,48 @@ dependency is also loaded, because a missing one fails the load. A project
 assembled directly with `from_programs` may declare an edge to a program it does
 not hold; the graph keeps that edge, because it describes the declared structure,
 not just the resolved closure.
+
+## Symbol index
+
+`SattLineProject.index` answers "who defines X" and "who uses Y" across every
+loaded unit. It is built on first access from the parsed trees and cached for the
+lifetime of the project.
+
+```mermaid
+flowchart LR
+    P["SattLineProject.index"] --> I["ProjectIndex"]
+    I --> D["definitions_of(name)"]
+    I --> U["usages_of(name)"]
+    I --> N["defined_names()"]
+    D --> DS["DefinitionSite<br/>name, kind, program, library, span"]
+    U --> US["UsageSite<br/>name, kind, program, library, span"]
+```
+
+| Definition kind | Node |
+| --- | --- |
+| `PROGRAM` | the unit's `BasePicture` header |
+| `DATATYPE` | a record declaration |
+| `MODULETYPE` | a module-type declaration |
+| `VARIABLE` | a module parameter, local, or record field declaration |
+
+| Usage kind | Node |
+| --- | --- |
+| `VARIABLE` | every `VarRef`, including a mapping source or target and a header argument |
+| `MODULETYPE` | every `ModuleTypeInstance` |
+
+Names compare with `fold_identifier`, so a lookup is case-insensitive. Results
+are sorted by unit name and then source offset, and deduplicated, so two runs
+over the same project return the same tuples. The index records where a name
+appears, not what it resolves to: a reference to a name defined nowhere still
+has a usage site, and validation is what reports it.
+
+`invoked_moduletypes(programs, targets, *, closure_of=None)` is exported from
+`sattline_parser.project`. It returns the module types each unit actually
+reaches, which is why a dependency file is validated only for the parts a target
+invokes. Its keys are the mapping keys the caller supplied (the loader passes
+plan keys), its values are module-type names folded with `fold_identifier`, and
+`closure_of` must answer in the same key space as `programs`. See
+[validation scopes](#validation-scopes).
 
 ## Caches
 
@@ -623,6 +710,11 @@ on the worker count: discovery fixes the plan order before any parse runs.
   cache and `workers` do not multiply.
 - If a pool cannot be created (a restricted sandbox, a bootstrap failure), the
   load logs and parses in this process rather than failing.
+- A worker that dies mid-load, for example under memory pressure, breaks the
+  pool. The load logs that at warning level and reparses the closure in the
+  parent instead of failing, because parsing is the load rather than an
+  optimisation. The warning names the pool failure, so a run that silently lost
+  its parallelism does not look like a clean parallel load.
 - `workers > 1` and a warm cache do not add up: the parent must still receive
   every AST from a child. Use the cache for repeated loads and `workers` for a
   cold one.

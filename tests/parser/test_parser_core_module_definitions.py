@@ -23,7 +23,7 @@ from sattline_parser.models.ast_model import (
 from sattline_parser.models.clauses import ClippingClause, ModuleArguments, ModuleMarker, ZoomLimits
 from sattline_parser.models.expressions import VarRef
 from sattline_parser.models.tails import VarTail
-from sattline_parser.transformer._module_shared import CoordTail, GroupConnInfo, InterimCoords
+from sattline_parser.transformer._module_shared import GLOBAL_KEYWORD, CoordTail, GroupConnInfo, InterimCoords
 from sattline_parser.transformer._payloads import Grid, ModuleOptions, SeqLayers, TwoLayers, Zoomable
 
 from ._parser_core_test_support import _module_header, _ModulesHarness
@@ -228,7 +228,7 @@ def test_modules_mixin_transfer_and_variable_helpers_cover_fallback_branches():
         SimpleNamespace(line=3, column=1, start_pos=30, end_pos=31),
         [
             VarRef("Target"),
-            True,
+            GLOBAL_KEYWORD,
             parser_const.GRAMMAR_VALUE_DURATION_VALUE,
             {parser_const.GRAMMAR_VALUE_TIME_VALUE: "T#5S"},
         ],

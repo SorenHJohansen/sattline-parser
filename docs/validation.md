@@ -66,7 +66,10 @@ The single-file caller may legitimately reference a datatype that lives in
 another file it has not loaded. `allow_unresolved_external_datatypes=True`
 suppresses only unknown-name findings. It does not suppress typo suggestions or
 local rules. The project loader never sets it: a project load has the whole
-closure, or it raises.
+closure, or it raises. When the caller does hold the dependency definitions, it
+passes them through `parse_and_validate`, which forwards the same three
+arguments to the validator; it does not have to call `validate_basepicture`
+itself.
 
 ## Walk
 
@@ -112,7 +115,8 @@ names as unresolved uses instead.
 
 `ModuleHeader.invoke_coord_tails` holds only the tails attached to the five
 invocation coordinates, so `SL-V032` applies to them like any other coordinate
-tail. `Enable_`, `Module_In_View`, and assignment tails are children of their
+tail. `coordinate_tails` is the same tails grouped by coordinate; the rule reads
+the flat list, so a tail is checked once. `Enable_`, `Module_In_View`, and assignment tails are children of their
 own clauses under `ModuleHeader.arguments`; the `Enable_` boolean rule and the
 ordinary expression walk apply through the clause that owns them.
 `ModuleDef.clipping` owns the clipping tails, so each is checked once.

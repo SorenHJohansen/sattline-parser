@@ -26,6 +26,7 @@ from .formats import (
     candidate_extensions,
     deps_extensions_for_code,
 )
+from .identity import ArtifactIdentity
 from .lookup_cache import FileLookupCache
 from .models import LoadMode
 
@@ -40,7 +41,16 @@ def _resolved(path: Path | None) -> Path | None:
 
 
 def _lookup_path_key(path: Path) -> str:
-    return str(_resolved(path)).casefold()
+    """The filesystem identity of *path*, for comparing two directories.
+
+    This is filesystem identity, not language identity: two roots are the same
+    root when the platform says their resolved paths are the same. On a
+    case-sensitive filesystem ``/lib`` and ``/Lib`` are different directories,
+    so the key must not case-fold; on Windows the platform comparison is
+    case-insensitive. Identifier comparison is a separate question and always
+    uses :func:`sattline_parser.names.fold_identifier`.
+    """
+    return ArtifactIdentity.of(path).key
 
 
 def _is_relative_to(path: Path | None, root: Path | None) -> bool:

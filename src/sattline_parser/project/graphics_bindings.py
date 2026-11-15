@@ -7,8 +7,8 @@ transformer, with source spans in companion-file coordinates.
 
 from __future__ import annotations
 
-import dataclasses
 import re
+from dataclasses import dataclass, fields, is_dataclass, replace
 from functools import lru_cache
 from typing import Any, cast
 
@@ -60,8 +60,9 @@ def _unwrap_expression_root(node: object) -> object:
     return node
 
 
-def _rebase_expression_spans(node: object, *, line: int, column: int, start: int) -> object:
-    """Rewrite expression spans from expression-local to companion coordinates.
+@dataclass(frozen=True, slots=True)
+class _SpanRebase:
+    """Rewrite expression-local spans into companion coordinates.
 
     The expression text is parsed on its own, so its spans start at line 1,
     column 1, offset 0. ``line``, ``column``, and ``start`` are the companion
@@ -70,54 +71,68 @@ def _rebase_expression_spans(node: object, *, line: int, column: int, start: int
     file offset.
     """
 
-    def rebase(value: SourceSpan) -> SourceSpan:
+    line: int
+    column: int
+    start: int
+
+    def apply(self, span: SourceSpan) -> SourceSpan:
         return SourceSpan(
-            start=start + value.start,
-            end=start + value.end,
-            line=line + value.line - 1,
-            column=(column + value.column - 1) if value.line == 1 else value.column,
+            start=self.start + span.start,
+            end=self.start + span.end,
+            line=self.line + span.line - 1,
+            column=(self.column + span.column - 1) if span.line == 1 else span.column,
         )
 
-    def convert(value: object) -> object:
-        if isinstance(value, SourceSpan):
-            return rebase(value)
-        if isinstance(value, (IntLiteral, FloatLiteral)):
-            # The literal classes are ``int``/``float`` subclasses, so they fall
-            # through every structural branch below and would keep their
-            # expression-local span.
-            literal_span = value.span
-            if literal_span is not None:
-                rebased = rebase(literal_span)
-                if isinstance(value, IntLiteral):
-                    return IntLiteral(int(value), rebased)
-                return FloatLiteral(float(value), rebased)
+    def literal(self, value: IntLiteral | FloatLiteral) -> IntLiteral | FloatLiteral:
+        """Rebase a literal's own span.
+
+        The literal classes are ``int``/``float`` subclasses, so they fall
+        through every structural branch and would keep their expression-local
+        span.
+        """
+        literal_span = value.span
+        if literal_span is None:
+            return value
+        rebased = self.apply(literal_span)
+        if isinstance(value, IntLiteral):
+            return IntLiteral(int(value), rebased)
+        return FloatLiteral(float(value), rebased)
+
+    def container(self, value: dict[str, object] | list[object] | tuple[object, ...] | Tree[object]) -> object:
         if isinstance(value, dict):
-            mapping = cast(dict[str, object], value)
-            for key, item in mapping.items():
-                mapping[key] = convert(item)
-            return mapping
+            for key, item in value.items():
+                value[key] = self.convert(item)
+            return value
         if isinstance(value, list):
-            items = cast(list[object], value)
-            for index, item in enumerate(items):
-                items[index] = convert(item)
-            return items
+            for index, item in enumerate(value):
+                value[index] = self.convert(item)
+            return value
         if isinstance(value, tuple):
-            items = cast(tuple[object, ...], value)
-            return tuple(convert(item) for item in items)
-        if isinstance(value, Tree):
-            tree = cast(Tree[object], value)
-            for index, item in enumerate(tree.children):
-                tree.children[index] = convert(item)
-            return tree
-        if dataclasses.is_dataclass(value) and not isinstance(value, type):
-            changes = {
-                structure_field.name: convert(getattr(value, structure_field.name))
-                for structure_field in dataclasses.fields(value)
-            }
-            return dataclasses.replace(value, **changes)
+            return tuple(self.convert(item) for item in value)
+        for index, item in enumerate(value.children):
+            value.children[index] = self.convert(item)
         return value
 
-    return convert(node)
+    def structure(self, value: object) -> object:
+        instance = cast(Any, value)
+        changes = {field.name: self.convert(getattr(instance, field.name)) for field in fields(instance)}
+        return replace(instance, **changes)
+
+    def convert(self, value: object) -> object:
+        if isinstance(value, SourceSpan):
+            return self.apply(value)
+        if isinstance(value, (IntLiteral, FloatLiteral)):
+            return self.literal(value)
+        if isinstance(value, (dict, list, tuple, Tree)):
+            return self.container(cast("dict[str, object] | list[object] | tuple[object, ...] | Tree[object]", value))
+        if is_dataclass(value) and not isinstance(value, type):
+            return self.structure(value)
+        return value
+
+
+def _rebase_expression_spans(node: object, *, line: int, column: int, start: int) -> object:
+    """Rewrite expression spans from expression-local to companion coordinates."""
+    return _SpanRebase(line=line, column=column, start=start).convert(node)
 
 
 def _coerce_graphics_literal(payload: str) -> object:

@@ -66,6 +66,20 @@ class PrivateMarker:
 
 
 @dataclass(frozen=True)
+class GlobalKeyword:
+    """The written ``GLOBAL`` keyword.
+
+    A dedicated payload, not the boolean ``True``: a literal source value is also
+    a bool, so a shared representation would let ``Name => True`` be read as the
+    keyword and lose the value. Identity comparison keeps the two apart.
+    """
+
+
+#: The one ``GLOBAL`` payload every keyword occurrence produces.
+GLOBAL_KEYWORD = GlobalKeyword()
+
+
+@dataclass(frozen=True)
 class GroupConnInfo:
     """``scan_group`` payload: an optional group connection and its global flag."""
 
@@ -185,10 +199,12 @@ def flatten_items(items: Iterable[TransformerItem]) -> Iterator[TransformerItem]
 
 
 __all__ = [
+    "GLOBAL_KEYWORD",
     "CodeBlockPayload",
     "CoordBox",
     "CoordPair",
     "CoordTail",
+    "GlobalKeyword",
     "GroupConnInfo",
     "InterimCoords",
     "ModuleInvocation",

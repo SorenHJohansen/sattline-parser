@@ -94,6 +94,14 @@ from .models.expressions import (
     VarRef,
 )
 from .models.header import HeaderInfo
+from .models.interactor_properties import (
+    InteractorPropertyKind,
+    InteractorPropertySpec,
+    TypedInteractorProperty,
+    find_interactor_property,
+    interactor_property_catalogue,
+    typed_interactor_properties,
+)
 from .models.properties import GraphProperties, InteractBodyEntry, InteractProperties
 from .models.tails import (
     LitStringTail,
@@ -142,6 +150,8 @@ __all__ = [
     "InteractBodyEntry",
     "InteractObject",
     "InteractProperties",
+    "InteractorPropertyKind",
+    "InteractorPropertySpec",
     "LitStringTail",
     "LiteralLeaf",
     "MappingSource",
@@ -178,15 +188,19 @@ __all__ = [
     "Tail",
     "TailedClause",
     "TernaryOp",
+    "TypedInteractorProperty",
     "UnaryOp",
     "VarRef",
     "VarTail",
     "Variable",
     "WalkEvent",
     "ZoomLimits",
+    "find_interactor_property",
+    "interactor_property_catalogue",
     "is_expression_tail",
     "iter_child_nodes",
     "iter_literal_leaves",
     "tail_list",
+    "typed_interactor_properties",
     "walk",
 ]

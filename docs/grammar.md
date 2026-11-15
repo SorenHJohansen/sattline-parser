@@ -281,9 +281,16 @@ The `NAME` terminal:
 
 - does not match any keyword (`IF`, `THEN`, `ELSE`, `ELSIF`, `ENDIF`, `AND`,
   `OR`, `NOT`, `True`, `False`, `On`, `Off`, `SUBSEQSTEP`);
-- accepts a quoted identifier `'...'` of 1 to 20 characters;
+- accepts a quoted identifier `'...'`;
 - accepts letters, marks, digits, `_`, `'`, and every printable CP1252 byte;
-- is limited to 20 characters.
+- accepts an identifier of any length.
+
+The language limits a declared identifier to 20 characters, so a longer spelling
+is a validation finding (`SL-V038`) with the declaration's span, not a lexer
+error. Keeping the lexer permissive means the source parses and the finding says
+what is wrong, instead of pointing at the twenty-first character as an
+unexpected one. A sidecar dependency name is still capped at 20 characters,
+because that name builds a filesystem path and is not a parsed declaration.
 
 Identifier comparison is not Unicode case folding. `names.fold_identifier`
 implements the CP1252 byte table used by the language:
@@ -303,9 +310,9 @@ to `0xC0-0xD6`, `0xF8-0xFE` to `0xD8-0xDE`, and `0xFF` to `0x9F`. Everything
 else is identity, so `ß` does not fold and `Straße` never equals `STRASSE`.
 Quoted identifiers compare including their quotes, with folding applied inside.
 
-The project layer uses `str.casefold` for filesystem identity. That is a
-different question from language identity, which always uses
-`fold_identifier`.
+The project layer compares filesystem paths with the platform's own rule
+(`os.path.normcase` through `ArtifactIdentity`), which is a different question
+from language identity.
 
 ### Keywords are case-insensitive
 

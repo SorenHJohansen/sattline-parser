@@ -44,6 +44,7 @@ classDiagram
         groupconn: VarRef | None
         groupconn_global: bool
         description_comments: list[CodeComment]
+        coordinate_tails: tuple
     }
 
     class SingleModule {
@@ -117,7 +118,10 @@ such as an empty picture or a dependency stub.
 arguments, and `Name = value` assignments. The singular names `layer_info`,
 `enable`, `enable_tail`, `module_in_view`, `zoom_limits`, `zoomable`, and
 `invocation_arguments` are read-only views over that field. `invoke_coord_tails`
-holds only the tails attached to the five invocation coordinates.
+is the flat list of tails attached to the five invocation coordinates, and
+`coordinate_tails` is the same tails grouped by coordinate (index-aligned with
+`invoke_coord`), so a reader can place each one. The two views hold the same
+objects, never copies.
 
 ## Declarations
 
@@ -270,8 +274,9 @@ written value is preserved and absence stays `None`.
 
 `ModuleDef.clipping` holds the whole `ClippingBounds` clause, so the resolved
 corners and the tails attached to them live in one payload. `clipping_bounds`
-and `clipping_tails` are read-only views over it. The block has no separate
-property map.
+and `clipping_tails` are read-only views over it. `ClippingClause.tails` is the
+flat list of corner tails and `corner_tails` groups the same objects by corner,
+in `bounds` order. The block has no separate property map.
 
 ## Typed property maps
 
@@ -300,6 +305,7 @@ than by drawing effect:
 | Key | Node type | Source |
 | --- | --- | --- |
 | `coords` | `tuple` pair or box | a box object's `(x, y) (w, h)` pairs |
+| `coord_tails` | `tuple` of tail groups | the tails written after each coordinate value |
 | `segment_point` | `tuple` pair | a `SegmentObject`'s third pair |
 | `polygon_type` | `list[str]` | `Polyline`, `Spline`, `Connection` |
 | `points` | `list[PolygonPoint]` | every polygon coordinate pair |
@@ -313,13 +319,40 @@ than by drawing effect:
 | `layer` | `int` | `Layer_ = <int>` |
 
 A `PolygonPoint` holds `x`, `y`, `x_tails`, and `y_tails`, so a tail written
-after one value stays attached to that value. A polygon whose coordinate carries
-a nested `ClippingBounds` annotation folds that annotation's tails into the same
-coordinate. The flat `tails` view lists the same tail objects, never copies.
+after one value stays attached to that value. Every other coordinate run uses
+`coord_tails`, one group per REAL, in the same order as the values; an
+`InteractObject` has the same key for its coordinate run. A polygon whose
+coordinate carries a nested `ClippingBounds` annotation folds that annotation's
+tails into the same coordinate. The flat `tails` view lists the same tail
+objects, never copies.
 
 A text-object clause keeps its value and its tail in one payload, so a literal
 and its `InVar_` binding are read together. Compare a clause by `key` and
 `value`, and read `tail` only when the binding matters.
+
+## Interactor property catalogue
+
+An interactor body accepts any `NAME` as a bare flag or as `NAME = value`, so an
+unknown property still parses. `models/interactor_properties.py` names the
+spellings the scanner enum defines and says what each one is for, without
+changing how the parser stores it.
+
+| Name | Meaning |
+| --- | --- |
+| `interactor_property_catalogue` | `Mapping[str, InteractorPropertySpec]` keyed by folded name |
+| `find_interactor_property` | `(name)` returns the spec, or `None` for an unknown spelling |
+| `typed_interactor_properties` | `(obj: InteractObject)` returns `TypedInteractorProperty` values in written order |
+| `TypedInteractorProperty` | `(clause, spec)` with `name` and `value` views |
+| `InteractorPropertySpec` | `(name, kind, datatype, summary)` |
+| `InteractorPropertyKind` | `SELECT`, `RANGE`, `COUNTER`, `BOOLEAN`, `NUMERIC`, `TEXT`, `EVENT` |
+
+A spec's `datatype` is advisory vocabulary: it names the value type the spelling
+implies, and the grammar still accepts any value, so `Int_Value = "text"` parses
+and is not a finding. The catalogue is vocabulary, not a
+runtime guarantee: a property is still stored as the `FlagClause` or
+`AssignClause` the source wrote, and an unknown spelling appears with
+`spec is None` instead of being dropped. Both container shapes are read: an
+ordered `body`, and the flat `flags` and `assigns` lists a `ComButProc_` uses.
 
 Every payload that reaches the parsed tree (the interact body clauses,
 coordinate and header tails, `ClippingClause`, `ModuleArguments`, graphics and
@@ -627,6 +660,8 @@ Property payloads are visited in a fixed order:
 | `GraphObject` | `colours`, `enable_tail`, `width`, `value_fraction`, `format_string`, `alignments`, `connection_node`, `points`, `tails` |
 | `InteractObject` | `procedure`, `assigns`, `enables`, `flags`, `colours`, `body`, `tails` |
 
+`coord_tails` keeps its place in both order tuples but is a grouping view: it yields no nodes, and the flat `tails` list emits each tail once. A key is in the order tuple because the table must cover every property key, not because the walker descends into it.
+
 `ModuleHeader.arguments` is walked as a node, so a consumer reaches `enable`,
 `module_in_view`, `zoom_limits`, `markers`, and `assigns` through it.
 `ModuleDef.clipping` owns the clipping tails, so they are emitted through the
@@ -658,10 +693,11 @@ walker decision, but they produce no nodes. `text_vars` holds `VarRef` values,
 which are nodes, and the walk visits them after the clauses.
 
 The flat `properties["tails"]` list is a derived view. A tail owned by a clause,
-a polygon point, or a text-object clause is emitted through that owner, and only
-the unowned (coordinate) tails are emitted from the flat list. Every tail node
-therefore appears once, and a query or validation pass does not need to
-deduplicate shared payloads.
+a polygon point, or a text-object clause is emitted through that owner, and the
+coordinate tails, which have no node owner, are emitted from the flat list.
+Every tail node therefore appears once, and a query or validation pass does not
+need to deduplicate shared payloads. `coord_tails` is not walked: it holds the
+same coordinate tails, and walking it would either duplicate or suppress them.
 
 `walk` uses an explicit stack and keeps ancestors as a persistent chain.
 `WalkEvent.parents` expands its sequence view only when read, so a deep tree is
@@ -681,10 +717,14 @@ collect variable references. Rule-specific validation walks stay in
 ## Formatting
 
 `formatting/formatter.py` renders AST nodes for `__str__`, message text, and
-debugging. `sattline_parser.formatting` is a supported import surface for the
-function names and their documented signatures; the exact rendered string is
-display output, not a serialization contract. Use the CLI or a consumer
-serializer when you need machine-readable output.
+debugging. `formatting/source.py` renders a whole file: `format_source` takes a
+`BasePicture` and `format_module` takes one `ModuleDef` block, and their output
+parses back to an equal tree for every corpus fixture. `UnsupportedFormattingError`
+marks the few shapes whose written place or spelling is not in the model.
+`sattline_parser.formatting` is a supported import surface for the function
+names and their documented signatures; the exact layout is display output, not a
+serialization contract. Use `sattline_parser.serialization` when you need
+machine-readable data.
 
 `format_expr` renders an expression or statement in source spelling, so the
 output parses back to the same node: a `VarRef` state is written `:Old`/`:New`,
@@ -705,6 +745,8 @@ keywords; only `format_expr` output is round-trip parseable.
 | `tests/parser/test_parser_core_module_definitions.py` | Layout and graphics fields |
 | `tests/parser/test_models_walk.py` | Field coverage, node order, field and indices, ancestry, pruning, leave events, literal leaves, visitor dispatch |
 | `tests/parser/test_formatter.py` | Expression rendering in source spelling, SFC footers, round-trip parsing |
+| `tests/parser/test_format_source.py` | Whole-file round trip for every corpus fixture, idempotence, graphics properties |
+| `tests/parser/test_serialization.py` | JSON-friendly data for scalars, spans, containers, and a whole picture |
 | `tests/parser/test_models_boundary.py` | The model layer imports no Lark module |
 | `tests/parser/test_ast_namespace.py` | Every node type and model dataclass is on the `sattline_parser.ast` surface |
 | `tests/parser/test_layout_metadata.py` | Every span and geometry field is classified as layout |

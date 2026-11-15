@@ -6,6 +6,7 @@ import pytest
 from lark import Token, Tree
 from lark.tree import Meta
 
+from sattline_parser import parse_source_text
 from sattline_parser.grammar import constants as parser_const
 from sattline_parser.models.ast_model import (
     BasePicture,
@@ -31,7 +32,14 @@ from sattline_parser.models.clauses import (
 )
 from sattline_parser.models.expressions import VarRef
 from sattline_parser.models.tails import VarTail
-from sattline_parser.transformer._module_shared import CoordTail, GroupConnInfo, InterimCoords, flatten_items, meta_span
+from sattline_parser.transformer._module_shared import (
+    GLOBAL_KEYWORD,
+    CoordTail,
+    GroupConnInfo,
+    InterimCoords,
+    flatten_items,
+    meta_span,
+)
 from sattline_parser.transformer._payloads import ClipValue, CoordinateClipping, Zoomable
 from sattline_parser.transformer.sl_transformer import _is_tree
 
@@ -154,14 +162,18 @@ def test_modules_mixin_coordinate_helpers_preserve_pairs_tails_and_clipping_tree
         coords=((1.0, 2.0), (3.0, 4.0)),
         tails=[VarTail("in", "PanelResize"), VarTail("in", "PanelScale")],
     )
-    assert invoke == InterimCoords(coords=(1.0, 2.0, 3.0, 4.0, 5.0), tails=[VarTail("in", "PanelResize")])
+    assert invoke == InterimCoords(
+        coords=(1.0, 2.0, 3.0, 4.0, 5.0),
+        tails=[VarTail("in", "PanelResize")],
+        coord_tails=((), (), (), (), (VarTail("in", "PanelResize"),)),
+    )
     assert mixin.origo_size_pair([InterimCoords(coords=(1.0, 2.0)), InterimCoords(coords=(3.0, 4.0))]) == (
         InterimCoords(coords=((1.0, 2.0), (3.0, 4.0)), tails=None)
     )
     assert mixin.coord_invar_tail(Meta(), [Token("COMMA", ","), "WidthSource"]) == CoordTail("WidthSource")
     assert clipping == CoordinateClipping((ClipValue(1.0),))
 
-    assert mixin.coordinates([1, 2, 3]).coord_tails is None
+    assert mixin.coordinates([1, 2, 3]).coord_tails == ((), ())
 
     with pytest.raises(ValueError, match="coordinates missing REAL values"):
         mixin.coordinates([1])
@@ -288,7 +300,7 @@ def test_modules_mixin_variable_group_and_mapping_helpers_preserve_modifiers_and
         SimpleNamespace(line=9, column=3, start_pos=90, end_pos=100),
         [
             parsed_name,
-            True,
+            GLOBAL_KEYWORD,
             parser_const.GRAMMAR_VALUE_DURATION_VALUE,
             VarRef("SourceVar"),
         ],
@@ -296,7 +308,7 @@ def test_modules_mixin_variable_group_and_mapping_helpers_preserve_modifiers_and
     variables = mixin.variable_group(
         [
             ("Alpha", "desc", SourceSpan(start=4, end=5, line=4, column=1)),
-            True,
+            GLOBAL_KEYWORD,
             "integer",
             parser_const.GRAMMAR_VALUE_CONST_KW,
             parser_const.GRAMMAR_VALUE_STATE_KW,
@@ -308,7 +320,7 @@ def test_modules_mixin_variable_group_and_mapping_helpers_preserve_modifiers_and
     list_tree = mixin.variable_list([variables])
     params_tree = mixin.moduleparameters([list_tree])
     locals_tree = mixin.localvariables([list_tree])
-    scan_group = mixin.scan_group([True, parsed_name])
+    scan_group = mixin.scan_group([GLOBAL_KEYWORD, parsed_name])
 
     assert parsed_name == VarRef("Pump.State", state="old", span=SourceSpan(start=90, end=100, line=9, column=3))
     assert mapping.target == VarRef("Pump.State", state="old", span=SourceSpan(start=90, end=100, line=9, column=3))
@@ -338,3 +350,30 @@ def test_modules_mixin_variable_group_and_mapping_helpers_preserve_modifiers_and
         ],
     )
     assert suffix_state_name == VarRef("Pump.State", state="old", span=SourceSpan(start=70, end=80, line=11, column=3))
+
+
+def test_a_falsy_parameter_mapping_literal_is_kept() -> None:
+    source = """\"Syntax version\"
+\"Original file date: ---\"
+\"Program date: ---, name: T\"
+BasePicture Invocation ( 0.0,0.0,0.0,1.0,1.0 ) : MODULEDEFINITION DateCode_ 1
+TYPEDEFINITIONS
+   MT = MODULEDEFINITION DateCode_ 1
+   MODULEPARAMETERS
+      P: integer;
+   ModuleDef
+   ClippingBounds = ( -1.0 , -1.0 ) ( 1.0 , 1.0 )
+   ENDDEF (*MT*);
+SUBMODULES
+   A Invocation ( 0.0,0.0,0.0,1.0,1.0 ) : MT ( P => False, P => True, P => 0, P => \"\");
+ModuleDef
+ClippingBounds = ( -1.0 , -1.0 ) ( 1.0 , 1.0 )
+ENDDEF (*BasePicture*);
+"""
+
+    picture = parse_source_text(source, log_failures=False)
+
+    instance = picture.submodules[0]
+    assert isinstance(instance, ModuleTypeInstance)
+    assert [mapping.source_literal for mapping in instance.parametermappings] == [False, True, 0, ""]
+    assert not any(mapping.is_source_global for mapping in instance.parametermappings)

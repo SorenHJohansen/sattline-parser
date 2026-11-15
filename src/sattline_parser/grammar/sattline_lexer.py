@@ -175,5 +175,5 @@ class SattLineLexer(ContextualLexer):
                     token_history=[last_token],
                     terminals_by_name=self.root_lexer.terminals_by_name,
                 ) from exc
-            except UnexpectedCharacters:
+            except UnexpectedCharacters:  # pragma: no cover - the root lexer failing too
                 raise exc from None

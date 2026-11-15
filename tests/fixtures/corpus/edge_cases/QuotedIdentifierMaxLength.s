@@ -3,9 +3,8 @@
 "Program date: 2026-04-23-12:00:00.000, name: QuotedIdMax20"
 (* EDGE CASE: A quoted identifier with exactly 20 characters in its body
    (not counting the surrounding single quotes).
-   20 characters is the maximum allowed length; 21 or more characters cause
-   the parser to raise UnexpectedCharacters.
-   This fixture verifies the 20-character boundary is accepted.
+   20 characters is the declared maximum; a longer spelling still parses and
+   reports SL-V038 at the declaration (see invalid/IdentifierTooLong.s).
    Expected: strict syntax-check passes. *)
 
 BasePicture Invocation

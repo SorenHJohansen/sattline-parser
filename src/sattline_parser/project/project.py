@@ -13,6 +13,7 @@ from pathlib import Path
 from types import MappingProxyType
 
 from ._cycles import dependency_cycles
+from .index import ProjectIndex
 from .loader import ProjectLoader
 from .models import DependencyGraph, LoadDiagnostic, LoadMode, LoadValidation, SattLineProgram
 
@@ -28,6 +29,7 @@ class SattLineProject:
     def __init__(self) -> None:
         self._programs: dict[str, SattLineProgram] = {}
         self._diagnostics: tuple[LoadDiagnostic, ...] = ()
+        self._index: ProjectIndex | None = None
 
     @classmethod
     def from_programs(cls, programs: Mapping[str, SattLineProgram]) -> SattLineProject:
@@ -184,6 +186,19 @@ class SattLineProject:
             for dependency in program.dependencies
         )
         return DependencyGraph(nodes=tuple(sorted(self._programs)), edges=edges)
+
+    @property
+    def index(self) -> ProjectIndex:
+        """Definitions and uses across the loaded units, built once.
+
+        The index is derived from the parsed trees and cached for the lifetime
+        of the project. Use :meth:`ProjectIndex.definitions_of` to answer "who
+        defines X" and :meth:`ProjectIndex.usages_of` to answer "who uses Y".
+        Both compare names the way the language does, case-insensitively.
+        """
+        if self._index is None:
+            self._index = ProjectIndex(self._programs)
+        return self._index
 
 
 __all__ = ["SattLineProject"]

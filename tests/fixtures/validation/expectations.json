@@ -216,6 +216,20 @@
         "parse_error": true
       }
     ],
+    "invalid/IdentifierTooLong.s": [
+      {
+        "code": "SL-V038",
+        "column": 4,
+        "length": 21,
+        "line": 13
+      },
+      {
+        "code": "SL-V038",
+        "column": 4,
+        "length": 95,
+        "line": 16
+      }
+    ],
     "invalid/IfConditionNotBoolean.s": [
       {
         "code": "SL-V030",
@@ -585,6 +599,7 @@
     "valid/SubSeqTransition.s": [],
     "valid/SubSeqTransitionAlt.s": [],
     "valid/SubmoduleParams.s": [],
+    "valid/SubmoduleScanGroup.s": [],
     "valid/SubsequenceBlock.s": [],
     "valid/TemporalVsNumericCompare.s": [],
     "valid/TypedExpressions.s": [],

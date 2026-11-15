@@ -8,7 +8,7 @@ from typing import Any, cast
 import pytest
 from lark import Tree
 
-from sattline_parser.models.ast_model import GraphicsBinding, SourceSpan
+from sattline_parser.models.ast_model import GraphicsBinding, IntLiteral, SourceSpan
 from sattline_parser.project import (
     GraphicsBinding as ProjectGraphicsBinding,
 )
@@ -19,6 +19,7 @@ from sattline_parser.project import (
     resolve_graphics_companion_path,
 )
 from sattline_parser.project import graphics_bindings as bindings
+from sattline_parser.project.graphics_bindings import _rebase_expression_spans
 from sattline_parser.project.graphics_parsing import GraphicsParseError
 
 
@@ -417,3 +418,15 @@ def test_parse_graphics_file_rejects_an_oversize_companion(tmp_path: Path, monke
 
     with pytest.raises(GraphicsParseError, match="byte limit"):
         parse_graphics_file(path)
+
+
+def test_span_rebasing_leaves_an_unknown_value_alone() -> None:
+    marker = object()
+
+    assert _rebase_expression_spans(marker, line=1, column=1, start=0) is marker
+
+
+def test_span_rebasing_leaves_a_literal_without_a_span_alone() -> None:
+    literal = IntLiteral(1)
+
+    assert _rebase_expression_spans(literal, line=2, column=3, start=4) is literal

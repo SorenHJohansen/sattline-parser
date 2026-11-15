@@ -13,7 +13,7 @@ import getpass
 import os
 import stat
 import sys
-from collections.abc import Callable, Collection, Generator
+from collections.abc import Callable, Collection, Generator, Sequence
 from contextlib import contextmanager
 from functools import lru_cache
 from hashlib import sha256
@@ -25,7 +25,7 @@ from lark import Lark, Token, Tree
 from lark import __version__ as lark_version
 from lark.exceptions import VisitError
 
-from sattline_parser.models.ast_model import BasePicture
+from sattline_parser.models.ast_model import BasePicture, DataType, ModuleTypeDef
 from sattline_parser.source_document import (
     SourceDocument,
     mark_remapped,
@@ -668,6 +668,9 @@ def parse_and_validate(
     debug: Callable[[str], None] | None = None,
     source_path: Path | None = None,
     log_failures: bool = True,
+    external_datatypes: Sequence[DataType] = (),
+    external_moduletype_defs: Sequence[ModuleTypeDef] = (),
+    allow_unresolved_external_datatypes: bool = False,
 ) -> tuple[BasePicture, tuple[Diagnostic, ...]]:
     """Parse a SattLine source and run strict single-source validation.
 
@@ -675,6 +678,14 @@ def parse_and_validate(
     source that fully validates. ``parse_source_text`` itself stays a pure
     parse/transform pipeline — callers opt into validation by using this entry
     point.
+
+    ``external_datatypes`` and ``external_moduletype_defs`` are the definitions
+    visible from units this one depends on, and are the same arguments
+    :func:`validate_basepicture` takes. Pass them when the caller already holds
+    the dependency definitions, so a reference to a record or module type from
+    a dependency resolves instead of dropping to the validator. A caller that
+    has not loaded those definitions, and only wants the unknown-name findings
+    suppressed, sets ``allow_unresolved_external_datatypes`` instead.
     """
     basepic = parse_source_text(
         src,
@@ -684,7 +695,12 @@ def parse_and_validate(
         source_path=source_path,
         log_failures=log_failures,
     )
-    return basepic, validate_basepicture(basepic)
+    return basepic, validate_basepicture(
+        basepic,
+        external_datatypes=external_datatypes,
+        external_moduletype_defs=external_moduletype_defs,
+        allow_unresolved_external_datatypes=allow_unresolved_external_datatypes,
+    )
 
 
 def parse_source_bytes(

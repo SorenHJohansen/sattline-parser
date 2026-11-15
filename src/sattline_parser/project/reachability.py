@@ -22,6 +22,7 @@ from sattline_parser.models.ast_model import (
     ModuleTypeInstance,
     SingleModule,
 )
+from sattline_parser.names import fold_identifier
 
 from .models import SattLineProgram
 
@@ -75,7 +76,10 @@ def invoked_moduletypes(
     (a :class:`BasePicture`). ``targets`` are program keys. A target contributes
     every module type in its own file and every library module type its
     submodules invoke. Those library definitions contribute their own nested
-    invocations, transitively.
+    invocations, transitively. Keys are the mapping keys the caller supplied, and
+    the values are module-type names folded with
+    :func:`sattline_parser.names.fold_identifier`, so a caller can compare them
+    with the language name table.
 
     ``closure_of`` answers "which program keys can this key see" and defaults to
     walking the declared dependency names. The loader passes its resolved
@@ -90,7 +94,7 @@ def invoked_moduletypes(
         else:
             closures[key] = visible_program_keys(programs, key, program.dependencies)
         for moduletype in program.code.moduletype_defs:
-            index.setdefault(moduletype.name.casefold(), []).append((key, moduletype))
+            index.setdefault(fold_identifier(moduletype.name), []).append((key, moduletype))
 
     pending: deque[tuple[str, str]] = deque()
     for target in targets:
@@ -105,12 +109,12 @@ def invoked_moduletypes(
     seen: set[tuple[str, str]] = set()
     while pending:
         name, requester = pending.popleft()
-        folded = name.casefold()
+        folded = fold_identifier(name)
         if (folded, requester) in seen:
             continue
         seen.add((folded, requester))
         for key, moduletype in _resolve_moduletype(folded, requester, index, closures):
-            reachable.setdefault(key, set()).add(moduletype.name.casefold())
+            reachable.setdefault(key, set()).add(fold_identifier(moduletype.name))
             pending.extend((reference, key) for reference in iter_moduletype_refs(moduletype.submodules))
     return reachable
 

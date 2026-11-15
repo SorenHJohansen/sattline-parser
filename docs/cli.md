@@ -29,7 +29,7 @@ flowchart TB
     E -->|2| U
     E -->|3| I["exit 3 internal"]
     D -->|CliError| U
-    D -->|KeyboardInterrupt| U
+    D -->|KeyboardInterrupt| K["print interrupted<br/>exit 130"]
     D -->|other exception| X{"--debug?"}
     X -->|yes| T["traceback"]
     X -->|no| O["one-line internal error"]
@@ -43,6 +43,7 @@ flowchart TB
 | `1` | Findings (or a diff that changed, or a query with no rows) |
 | `2` | Usage or input problem |
 | `3` | Internal error (a bug) |
+| `130` | Interrupted (Ctrl-C), following the shell convention of 128 + SIGINT |
 
 Agents branch on exit codes, not on prose. A traceback is printed only under
 `--debug`. `--debug` is a top-level flag, so it comes before the command:
@@ -250,10 +251,12 @@ sattline corpus tests/fixtures/corpus --summary
 sattline corpus src --jobs 8 --json
 ```
 
-Scans for `.s`/`.x` recursively. `--jobs N` uses a thread pool of 1 to 32
-workers and produces the same rows in the same order as a serial run. The output is a
-rule histogram plus the failing files, or a full JSON result unless `--summary`
-is given.
+Scans for `.s`/`.x` recursively. `--jobs N` uses a process pool of 1 to 32
+workers and produces the same rows in the same order as a serial run. A worker
+returns only counts, so no parser, counter, or source text is shared between
+jobs. A pool that cannot start, or one whose worker dies, falls back to scanning
+in this process with a warning on stderr. The output is a rule histogram plus
+the failing files, or a full JSON result unless `--summary` is given.
 
 ### `version`
 
@@ -272,6 +275,7 @@ compatibility before parsing output.
 | (none) | Human-readable text |
 | `--json` | One JSON document |
 | `--jsonl` | Command-specific stream, described below |
+| `--sarif` | A SARIF 2.1.0 log for code scanning (`check`, `project`); exclusive with `--json` and `--jsonl` |
 
 `--json` and `--jsonl` are mutually exclusive. Findings are never printed as a
 second document alongside a JSON payload: they ride inside the same object.
@@ -346,6 +350,27 @@ A validation row has no `severity`, because every row it carries is an error.
 `count`, split into `findings.added` and `findings.removed`, plus
 `counts.changed`.
 
+## SARIF output
+
+`sattline check --sarif` and `sattline project --sarif` emit a SARIF 2.1.0 log
+for a code-scanning service. The mapping is fixed:
+
+| SARIF field | Source |
+| --- | --- |
+| `runs[0].tool.driver.name` | `sattline` |
+| `runs[0].tool.driver.version` | the package version |
+| `runs[0].tool.driver.rules[]` | one descriptor per rule that appears, sorted by id |
+| `results[].ruleId` | the `SL-V###` id for a validation finding, or the synthetic finding id |
+| `results[].level` | the finding severity, `error` or `warning` |
+| `results[].message` | the finding message, with `hint` folded into a `markdown` variant when present |
+| `results[].locations[]` | the finding file as a repository-relative, percent-encoded artifact URI when it is under the working directory, otherwise an absolute file URI; `startLine` and `startColumn` when known |
+
+A result without a location still appears, so a project-load failure is not
+dropped. `--sarif` is exclusive with `--json` and `--jsonl`, and on `project` it
+also refuses `--of` and `--graph`: asking for two output shapes, or for a
+SARIF document of one graph slice, is a usage error. `--max-findings` does not
+apply to it, and the exit code is the same as for text output.
+
 ## Shared flags
 
 | Flag | Applies to | Meaning |
@@ -358,6 +383,7 @@ A validation row has no `severity`, because every row it carries is an error.
 | `--limit N` | `query` | Stop after `N` rows |
 | `--fail-on none\|error` | `check`, `project`, `corpus` | Which findings make the exit code `1` |
 | `--compact` | `parse` | Emit JSON on one line |
+| `--sarif` | `check`, `project` | Emit a SARIF 2.1.0 log instead of text or JSON |
 | `--depth N` | `parse --tree`, `project --of` | Bound output or traversal |
 
 "Source commands" means `check`, `parse`, `query`, `graphics`, `decode`, and

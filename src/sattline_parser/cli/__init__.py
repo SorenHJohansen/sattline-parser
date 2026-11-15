@@ -19,8 +19,9 @@ so an agent needs neither Python glue nor a lookup table:
 * ``sattline version`` — tool and JSON schema versions.
 
 Exit codes are the contract: ``0`` clean, ``1`` findings, ``2`` usage/input,
-``3`` internal error. Output is plain text unless ``--json``/``--jsonl`` is
-given, and a traceback is only printed under ``--debug``. No command edits a
+``3`` internal error, ``130`` interrupted. Output is plain text unless
+``--json``, ``--jsonl``, or ``--sarif`` is given, and a traceback is only printed
+under ``--debug``. No command edits a
 source tree: there is no ``--fix``, no network access and no watch mode. The
 ``project`` command does write its parser cache unless ``--no-cache`` is given.
 """
@@ -83,7 +84,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         return int(ExitCode.USAGE)
     except KeyboardInterrupt:
         print(f"{_PROGRAM}: interrupted", file=sys.stderr)
-        return int(ExitCode.USAGE)
+        return int(ExitCode.INTERRUPTED)
     except Exception as exc:  # noqa: BLE001 - the CLI must never leak a traceback by default
         if args.debug:
             traceback.print_exc()

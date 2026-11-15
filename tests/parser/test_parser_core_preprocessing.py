@@ -361,3 +361,14 @@ def test_undefined_byte_inside_an_unterminated_nested_comment_still_fails(tmp_pa
 
     with pytest.raises(UnicodeDecodeError):
         parser_api._decode_source_bytes_for_parse(source)
+
+
+def test_scan_opaque_regions_accepts_a_quoted_identifier_of_any_length():
+    name = "A" * 25
+    text = f"A := '{name}';"
+
+    assert scan_opaque_regions(text) == [("S", 5, 5 + len(name) + 2)]
+
+
+def test_scan_opaque_regions_does_not_mask_across_a_line_break():
+    assert scan_opaque_regions("A := 'open\nB := 1;") == []

@@ -113,9 +113,14 @@ def test_typed_tail_nodes_survive_a_pickle_round_trip() -> None:
     old envelope is never read as if it held the current nodes.
     """
     corner = VarTail("in", "Corner")
+    coordinate = VarTail("in", "Coordinate")
     span = SourceSpan(start=3, end=9, line=1, column=4)
     module_def = ModuleDef(
-        clipping=ClippingClause(((-1.0, -1.0), (1.0, 1.0)), (corner,)),
+        clipping=ClippingClause(
+            ((-1.0, -1.0), (1.0, 1.0)),
+            (corner,),
+            corner_tails=((corner,), (), (), ()),
+        ),
         graph_objects=[
             GraphObject(
                 type=const.GRAMMAR_VALUE_TEXTOBJECT,
@@ -127,6 +132,8 @@ def test_typed_tail_nodes_survive_a_pickle_round_trip() -> None:
                         )
                     ],
                     const.KEY_COORDS: ((-1.0, 1.0), (1.0, -1.0)),
+                    const.KEY_COORD_TAILS: ((), (), (coordinate,), ()),
+                    const.KEY_TAILS: [coordinate],
                 },
                 span=span,
             )
@@ -146,6 +153,7 @@ def test_typed_tail_nodes_survive_a_pickle_round_trip() -> None:
             invoke_coord=(0.0, 0.0, 0.0, 1.0, 1.0),
             arguments=ModuleArguments(enable=EnableClause(True, VarTail("in", "EnableVar"))),
             invoke_coord_tails=[VarTail("out", LitStringTail("LitString", "Symbol"))],
+            coordinate_tails=((), (), (), (), (VarTail("out", LitStringTail("LitString", "Symbol")),)),
         ),
         position=(1.0, 2.0, 3.0, 4.0, 5.0),
         moduledef=module_def,
@@ -155,15 +163,25 @@ def test_typed_tail_nodes_survive_a_pickle_round_trip() -> None:
 
     assert restored == picture
     assert restored.header.invoke_coord_tails == [VarTail("out", LitStringTail("LitString", "Symbol"))]
+    assert restored.header.coordinate_tails == (
+        (),
+        (),
+        (),
+        (),
+        (VarTail("out", LitStringTail("LitString", "Symbol")),),
+    )
     assert restored.header.invoke_coord == (0.0, 0.0, 0.0, 1.0, 1.0)
     assert restored.position == (1.0, 2.0, 3.0, 4.0, 5.0)
     assert restored.moduledef is not None
     assert restored.moduledef.clipping_bounds == ((-1.0, -1.0), (1.0, 1.0))
     assert restored.moduledef.clipping_tails == (corner,)
+    assert restored.moduledef.clipping is not None
+    assert restored.moduledef.clipping.corner_tails == ((corner,), (), (), ())
     assert restored.moduledef.span == span
     assert restored.moduledef.graph_objects[0].span == span
+    assert restored.moduledef.graph_objects[0].properties[const.KEY_COORD_TAILS] == ((), (), (coordinate,), ())
     assert restored.moduledef.interact_objects[0].span == span
-    assert FILE_AST_CACHE_VERSION == 12
+    assert FILE_AST_CACHE_VERSION == 13
 
 
 def test_envelope_round_trip() -> None:
@@ -872,11 +890,14 @@ def test_entry_cap_uses_max_entries_and_last_use(tmp_path: Path) -> None:
     paths = [_write_code(tmp_path, name) for name in ("A.s", "B.s", "C.s")]
     for code_path in paths:
         cache.save(code_path, "draft", _picture(code_path))
-    # Pin B and C to explicit old mtimes, so a coarse filesystem and the hash
-    # filename tiebreak cannot change the eviction order. A's load moves it
-    # ahead of both.
+    # Pin B and C to explicit old mtimes one second apart, so neither a coarse
+    # filesystem nor the hash filename tiebreak can change the eviction order.
+    # A's load moves it ahead of both. A whole-second stamp survives filesystems
+    # that clamp a tiny ``ns`` value to the same instant.
+    base = 1_600_000_000_000_000_000
     for index, code_path in enumerate(paths[1:], start=1):
-        os.utime(cache._path(code_path, "draft"), ns=(index, index))
+        stamp = base + index * 1_000_000_000
+        os.utime(cache._path(code_path, "draft"), ns=(stamp, stamp))
 
     assert cache.load(paths[0], "draft") is not None
 

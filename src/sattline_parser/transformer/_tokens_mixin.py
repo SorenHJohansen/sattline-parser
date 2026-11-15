@@ -8,12 +8,12 @@ keywords, and terminal punctuation.
 
 from __future__ import annotations
 
-from typing import Literal
-
 from lark import Token
 
 from sattline_parser.grammar import constants as const
 from sattline_parser.models.ast_model import FloatLiteral, IntLiteral, SourceSpan
+
+from ._module_shared import GLOBAL_KEYWORD, GlobalKeyword
 
 DEFAULT_INIT = object()
 
@@ -115,9 +115,9 @@ class TokensMixin:
 
     # Keywords we care about as flags
 
-    def GLOBAL_KW(self, _tok: object) -> Literal[True]:  # "GLOBAL"
-        """Grammar GLOBAL_KW keyword -> True."""
-        return True
+    def GLOBAL_KW(self, _tok: object) -> GlobalKeyword:  # "GLOBAL"
+        """Grammar GLOBAL_KW keyword -> its own payload, distinct from ``True``."""
+        return GLOBAL_KEYWORD
 
     def CONST_KW(self, _tok: object) -> str:
         """Grammar CONST_KW keyword -> modifier string."""

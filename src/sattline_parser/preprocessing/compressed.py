@@ -174,9 +174,6 @@ def is_compressed(text: str) -> bool:
 # ---------------------------------------------------------------------------
 
 
-#: Longest body a quoted identifier may have, from the grammar's name regex.
-_QUOTED_NAME_MAX = 20
-
 #: One character the grammar accepts inside an unquoted name. An apostrophe
 #: preceded by one of these belongs to a name such as ``Pump'A``, not to a
 #: quoted identifier, so it must not open an opaque region.
@@ -186,6 +183,12 @@ _NAME_CHAR_RE = regex.compile(f"[{const.GRAMMAR_CHARSET_NAME}]")
 def _continues_name(text: str, index: int) -> bool:
     """True when the character before *index* is part of an unquoted name."""
     return index > 0 and _NAME_CHAR_RE.match(text[index - 1]) is not None
+
+
+def _next_line_break(text: str, start: int) -> int:
+    """The next CR or LF offset at or after *start*, or ``-1``."""
+    positions = [position for position in (text.find("\n", start), text.find("\r", start)) if position != -1]
+    return min(positions) if positions else -1
 
 
 def _scan_opaque_regions(text: str) -> list[tuple[str, int, int, bool]]:
@@ -236,8 +239,13 @@ def _scan_opaque_regions(text: str) -> list[tuple[str, int, int, bool]]:
                 # start of a quoted identifier.
                 index += 1
                 continue
-            closing = text.find("'", index + 2, index + 2 + _QUOTED_NAME_MAX)
-            if closing == -1:
+            # The grammar places no length limit on a quoted identifier, so the
+            # closing quote is the next one. A quoted name does not span a line:
+            # stopping at the break keeps a stray apostrophe from masking the
+            # rest of the file.
+            closing = text.find("'", index + 2)
+            line_break = _next_line_break(text, index)
+            if closing == -1 or (line_break != -1 and closing > line_break):
                 index += 1
                 continue
             regions.append(("S", index, closing + 1, True))

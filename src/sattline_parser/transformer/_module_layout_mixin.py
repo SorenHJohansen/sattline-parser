@@ -67,26 +67,25 @@ def _split_coordinate_items(items: list[TransformerItem]) -> tuple[list[float], 
     return values, tails
 
 
-def _per_coordinate_tails(items: list[TransformerItem]) -> tuple[tuple[Tail, ...], ...] | None:
-    """The tails that follow each coordinate value, in source order.
+def _coordinate_tail_groups(items: list[TransformerItem]) -> tuple[tuple[Tail, ...], ...]:
+    """The tails that follow each coordinate value, index-aligned with the values.
 
-    ``CoordTail`` wrappers are positional: a tail that appears after the first
-    REAL and before the second belongs to the first value. Returns ``None`` when
-    the run does not spell exactly two values, because the pair interpretation
-    would be a guess.
+    ``CoordTail`` wrappers are positional: a tail that appears after one REAL and
+    before the next belongs to that value. A nested ``ClippingBounds`` annotation
+    contributes its tails to the value it follows, the same way it contributes to
+    the flat view. The result always has one group per REAL, so a caller can place
+    every tail where it was written.
     """
-    values: list[list[Tail]] = []
+    groups: list[list[Tail]] = []
     for item in items:
         if isinstance(item, (int, float)) and not isinstance(item, bool):
-            values.append([])
+            groups.append([])
         elif isinstance(item, CoordTail):
-            if values:
-                values[-1].append(item.value)
-        elif isinstance(item, CoordinateClipping) and values:
-            values[-1].extend(item.tails)
-    if len(values) != 2:
-        return None
-    return (tuple(values[0]), tuple(values[1]))
+            if groups:
+                groups[-1].append(item.value)
+        elif isinstance(item, CoordinateClipping) and groups:
+            groups[-1].extend(item.tails)
+    return tuple(tuple(group) for group in groups)
 
 
 def _float_values(items: list[TransformerItem]) -> list[float]:
@@ -116,13 +115,19 @@ class ModuleLayoutMixin:
         return InterimCoords(
             (nums[0], nums[1]),
             tails or None,
-            coord_tails=_per_coordinate_tails(items),
+            coord_tails=_coordinate_tail_groups(items)[:2],
         )
 
     def origo_size_pair(self, items: list[TransformerItem]) -> InterimCoords:
-        """Grammar origo_size_pair -> ((x, y), (w, h)) with coordinate tails."""
+        """Grammar origo_size_pair -> ((x, y), (w, h)) with coordinate tails.
+
+        The per-corner split is kept as well as the flat list, so a clipping
+        clause can say which of its four values a tail belongs to.
+        """
         coords: list[CoordPair] = []
         tails: list[Tail] = []
+        corner_groups: list[tuple[Tail, ...]] = []
+        complete = True
         for item in items:
             if not isinstance(item, InterimCoords):
                 continue
@@ -131,9 +136,17 @@ class ModuleLayoutMixin:
                 coords.append(pair)
                 if item.tails:
                     tails.extend(item.tails)
+                if item.coord_tails is None:
+                    complete = False
+                else:
+                    corner_groups.extend(item.coord_tails)
         if len(coords) != 2:
             raise ValueError(f"origo_size_pair expected 2 coordinate pairs, found {len(coords)}")
-        return InterimCoords((coords[0], coords[1]), tails or None)
+        return InterimCoords(
+            (coords[0], coords[1]),
+            tails or None,
+            coord_tails=tuple(corner_groups) if complete and len(corner_groups) == 4 else None,
+        )
 
     def invoke_coord(self, items: list[TransformerItem]) -> InterimCoords:
         """Grammar invoke_coord -> five-value invocation coordinate with tails."""
@@ -143,6 +156,7 @@ class ModuleLayoutMixin:
         return InterimCoords(
             cast(tuple[float, float, float, float, float], tuple(nums[:5])),
             tails or None,
+            coord_tails=_coordinate_tail_groups(items),
         )
 
     @v_args(meta=True)
@@ -206,7 +220,12 @@ class ModuleLayoutMixin:
         """Grammar clippingbounds -> the resolved corners and their corner tails."""
         for item in items:
             if isinstance(item, InterimCoords):
-                return ClippingClause(cast(CoordBox, item.coords), tuple(item.tails or ()), meta_span(meta))
+                return ClippingClause(
+                    cast(CoordBox, item.coords),
+                    tuple(item.tails or ()),
+                    meta_span(meta),
+                    corner_tails=item.coord_tails or (),
+                )
         raise ValueError("clippingbounds expected a payload; got no items")
 
     def seq_layers(self, items: list[TransformerItem]) -> SeqLayers:
