@@ -108,6 +108,19 @@ def test_main_checks_builds_and_releases(tmp_path: Path) -> None:
     assert not (fragment_dir / "one.added.md").exists()
 
 
+def test_release_requires_the_version_month_to_match_the_release_date(tmp_path: Path) -> None:
+    fragment_dir = tmp_path / "changelog.d"
+    fragment_dir.mkdir()
+    (fragment_dir / "one.added.md").write_text("- **One.** body\n", encoding="utf-8")
+    changelog_path = tmp_path / "CHANGELOG.md"
+    changelog_path.write_text(_MINIMAL, encoding="utf-8")
+    common = ["--fragment-dir", str(fragment_dir), "--changelog", str(changelog_path)]
+
+    assert changelog.main(["--release", "2026.12.1", "--date", "2026-11-15", *common]) == 1
+    assert changelog.main(["--release", "2025.11.6", "--date", "2026-11-15", *common]) == 1
+    assert changelog.main(["--release", "2026.11.6", "--date", "2026-11-15", *common]) == 0
+
+
 def test_main_rejects_invalid_release_input(tmp_path: Path) -> None:
     fragment_dir = tmp_path / "changelog.d"
     fragment_dir.mkdir()

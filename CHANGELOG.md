@@ -9,6 +9,197 @@ policy are documented in the README.
 
 ## [Unreleased]
 
+## [2026.11.6] - 2026-11-15
+
+### Added
+
+- **Public AST serializer.** `to_jsonable(value, *, depth=None)` turns any model
+  value into JSON-friendly data and `to_json(...)` encodes it, both exported by
+  `sattline_parser`. Every dataclass field is emitted under its own name, so a
+  new model field needs no serializer change, and `depth` replaces a composite
+  value with a placeholder at the limit instead of dropping it. The CLI now uses
+  the same functions.
+
+- **`CenterAligned`.** The interactor body accepts `CenterAligned` and stores it
+  as `Alignment("center")`, alongside `LeftAligned` and `RightAligned`. The
+  spelling is now a reserved identifier keyword, so a declaration that uses it
+  reports `SL-V039`.
+
+- **Coordinate tails keep their value.** A module header's coordinate tails are
+  also grouped in `ModuleHeader.coordinate_tails`, a clipping clause's in
+  `ClippingClause.corner_tails`, and a graphics or interact coordinate run in
+  the `coord_tails` property key. Each group is index-aligned with the written
+  values and holds the same tail objects as the flat view. The flat fields are
+  unchanged, so existing readers and validation rules keep working.
+
+- **Interactor property catalogue.** `interactor_property_catalogue` names the
+  interactor property spellings the scanner defines but the grammar accepts as a
+  generic flag or assignment. `find_interactor_property` classifies one spelling
+  and `typed_interactor_properties` reads an interactor's properties in written
+  order from either container shape. Parsing and the stored clauses are
+  unchanged, and an unknown property still parses as a generic clause.
+
+- **`parse_and_validate` accepts external definitions.** `external_datatypes`,
+  `external_moduletype_defs`, and `allow_unresolved_external_datatypes` now pass
+  through to `validate_basepicture`, so a single-source consumer with loaded
+  dependency definitions does not have to call the validator itself.
+
+- **Dependency cycles follow resolved artifacts.** The planner pushes the
+  resolved body identity on its active stack instead of the folded name, so two
+  names for one file (a symlink alias, for example) are a cycle even though no
+  name repeats, and two units that merely share a spelling are not. The
+  diagnostic still reports the logical names that formed the loop, folded.
+- **Project identities are named.** `UnitIdentity` (language identity, CP1252
+  `fold_identifier`) and `ArtifactIdentity` (filesystem identity, resolved path
+  compared with `os.path.normcase`) are exported from `sattline_parser.project`
+  so a consumer can apply the same rule as the loader. The project view keeps
+  its `str.casefold` registry keys, documented alongside the other two.
+
+- **Project symbol index.** `SattLineProject.index` answers which loaded unit
+  defines a name and which loaded units use it. `definitions_of(name)` reports
+  program, record, module-type, and variable declarations; `usages_of(name)`
+  reports variable references and module-type instances. Names compare
+  case-insensitively and the results are stable across runs. `invoked_moduletypes`
+  is now exported from `sattline_parser.project` for consumers that want the
+  loader's reachability answer directly.
+
+- **Datatype and record-field query rows.** `sattline query --what symbols`
+  reports datatypes and record fields, and variable, parameter, datatype, and
+  record-field rows carry the declaration span instead of `line: null`.
+
+- **SARIF output for code scanning.** `sattline check --sarif` and
+  `sattline project --sarif` emit a SARIF 2.1.0 log. A validation finding uses
+  its `SL-V###` id as the SARIF rule id and the registry supplies the rule
+  descriptor; a parse, decode, project, or read finding keeps its own id. Each
+  result carries the severity and, when the finding has one, a file location.
+  `--sarif` is exclusive with `--json` and `--jsonl`.
+
+- **Whole-file formatting.** `format_source(picture)` renders a parsed unit back
+  to canonical SattLine source, and `format_module(module)` renders one
+  `ModuleDef` block. The text parses back to an equal tree for every parsed
+  corpus fixture, including graphics and interactor bodies. Each tail is written
+  after the value it followed, using the new positional views
+  `ModuleHeader.coordinate_tails`, `ClippingClause.corner_tails`, and the
+  `coord_tails` property key. A hand-built model that carries a tail without its
+  position raises `UnsupportedFormattingError` rather than moving it.
+
+### Changed
+
+- **`corpus --jobs` uses processes.** Each job is independent and returns only
+  counts, so the scan now runs in a process pool shaped by the same start-method
+  rule as the project loader rather than sharing one cached Lark parser across
+  threads. Order and output are unchanged. A pool that cannot start, or one
+  whose worker dies, falls back to scanning in this process with a warning.
+
+- **Equation block heading.** `str(ModuleCode)` now prints `Equation blocks:`
+  instead of `Equations:`, matching the `equationblocks` field name.
+
+- **A 21-character declared identifier is a friendly finding.** The lexer accepts
+  an identifier of any length, so an over-long name parses and `SL-V038` reports
+  it at the declaration with its span, instead of the lexer rejecting the
+  twenty-first character as unexpected. A sidecar dependency name is still
+  capped at 20 characters, because that name builds a filesystem path.
+
+- **Ctrl-C exits `130`.** An interrupted command now returns the shell
+  convention of 128 + SIGINT instead of the usage code `2`, so a script can tell
+  a cancelled run from a bad invocation.
+
+- **The search path is the lookup order.** `SattLineProject.load` and
+  `sattline project` search the roots in the order given, and an earlier root
+  wins, matching the path list the real tool searches. Requester-relative
+  precedence, cluster sorting by branch, and the terminal-root fallback are
+  removed, and `ProjectLookup` computes one order instead of one per requester.
+  `parse_search_path` reads the `LibA\UnitLib,LibB\UnitLib` notation, and
+  `sattline project` gains `--search-path` and `--search-path-base`; positional
+  roots and `--search-path` cannot be combined. Because one path order resolves
+  every name, one folded name can no longer reach two bodies:
+  `NAME_RESOLUTION_CONFLICT` is removed, and a later same-named body is never
+  planned, parsed, or validated. `LOOKUP_CACHE_VERSION` is `2`.
+
+- **The loader is four collaborators.** `ProjectLoader` now orchestrates a
+  planner (resolve names into post-order plans), an executor (parse bodies and
+  own the worker pool and AST cache), an assembler (registry entries and
+  companions), and a validator (validation scope and diagnostic aggregation).
+  The dependency algorithm no longer shares a module with multiprocessing or
+  the registry, and the public `ProjectLoader` behaviour is unchanged.
+
+- **`ScalarDatatype`.** `Simple_DataType` becomes `ScalarDatatype`, the closed
+  set of the language's scalar datatypes. The name says what the enum holds: a
+  scalar value, not a record, and not the `AnyType` wildcard, which stays a
+  plain string for the type graph to resolve. The members, `from_any`, and the
+  normalization behaviour are unchanged; the old spelling is removed, so a
+  caller that imported it updates the name. Import it from
+  `sattline_parser.ast` or `sattline_parser.types`.
+
+- **Module layout blocks are singular again.** `SingleModule`, `FrameModule`,
+  `ModuleTypeDef`, and `BasePicture` store `moduledef` and `modulecode` as
+  optional fields. The `moduledefs` and `modulecodes` lists are removed. The
+  grammar allows one `ModuleDef` and one optional `ModuleCode` per module body,
+  so the lists could never hold more than one entry, and the property views over
+  them implied a legacy multi-block shape the language does not have.
+  `sattline parse --tree` emits `moduledef` and `modulecode` instead of the two
+  lists, the transformer rejects a second block in one body instead of
+  overwriting the first, and `FILE_AST_CACHE_VERSION` is `12`, so older AST
+  cache entries are discarded.
+
+### Removed
+
+- **`--fail-on never`.** The alias is removed; `--fail-on` accepts `none` and
+  `error`. `never` is now a usage error instead of a synonym for `none`.
+
+- **`sattline query --what definitions`.** The alias is removed; use
+  `--what symbols`, which returns the same declaration rows. `definitions` is
+  now a usage error.
+
+### Fixed
+
+- **AST cache eviction follows last use.** A successful load touches its entry,
+  the cap is configurable through `FileASTCache(max_entries=...)`, and a
+  symlinked entry is ignored instead of read.
+
+- **Lookup roots compare as filesystem paths.** Two configured roots that differ
+  only in letter case are two roots on a case-sensitive filesystem, so a root
+  such as `Library` is no longer collapsed into `library`. Windows path
+  comparison stays case-insensitive. Identifier comparison is unchanged and
+  still uses the case-folding name table.
+
+- **The parse pool no longer forces `fork` on every Linux host.** `fork` is
+  used only on Linux before Python 3.14 with no other Python thread, and the
+  platform default applies on macOS and newer Linux runtimes.
+
+- **A boolean parameter mapping value is kept.** `Name => True` was read as the
+  optional `GLOBAL` keyword, and `Name => False` as its absence, because the
+  keyword and a boolean literal shared the value `True`. The keyword now has
+  its own payload, so `True`, `False`, `0`, and `""` all reach the model as the
+  written values.
+
+- **Bounded process and thread counts.** `sattline project --workers` accepts
+  1 to 32 and `sattline corpus --jobs` accepts 1 to 32; a larger value is a
+  usage error instead of a request that can exhaust the machine.
+
+- **`sattline project --graph` reports validation findings.** Graph mode prints
+  the validation rows and includes them in its JSON payload, so a run no longer
+  exits `1` on a finding it did not show. `--of` with a name outside the loaded
+  graph is a `PROJECT_QUERY_ERROR` finding instead of an empty graph.
+
+- **Unknown SFC accessors are reported.** Only the runtime field names an
+  element kind exposes are treated as accessors: `X`, `Hold`, `Reset`, and `T`
+  for a step, and `Hold` and `Reset` for a sequence. A suffix such as
+  `Step.Foo`, or `Sequence.X`, is now an undefined reference instead of an
+  unchecked dotted name. Availability still comes from `SeqControl` and
+  `SeqTimer`, which `SL-V051` reports separately.
+
+- **Worker parse failures keep their cause.** A body parsed in a worker now
+  rebuilds the same exception type and source position in the parent, so a
+  broken dependency has the same `__cause__` at any worker count.
+
+### Security
+
+- **Dependency names are validated as SattLine identifiers.** A `.l`/`.z` line
+  must be a unit name of at most 20 characters, so a drive-qualified name,
+  path separator, parent reference, control character, Windows device name, or
+  invalid filename character cannot resolve outside the search roots.
+
 ## [2026.11.5] - 2026-11-14
 
 ### Added

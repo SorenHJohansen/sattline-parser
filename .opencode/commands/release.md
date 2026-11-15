@@ -10,7 +10,9 @@ changing files.
 Checklist:
 
 1. Read `AGENTS.md`, `docs/development.md`, and the current `CHANGELOG.md`.
-2. Confirm the version is not already released.
+2. Confirm the version is not already released. The year and month must be the
+   month of the release date: a November release is `YYYY.11.N`, never the next
+   month, and a breaking change does not move it.
 3. Update `src/sattline_parser/__version__.py`.
 4. Move the `Unreleased` entries in `CHANGELOG.md` under the new version and
    date, and leave a fresh `Unreleased` section.
