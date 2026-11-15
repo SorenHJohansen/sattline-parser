@@ -43,12 +43,12 @@ from sattline_parser.models.ast_model import (
     SourceSpan,
 )
 from sattline_parser.names import fold_identifier
-from sattline_parser.source_io import parse_source_file, private_cache_dir, read_text_cp1252
+from sattline_parser.source_io import parse_source_bytes, private_cache_dir, read_text_cp1252
 from sattline_parser.validation import validate_basepicture
 from sattline_parser.validation.diagnostics import Diagnostic, DiagnosticCode
 
 from ._cycles import canonical_cycle, first_cycle
-from .ast_cache import FileASTCache, source_snapshot
+from .ast_cache import FileASTCache, SourceSnapshot, source_snapshot
 from .discovery import ProjectLookup
 from .distribution import (
     DistributionParseError,
@@ -140,9 +140,9 @@ class _ParseOutcome:
     #: caller can still reach a ``SourceTooDeepError`` limit or a decode
     #: offset through ``__cause__``. A worker returns text only.
     error: ProjectLoadError | None = None
-    #: The source stat captured before the parse, so the parent can refuse to
-    #: cache an AST when the file changed while a worker was reading it.
-    snapshot: tuple[int, int] | None = None
+    #: The exact source revision the worker parsed, so the parent can refuse to
+    #: cache an AST when the file changed while the worker was reading it.
+    snapshot: SourceSnapshot | None = None
     #: The AST came from the cache, so it has nothing to store.
     cached: bool = False
 
@@ -179,7 +179,7 @@ def _worker_cache(cache_text: str) -> FileASTCache:
     return cache
 
 
-def _parse_code_file(task: tuple[str, str, str | None]) -> _ParseOutcome:
+def _parse_code_file(task: tuple[str, str, str | None, bool]) -> _ParseOutcome:
     """Parse one code file into an AST.
 
     Runs in a child process when ``workers`` is greater than one, so it must not
@@ -187,17 +187,20 @@ def _parse_code_file(task: tuple[str, str, str | None]) -> _ParseOutcome:
     it: the parent owns every write, so the per-user cache key is created and
     the entries are signed by a single process. A failure comes back as text,
     because the error type and wording depend on the dependency edge and the
-    parent owns both.
+    parent owns both. ``log_failures`` mirrors the parent's choice: a plain load
+    keeps stderr for the structured finding, and ``--debug`` keeps the parser
+    traceback.
     """
-    code_text, mode, cache_text = task
+    code_text, mode, cache_text, log_failures = task
     code_path = Path(code_text)
     if cache_text is not None:
         cached = _worker_cache(cache_text).load(code_path, mode)
         if cached is not None:
             return _ParseOutcome(ast=cached, cached=True)
-    snapshot = source_snapshot(code_path)
+    raw_bytes = code_path.read_bytes()
+    snapshot = source_snapshot(code_path, raw_bytes)
     try:
-        picture = parse_source_file(code_path)
+        picture = parse_source_bytes(raw_bytes, source_path=code_path, log_failures=log_failures)
     except PARSE_FAILURES as exc:
         return _ParseOutcome(failure=str(exc) or type(exc).__name__)
     return _ParseOutcome(ast=picture, snapshot=snapshot)
@@ -255,6 +258,10 @@ class ProjectLoader:
         self._lookup = ProjectLookup(roots, mode, cache=self._lookup_cache, debug=debug)
         self._mode = mode
         self._debug = debug
+        #: The parser logs a failure with its traceback. A plain load reports the
+        #: problem once as a structured finding, so only a debug run asks for the
+        #: parser's own log line and stack.
+        self._log_failures = debug is not None
         self._validate = validate
         self._workers = max(1, workers)
         self._secure_cache_dir = secure_cache_dir
@@ -471,7 +478,9 @@ class ProjectLoader:
             return
 
         cache_text = None if self._secure_cache_dir is None else str(self._secure_cache_dir)
-        tasks = [(str(plan.artifact.code_path), self._mode.value, cache_text) for plan in self._plans]
+        tasks = [
+            (str(plan.artifact.code_path), self._mode.value, cache_text, self._log_failures) for plan in self._plans
+        ]
         workers = min(self._workers, len(tasks))
         self._dbg(f"Parsing {len(tasks)} bodies in {workers} processes")
         try:
@@ -964,12 +973,18 @@ class ProjectLoader:
             if cached is not None:
                 self._dbg(f"Using cached AST for: {code_path}")
                 return cached
-        # Capture the source revision before reading it, so the entry written
-        # below describes the bytes that were actually parsed.
-        snapshot = source_snapshot(code_path)
+        # Read the source once and hash those bytes: the entry written below then
+        # describes exactly the revision that was parsed, never a later stat.
+        raw_bytes = code_path.read_bytes()
+        snapshot = source_snapshot(code_path, raw_bytes)
         self._dbg(f"Parsing: {code_path}")
         try:
-            basepicture = parse_source_file(code_path, debug=self._debug)
+            basepicture = parse_source_bytes(
+                raw_bytes,
+                source_path=code_path,
+                debug=self._debug,
+                log_failures=self._log_failures,
+            )
         except PARSE_FAILURES as exc:
             if dependency is None:
                 raise ArtifactLoadError(program_name, f"failed to parse {code_path.name}") from exc

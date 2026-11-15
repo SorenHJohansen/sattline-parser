@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import sys
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 
@@ -148,12 +149,22 @@ def _validation_fails(rows: Sequence[Mapping[str, object]], fail_on: str) -> boo
     return fails_on(len(rows), fail_on)
 
 
+def _debug_sink(message: str) -> None:
+    """Where ``--debug`` sends the loader's progress and the parser's failures."""
+    print(f"debug: {message}", file=sys.stderr)
+
+
 def _load(args: argparse.Namespace) -> SattLineProject:
     roots = [Path(root) for root in args.root]
     for root in roots:
-        if not root.exists():
+        try:
+            present = root.exists()
+            is_dir = root.is_dir()
+        except OSError as exc:
+            raise CliError(f"cannot read {root}: {exc.strerror or exc}") from exc
+        if not present:
             raise CliError(f"cannot read {root}: no such file or directory")
-        if not root.is_dir():
+        if not is_dir:
             raise CliError(f"cannot read {root}: not a directory")
     mode = LoadMode(args.mode)
     targets = (
@@ -168,6 +179,7 @@ def _load(args: argparse.Namespace) -> SattLineProject:
         roots,
         mode=mode,
         targets=targets,
+        debug=_debug_sink if args.debug else None,
         cache_dir=_cache_dir(args),
         validate=LoadValidation(args.validate),
         workers=args.workers,
@@ -203,10 +215,16 @@ def _discover_targets(roots: Sequence[Path], *, mode: LoadMode) -> tuple[str, ..
     extensions = {extension.lower() for extension in code_ext_candidates(mode)}
     names: set[str] = set()
     for root in roots:
-        for path in root.iterdir():
-            if path.is_file() and path.suffix.lower() in extensions:
-                names.add(path.stem)
+        names.update(path.stem for path in _root_entries(root) if path.is_file() and path.suffix.lower() in extensions)
     return tuple(sorted(names))
+
+
+def _root_entries(root: Path) -> list[Path]:
+    """The direct entries of one root, reported as a bad input rather than a crash."""
+    try:
+        return list(root.iterdir())
+    except OSError as exc:
+        raise CliError(f"cannot read {root}: {exc.strerror or exc}") from exc
 
 
 def _edges(project: SattLineProject, args: argparse.Namespace) -> list[Edge]:

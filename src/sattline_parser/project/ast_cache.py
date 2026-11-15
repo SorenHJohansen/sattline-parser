@@ -8,9 +8,11 @@ package version, the resolved grammar fingerprint, and a fingerprint of the
 sources that shape a parsed AST (the models, the transformer, and the decoding,
 provenance, and name-folding modules), so an upgrade that changes the AST shape,
 fixes a transformer, or changes decoding cannot serve an old entry. Path, mode,
-and a ``mtime_ns`` + ``size`` stat snapshot are validated before a cached AST is
-trusted; entries outside the parser namespace or built by another version,
-grammar, or model shape are pruned.
+and the source revision are validated before a cached AST is trusted: a
+``mtime_ns`` + ``size`` stat snapshot is the cheap filter, and the SHA-256 of
+the source bytes decides, so an edit that preserves the size and lands inside
+the filesystem's mtime granularity is still a miss. Entries outside the parser
+namespace or built by another version, grammar, or model shape are pruned.
 
 The HMAC key lives beside the entries, so the signature only proves that an
 entry was written by whoever could write that directory. It is not a defence
@@ -30,6 +32,7 @@ import hmac
 import os
 import pickle  # nosec B403 - HMAC-signed pickle envelope, key creation racy/excl guarded
 import secrets
+from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
 from typing import cast
@@ -43,7 +46,7 @@ from ._atomic import TEMP_SUFFIX
 from ._atomic import temp_file_is_abandoned as _temp_file_is_abandoned
 from ._atomic import temp_path_for as _temp_path_for
 
-FILE_AST_CACHE_VERSION = 10
+FILE_AST_CACHE_VERSION = 11
 
 _PICKLE_CACHE_MAGIC = b"SATTLINE-PARSER-PICKLE-V1\n"
 _PICKLE_HMAC_KEY_NAME = ".pickle-hmac-key"
@@ -119,13 +122,23 @@ def _as_data_dict(value: object) -> dict[object, object] | None:
     return cast(dict[object, object], value)
 
 
-def _matches_stat_snapshot(path: Path, *, mtime_ns: object, size: object) -> bool:
-    if not isinstance(mtime_ns, int) or not isinstance(size, int):
+def _matches_source_identity(path: Path, *, mtime_ns: object, size: object, digest: object) -> bool:
+    """Whether *path* is still the revision the entry describes.
+
+    ``(mtime_ns, size)`` is the cheap filter; a match is confirmed by hashing
+    the current bytes, so an edit that keeps the size and lands inside the
+    filesystem's mtime granularity is still a miss.
+    """
+    if not isinstance(mtime_ns, int) or not isinstance(size, int) or not isinstance(digest, str):
         return False
     stat_result = _safe_stat(path)
-    if stat_result is None:
+    if stat_result is None or stat_result.st_mtime_ns != mtime_ns or stat_result.st_size != size:
         return False
-    return stat_result.st_mtime_ns == mtime_ns and stat_result.st_size == size
+    try:
+        raw_bytes = path.read_bytes()
+    except OSError:
+        return False
+    return hmac.compare_digest(hashlib.sha256(raw_bytes).hexdigest(), digest)
 
 
 def _stored_source_exists(meta: dict[object, object]) -> bool:
@@ -141,17 +154,41 @@ def _stored_source_exists(meta: dict[object, object]) -> bool:
     return Path(stored_path).exists()
 
 
-def source_snapshot(path: Path) -> tuple[int, int] | None:
-    """The ``(mtime_ns, size)`` snapshot an AST was parsed from.
+@dataclass(frozen=True, slots=True)
+class SourceSnapshot:
+    """The source revision an AST was parsed from.
 
-    Callers capture this *before* reading the source and pass it back to
-    :meth:`FileASTCache.save`, so an entry can never claim a source revision it
-    does not describe. ``None`` means the file could not be stat'ed.
+    ``sha256`` is the digest of the exact bytes that were parsed. ``mtime_ns``
+    and ``size`` are a cheap pre-filter only: an edit that preserves the size
+    and lands inside the filesystem's mtime granularity changes the digest but
+    not the stat, so the digest is what decides.
+    """
+
+    mtime_ns: int
+    size: int
+    sha256: str
+
+
+def source_snapshot(path: Path, raw_bytes: bytes | None = None) -> SourceSnapshot | None:
+    """The snapshot an AST was parsed from, or ``None`` when the file is unreadable.
+
+    Pass *raw_bytes* when the caller already read the source: the digest then
+    describes exactly the bytes that were parsed, so no concurrent edit can
+    pair one revision's content with another revision's metadata.
     """
     stat_result = _safe_stat(path)
     if stat_result is None:
         return None
-    return (stat_result.st_mtime_ns, stat_result.st_size)
+    if raw_bytes is None:
+        try:
+            raw_bytes = path.read_bytes()
+        except OSError:
+            return None
+    return SourceSnapshot(
+        mtime_ns=stat_result.st_mtime_ns,
+        size=len(raw_bytes),
+        sha256=hashlib.sha256(raw_bytes).hexdigest(),
+    )
 
 
 def _code_path_key(code_path: Path) -> str:
@@ -391,7 +428,12 @@ class FileASTCache:
             return None
         if meta.get("code") != _code_fingerprint():
             return None
-        if not _matches_stat_snapshot(code_path, mtime_ns=meta.get("mtime_ns"), size=meta.get("size")):
+        if not _matches_source_identity(
+            code_path,
+            mtime_ns=meta.get("mtime_ns"),
+            size=meta.get("size"),
+            digest=meta.get("sha256"),
+        ):
             return None
         ast = payload_map.get("ast")
         if not isinstance(ast, BasePicture):
@@ -404,23 +446,22 @@ class FileASTCache:
         mode: str,
         ast: BasePicture,
         *,
-        snapshot: tuple[int, int] | None = None,
+        snapshot: SourceSnapshot | None = None,
     ) -> None:
         """Store *ast* for ``code_path``/``mode``.
 
-        ``snapshot`` is the source stat taken before the parse. When it is
-        given and the file no longer matches, the entry is not written: the AST
-        describes an older revision, and storing it under the current metadata
-        would serve stale syntax until the next edit.
+        ``snapshot`` describes the bytes the parse read. When it is given and
+        the file no longer holds the same bytes, the entry is not written: the
+        AST describes an older revision, and storing it under the current
+        metadata would serve stale syntax until the next edit.
         """
         if not self._enabled:
             return
         current = source_snapshot(code_path)
         if current is None:
             return
-        if snapshot is not None and snapshot != current:
+        if snapshot is not None and snapshot.sha256 != current.sha256:
             return
-        mtime_ns, size = current
         payload: dict[str, object] = {
             "version": FILE_AST_CACHE_VERSION,
             "meta": {
@@ -429,8 +470,9 @@ class FileASTCache:
                 "parser_version": __version__,
                 "grammar": grammar_fingerprint(),
                 "code": _code_fingerprint(),
-                "mtime_ns": mtime_ns,
-                "size": size,
+                "mtime_ns": current.mtime_ns,
+                "size": current.size,
+                "sha256": current.sha256,
             },
             "ast": ast,
         }
@@ -489,4 +531,4 @@ class FileASTCache:
         return removed
 
 
-__all__ = ["FILE_AST_CACHE_VERSION", "MAX_AST_CACHE_ENTRIES", "FileASTCache"]
+__all__ = ["FILE_AST_CACHE_VERSION", "MAX_AST_CACHE_ENTRIES", "FileASTCache", "SourceSnapshot", "source_snapshot"]

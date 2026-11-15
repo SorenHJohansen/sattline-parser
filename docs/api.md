@@ -36,6 +36,7 @@ statements.
 | --- | --- | --- | --- |
 | `parse_source_text` | both | `(src, *, parser=None, transformer=None, debug=None, source_path=None, log_failures=True)` | `BasePicture` |
 | `parse_source_file` | both | `(path, *, parser=None, transformer=None, debug=None, log_failures=True)` | `BasePicture` |
+| `parse_source_bytes` | both | `(raw_bytes, *, parser=None, transformer=None, debug=None, source_path=None, log_failures=True)` | `BasePicture` |
 | `parse_and_validate` | both | same options as `parse_source_text` | `(BasePicture, tuple[Diagnostic, ...])` |
 | `create_parser` | both | `()` | `Lark` |
 | `build_lark_parser` | `api` | `(*, start="start", propagate_positions=True)` | `Lark` |
@@ -53,7 +54,10 @@ statements.
 | `source_text_for_parse` | `api` | `(path, *, debug=None, log_failures=True)` | text for `parse_source_text` |
 
 `parse_source_text` and `parse_source_file` are the ordinary entry points.
-`parse_and_validate` is the opt-in single-source validation. `preprocess_source`
+`parse_source_bytes` is for a caller that already read the source and needs to
+keep the exact bytes it parsed, such as the project cache, which identifies an
+entry by their digest. `parse_and_validate` is the opt-in single-source
+validation. `preprocess_source`
 returns a `SourceDocument`, and the class itself is importable from
 `sattline_parser.preprocessing`. The rest are power-user helpers for tooling
 that needs an intermediate stage.
@@ -151,6 +155,7 @@ clause payload, and tail type together with the traversal helpers:
 | Name | Meaning |
 | --- | --- |
 | `BasePicture` | Root node |
+| `HeaderInfo` | The quoted file header lines and change description on `BasePicture.header_info` |
 | `SourceSpan` | Original-source range |
 | `ModuleHeader`, `ModuleDef`, `ModuleCode`, `SingleModule`, `FrameModule`, `ModuleTypeInstance`, `ModuleTypeDef` | Module and layout nodes |
 | `Sequence`, `Equation`, `SFCStep`, `SFCTransition`, and the other `SFC*` nodes | Code and SFC nodes |
@@ -158,6 +163,7 @@ clause payload, and tail type together with the traversal helpers:
 | `GraphObject`, `InteractObject` | Graphics and interact AST nodes, visited by `walk` |
 | `GraphicsBinding` | Project graphics value carried by `GraphicsModel.bindings`; not an AST node and never visited by `walk` |
 | `GraphProperties`, `InteractProperties` | Typed property maps carried by graphics and interact nodes |
+| `PolygonPoint` | One polygon coordinate pair with the tails written after each value |
 | `AssignClause`, `EnableClause`, `TailedClause`, `ColourSpec`, `PickButton`, `Alignment`, `InteractBodyEntry`, and the other clause payloads | Typed clause payloads and the interactor body union |
 | `VarTail`, `LitStringTail`, `Tail` | Bound and computed tails |
 | `walk` | `(node, *, prune=None, emit_leave=False)` yields every AST node in pre-order |

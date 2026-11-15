@@ -24,9 +24,10 @@ Literal values are leaves and are not emitted as nodes; use
 
 Property order:
 
-* ``GraphObject``: ``colours``, ``enable_tail``, ``tails``, ``text_vars``,
-  then the non-node keys (``coords``, ``segment_point``, ``polygon_type``,
-  ``layer``, ``enable``).
+* ``GraphObject``: ``colours``, ``enable_tail``, ``width``,
+  ``value_fraction``, ``format_string``, ``alignments``, ``connection_node``,
+  ``points``, ``tails``, then the remaining keys (``coords``,
+  ``segment_point``, ``polygon_type``, ``layer``, ``text_vars``, ``enable``).
 * ``InteractObject``: ``procedure``, ``assigns``, ``enables``, ``flags``,
   ``colours``, ``body``, ``tails``, then the non-node keys (``coords``,
   ``layers``).
@@ -64,6 +65,7 @@ from .clauses import (
     ModuleInViewClause,
     ModuleMarker,
     PickButton,
+    PolygonPoint,
     ProcedureCall,
     ScaleSelector,
     TailedClause,
@@ -82,6 +84,7 @@ from .expressions import (
     UnaryOp,
     VarRef,
 )
+from .header import HeaderInfo
 from .tails import LitStringTail, VarTail, is_expression_tail
 
 __all__ = ["LiteralLeaf", "NodeVisitor", "WalkEvent", "iter_child_nodes", "iter_literal_leaves", "walk"]
@@ -113,6 +116,7 @@ _NODE_TYPES: tuple[type[object], ...] = (
     m.Sequence,
     m.SingleModule,
     m.Variable,
+    HeaderInfo,
     Alignment,
     AssignClause,
     Assignment,
@@ -132,6 +136,7 @@ _NODE_TYPES: tuple[type[object], ...] = (
     ModuleMarker,
     NotOp,
     PickButton,
+    PolygonPoint,
     ProcedureCall,
     ScaleSelector,
     TailedClause,
@@ -154,6 +159,7 @@ _FIELD_SPECS: _FieldSpecs = {
         "header": "node",
         "name": "leaf",
         "program_name": "leaf",
+        "header_info": "value",
         "position": "leaf",
         "datatype_defs": "node",
         "moduletype_defs": "node",
@@ -168,6 +174,12 @@ _FIELD_SPECS: _FieldSpecs = {
         "datecode": "leaf",
     },
     m.CodeComment: {"text": "leaf", "span": "leaf"},
+    HeaderInfo: {
+        "syntax_version_line": "leaf",
+        "original_file_date_line": "leaf",
+        "program_date_line": "leaf",
+        "description": "node",
+    },
     m.DataType: {
         "name": "leaf",
         "description": "leaf",
@@ -334,6 +346,7 @@ _FIELD_SPECS: _FieldSpecs = {
     ModuleMarker: {"kind": "leaf", "span": "leaf"},
     NotOp: {"operand": "value", "span": "leaf"},
     PickButton: {"value": "leaf", "reference": "node", "span": "leaf"},
+    PolygonPoint: {"x": "leaf", "y": "leaf", "x_tails": "value", "y_tails": "value", "span": "leaf"},
     ProcedureCall: {"name": "leaf", "args": "value", "span": "leaf"},
     ScaleSelector: {"mode": "leaf", "span": "leaf"},
     TailedClause: {"key": "leaf", "value": "value", "tail": "value", "span": "leaf"},
@@ -350,6 +363,12 @@ _FIELD_SPECS: _FieldSpecs = {
 _GRAPH_PROPERTY_ORDER: tuple[str, ...] = (
     "colours",
     "enable_tail",
+    "width",
+    "value_fraction",
+    "format_string",
+    "alignments",
+    "connection_node",
+    "points",
     "tails",
     "coords",
     "segment_point",

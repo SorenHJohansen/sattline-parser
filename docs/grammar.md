@@ -82,8 +82,13 @@ before any nested construct is considered.
 ### Header lines
 
 `syntax_version_line`, `original_file_date_line`, and `program_date_line` are
-all `STRING` tokens. `program_date_line` is where the transformer finds
-`program_name` when the header carries a `name:` field.
+all `STRING` tokens. The transformer keeps all three inside `HeaderInfo` on the
+root `BasePicture`, together with the optional `change_description` comment, and
+derives `program_name` from the `name:` field of the program date line.
+`HeaderInfo` also exposes the written syntax version, original file date, and
+program date. A line the package does not recognise keeps its text and yields
+`None` for the field it lacks, so a shadow header from an invalid-input fixture
+is preserved rather than rejected.
 
 ### Module structure
 

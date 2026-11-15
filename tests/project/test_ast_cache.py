@@ -40,12 +40,13 @@ from sattline_parser.project.ast_cache import (
     _CODE_FINGERPRINT_SOURCES,
     _PICKLE_CACHE_MAGIC,
     _PICKLE_HMAC_KEY_NAME,
+    SourceSnapshot,
     _as_data_dict,
     _code_fingerprint,
     _code_path_key,
     _load_or_create_pickle_hmac_key,
     _load_pickle_payload,
-    _matches_stat_snapshot,
+    _matches_source_identity,
     _read_pickle_hmac_key,
     _read_signed_pickle_envelope,
     _remove_file,
@@ -159,7 +160,7 @@ def test_typed_tail_nodes_survive_a_pickle_round_trip() -> None:
     assert restored.moduledefs[0].span == span
     assert restored.moduledefs[0].graph_objects[0].span == span
     assert restored.moduledefs[0].interact_objects[0].span == span
-    assert FILE_AST_CACHE_VERSION == 10
+    assert FILE_AST_CACHE_VERSION == 11
 
 
 def test_envelope_round_trip() -> None:
@@ -193,15 +194,44 @@ def test_safe_stat(tmp_path: Path) -> None:
     assert _safe_stat(tmp_path) is not None
 
 
-def test_matches_stat_snapshot(tmp_path: Path) -> None:
+def test_matches_source_identity_is_false_when_the_read_fails(tmp_path: Path) -> None:
     path = tmp_path / "f"
     path.write_text("abc", encoding="utf-8")
     stat_result = path.stat()
-    assert _matches_stat_snapshot(path, mtime_ns=stat_result.st_mtime_ns, size=stat_result.st_size)
-    assert not _matches_stat_snapshot(path, mtime_ns=stat_result.st_mtime_ns, size=stat_result.st_size + 1)
+
+    with patch(f"{_AC_PATH}.Path.read_bytes", side_effect=OSError("boom")):
+        assert not _matches_source_identity(
+            path,
+            mtime_ns=stat_result.st_mtime_ns,
+            size=stat_result.st_size,
+            digest=hashlib.sha256(b"abc").hexdigest(),
+        )
+
+
+def test_source_snapshot_is_none_when_the_read_fails(tmp_path: Path) -> None:
+    path = tmp_path / "f"
+    path.write_text("abc", encoding="utf-8")
+
+    with patch(f"{_AC_PATH}.Path.read_bytes", side_effect=OSError("boom")):
+        assert source_snapshot(path) is None
+
+
+def test_matches_source_identity(tmp_path: Path) -> None:
+    path = tmp_path / "f"
+    path.write_text("abc", encoding="utf-8")
+    stat_result = path.stat()
+    digest = hashlib.sha256(b"abc").hexdigest()
+    assert _matches_source_identity(path, mtime_ns=stat_result.st_mtime_ns, size=stat_result.st_size, digest=digest)
+    assert not _matches_source_identity(
+        path, mtime_ns=stat_result.st_mtime_ns, size=stat_result.st_size, digest=hashlib.sha256(b"abd").hexdigest()
+    )
+    assert not _matches_source_identity(
+        path, mtime_ns=stat_result.st_mtime_ns, size=stat_result.st_size + 1, digest=digest
+    )
     path.unlink()
-    assert not _matches_stat_snapshot(path, mtime_ns=stat_result.st_mtime_ns, size=stat_result.st_size)
-    assert not _matches_stat_snapshot(path, mtime_ns="x", size=stat_result.st_size)
+    assert not _matches_source_identity(path, mtime_ns=stat_result.st_mtime_ns, size=stat_result.st_size, digest=digest)
+    assert not _matches_source_identity(path, mtime_ns="x", size=stat_result.st_size, digest=digest)
+    assert not _matches_source_identity(path, mtime_ns=stat_result.st_mtime_ns, size=stat_result.st_size, digest=1)
 
 
 def test_read_pickle_hmac_key(tmp_path: Path) -> None:
@@ -450,6 +480,7 @@ def test_load_rejects_version_mismatch(tmp_path: Path) -> None:
                 "code": _code_fingerprint(),
                 "mtime_ns": stat_result.st_mtime_ns,
                 "size": stat_result.st_size,
+                "sha256": hashlib.sha256(code_path.read_bytes()).hexdigest(),
             },
             "ast": _picture(code_path),
         },
@@ -517,6 +548,7 @@ def test_load_rejects_meta_and_payload_shape(tmp_path: Path) -> None:
                 "code": _code_fingerprint(),
                 "mtime_ns": stat_result.st_mtime_ns,
                 "size": stat_result.st_size,
+                "sha256": hashlib.sha256(code_path.read_bytes()).hexdigest(),
             },
             "ast": ast,
         }
@@ -535,6 +567,7 @@ def test_load_rejects_meta_and_payload_shape(tmp_path: Path) -> None:
                 "mode": "bad-path",
                 "mtime_ns": stat_result.st_mtime_ns,
                 "size": stat_result.st_size,
+                "sha256": hashlib.sha256(code_path.read_bytes()).hexdigest(),
             },
         ),
         "bad-mode": _payload(
@@ -544,6 +577,7 @@ def test_load_rejects_meta_and_payload_shape(tmp_path: Path) -> None:
                 "mode": "WRONG",
                 "mtime_ns": stat_result.st_mtime_ns,
                 "size": stat_result.st_size,
+                "sha256": hashlib.sha256(code_path.read_bytes()).hexdigest(),
             },
         ),
     }
@@ -568,12 +602,59 @@ def test_load_rejects_stat_change(tmp_path: Path) -> None:
     assert cache.load(code_path, "draft") is None
 
 
+def test_a_graph_object_geometry_fixture_round_trips_through_the_cache(tmp_path: Path) -> None:
+    """Every polygon point and text clause survives the signed pickle envelope."""
+    fixture = Path(__file__).resolve().parents[1] / "fixtures" / "corpus" / "valid" / "GraphObjectGeometry.s"
+    cache = FileASTCache(tmp_path / "cache")
+    picture = parse_source_file(fixture)
+
+    cache.save(fixture, "draft", picture)
+
+    restored = cache.load(fixture, "draft")
+    assert restored == picture
+    assert restored is not None
+    polygon = next(obj for obj in restored.moduledefs[0].graph_objects if obj.type == "PolygonObject")
+    points = polygon.properties.get("points") or []
+    assert len(points) == 5
+
+
+def test_load_rejects_new_bytes_with_an_unchanged_stat(tmp_path: Path) -> None:
+    """A same-size edit inside the mtime granularity must not be served as a hit."""
+    code_path = _write_code(tmp_path)
+    cache = FileASTCache(tmp_path)
+    cache.save(code_path, "draft", _picture(code_path))
+    stat_result = code_path.stat()
+    original = _MINIMAL_SOURCE.encode("utf-8")
+    edited = original.replace(b"name: MinimalProgram", b"name: MinimalPrograx")
+    assert len(edited) == len(original)
+    code_path.write_bytes(edited)
+    os.utime(code_path, ns=(stat_result.st_atime_ns, stat_result.st_mtime_ns))
+    restored = code_path.stat()
+    assert (restored.st_mtime_ns, restored.st_size) == (stat_result.st_mtime_ns, stat_result.st_size)
+
+    assert cache.load(code_path, "draft") is None
+
+
+def test_save_keeps_an_entry_when_only_the_mtime_moved(tmp_path: Path) -> None:
+    """Identical bytes under a restored mtime are the same revision."""
+    code_path = _write_code(tmp_path)
+    cache = FileASTCache(tmp_path)
+    snapshot = source_snapshot(code_path)
+    assert snapshot is not None
+    stat_result = code_path.stat()
+    os.utime(code_path, ns=(stat_result.st_atime_ns, stat_result.st_mtime_ns - 1_000_000))
+
+    cache.save(code_path, "draft", _picture(code_path), snapshot=snapshot)
+
+    assert cache.load(code_path, "draft") is not None
+
+
 def test_save_refuses_a_snapshot_the_source_no_longer_matches(tmp_path: Path) -> None:
     """A body parsed from an older revision must not be stored as current."""
     code_path = _write_code(tmp_path)
     cache = FileASTCache(tmp_path)
 
-    cache.save(code_path, "draft", _picture(code_path), snapshot=(0, 0))
+    cache.save(code_path, "draft", _picture(code_path), snapshot=SourceSnapshot(mtime_ns=0, size=0, sha256="0" * 64))
 
     assert cache.load(code_path, "draft") is None
 

@@ -1851,6 +1851,7 @@ def test_bound_tail_names_are_not_diagnosed_in_annotations():
         ModuleDef(
             graph_objects=[
                 GraphObject("RectangleObject", properties={"enable_tail": VarTail("in", "MissingGraphEnable")}),
+                GraphObject("RectangleObject", properties={"tails": [VarTail("in", "MissingCoordinate")]}),
             ]
         )
     ]

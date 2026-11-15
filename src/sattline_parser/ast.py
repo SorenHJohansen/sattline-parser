@@ -71,6 +71,7 @@ from .models.clauses import (
     ModuleInViewClause,
     ModuleMarker,
     PickButton,
+    PolygonPoint,
     ProcedureCall,
     ScaleSelector,
     TailedClause,
@@ -92,6 +93,7 @@ from .models.expressions import (
     UnaryOp,
     VarRef,
 )
+from .models.header import HeaderInfo
 from .models.properties import GraphProperties, InteractBodyEntry, InteractProperties
 from .models.tails import (
     LitStringTail,
@@ -134,6 +136,7 @@ __all__ = [
     "GraphObject",
     "GraphProperties",
     "GraphicsBinding",
+    "HeaderInfo",
     "IfStmt",
     "IntLiteral",
     "InteractBodyEntry",
@@ -154,6 +157,7 @@ __all__ = [
     "NotOp",
     "ParameterMapping",
     "PickButton",
+    "PolygonPoint",
     "ProcedureCall",
     "SFCAlternative",
     "SFCBodyItem",

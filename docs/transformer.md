@@ -113,18 +113,21 @@ actual tree shapes, not against the grammar text alone.
 ## Root: `start`
 
 ```python
-def start(self, items: list[TransformerItem]) -> BasePicture:
-    ...
+def header_lines(self, items: list[TransformerItem]) -> HeaderInfo: ...
+def start(self, items: list[TransformerItem]) -> BasePicture: ...
 ```
+
+`header_lines` turns the three quoted header lines and the optional change
+description into one `HeaderInfo`. The lines are stored as written; the derived
+fields (`syntax_version`, `original_file_date`, `program_date`, `program_name`)
+read the editor's spelling and return `None` for a line that does not carry
+them. `change_description` becomes a `CodeComment` with its span.
 
 `start` does two things:
 
-1. Finds the `header_lines` tree and extracts the program name from
-   `program_date_line`. The header is a quoted string with comma-separated
-   `name: value` fields; the extractor splits on `,` and matches `name`
-   case-insensitively.
+1. Finds the `HeaderInfo` produced by `header_lines`.
 2. Finds the `BasePicture` produced by `base_picture_module`, attaches the
-   program name, and returns it.
+   header info and its derived program name, and returns it.
 
 If no `BasePicture` is present, it raises `ValueError` naming the observed child
 types. That is a grammar or transformer bug, not invalid input.
@@ -285,6 +288,15 @@ the resolved boolean in `properties["enable"]`. Interact objects keep their
 `properties["tails"]` list is a derived view over the same tail objects; the
 walker emits a clause-owned tail through its clause and only the remaining
 coordinate tails from the flat list.
+
+A polygon keeps every coordinate pair in `properties["points"]` as a
+`PolygonPoint`, with `x_tails` and `y_tails` holding the tails written after
+each value. `coordinates` records that split alongside the flat tail list, so a
+`ClippingBounds` annotation on one corner is attributed to that value. A text
+object keeps `Width_`, `ValueFraction`, and `Format_String_` as `TailedClause`
+payloads, the alignments as `Alignment` values, and its `ConnectionNode` anchor
+as a `GraphObject`. Each clause is one payload: the value and its binding tail
+are read together, and the tail is the same object the flat list holds.
 
 Free-form interactor names are accepted on purpose. The transformer preserves
 them as `InteractObject.type` strings; the package does not decide which

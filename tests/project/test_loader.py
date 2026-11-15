@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import os
 from collections.abc import Callable, Generator, Iterator
 from concurrent.futures import ProcessPoolExecutor
 from concurrent.futures.process import BrokenProcessPool
@@ -13,7 +14,7 @@ from unittest.mock import patch
 
 import pytest
 
-from sattline_parser.api import parse_source_file
+from sattline_parser.api import parse_source_bytes, parse_source_file
 from sattline_parser.models.ast_model import (
     BasePicture,
 )
@@ -29,7 +30,7 @@ from sattline_parser.project import (
     read_dependency_names,
 )
 from sattline_parser.project import loader as project_loader
-from sattline_parser.project.ast_cache import FileASTCache, source_snapshot
+from sattline_parser.project.ast_cache import FileASTCache, SourceSnapshot, source_snapshot
 from sattline_parser.project.models import LoadDiagnosticKind, SidecarState
 
 from ._support import write_file
@@ -131,11 +132,9 @@ def _record_dispatched(monkeypatch: pytest.MonkeyPatch) -> list[str]:
 
 
 def _counting_parse(call_count: list[int]) -> Callable[..., BasePicture]:
-    real_parse = parse_source_file
-
-    def counting_parse(code_path: Path, **_: object) -> BasePicture:
+    def counting_parse(raw_bytes: bytes, **_: object) -> BasePicture:
         call_count.append(1)
-        return real_parse(code_path)
+        return parse_source_bytes(raw_bytes)
 
     return counting_parse
 
@@ -327,7 +326,7 @@ def test_load_debug_callback(tmp_path: Path) -> None:
 
 @contextmanager
 def _spy_on_parse(call_count: list[int]) -> Generator[None]:
-    with patch.object(project_loader, "parse_source_file", side_effect=_counting_parse(call_count)):
+    with patch.object(project_loader, "parse_source_bytes", side_effect=_counting_parse(call_count)):
         yield
 
 
@@ -387,6 +386,23 @@ def test_load_ast_cache_reparses_after_source_change(tmp_path: Path) -> None:
         second = _load(tmp_path, cache_dir=cache_dir)
 
     assert "main" in first and "main" in second
+    assert len(call_count) == 2
+
+
+def test_load_reparses_a_same_size_edit_that_keeps_the_mtime(tmp_path: Path) -> None:
+    """The cache identity is the source bytes, not the stat snapshot."""
+    source = write_file(tmp_path, "Main.s", _CODE)
+    cache_dir = tmp_path / "cache"
+    call_count: list[int] = []
+    with _spy_on_parse(call_count):
+        _load(tmp_path, cache_dir=cache_dir)
+        stat_result = source.stat()
+        edited = _CODE.replace("name: Prog", "name: Proq")
+        assert len(edited) == len(_CODE)
+        source.write_text(edited, encoding="utf-8")
+        os.utime(source, ns=(stat_result.st_atime_ns, stat_result.st_mtime_ns))
+        _load(tmp_path, cache_dir=cache_dir)
+
     assert len(call_count) == 2
 
 
@@ -828,6 +844,21 @@ def test_sidecar_is_not_paired_across_prefixes(tmp_path: Path) -> None:
     assert [d.path for d in stray] == [other / "Lib.l"]
 
 
+@pytest.mark.skipif(
+    os.name != "posix" or os.geteuid() == 0,
+    reason="mode bits deny reads on POSIX, and root bypasses them",
+)
+def test_an_unreadable_root_is_a_project_load_error(tmp_path: Path) -> None:
+    """A root that cannot be listed is an input problem, not an internal error."""
+    write_file(tmp_path, "Main.s", _CODE)
+    tmp_path.chmod(0o000)
+    try:
+        with pytest.raises(ProjectLoadError, match="cannot read"):
+            _load(tmp_path)
+    finally:
+        tmp_path.chmod(0o755)
+
+
 def test_missing_sidecar_is_reported_not_invented(tmp_path: Path) -> None:
     write_file(tmp_path, "Main.s", _CODE)
 
@@ -943,7 +974,7 @@ def test_parse_code_file_reads_but_never_writes_the_ast_cache(tmp_path: Path) ->
     """A worker reads the cache and leaves every write to the parent."""
     code = write_file(tmp_path, "Cached.s", _CODE)
     cache_dir = tmp_path / "cache"
-    task = (str(code), LoadMode.DRAFT.value, str(cache_dir))
+    task = (str(code), LoadMode.DRAFT.value, str(cache_dir), True)
 
     first = project_loader._parse_code_file(task)
     second = project_loader._parse_code_file(task)
@@ -959,7 +990,7 @@ def test_parse_code_file_reads_but_never_writes_the_ast_cache(tmp_path: Path) ->
 def test_parse_code_file_reports_a_parse_failure_as_text(tmp_path: Path) -> None:
     code = write_file(tmp_path, "Broken.s", _BROKEN)
 
-    outcome = project_loader._parse_code_file((str(code), LoadMode.DRAFT.value, None))
+    outcome = project_loader._parse_code_file((str(code), LoadMode.DRAFT.value, None, True))
 
     assert outcome.ast is None
     assert outcome.failure
@@ -968,13 +999,13 @@ def test_parse_code_file_reports_a_parse_failure_as_text(tmp_path: Path) -> None
 def test_parse_code_file_serves_a_warm_entry_without_reparsing(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     code = write_file(tmp_path, "Cached.s", _CODE)
     cache_dir = tmp_path / "cache"
-    project_loader.FileASTCache(cache_dir).save(code, LoadMode.DRAFT.value, project_loader.parse_source_file(code))
+    project_loader.FileASTCache(cache_dir).save(code, LoadMode.DRAFT.value, parse_source_file(code))
 
     def refuse(*args: object, **kwargs: object) -> object:
         raise AssertionError("a warm entry must not be reparsed")
 
-    monkeypatch.setattr(project_loader, "parse_source_file", refuse)
-    outcome = project_loader._parse_code_file((str(code), LoadMode.DRAFT.value, str(cache_dir)))
+    monkeypatch.setattr(project_loader, "parse_source_bytes", refuse)
+    outcome = project_loader._parse_code_file((str(code), LoadMode.DRAFT.value, str(cache_dir), True))
 
     assert outcome.ast is not None
     assert outcome.cached
@@ -1052,8 +1083,8 @@ def test_parse_code_file_returns_a_cached_body_without_parsing(tmp_path: Path, m
     def no_parse(*args: object, **kwargs: object) -> None:
         raise AssertionError("a cached body must not be parsed again")
 
-    monkeypatch.setattr(project_loader, "parse_source_file", no_parse)
-    outcome = project_loader._parse_code_file((str(code), LoadMode.DRAFT.value, str(cache_dir)))
+    monkeypatch.setattr(project_loader, "parse_source_bytes", no_parse)
+    outcome = project_loader._parse_code_file((str(code), LoadMode.DRAFT.value, str(cache_dir), True))
 
     assert outcome.ast is not None and outcome.failure is None
 
@@ -1102,7 +1133,7 @@ def test_a_cache_write_failure_does_not_fail_a_parallel_load(tmp_path: Path, mon
         mode: str,
         ast: BasePicture,
         *,
-        snapshot: tuple[int, int] | None = None,
+        snapshot: SourceSnapshot | None = None,
     ) -> None:
         raise OSError("disk full")
 
@@ -1121,7 +1152,7 @@ def test_a_parallel_save_records_the_snapshot_the_worker_parsed(
     write_file(tmp_path, "Lib.s", _CODE)
     write_file(tmp_path, "Main.s", _CODE)
     write_file(tmp_path, "Main.l", "Lib\n")
-    seen: list[tuple[int, int] | None] = []
+    seen: list[SourceSnapshot | None] = []
     real_save = FileASTCache.save
 
     def recording_save(
@@ -1130,7 +1161,7 @@ def test_a_parallel_save_records_the_snapshot_the_worker_parsed(
         mode: str,
         ast: BasePicture,
         *,
-        snapshot: tuple[int, int] | None = None,
+        snapshot: SourceSnapshot | None = None,
     ) -> None:
         seen.append(snapshot)
         real_save(self, code_path, mode, ast, snapshot=snapshot)
@@ -1155,7 +1186,7 @@ def test_a_warm_parallel_load_does_not_rewrite_cached_bodies(tmp_path: Path, mon
         mode: str,
         ast: BasePicture,
         *,
-        snapshot: tuple[int, int] | None = None,
+        snapshot: SourceSnapshot | None = None,
     ) -> None:
         saves.append(code_path)
 
@@ -1169,8 +1200,8 @@ def test_a_warm_parallel_load_does_not_rewrite_cached_bodies(tmp_path: Path, mon
 def test_a_body_that_changes_during_the_parse_is_not_cached(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     write_file(tmp_path, "Main.s", _CODE)
 
-    def stale_snapshot(_path: Path) -> tuple[int, int]:
-        return (0, 0)
+    def stale_snapshot(_path: Path, _raw_bytes: bytes | None = None) -> SourceSnapshot:
+        return SourceSnapshot(mtime_ns=0, size=0, sha256="0" * 64)
 
     monkeypatch.setattr(project_loader, "source_snapshot", stale_snapshot)
 

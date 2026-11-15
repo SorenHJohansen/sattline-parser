@@ -82,3 +82,19 @@ def test_check_rejects_a_retired_rule(tmp_path, capsys) -> None:
 
     assert main(["check", str(source), "--rule", "SL-V001"]) == ExitCode.USAGE
     assert "retired" in capsys.readouterr().err
+
+
+def test_check_rejects_another_commands_synthetic_rule(tmp_path, capsys) -> None:
+    """``check`` cannot emit a corpus read error, so selecting one is a usage error."""
+    source = write_source(tmp_path, "Valid.s", VALID_SOURCE)
+
+    assert main(["check", str(source), "--rule", "READ_ERROR"]) == ExitCode.USAGE
+    assert "unknown rule 'READ_ERROR'" in capsys.readouterr().err
+
+
+def test_check_accepts_its_own_synthetic_rules(tmp_path, capsys) -> None:
+    source = write_source(tmp_path, "Valid.s", VALID_SOURCE)
+
+    assert main(["check", str(source), "--rule", "PARSE_ERROR"]) == ExitCode.OK
+    assert main(["check", str(source), "--rule", "DECODE_ERROR"]) == ExitCode.OK
+    assert capsys.readouterr().out == ""

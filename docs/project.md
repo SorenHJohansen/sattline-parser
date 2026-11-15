@@ -414,17 +414,23 @@ envelope. The key includes:
 - the resolved grammar fingerprint;
 - a fingerprint of the sources that shape an AST: `models/`, `transformer/`,
   `source_io.py`, `source_document.py`, and `names.py`;
-- a `mtime_ns` and `size` stat snapshot.
+- the digest of the source bytes the AST was parsed from.
+
+A `mtime_ns` and `size` stat snapshot is the cheap first filter; on a match the
+cached digest is confirmed against the bytes on disk, so the bytes decide. An
+edit that keeps the file size and lands inside the filesystem's mtime
+granularity, or a restore that puts an old mtime back, is a miss and the body is
+reparsed.
 
 Decoding, span remapping, and identifier folding all change the parsed AST, so
 they are part of the fingerprint: a fix there invalidates a cached body through
 the key rather than through a version bump. `FILE_AST_CACHE_VERSION` tracks the
 envelope shape only.
 
-The snapshot is taken **before** the source is parsed, and the entry records
-that snapshot, so an entry can never claim a source revision it was not parsed
-from. A body whose source changed while a worker was reading it is left
-uncached: the next load reparses it instead of trusting a stale AST.
+The snapshot is taken from the exact bytes that are parsed, and the entry
+records those bytes' digest, so an entry can never claim a source revision it
+was not parsed from. A body whose source changed while a worker was reading it
+is left uncached: the next load reparses it instead of trusting a stale AST.
 
 The namespace and file-format magic belong to `sattline-parser`
 (`FILE_AST_CACHE_VERSION`), so another tool's cache never cross-reads. The HMAC

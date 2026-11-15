@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import os
 from collections.abc import Sequence
 from pathlib import Path
 from unittest.mock import patch
@@ -13,6 +14,7 @@ from sattline_parser.project import (
     ArtifactKind,
     FileLookupCache,
     LoadMode,
+    ProjectLoadError,
     ProjectLookup,
     SourceIndex,
     ordered_lookup_bases,
@@ -517,6 +519,19 @@ def test_lookup_restats_an_index_hit_for_a_sidecar(tmp_path: Path) -> None:
     sidecar.unlink()
 
     assert lookup.find_deps_beside(body, "Main") is None
+
+
+def test_an_unreadable_root_is_a_load_error(tmp_path: Path) -> None:
+    if os.name != "posix" or os.geteuid() == 0:
+        pytest.skip("mode bits deny reads on POSIX, and root bypasses them")
+    root = tmp_path / "closed"
+    root.mkdir()
+    root.chmod(0o000)
+    try:
+        with pytest.raises(ProjectLoadError, match="cannot read"):
+            SourceIndex([root]).find_in_index(base=root, name="Main", extensions=[".s"])
+    finally:
+        root.chmod(0o755)
 
 
 def test_project_lookup_requester_ordering_end_to_end(tmp_path: Path) -> None:

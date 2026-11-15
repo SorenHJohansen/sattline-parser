@@ -160,7 +160,7 @@ pip install -e ".[dev,fuzz]"   # Linux / FreeBSD only
 
 ```mermaid
 flowchart LR
-    PR["pull request or push"] --> L["lint"]
+    PR["pull request, push, or a call from publish"] --> L["lint"]
     PR --> T["tests 3.12, 3.13, and 3.14"]
     PR --> B["benchmarks"]
     PR --> F["fuzz"]
@@ -193,10 +193,14 @@ flowchart LR
     W --> W1["full suite on Windows"]
 ```
 
-`.github/workflows/publish.yml` handles release publication. `.github/workflows/ci.yml`
-runs on pull requests, pushes to `main`, version tags, and manual dispatch.
-`.github/workflows/docs.yml` runs when documentation changes and checks relative
-links, anchors, prose punctuation, and every Mermaid block.
+`.github/workflows/ci.yml` runs on pull requests, pushes to `main`, version
+tags, manual dispatch, and as a reusable workflow. `.github/workflows/publish.yml`
+handles release publication and calls that workflow as one job, so a tag cannot
+reach PyPI unless every CI job passed for the same commit, the Windows job and
+the Lark compatibility job included. The release job then re-checks the tag
+version and the built metadata before the upload step. `.github/workflows/docs.yml`
+runs when documentation changes and checks relative links, anchors, prose
+punctuation, and every Mermaid block.
 
 Every action is pinned to a commit SHA with a `# vX.Y.Z` comment, so the pinned
 version is readable and a bump is a reviewable one-line change.

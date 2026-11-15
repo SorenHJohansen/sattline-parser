@@ -18,7 +18,7 @@ from sattline_parser.validation import Diagnostic
 from ._io import display_path
 
 __all__ = [
-    "CLI_RULE_IDS",
+    "CHECK_RULE_IDS",
     "DECODE_RULE",
     "GRAPHICS_SCAN_RULE",
     "PARSE_RULE",
@@ -43,9 +43,11 @@ GRAPHICS_SCAN_RULE = "GRAPHICS_SCAN"
 READ_RULE = "READ_ERROR"
 
 #: Finding ids that do not come from the validation registry but can still be
-#: selected with ``--rule``. The registry is for validator rules; these describe
-#: the input or the project around it.
-CLI_RULE_IDS: frozenset[str] = frozenset({PARSE_RULE, DECODE_RULE, PROJECT_LOAD_RULE, GRAPHICS_SCAN_RULE, READ_RULE})
+#: selected with ``--rule``. Each command declares the subset it can emit, so an
+#: id that belongs to another command is a usage error rather than a filter that
+#: silently matches nothing. ``check`` reports parse and decode failures; the
+#: validator codes themselves come from the registry.
+CHECK_RULE_IDS: frozenset[str] = frozenset({PARSE_RULE, DECODE_RULE})
 
 
 @dataclass(frozen=True, slots=True)

@@ -4,13 +4,18 @@
 from __future__ import annotations
 
 import json
+import logging
+import os
+from pathlib import Path
+
+import pytest
 
 from sattline_parser.cli import main
 from sattline_parser.cli._exit import ExitCode
 from sattline_parser.cli.cmds import project as project_cmd
 from sattline_parser.project._cycles import dependency_cycles
 
-from ._cli_support import VALID_SOURCE, write_source
+from ._cli_support import PARSE_ERROR_SOURCE, VALID_SOURCE, write_source
 
 
 def _cycles(edges: list[tuple[str, str]]) -> list[list[str]]:
@@ -193,6 +198,58 @@ def test_load_failure_is_a_finding(tmp_path, capsys) -> None:
     payload = json.loads(capsys.readouterr().out)
     assert payload["programs"] == []
     assert [row["rule"] for row in payload["findings"]] == ["PROJECT_LOAD_ERROR"]
+
+
+def test_a_load_failure_logs_no_parser_trace_without_debug(tmp_path, capsys, caplog) -> None:
+    """A failed parse is the structured finding, not a parser log on stderr."""
+    write_source(tmp_path, "Broken.s", PARSE_ERROR_SOURCE)
+
+    with caplog.at_level(logging.ERROR, logger="sattline_parser"):
+        assert main(["project", str(tmp_path), "--json"]) == ExitCode.FINDINGS
+    captured = capsys.readouterr()
+    assert [row["rule"] for row in json.loads(captured.out)["findings"]] == ["PROJECT_LOAD_ERROR"]
+    assert captured.err == ""
+    assert caplog.records == []
+
+
+def test_debug_keeps_the_parser_trace_for_a_load_failure(tmp_path, caplog) -> None:
+    write_source(tmp_path, "Broken.s", PARSE_ERROR_SOURCE)
+
+    with caplog.at_level(logging.ERROR, logger="sattline_parser"):
+        assert main(["--debug", "project", str(tmp_path), "--json"]) == ExitCode.FINDINGS
+    records = [record for record in caplog.records if record.name == "sattline_parser"]
+    assert records and any(record.exc_info is not None for record in records)
+
+
+def test_cli_an_unreadable_root_is_an_input_error(tmp_path, capsys) -> None:
+    """A root the process may not list is exit 2, never an internal error."""
+    if os.name != "posix" or os.geteuid() == 0:
+        pytest.skip("mode bits deny reads on POSIX, and root bypasses them")
+    root = tmp_path / "closed"
+    root.mkdir()
+    _program(root, "Hidden")
+    root.chmod(0o000)
+    try:
+        assert main(["project", str(root)]) == ExitCode.USAGE
+        assert "cannot read" in capsys.readouterr().err
+    finally:
+        root.chmod(0o755)
+
+
+def test_a_root_that_cannot_be_probed_is_an_input_error(tmp_path, capsys, monkeypatch) -> None:
+    root = tmp_path / "probe"
+    root.mkdir()
+    real_exists = Path.exists
+
+    def failing_exists(self: Path) -> bool:
+        if self == root:
+            raise OSError(13, "Permission denied")
+        return real_exists(self)
+
+    monkeypatch.setattr(Path, "exists", failing_exists)
+
+    assert main(["project", str(root)]) == ExitCode.USAGE
+    assert "cannot read" in capsys.readouterr().err
 
 
 def test_targets_flag_limits_the_load(tmp_path, capsys) -> None:

@@ -11,7 +11,7 @@ tail, a literal (the ``layer_info`` value), an ``Alignment``, or a
 
 from __future__ import annotations
 
-from typing import TypedDict
+from typing import TYPE_CHECKING, TypedDict
 
 from .clauses import (
     Alignment,
@@ -22,12 +22,16 @@ from .clauses import (
     EnableClause,
     FlagClause,
     PickButton,
+    PolygonPoint,
     ProcedureCall,
     ScaleSelector,
     TailedClause,
 )
 from .expressions import CodeComment, VarRef
 from .tails import Tail
+
+if TYPE_CHECKING:
+    from .ast_model import GraphObject
 
 __all__ = [
     "GraphProperties",
@@ -67,6 +71,8 @@ class GraphProperties(TypedDict, total=False):
     segment_point: CoordPair
     #: ``KEY_POLYGON_TYPE``
     polygon_type: list[str]
+    #: ``KEY_POINTS``: one entry per polygon coordinate pair, in source order.
+    points: list[PolygonPoint]
     #: ``KEY_TAILS``
     tails: list[Tail]
     #: ``KEY_LAYER``
@@ -75,6 +81,16 @@ class GraphProperties(TypedDict, total=False):
     colours: list[ColourSpec]
     #: ``KEY_TEXT_VARS``
     text_vars: list[VarRef]
+    #: ``KEY_WIDTH``: a text object's ``Width_ = <int>`` clause.
+    width: TailedClause
+    #: ``KEY_VALUE_FRACTION``: a text object's ``ValueFraction = <int>`` clause.
+    value_fraction: TailedClause
+    #: ``KEY_FORMAT_STRING``: a text object's ``Format_String_ = <value>`` clause.
+    format_string: TailedClause
+    #: ``KEY_ALIGNMENTS``: the ``LeftAligned``/``RightAligned`` markers, in order.
+    alignments: list[Alignment]
+    #: ``KEY_CONNECTION_NODE``: the ``ConnectionNode (x, y)`` anchor object.
+    connection_node: GraphObject
     #: ``KEY_ENABLE``
     enable: bool
     #: ``KEY_ENABLE_TAIL``

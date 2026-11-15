@@ -145,7 +145,11 @@ def test_modules_mixin_coordinate_helpers_preserve_pairs_tails_and_clipping_tree
     invoke = mixin.invoke_coord([1, 2, 3, 4, 5, coord_tail])
     clipping = mixin.coord_clippingbounds([CoordinateClipping((ClipValue(1.0),))])
 
-    assert coords == InterimCoords(coords=(1.0, 2.0), tails=[VarTail("in", "PanelResize")])
+    assert coords == InterimCoords(
+        coords=(1.0, 2.0),
+        tails=[VarTail("in", "PanelResize")],
+        coord_tails=((), (VarTail("in", "PanelResize"),)),
+    )
     assert pair == InterimCoords(
         coords=((1.0, 2.0), (3.0, 4.0)),
         tails=[VarTail("in", "PanelResize"), VarTail("in", "PanelScale")],
@@ -156,6 +160,8 @@ def test_modules_mixin_coordinate_helpers_preserve_pairs_tails_and_clipping_tree
     )
     assert mixin.coord_invar_tail(Meta(), [Token("COMMA", ","), "WidthSource"]) == CoordTail("WidthSource")
     assert clipping == CoordinateClipping((ClipValue(1.0),))
+
+    assert mixin.coordinates([1, 2, 3]).coord_tails is None
 
     with pytest.raises(ValueError, match="coordinates missing REAL values"):
         mixin.coordinates([1])

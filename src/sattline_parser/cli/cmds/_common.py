@@ -10,7 +10,7 @@ from pathlib import Path
 from ...project.formats import ALL_DISTRIBUTION_EXTENSIONS, ALL_GRAPHICS_EXTENSIONS
 from ...validation.rules import RuleStatus, UnknownRuleError, require_rule
 from .._errors import CliError
-from .._findings import CLI_RULE_IDS, Finding
+from .._findings import Finding
 from .._json import SCHEMA_PREFIX, dumps
 
 __all__ = [
@@ -148,20 +148,20 @@ def add_finding_filters(parser: argparse.ArgumentParser) -> None:
     )
 
 
-def resolve_rule_filters(values: Sequence[str]) -> tuple[str, ...]:
+def resolve_rule_filters(values: Sequence[str], *, synthetic: frozenset[str]) -> tuple[str, ...]:
     """Resolve ``--rule`` values to canonical finding rule ids.
 
     Both the ``SL-V###`` id and the enum name are accepted, case-insensitively.
-    Synthetic finding ids such as ``PARSE_ERROR`` are accepted too, because they
-    appear in output but not in the validation registry. An unknown value or a
-    rule that can never produce a finding is a usage error, so a typo cannot
-    silently pass with an empty report.
+    *synthetic* is the set of non-registry finding ids the calling command can
+    actually emit, such as ``PARSE_ERROR``. An unknown value, a rule that can
+    never produce a finding, or another command's synthetic id is a usage error,
+    so a typo cannot silently pass with an empty report.
     """
     names: list[str] = []
     for value in values:
-        synthetic = value.upper()
-        if synthetic in CLI_RULE_IDS:
-            names.append(synthetic)
+        candidate = value.upper()
+        if candidate in synthetic:
+            names.append(candidate)
             continue
         try:
             rule = require_rule(value)
@@ -174,11 +174,13 @@ def resolve_rule_filters(values: Sequence[str]) -> tuple[str, ...]:
     return tuple(names)
 
 
-def selected_findings(findings: Sequence[Finding], args: argparse.Namespace) -> list[Finding]:
+def selected_findings(
+    findings: Sequence[Finding], args: argparse.Namespace, *, synthetic: frozenset[str]
+) -> list[Finding]:
     """Apply the ``--rule`` filter."""
     selected = list(findings)
     if args.rule:
-        wanted = set(resolve_rule_filters(args.rule))
+        wanted = set(resolve_rule_filters(args.rule, synthetic=synthetic))
         selected = [finding for finding in selected if finding.rule in wanted]
     return selected
 

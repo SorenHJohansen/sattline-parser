@@ -76,10 +76,12 @@ Reads each source exactly like `parse_source_file` and reports parse-or-decode
 failures and validator diagnostics in one shape.
 
 `--rule` accepts a rule id (`SL-V016`), enum name
-(`CONSECUTIVE_SEQUENCE_STEPS`), or a synthetic finding id such as
-`PARSE_ERROR`, and is repeatable, so output can be narrowed to one rule. An
-unknown or inactive rule is a usage error (exit `2`), never a silently empty
-report. See [`rules`](#rules) for the registry.
+(`CONSECUTIVE_SEQUENCE_STEPS`), or one of the two synthetic finding ids this
+command emits itself: `PARSE_ERROR` and `DECODE_ERROR`. It is repeatable, so
+output can be narrowed to one rule. An unknown rule, an inactive rule, or
+another command's synthetic id (such as `READ_ERROR`, which only `corpus`
+reports) is a usage error (exit `2`), never a silently empty report. See
+[`rules`](#rules) for the registry.
 
 ### `parse`
 
@@ -335,7 +337,7 @@ A validation row has no `severity`, because every row it carries is an error.
 | `--debug` | top level | Print a traceback for internal errors. It comes before the command |
 | `--stdin-name PATH` | source commands | Required when reading `-`, so findings are attributable; a companion suffix here is refused like a companion path |
 | `--paths given\|absolute` | source commands | How to render paths, in findings and in the document-level `file` key. Default `given` |
-| `--rule RULE` | `check` | Filter by rule id or enum name, repeatable; synthetic ids such as `PARSE_ERROR` are accepted |
+| `--rule RULE` | `check` | Filter by rule id or enum name, repeatable; only this command's own synthetic ids (`PARSE_ERROR`, `DECODE_ERROR`) are accepted |
 | `--max-findings N` | `check` | Limit printed findings; the exit code still reflects all of them |
 | `--limit N` | `query` | Stop after `N` rows |
 | `--fail-on none\|error` | `check`, `project`, `corpus` | Which findings make the exit code `1` (`never` is accepted as an alias) |

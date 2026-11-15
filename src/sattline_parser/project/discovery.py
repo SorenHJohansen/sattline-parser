@@ -11,6 +11,7 @@ from __future__ import annotations
 from collections.abc import Callable, Sequence
 from pathlib import Path
 
+from .errors import ProjectLoadError
 from .formats import (
     ALL_CODE_EXTENSIONS,
     ALL_DEPS_EXTENSIONS,
@@ -96,10 +97,17 @@ class SourceIndex:
         if base in self._indexes:
             return self._indexes[base]
         index: dict[str, dict[str, Path]] = {}
-        if not base.exists() or not base.is_dir():
-            self._indexes[base] = index
-            return index
-        for entry in base.iterdir():
+        try:
+            present = base.exists() and base.is_dir()
+            entries = list(base.iterdir()) if present else []
+        except OSError as exc:
+            # A configured root that cannot be read is an input problem, not an
+            # internal error: report it as a load failure about that root.
+            raise ProjectLoadError(
+                base.name or str(base),
+                f"cannot read {base}: {exc.strerror or exc}",
+            ) from exc
+        for entry in entries:
             if not entry.is_file():
                 continue
             ext = entry.suffix.lower()

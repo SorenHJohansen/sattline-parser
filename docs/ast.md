@@ -13,6 +13,7 @@ classDiagram
         header: ModuleHeader
         name: str
         program_name: str | None
+        header_info: HeaderInfo | None
         position: tuple | None
         datatype_defs: list[DataType]
         moduletype_defs: list[ModuleTypeDef]
@@ -27,6 +28,13 @@ classDiagram
         origin_lib: str | None
         trailing_comments: list[CodeComment]
         datecode: int | None
+    }
+
+    class HeaderInfo {
+        syntax_version_line: str
+        original_file_date_line: str
+        program_date_line: str
+        description: CodeComment | None
     }
 
     class ModuleHeader {
@@ -192,6 +200,13 @@ order matters: `State OpSave` is valid, while `OpSave State` and
 `datecode` is `None` when the source omitted it. The parser never stamps an
 import date or invents a default. Stamping is a separate consumer operation.
 
+`BasePicture.header_info` holds the three quoted header lines as written and the
+optional change description comment. `program_name` is the convenience view
+over the `name:` field of the program date line, matched case-insensitively.
+`HeaderInfo` reads the written syntax version, original file date, and program
+date as properties. A line it does not recognise keeps its text and yields
+`None` for the field it lacks; the parser never rejects a header for its shape.
+
 `ParameterMapping.source_type` is a `MappingSource` member: `VARIABLE` for a
 variable or dotted field reference, `VALUE` for a literal or a
 `Duration_Value`/`Time_Value` payload.
@@ -286,6 +301,33 @@ for `LeftAligned`/`RightAligned`, and the typed clauses (`EnableClause`,
 `ScaleSelector`). Preserved comments are `CodeComment` values. No Lark tree
 reaches a caller, so a consumer reads body entries directly instead of
 unwrapping a grammar node.
+
+A `GraphObject` keeps the geometry its source spells, keyed by spelling rather
+than by drawing effect:
+
+| Key | Node type | Source |
+| --- | --- | --- |
+| `coords` | `tuple` pair or box | a box object's `(x, y) (w, h)` pairs |
+| `segment_point` | `tuple` pair | a `SegmentObject`'s third pair |
+| `polygon_type` | `list[str]` | `Polyline`, `Spline`, `Connection` |
+| `points` | `list[PolygonPoint]` | every polygon coordinate pair |
+| `tails` | `list[Tail]` | the flat view of every tail the object carried |
+| `text_vars` | `list[VarRef]` | a text object's `VarName` labels |
+| `width`, `value_fraction`, `format_string` | `TailedClause` | the text object's `Width_`, `ValueFraction`, `Format_String_` clauses |
+| `alignments` | `list[Alignment]` | `LeftAligned`, `RightAligned` |
+| `connection_node` | `GraphObject` | a text object's `ConnectionNode (x, y)` anchor |
+| `enable`, `enable_tail` | `bool`, `Tail` | `Enable_ = ...` and its binding |
+| `colours` | `list[ColourSpec]` | the outline and fill blocks |
+| `layer` | `int` | `Layer_ = <int>` |
+
+A `PolygonPoint` holds `x`, `y`, `x_tails`, and `y_tails`, so a tail written
+after one value stays attached to that value. A polygon whose coordinate carries
+a nested `ClippingBounds` annotation folds that annotation's tails into the same
+coordinate. The flat `tails` view lists the same tail objects, never copies.
+
+A text-object clause keeps its value and its tail in one payload, so a literal
+and its `InVar_` binding are read together. Compare a clause by `key` and
+`value`, and read `tail` only when the binding matters.
 
 Every payload that reaches the parsed tree (the interact body clauses,
 coordinate and header tails, `ClippingClause`, `ModuleArguments`, graphics and
@@ -587,7 +629,7 @@ Property payloads are visited in a fixed order:
 
 | Container | Node-bearing keys, in walk order |
 | --- | --- |
-| `GraphObject` | `colours`, `enable_tail`, `tails`, `text_vars` |
+| `GraphObject` | `colours`, `enable_tail`, `width`, `value_fraction`, `format_string`, `alignments`, `connection_node`, `points`, `tails` |
 | `InteractObject` | `procedure`, `assigns`, `enables`, `flags`, `colours`, `body`, `tails` |
 
 `ModuleHeader.arguments` is walked as a node, so a consumer reaches `enable`,
@@ -616,13 +658,15 @@ A `VarTail` whose value is a `LitStringTail` is a quoted symbol, not a variable
 path, so the collector skips it.
 
 The non-node keys (`coords`, `segment_point`, `polygon_type`, `layer`, `enable`,
-and `layers`) stay in the order tuple so a new property forces a walker
-decision, but they produce no nodes.
+`text_vars`, and `layers`) stay in the order tuple so a new property forces a
+walker decision, but they produce no nodes. `text_vars` holds `VarRef` values,
+which are nodes, and the walk visits them after the clauses.
 
-The flat `properties["tails"]` list is a derived view. A tail owned by a clause
-is emitted through that clause, and only the unowned (coordinate) tails are
-emitted from the flat list. Every tail node therefore appears once, and a query
-or validation pass does not need to deduplicate shared payloads.
+The flat `properties["tails"]` list is a derived view. A tail owned by a clause,
+a polygon point, or a text-object clause is emitted through that owner, and only
+the unowned (coordinate) tails are emitted from the flat list. Every tail node
+therefore appears once, and a query or validation pass does not need to
+deduplicate shared payloads.
 
 `walk` uses an explicit stack and keeps ancestors as a persistent chain.
 `WalkEvent.parents` expands its sequence view only when read, so a deep tree is

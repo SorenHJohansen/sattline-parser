@@ -67,6 +67,28 @@ def _split_coordinate_items(items: list[TransformerItem]) -> tuple[list[float], 
     return values, tails
 
 
+def _per_coordinate_tails(items: list[TransformerItem]) -> tuple[tuple[Tail, ...], ...] | None:
+    """The tails that follow each coordinate value, in source order.
+
+    ``CoordTail`` wrappers are positional: a tail that appears after the first
+    REAL and before the second belongs to the first value. Returns ``None`` when
+    the run does not spell exactly two values, because the pair interpretation
+    would be a guess.
+    """
+    values: list[list[Tail]] = []
+    for item in items:
+        if isinstance(item, (int, float)) and not isinstance(item, bool):
+            values.append([])
+        elif isinstance(item, CoordTail):
+            if values:
+                values[-1].append(item.value)
+        elif isinstance(item, CoordinateClipping) and values:
+            values[-1].extend(item.tails)
+    if len(values) != 2:
+        return None
+    return (tuple(values[0]), tuple(values[1]))
+
+
 def _float_values(items: list[TransformerItem]) -> list[float]:
     return [float(item) for item in items if isinstance(item, (int, float))]
 
@@ -83,11 +105,19 @@ class ModuleLayoutMixin:
         return items
 
     def coordinates(self, items: list[TransformerItem]) -> InterimCoords:
-        """Grammar coordinates -> (x, y) with optional coordinate tails."""
+        """Grammar coordinates -> (x, y) with optional coordinate tails.
+
+        The per-coordinate split is kept as well as the flat tail list, so a
+        polygon point can say which of its two values a tail belongs to.
+        """
         nums, tails = _split_coordinate_items(items)
         if len(nums) < 2:
             raise ValueError(f"coordinates missing REAL values (got {len(nums)})")
-        return InterimCoords((nums[0], nums[1]), tails or None)
+        return InterimCoords(
+            (nums[0], nums[1]),
+            tails or None,
+            coord_tails=_per_coordinate_tails(items),
+        )
 
     def origo_size_pair(self, items: list[TransformerItem]) -> InterimCoords:
         """Grammar origo_size_pair -> ((x, y), (w, h)) with coordinate tails."""

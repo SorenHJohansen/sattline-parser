@@ -5,7 +5,7 @@ from __future__ import annotations
 import argparse
 
 from .._exit import ExitCode
-from .._findings import Finding
+from .._findings import CHECK_RULE_IDS, Finding
 from .._io import read_source
 from .._validate import analyse
 from ._common import (
@@ -36,13 +36,13 @@ def register(subparsers: argparse._SubParsersAction[argparse.ArgumentParser]) ->
 def run(args: argparse.Namespace) -> int:
     absolute = args.path_style == "absolute"
     # Reject an unknown or inactive --rule before reading any source.
-    resolve_rule_filters(args.rule or ())
+    resolve_rule_filters(args.rule or (), synthetic=CHECK_RULE_IDS)
     findings: list[Finding] = []
     for target in args.paths:
         reject_companion(target, stdin_name=args.stdin_name)
         source = read_source(target, name=args.stdin_name)
         findings.extend(analyse(source.name, source.text, absolute=absolute).findings)
-    reported = selected_findings(findings, args)
+    reported = selected_findings(findings, args, synthetic=CHECK_RULE_IDS)
     emit_findings(
         reported,
         args=args,

@@ -49,6 +49,7 @@ from .expressions import (
     UnaryOp,
     VarRef,
 )
+from .header import HeaderInfo
 from .properties import (
     GraphProperties,
     InteractProperties,
@@ -548,6 +549,9 @@ class BasePicture(_ModuleBlockViews):
     header: ModuleHeader
     name: str = "BasePicture"
     program_name: str | None = None
+    #: The three quoted header lines and the optional change description, as
+    #: written. ``program_name`` above is the convenience view over it.
+    header_info: HeaderInfo | None = None
     position: tuple[float, float, float, float, float] | None = field(
         default=None, compare=False, metadata={"layout": True}
     )

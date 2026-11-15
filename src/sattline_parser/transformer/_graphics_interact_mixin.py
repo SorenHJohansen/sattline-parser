@@ -22,6 +22,7 @@ from sattline_parser.models.clauses import (
     FlagClause,
     ModuleInViewClause,
     PickButton,
+    PolygonPoint,
     ProcedureCall,
     ScaleSelector,
     TailedClause,
@@ -89,6 +90,43 @@ def _box_coords(items: list[TransformerItem]) -> CoordBox | None:
         if isinstance(item, InterimCoords) and _is_coord_box(item.coords):
             return item.coords
     return None
+
+
+def _polygon_points(items: list[TransformerItem]) -> list[PolygonPoint]:
+    """Every polygon coordinate pair, with the tails written after each value."""
+    points: list[PolygonPoint] = []
+    for item in items:
+        if not isinstance(item, InterimCoords) or not _is_coord_pair(item.coords):
+            continue
+        x, y = item.coords
+        x_tails, y_tails = item.coord_tails or ((), ())
+        points.append(PolygonPoint(x, y, x_tails, y_tails))
+    return points
+
+
+def _text_object_properties(go: GraphObject, items: list[TransformerItem]) -> None:
+    """Collect the typed text-object clauses a ``TextObject`` line carries.
+
+    Each clause keeps its own value and tail, so a literal and its binding are
+    one payload. The object's flat ``tails`` view still lists the same tail
+    objects, and the walk emits each of them once.
+    """
+    alignments: list[Alignment] = []
+    for item in items:
+        if isinstance(item, TailedClause):
+            folded = item.key.casefold()
+            if folded == const.GRAMMAR_VALUE_WIDTH_KEY.casefold():
+                go.properties[const.KEY_WIDTH] = item
+            elif folded == const.GRAMMAR_VALUE_VALUEFRACTION.casefold():
+                go.properties[const.KEY_VALUE_FRACTION] = item
+            elif folded == const.GRAMMAR_VALUE_FORMAT_STRING.casefold():
+                go.properties[const.KEY_FORMAT_STRING] = item
+        elif isinstance(item, Alignment):
+            alignments.append(item)
+        elif isinstance(item, GraphObject) and item.type == const.GRAMMAR_VALUE_CONNECTIONNODE:
+            go.properties[const.KEY_CONNECTION_NODE] = item
+    if alignments:
+        go.properties[const.KEY_ALIGNMENTS] = alignments
 
 
 class _GraphicsInteractMixin:
@@ -300,7 +338,7 @@ class _GraphicsInteractMixin:
         return text_vars
 
     def text_object(self, items: list[TransformerItem]) -> GraphObject:
-        """Grammar text_object -> GraphObject (TEXTOBJECT with text and coordinates)."""
+        """Grammar text_object -> GraphObject (TEXTOBJECT with its typed clauses)."""
         go = GraphObject(const.GRAMMAR_VALUE_TEXTOBJECT)
         box = _box_coords(items)
         if box is not None:
@@ -309,6 +347,7 @@ class _GraphicsInteractMixin:
         if tails:
             go.properties[const.KEY_TAILS] = tails
         self._apply_common_properties(go.properties, items)
+        _text_object_properties(go, items)
         text_vars = self._text_vars(items)
         if text_vars:
             go.properties[const.KEY_TEXT_VARS] = text_vars
@@ -342,6 +381,9 @@ class _GraphicsInteractMixin:
             if isinstance(it, list) and all(isinstance(x, str) for x in cast(list[object], it)):
                 go.properties[const.KEY_POLYGON_TYPE] = cast(list[str], it)
                 break
+        points = _polygon_points(items)
+        if points:
+            go.properties[const.KEY_POINTS] = points
         tails = _tails_of(items)
         if tails:
             go.properties[const.KEY_TAILS] = tails

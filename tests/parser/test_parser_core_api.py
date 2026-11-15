@@ -67,6 +67,22 @@ ENDDEF (*BasePicture*);
     assert bp.name == "BasePicture"
 
 
+def test_source_text_for_parse_returns_the_text_the_parser_takes(tmp_path):
+    code = (
+        '"Syntax version 2.23, date: 2026-04-30-00:00:00.000 N"\n'
+        '"Original file date: ---"\n'
+        '"Program date: 2026-04-30-00:00:00.000, name: Plain"\n'
+        "BasePicture Invocation ( 0.0 , 0.0 , 0.0 , 1.0 , 1.0 ) : MODULEDEFINITION DateCode_ 1\n"
+        "ModuleDef\n"
+        "ClippingBounds = ( -1.0 , -1.0 ) ( 1.0 , 1.0 )\n"
+        "ENDDEF (*BasePicture*);\n"
+    )
+    source_file = tmp_path / "Plain.s"
+    source_file.write_bytes(code.encode("cp1252"))
+
+    assert parser_api.source_text_for_parse(source_file) == code
+
+
 def test_parser_core_reuses_default_parser(monkeypatch):
     code = """
 "SyntaxVersion"
