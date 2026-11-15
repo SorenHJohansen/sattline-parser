@@ -426,7 +426,8 @@ A `mtime_ns` and `size` stat snapshot is the cheap first filter; on a match the
 cached digest is confirmed against the bytes on disk, so the bytes decide. An
 edit that keeps the file size and lands inside the filesystem's mtime
 granularity, or a restore that puts an old mtime back, is a miss and the body is
-reparsed.
+reparsed. A cache hit still reads the source to verify the digest, so a warm
+load avoids parsing but not the source read.
 
 Decoding, span remapping, and identifier folding all change the parsed AST, so
 they are part of the fingerprint: a fix there invalidates a cached body through
