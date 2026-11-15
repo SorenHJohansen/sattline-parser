@@ -396,7 +396,7 @@ def test_qualification_resolves_record_fields():
 def test_write_to_const_variable_flagged():
     bp = _base_picture()
     bp.localvariables = [_var("MaxLimit", "integer", const=True)]
-    bp.modulecodes = [ModuleCode(equationblocks=[_equation(Assignment(VarRef("MaxLimit"), 1))])]
+    bp.modulecode = ModuleCode(equationblocks=[_equation(Assignment(VarRef("MaxLimit"), 1))])
     codes = {d.code.value for d in validate_basepicture(bp)}
     assert "SL-V007" in codes
 
@@ -404,17 +404,15 @@ def test_write_to_const_variable_flagged():
 def test_undefined_variable_references_flagged():
     bp = _base_picture()
     bp.localvariables = [_var("Input", "integer"), _var("Mystery", "integer")]
-    bp.modulecodes = [
-        ModuleCode(
-            equationblocks=[
-                _equation(
-                    Assignment(VarRef("Input"), 0),
-                    Assignment(VarRef("Sub.Out"), 1, span=None),
-                    Assignment(VarRef("Mystery.x"), 1, span=None),
-                )
-            ]
-        )
-    ]
+    bp.modulecode = ModuleCode(
+        equationblocks=[
+            _equation(
+                Assignment(VarRef("Input"), 0),
+                Assignment(VarRef("Sub.Out"), 1, span=None),
+                Assignment(VarRef("Mystery.x"), 1, span=None),
+            )
+        ]
+    )
     codes = [d.code.value for d in validate_basepicture(bp)]
     assert codes.count("SL-V019") == 2
 
@@ -429,24 +427,22 @@ def test_old_new_on_non_state_variable_and_field_flagged():
     bp = _base_picture()
     bp.datatype_defs = [record_type]
     bp.localvariables = [_var("Counter", "integer"), _var("CMD", "CmdType")]
-    bp.modulecodes = [
-        ModuleCode(
-            equationblocks=[
-                _equation(
-                    IfStmt(
-                        branches=(
-                            (
-                                Compare(VarRef("Counter", state="old"), "==", 0),
-                                (Assignment(VarRef("Out", span=None), 1, span=None),),
-                            ),
+    bp.modulecode = ModuleCode(
+        equationblocks=[
+            _equation(
+                IfStmt(
+                    branches=(
+                        (
+                            Compare(VarRef("Counter", state="old"), "==", 0),
+                            (Assignment(VarRef("Out", span=None), 1, span=None),),
                         ),
-                        else_block=None,
                     ),
-                    Assignment(VarRef("Out", span=None), VarRef("CMD.Other", state="old"), span=None),
-                )
-            ]
-        )
-    ]
+                    else_block=None,
+                ),
+                Assignment(VarRef("Out", span=None), VarRef("CMD.Other", state="old"), span=None),
+            )
+        ]
+    )
     codes = {d.code.value for d in validate_basepicture(bp)}
     assert "SL-V005" in codes
     assert "SL-V006" in codes
@@ -457,15 +453,13 @@ def test_old_new_on_state_symbols_not_flagged():
     bp = _base_picture()
     bp.datatype_defs = [record_type]
     bp.localvariables = [_var("Counter", "integer", state=True), _var("CMD", "CmdType")]
-    bp.modulecodes = [
-        ModuleCode(
-            equationblocks=[
-                _equation(
-                    BoolOp("AND", (VarRef("Counter", state="old"), VarRef("CMD.Flag", state="new"))),
-                )
-            ]
-        )
-    ]
+    bp.modulecode = ModuleCode(
+        equationblocks=[
+            _equation(
+                BoolOp("AND", (VarRef("Counter", state="old"), VarRef("CMD.Flag", state="new"))),
+            )
+        ]
+    )
     assert validate_basepicture(bp) == ()
 
 
@@ -539,18 +533,16 @@ def test_retired_rules_stay_silent_on_hand_built_asts():
     assert validate_basepicture(duplicate_field) == ()
 
     repeated_init = _base_picture()
-    repeated_init.modulecodes = [
-        ModuleCode(
-            sequences=[
-                _sequence(
-                    SFCStep(kind="init", name="First", code=SFCCodeBlocks()),
-                    SFCTransition(name="TrA", condition=True),
-                    SFCStep(kind="init", name="Second", code=SFCCodeBlocks()),
-                    SFCTransition(name="TrB", condition=True),
-                )
-            ]
-        )
-    ]
+    repeated_init.modulecode = ModuleCode(
+        sequences=[
+            _sequence(
+                SFCStep(kind="init", name="First", code=SFCCodeBlocks()),
+                SFCTransition(name="TrA", condition=True),
+                SFCStep(kind="init", name="Second", code=SFCCodeBlocks()),
+                SFCTransition(name="TrB", condition=True),
+            )
+        ]
+    )
     # Ends on a transition, so the only rule left is the one we retired.
     assert validate_basepicture(repeated_init) == ()
 
@@ -578,7 +570,7 @@ def test_string_literal_call_argument_flagged_for_any_call():
     bp = _base_picture()
     bp.localvariables = [_var("Input", "string", init_value="")]
     unknown = FuncCall(name="UserProc", args=("text",))
-    bp.modulecodes = [ModuleCode(equationblocks=[_equation(FuncCallStmt(unknown))])]
+    bp.modulecode = ModuleCode(equationblocks=[_equation(FuncCallStmt(unknown))])
     codes = {d.code.value for d in validate_basepicture(bp)}
     assert "SL-V015" in codes
 
@@ -590,7 +582,7 @@ def test_builtin_arity_and_out_arg_checks():
     copy_call = FuncCallStmt(FuncCall(name="CopyTime", args=(VarRef("A"), BoolOp("OR", (VarRef("A"), VarRef("B"))))))
     ok_call = FuncCallStmt(FuncCall(name="EqualStrings", args=(VarRef("A"), VarRef("B"), True)))
     unknown = FuncCallStmt(FuncCall(name="UserProc", args=(1, 2, 3, 4)))
-    bp.modulecodes = [ModuleCode(equationblocks=[_equation(fn_call, copy_call, ok_call, unknown)])]
+    bp.modulecode = ModuleCode(equationblocks=[_equation(fn_call, copy_call, ok_call, unknown)])
     codes = {d.code.value for d in validate_basepicture(bp)}
     assert "SL-V013" in codes
     assert "SL-V014" in codes
@@ -605,7 +597,7 @@ def test_builtin_optional_trailing_arguments_are_accepted():
         _var("Async", "integer", init_value=0),
     ]
     call = FuncCallStmt(FuncCall(name="writeline", args=(VarRef("File1"), VarRef("Text"), VarRef("Async"))))
-    bp.modulecodes = [ModuleCode(equationblocks=[_equation(call)])]
+    bp.modulecode = ModuleCode(equationblocks=[_equation(call)])
     assert validate_basepicture(bp, allow_unresolved_external_datatypes=True) == ()
 
 
@@ -613,7 +605,7 @@ def test_builtin_missing_required_argument_is_still_flagged():
     bp = _base_picture()
     bp.localvariables = [_var("File1", "textfile")]
     call = FuncCallStmt(FuncCall(name="writeline", args=(VarRef("File1"),)))
-    bp.modulecodes = [ModuleCode(equationblocks=[_equation(call)])]
+    bp.modulecode = ModuleCode(equationblocks=[_equation(call)])
     codes = {d.code.value for d in validate_basepicture(bp)}
     assert "SL-V013" in codes
 
@@ -628,7 +620,7 @@ def test_string_cursor_parameter_accepts_a_const_string_but_checks_the_rest():
     const_ok = FuncCallStmt(FuncCall(name="GetStringPos", args=(VarRef("Template"),)))
     wrong_datatype = FuncCallStmt(FuncCall(name="GetStringPos", args=(VarRef("Cursor"),)))
     not_a_reference = FuncCallStmt(FuncCall(name="GetStringPos", args=(1,)))
-    bp.modulecodes = [ModuleCode(equationblocks=[_equation(const_ok, wrong_datatype, not_a_reference)])]
+    bp.modulecode = ModuleCode(equationblocks=[_equation(const_ok, wrong_datatype, not_a_reference)])
 
     diagnostics = [d.code.value for d in validate_basepicture(bp)]
 
@@ -644,7 +636,7 @@ def test_builtin_output_argument_is_checked_against_its_declaration():
         _var("Status", "integer", init_value=0),
     ]
     call = FuncCallStmt(FuncCall(name="CopyString", args=(VarRef("Source"), VarRef("Destination"), VarRef("Status"))))
-    bp.modulecodes = [ModuleCode(equationblocks=[_equation(call)])]
+    bp.modulecode = ModuleCode(equationblocks=[_equation(call)])
 
     codes = [d.code.value for d in validate_basepicture(bp)]
 
@@ -656,7 +648,7 @@ def test_transition_guard_must_be_boolean():
     transition = SFCTransition(name="TrCount", condition=VarRef("Count"))
     bp = _base_picture()
     bp.localvariables = [_var("Count", "integer", init_value=0)]
-    bp.modulecodes = [ModuleCode(sequences=[_sequence(transition, name="Counter")])]
+    bp.modulecode = ModuleCode(sequences=[_sequence(transition, name="Counter")])
 
     diagnostics = [d for d in validate_basepicture(bp) if d.code is DiagnosticCode.CONDITION_NOT_BOOLEAN]
 
@@ -668,7 +660,7 @@ def test_transition_guard_accepts_a_boolean():
     transition = SFCTransition(name="TrDone", condition=VarRef("Done"))
     bp = _base_picture()
     bp.localvariables = [_var("Done", "boolean", init_value=False)]
-    bp.modulecodes = [ModuleCode(sequences=[_sequence(transition, name="Counter")])]
+    bp.modulecode = ModuleCode(sequences=[_sequence(transition, name="Counter")])
 
     assert [d for d in validate_basepicture(bp) if d.code is DiagnosticCode.CONDITION_NOT_BOOLEAN] == []
 
@@ -696,7 +688,7 @@ def test_unresolved_field_on_opaque_or_builtin_record_stays_silent():
     ]
     first = Assignment(VarRef("Sink"), VarRef("Group.Executing"), span=None)
     second = Assignment(VarRef("Sink"), VarRef("File.Name"), span=None)
-    bp.modulecodes = [ModuleCode(equationblocks=[_equation(first, second)])]
+    bp.modulecode = ModuleCode(equationblocks=[_equation(first, second)])
     codes = {d.code.value for d in validate_basepicture(bp)}
     assert "SL-V019" not in codes
 
@@ -710,7 +702,7 @@ def test_temporal_component_accessors_are_not_undefined():
     ]
     first = Assignment(VarRef("Sink"), VarRef("Stamp.Time"), span=None)
     second = Assignment(VarRef("Sink"), VarRef("Elapsed.Milliseconds"), span=None)
-    bp.modulecodes = [ModuleCode(equationblocks=[_equation(first, second)])]
+    bp.modulecode = ModuleCode(equationblocks=[_equation(first, second)])
     codes = {d.code.value for d in validate_basepicture(bp)}
     assert "SL-V019" not in codes
 
@@ -719,7 +711,7 @@ def test_assignment_to_sequence_runtime_accessor_is_not_undefined():
     bp = _base_picture()
     step = SFCStep(kind="init", name="Init", code=SFCCodeBlocks(active=[Assignment(VarRef("Seq.Reset"), True)]))
     sequence = _sequence(step, name="Seq")
-    bp.modulecodes = [ModuleCode(sequences=[sequence])]
+    bp.modulecode = ModuleCode(sequences=[sequence])
     codes = {d.code.value for d in validate_basepicture(bp)}
     assert "SL-V019" not in codes
 
@@ -742,9 +734,9 @@ def test_expression_walk_covers_all_node_kinds():
         _var("B", "integer", init_value=0),
         _var("Out", "integer", init_value=0),
     ]
-    bp.modulecodes = [
-        ModuleCode(equationblocks=[_equation(fn, Assignment(VarRef("Out", span=None), expression_nodes, span=None))])
-    ]
+    bp.modulecode = ModuleCode(
+        equationblocks=[_equation(fn, Assignment(VarRef("Out", span=None), expression_nodes, span=None))]
+    )
     diagnostics = validate_basepicture(bp)
     assert "SL-V013" not in {d.code.value for d in diagnostics}
     assert diagnostics == ()
@@ -755,7 +747,7 @@ def test_sfc_structural_rules_flagged():
     bp.localvariables = [_var("In", "integer", init_value=0)]
     step = SFCStep(kind="init", name="Init", code=SFCCodeBlocks(active=[Assignment(VarRef("In"), 0)]))
     step2 = SFCStep(kind="step", name="Step2", code=SFCCodeBlocks())
-    bp.modulecodes = [ModuleCode(sequences=[_sequence(step, step2)])]
+    bp.modulecode = ModuleCode(sequences=[_sequence(step, step2)])
     codes = {d.code.value for d in validate_basepicture(bp)}
     assert "SL-V016" in codes
 
@@ -764,14 +756,14 @@ def test_sfc_fork_target_checks():
     # SEQFORK is a suffix of its host step/transition, never a body element.
     bad_step = SFCStep(kind="init", name="Init", code=SFCCodeBlocks(), fork=SFCFork(targets=("Nope",)))
     bad = _base_picture()
-    bad.modulecodes = [ModuleCode(sequences=[_sequence(bad_step)])]
+    bad.modulecode = ModuleCode(sequences=[_sequence(bad_step)])
     codes = {d.code.value for d in validate_basepicture(bad)}
     assert "SL-V017" in codes
 
     good_step = SFCStep(kind="init", name="Init", code=SFCCodeBlocks())
     good_transition = SFCTransition(name="TrGo", condition=True, fork=SFCFork(targets=("Init",)))
     good = _base_picture()
-    good.modulecodes = [ModuleCode(sequences=[_sequence(good_step, good_transition)])]
+    good.modulecode = ModuleCode(sequences=[_sequence(good_step, good_transition)])
     assert validate_basepicture(good) == ()
 
 
@@ -830,26 +822,24 @@ def test_sfc_walk_covers_all_body_item_kinds():
     )
     # Positions: Init(S) TrMatch(T) ... every step is followed by a transition
     # and every transition by a step, with the SUBSEQUENCE as a structural unit.
-    bp.modulecodes = [
-        ModuleCode(
-            sequences=[
-                _sequence(
-                    step,
-                    transition,
-                    after_transition,
-                    transition_sub,
-                    after_sub,
-                    alterni,
-                    parallel,
-                    trailing,
-                    subsequence,
-                    comment,
-                    second_step,
-                    SFCTransition(name="TrFinal", condition=True),
-                )
-            ]
-        )
-    ]
+    bp.modulecode = ModuleCode(
+        sequences=[
+            _sequence(
+                step,
+                transition,
+                after_transition,
+                transition_sub,
+                after_sub,
+                alterni,
+                parallel,
+                trailing,
+                subsequence,
+                comment,
+                second_step,
+                SFCTransition(name="TrFinal", condition=True),
+            )
+        ]
+    )
     assert validate_basepicture(bp) == ()
 
 
@@ -882,24 +872,22 @@ def test_sfc_step_and_transition_names_collected_for_fork():
     )
     # Step targets only: the host is a transition, so the target kind is checked.
     transitions[0].fork = SFCFork(targets=("Run", "Mid", "Nested", "NestedAlt", "AfterSub", "Tail"))
-    bp.modulecodes = [
-        ModuleCode(
-            sequences=[
-                _sequence(
-                    init_step,
-                    transitions[0],
-                    run_step,
-                    transitions[1],
-                    mid_step,
-                    transition_sub,
-                    SFCStep(kind="step", name="AfterSub", code=SFCCodeBlocks()),
-                    branch,
-                    SFCStep(kind="step", name="Tail", code=SFCCodeBlocks()),
-                    SFCTransition(name="TrEnd", condition=True),
-                )
-            ]
-        )
-    ]
+    bp.modulecode = ModuleCode(
+        sequences=[
+            _sequence(
+                init_step,
+                transitions[0],
+                run_step,
+                transitions[1],
+                mid_step,
+                transition_sub,
+                SFCStep(kind="step", name="AfterSub", code=SFCCodeBlocks()),
+                branch,
+                SFCStep(kind="step", name="Tail", code=SFCCodeBlocks()),
+                SFCTransition(name="TrEnd", condition=True),
+            )
+        ]
+    )
     assert validate_basepicture(bp) == ()
 
 
@@ -907,59 +895,51 @@ def test_duplicate_sfc_element_names_flagged():
     bp = _base_picture()
     step_a = SFCStep(kind="step", name="Work", code=SFCCodeBlocks())
     step_b = SFCStep(kind="step", name="work", code=SFCCodeBlocks())
-    bp.modulecodes = [
-        ModuleCode(
-            sequences=[
-                _sequence(
-                    SFCStep(kind="init", name="Start", code=SFCCodeBlocks()),
-                    SFCTransition(name="TrA", condition=True),
-                    step_a,
-                    SFCTransition(name="TrB", condition=True),
-                    step_b,
-                )
-            ]
-        )
-    ]
+    bp.modulecode = ModuleCode(
+        sequences=[
+            _sequence(
+                SFCStep(kind="init", name="Start", code=SFCCodeBlocks()),
+                SFCTransition(name="TrA", condition=True),
+                step_a,
+                SFCTransition(name="TrB", condition=True),
+                step_b,
+            )
+        ]
+    )
     codes = {d.code.value for d in validate_basepicture(bp)}
     assert "SL-V021" in codes
 
 
 def test_sfc_branch_start_checks_skip_leading_comments():
     alt = _base_picture()
-    alt.modulecodes = [
-        ModuleCode(
-            sequences=[
-                _sequence(
-                    SFCStep(kind="init", name="Init", code=SFCCodeBlocks()),
-                    SFCAlternative(
-                        branches=[[CodeComment(text="(* c *)"), SFCStep(kind="step", name="Bad", code=SFCCodeBlocks())]]
-                    ),
-                )
-            ]
-        )
-    ]
+    alt.modulecode = ModuleCode(
+        sequences=[
+            _sequence(
+                SFCStep(kind="init", name="Init", code=SFCCodeBlocks()),
+                SFCAlternative(
+                    branches=[[CodeComment(text="(* c *)"), SFCStep(kind="step", name="Bad", code=SFCCodeBlocks())]]
+                ),
+            )
+        ]
+    )
     assert "SL-V023" in {d.code.value for d in validate_basepicture(alt)}
 
     par = _base_picture()
-    par.modulecodes = [
-        ModuleCode(
-            sequences=[
-                _sequence(
-                    SFCStep(kind="init", name="Init", code=SFCCodeBlocks()),
-                    SFCParallel(branches=[[CodeComment(text="(* c *)"), SFCTransition(name="BadTr", condition=True)]]),
-                )
-            ]
-        )
-    ]
+    par.modulecode = ModuleCode(
+        sequences=[
+            _sequence(
+                SFCStep(kind="init", name="Init", code=SFCCodeBlocks()),
+                SFCParallel(branches=[[CodeComment(text="(* c *)"), SFCTransition(name="BadTr", condition=True)]]),
+            )
+        ]
+    )
     assert "SL-V024" in {d.code.value for d in validate_basepicture(par)}
 
 
 def test_builtin_out_arg_beyond_call_args_not_flagged():
     bp = _base_picture()
     bp.localvariables = [_var("A", "time")]
-    bp.modulecodes = [
-        ModuleCode(equationblocks=[_equation(FuncCallStmt(FuncCall(name="CopyTime", args=(VarRef("A"),))))])
-    ]
+    bp.modulecode = ModuleCode(equationblocks=[_equation(FuncCallStmt(FuncCall(name="CopyTime", args=(VarRef("A"),))))])
     codes = {d.code.value for d in validate_basepicture(bp)}
     assert codes == {"SL-V013"}
 
@@ -974,18 +954,15 @@ def test_unknown_datatype_name_flagged_and_groupdata_exempt():
 
 def test_modulecode_without_sequences_or_equations_is_clean():
     bp = _base_picture()
-    bp.modulecodes = [ModuleCode(sequences=None, equationblocks=None)]
+    bp.modulecode = ModuleCode(sequences=None, equationblocks=None)
     assert validate_basepicture(bp) == ()
     empty = _base_picture()
     assert validate_basepicture(empty) == ()
 
 
-def test_identifier_checks_cover_every_modulecode_block():
+def test_identifier_checks_cover_every_equation():
     bp = _base_picture()
-    bp.modulecodes = [
-        ModuleCode(equationblocks=[_equation(name="First")]),
-        ModuleCode(equationblocks=[_equation(name="X" * 21)]),
-    ]
+    bp.modulecode = ModuleCode(equationblocks=[_equation(name="First"), _equation(name="X" * 21)])
     codes = [diagnostic.code for diagnostic in validate_basepicture(bp)]
     assert codes.count(DiagnosticCode.IDENTIFIER_TOO_LONG) == 1
 
@@ -994,19 +971,19 @@ def test_moduletype_and_nested_module_walks():
     child_type = SingleModule(
         header=_module_header("Child"),
         localvariables=[_var("Local", "integer")],
-        modulecodes=[ModuleCode(equationblocks=[_equation(Assignment(VarRef("Local"), 1))])],
+        modulecode=ModuleCode(equationblocks=[_equation(Assignment(VarRef("Local"), 1))]),
     )
     moduletype = ModuleTypeDef(
         name="T",
         moduleparameters=[_var("P", "integer")],
         localvariables=[_var("L", "integer")],
         submodules=[ModuleTypeInstance(header=_module_header("Inst"), moduletype_name="T")],
-        modulecodes=[ModuleCode(equationblocks=[_equation(Assignment(VarRef("P"), 0))])],
+        modulecode=ModuleCode(equationblocks=[_equation(Assignment(VarRef("P"), 0))]),
     )
     frame = FrameModule(
         header=_module_header("Frame"),
         submodules=[child_type],
-        modulecodes=[ModuleCode(equationblocks=[_equation(Assignment(VarRef("P", span=None), 0, span=None))])],
+        modulecode=ModuleCode(equationblocks=[_equation(Assignment(VarRef("P", span=None), 0, span=None))]),
     )
     bp = _base_picture()
     bp.localvariables = [_var("P", "integer")]
@@ -1032,7 +1009,7 @@ def test_param_transfer_type_mismatch_flagged():
     moduletype = ModuleTypeDef(
         name="ChildType",
         moduleparameters=[_var("EnableFlag", "boolean")],
-        modulecodes=[ModuleCode(equationblocks=[_equation(Assignment(VarRef("EnableFlag"), False))])],
+        modulecode=ModuleCode(equationblocks=[_equation(Assignment(VarRef("EnableFlag"), False))]),
     )
     bp = _base_picture()
     bp.localvariables = [_var("CounterValue", "integer")]
@@ -1337,7 +1314,7 @@ def test_frame_module_identifiers_are_checked_like_a_single_module():
         header=_module_header("Frame"),
         moduleparameters=[_var("ModuleDef", "integer")],
         localvariables=[_var("A" * 21, "integer")],
-        modulecodes=[ModuleCode(equationblocks=[_equation(name="X" * 21)])],
+        modulecode=ModuleCode(equationblocks=[_equation(name="X" * 21)]),
     )
     bp = _base_picture()
     bp.submodules = [frame]
@@ -1409,7 +1386,7 @@ def test_subseqtransition_starting_with_a_step_reports_its_own_code():
         ],
     )
     bp = _base_picture()
-    bp.modulecodes = [ModuleCode(sequences=[_sequence(step, SFCTransition(name="TrDone", condition=True), sub)])]
+    bp.modulecode = ModuleCode(sequences=[_sequence(step, SFCTransition(name="TrDone", condition=True), sub)])
 
     diagnostics = [d for d in validate_basepicture(bp) if d.code is DiagnosticCode.SUBSEQTRANSITION_STARTS_WITH_STEP]
 
@@ -1420,18 +1397,16 @@ def test_subseqtransition_starting_with_a_step_reports_its_own_code():
 
 def test_alternative_branch_starting_with_a_step_keeps_the_branch_code():
     bp = _base_picture()
-    bp.modulecodes = [
-        ModuleCode(
-            sequences=[
-                _sequence(
-                    SFCStep(kind="init", name="Init", code=SFCCodeBlocks()),
-                    SFCAlternative(
-                        branches=[[SFCStep(kind="step", name="Bad", code=SFCCodeBlocks())]],
-                    ),
-                )
-            ]
-        )
-    ]
+    bp.modulecode = ModuleCode(
+        sequences=[
+            _sequence(
+                SFCStep(kind="init", name="Init", code=SFCCodeBlocks()),
+                SFCAlternative(
+                    branches=[[SFCStep(kind="step", name="Bad", code=SFCCodeBlocks())]],
+                ),
+            )
+        ]
+    )
 
     diagnostics = [d for d in validate_basepicture(bp) if d.code is DiagnosticCode.SFC_ALTERNATIVE_BRANCH_START]
 
@@ -1458,18 +1433,14 @@ def test_signature_only_system_records_declare_and_type_their_builtin_arguments(
         _var("Signal", "AnalogSignalIn"),
         _var("Output", "AnalogSignalOut"),
     ]
-    bp.modulecodes = [
-        ModuleCode(
-            equationblocks=[
-                _equation(
-                    FuncCallStmt(FuncCall(name="getreceivedcomlidata", args=(VarRef("Mess"), VarRef("Data")))),
-                    FuncCallStmt(
-                        FuncCall(name="pid", args=(VarRef("PidPar"), 1.0, VarRef("Signal"), VarRef("Output")))
-                    ),
-                )
-            ]
-        )
-    ]
+    bp.modulecode = ModuleCode(
+        equationblocks=[
+            _equation(
+                FuncCallStmt(FuncCall(name="getreceivedcomlidata", args=(VarRef("Mess"), VarRef("Data")))),
+                FuncCallStmt(FuncCall(name="pid", args=(VarRef("PidPar"), 1.0, VarRef("Signal"), VarRef("Output")))),
+            )
+        ]
+    )
 
     assert validate_basepicture(bp) == ()
 
@@ -1490,13 +1461,11 @@ def test_anytype_is_exempt_from_the_condition_and_ternary_rules():
 def test_anytype_is_exempt_from_the_enable_tail_rule():
     bp = _base_picture()
     bp.localvariables = [_var("AnyVar", "AnyType")]
-    bp.moduledefs = [
-        ModuleDef(
-            graph_objects=[
-                GraphObject("RectangleObject", properties={"enable_tail": VarRef("AnyVar")}),
-            ]
-        )
-    ]
+    bp.moduledef = ModuleDef(
+        graph_objects=[
+            GraphObject("RectangleObject", properties={"enable_tail": VarRef("AnyVar")}),
+        ]
+    )
 
     assert [d.code.value for d in validate_basepicture(bp) if d.code is DiagnosticCode.CONDITION_NOT_BOOLEAN] == []
 
@@ -1522,7 +1491,7 @@ def _typed_bp(variables: list[Variable], *items: object, datatypes: list[DataTyp
     bp.localvariables = variables
     if datatypes is not None:
         bp.datatype_defs = datatypes
-    bp.modulecodes = [ModuleCode(equationblocks=[_equation(*items)])]
+    bp.modulecode = ModuleCode(equationblocks=[_equation(*items)])
     return bp
 
 
@@ -1737,7 +1706,7 @@ def test_coordinate_tail_type_rule_scopes_to_computed_expressions():
     module_def = ModuleDef(clipping=ClippingClause(((-1.0, -1.0), (1.0, 1.0)), (integer_tail,)))
     bp = _base_picture()
     bp.localvariables = [_var("Source", "integer")]
-    bp.moduledefs = [module_def]
+    bp.moduledef = module_def
     assert "SL-V032" in [d.code.value for d in validate_basepicture(bp)]
 
     module_def.clipping = ClippingClause(((-1.0, -1.0), (1.0, 1.0)), (real_tail,))
@@ -1750,7 +1719,7 @@ def test_coordinate_tail_rule_covers_bare_variable_tails():
     module_def = ModuleDef(clipping=ClippingClause(((-1.0, -1.0), (1.0, 1.0)), (VarRef("Source"),)))
     bp = _base_picture()
     bp.localvariables = [_var("Source", "integer")]
-    bp.moduledefs = [module_def]
+    bp.moduledef = module_def
     assert "SL-V032" in [d.code.value for d in validate_basepicture(bp)]
 
     bp.localvariables = [_var("Source", "real")]
@@ -1763,20 +1732,18 @@ def test_coordinate_tail_rule_skips_reference_names():
         clipping=ClippingClause(((-1.0, -1.0), (1.0, 1.0)), (VarTail("in", "ClipX"),)),
     )
     bp = _base_picture()
-    bp.moduledefs = [module_def]
+    bp.moduledef = module_def
     assert [d.code.value for d in validate_basepicture(bp)] == []
 
 
 def test_graph_enable_tail_reports_undefined_variable():
     """A parenthesised Enable_ tail is a real expression use (SL-V019)."""
     bp = _base_picture()
-    bp.moduledefs = [
-        ModuleDef(
-            graph_objects=[
-                GraphObject("RectangleObject", properties={"enable_tail": VarRef("MissingEnable")}),
-            ]
-        )
-    ]
+    bp.moduledef = ModuleDef(
+        graph_objects=[
+            GraphObject("RectangleObject", properties={"enable_tail": VarRef("MissingEnable")}),
+        ]
+    )
 
     diagnostics = [d for d in validate_basepicture(bp) if d.code is DiagnosticCode.UNDEFINED_VARIABLE]
 
@@ -1788,13 +1755,11 @@ def test_graph_enable_tail_must_be_boolean():
     """An Enable_ expression tail uses the boolean-condition rule (SL-V030)."""
     bp = _base_picture()
     bp.localvariables = [_var("Count", "integer")]
-    bp.moduledefs = [
-        ModuleDef(
-            graph_objects=[
-                GraphObject("RectangleObject", properties={"enable_tail": BinOp(VarRef("Count"), "+", 1)}),
-            ]
-        )
-    ]
+    bp.moduledef = ModuleDef(
+        graph_objects=[
+            GraphObject("RectangleObject", properties={"enable_tail": BinOp(VarRef("Count"), "+", 1)}),
+        ]
+    )
 
     diagnostics = [d for d in validate_basepicture(bp) if d.code is DiagnosticCode.CONDITION_NOT_BOOLEAN]
 
@@ -1810,13 +1775,11 @@ def test_graph_colour_tail_reports_undefined_variable_once():
         assignments=(TailedClause(key="Colour0", value=1, tail=missing),),
     )
     bp = _base_picture()
-    bp.moduledefs = [
-        ModuleDef(
-            graph_objects=[
-                GraphObject("RectangleObject", properties={"colours": [colour], "tails": [missing]}),
-            ]
-        )
-    ]
+    bp.moduledef = ModuleDef(
+        graph_objects=[
+            GraphObject("RectangleObject", properties={"colours": [colour], "tails": [missing]}),
+        ]
+    )
 
     diagnostics = [d for d in validate_basepicture(bp) if d.code is DiagnosticCode.UNDEFINED_VARIABLE]
 
@@ -1827,21 +1790,19 @@ def test_graph_colour_tail_reports_undefined_variable_once():
 def test_interact_enable_and_assign_tails_report_undefined_variables():
     """Interact clauses carry expression tails that must resolve in scope."""
     bp = _base_picture()
-    bp.moduledefs = [
-        ModuleDef(
-            interact_objects=[
-                InteractObject(
-                    "ComBut_",
-                    properties={
-                        "enables": [EnableClause(True, VarRef("MissingEnable"))],
-                        "assigns": [AssignClause("Value", 0, VarRef("MissingAssign"))],
-                        "body": [VarRef("MissingBody")],
-                        "tails": [VarRef("MissingFlat")],
-                    },
-                )
-            ]
-        )
-    ]
+    bp.moduledef = ModuleDef(
+        interact_objects=[
+            InteractObject(
+                "ComBut_",
+                properties={
+                    "enables": [EnableClause(True, VarRef("MissingEnable"))],
+                    "assigns": [AssignClause("Value", 0, VarRef("MissingAssign"))],
+                    "body": [VarRef("MissingBody")],
+                    "tails": [VarRef("MissingFlat")],
+                },
+            )
+        ]
+    )
 
     messages = [d.message for d in validate_basepicture(bp) if d.code is DiagnosticCode.UNDEFINED_VARIABLE]
 
@@ -1928,14 +1889,12 @@ def test_moduletype_layout_coordinate_tail_is_checked():
     moduletype = ModuleTypeDef(
         name="Type",
         localvariables=[_var("Source", "integer")],
-        moduledefs=[
-            ModuleDef(
-                clipping=ClippingClause(
-                    ((-1.0, -1.0), (1.0, 1.0)),
-                    (BinOp(VarRef("Source"), "+", 1),),
-                )
+        moduledef=ModuleDef(
+            clipping=ClippingClause(
+                ((-1.0, -1.0), (1.0, 1.0)),
+                (BinOp(VarRef("Source"), "+", 1),),
             )
-        ],
+        ),
     )
     bp = _base_picture()
     bp.moduletype_defs = [moduletype]
@@ -1954,14 +1913,12 @@ def test_bound_tail_names_are_not_diagnosed_in_annotations():
         arguments=ModuleArguments(enable=EnableClause(True, VarTail("in", "MissingHeaderEnable"))),
         invoke_coord_tails=[VarTail("out", LitStringTail("LitString", "MissingCoord"))],
     )
-    bp.moduledefs = [
-        ModuleDef(
-            graph_objects=[
-                GraphObject("RectangleObject", properties={"enable_tail": VarTail("in", "MissingGraphEnable")}),
-                GraphObject("RectangleObject", properties={"tails": [VarTail("in", "MissingCoordinate")]}),
-            ]
-        )
-    ]
+    bp.moduledef = ModuleDef(
+        graph_objects=[
+            GraphObject("RectangleObject", properties={"enable_tail": VarTail("in", "MissingGraphEnable")}),
+            GraphObject("RectangleObject", properties={"tails": [VarTail("in", "MissingCoordinate")]}),
+        ]
+    )
 
     assert [d.code.value for d in validate_basepicture(bp)] == []
 
@@ -1974,7 +1931,7 @@ def test_clipping_tail_is_checked_once():
     )
     bp = _base_picture()
     bp.localvariables = [_var("Source", "integer")]
-    bp.moduledefs = [module_def]
+    bp.moduledef = module_def
 
     diagnostics = [d for d in validate_basepicture(bp) if d.code is DiagnosticCode.COORDINATE_NOT_REAL]
 
@@ -1985,23 +1942,21 @@ def test_an_untyped_builtin_with_unknown_arity_is_not_rejected():
     """``GetPrivilegeFlag`` has no transcribed parameter list, so a call is not judged."""
     bp = _base_picture()
     bp.localvariables = [_var("Flag", "boolean")]
-    bp.modulecodes = [
-        ModuleCode(
-            equationblocks=[
-                _equation(
-                    FuncCallStmt(FuncCall("GetPrivilegeFlag", (VarRef("Flag"),))),
-                    FuncCallStmt(FuncCall("ResetPrivilegeFlag", (VarRef("Flag"),))),
-                )
-            ]
-        )
-    ]
+    bp.modulecode = ModuleCode(
+        equationblocks=[
+            _equation(
+                FuncCallStmt(FuncCall("GetPrivilegeFlag", (VarRef("Flag"),))),
+                FuncCallStmt(FuncCall("ResetPrivilegeFlag", (VarRef("Flag"),))),
+            )
+        ]
+    )
 
     assert validate_basepicture(bp) == ()
 
 
 def test_a_typed_builtin_still_reports_arity():
     bp = _base_picture()
-    bp.modulecodes = [ModuleCode(equationblocks=[_equation(FuncCallStmt(FuncCall("Abs", ())))])]
+    bp.modulecode = ModuleCode(equationblocks=[_equation(FuncCallStmt(FuncCall("Abs", ())))])
 
     assert [d.code.value for d in validate_basepicture(bp)] == ["SL-V013"]
 
@@ -2013,9 +1968,9 @@ def test_a_temporal_field_accessor_is_not_an_undefined_field():
     bp = _base_picture()
     bp.datatype_defs = [measured, readings]
     bp.localvariables = [_var("Readings", "Readings"), _var("Sink", "integer")]
-    bp.modulecodes = [
-        ModuleCode(equationblocks=[_equation(Assignment(VarRef("Sink"), VarRef("Readings.Entry.Stamp.Time")))])
-    ]
+    bp.modulecode = ModuleCode(
+        equationblocks=[_equation(Assignment(VarRef("Sink"), VarRef("Readings.Entry.Stamp.Time")))]
+    )
 
     assert validate_basepicture(bp) == ()
 
@@ -2027,7 +1982,7 @@ def test_a_field_of_a_duplicated_record_name_stays_silent():
     bp = _base_picture()
     bp.datatype_defs = [first, second]
     bp.localvariables = [_var("Sensor", "SensorType"), _var("Sink", "integer")]
-    bp.modulecodes = [ModuleCode(equationblocks=[_equation(Assignment(VarRef("Sink"), VarRef("Sensor.Value")))])]
+    bp.modulecode = ModuleCode(equationblocks=[_equation(Assignment(VarRef("Sink"), VarRef("Sensor.Value")))])
 
     assert validate_basepicture(bp) == ()
 
@@ -2038,16 +1993,14 @@ def test_known_record_bad_field_is_undefined_on_write_and_read():
     bp = _base_picture()
     bp.datatype_defs = [record]
     bp.localvariables = [_var("Reading", "Reading"), _var("Sink", "integer")]
-    bp.modulecodes = [
-        ModuleCode(
-            equationblocks=[
-                _equation(
-                    Assignment(VarRef("Reading.Missing"), 1),
-                    Assignment(VarRef("Sink"), VarRef("Reading.Missing")),
-                )
-            ]
-        )
-    ]
+    bp.modulecode = ModuleCode(
+        equationblocks=[
+            _equation(
+                Assignment(VarRef("Reading.Missing"), 1),
+                Assignment(VarRef("Sink"), VarRef("Reading.Missing")),
+            )
+        ]
+    )
 
     diagnostics = validate_basepicture(bp)
 
@@ -2061,9 +2014,7 @@ def test_known_nested_record_bad_field_is_undefined():
     bp = _base_picture()
     bp.datatype_defs = [inner, outer]
     bp.localvariables = [_var("Outer", "Outer"), _var("Sink", "integer")]
-    bp.modulecodes = [
-        ModuleCode(equationblocks=[_equation(Assignment(VarRef("Sink"), VarRef("Outer.Nested.Missing")))])
-    ]
+    bp.modulecode = ModuleCode(equationblocks=[_equation(Assignment(VarRef("Sink"), VarRef("Outer.Nested.Missing")))])
 
     diagnostics = validate_basepicture(bp)
 
@@ -2077,9 +2028,7 @@ def test_a_field_on_an_unloaded_nested_record_stays_silent():
     bp = _base_picture()
     bp.datatype_defs = [outer]
     bp.localvariables = [_var("Outer", "Outer"), _var("Sink", "integer")]
-    bp.modulecodes = [
-        ModuleCode(equationblocks=[_equation(Assignment(VarRef("Sink"), VarRef("Outer.Nested.Missing")))])
-    ]
+    bp.modulecode = ModuleCode(equationblocks=[_equation(Assignment(VarRef("Sink"), VarRef("Outer.Nested.Missing")))])
 
     assert validate_basepicture(bp, allow_unresolved_external_datatypes=True) == ()
 
@@ -2087,7 +2036,7 @@ def test_a_field_on_an_unloaded_nested_record_stays_silent():
 def test_a_field_on_an_opaque_builtin_record_stays_silent():
     bp = _base_picture()
     bp.localvariables = [_var("Message", "ComliMessage"), _var("Sink", "integer")]
-    bp.modulecodes = [ModuleCode(equationblocks=[_equation(Assignment(VarRef("Sink"), VarRef("Message.NoSuchField")))])]
+    bp.modulecode = ModuleCode(equationblocks=[_equation(Assignment(VarRef("Sink"), VarRef("Message.NoSuchField")))])
 
     assert validate_basepicture(bp) == ()
 
@@ -2099,22 +2048,20 @@ def test_sequence_ends_with_step_skips_open_sequences():
         (const.GRAMMAR_VALUE_OPENSEQUENCE, []),
     ):
         picture = _base_picture()
-        picture.modulecodes = [
-            ModuleCode(
-                sequences=[
-                    Sequence(
-                        name="Seq",
-                        type=seq_type,
-                        position=(0.0, 0.0),
-                        size=(1.0, 1.0),
-                        code=[
-                            SFCStep(kind="step", name="Last", code=SFCCodeBlocks()),
-                            CodeComment(text="a trailing comment is not the last element"),
-                        ],
-                    )
-                ]
-            )
-        ]
+        picture.modulecode = ModuleCode(
+            sequences=[
+                Sequence(
+                    name="Seq",
+                    type=seq_type,
+                    position=(0.0, 0.0),
+                    size=(1.0, 1.0),
+                    code=[
+                        SFCStep(kind="step", name="Last", code=SFCCodeBlocks()),
+                        CodeComment(text="a trailing comment is not the last element"),
+                    ],
+                )
+            ]
+        )
         assert [d.code.value for d in validate_basepicture(picture)] == expected, seq_type
 
 

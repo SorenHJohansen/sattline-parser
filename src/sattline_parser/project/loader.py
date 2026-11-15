@@ -844,8 +844,8 @@ class ProjectLoader:
             basepicture,
             moduletype_defs=selected,
             submodules=[],
-            moduledefs=[],
-            modulecodes=[],
+            moduledef=None,
+            modulecode=None,
             localvariables=[],
         )
 

@@ -308,8 +308,8 @@ def test_base_picture_pickle_roundtrip() -> None:
     restored = pickle.loads(pickle.dumps(basepic))
     assert restored == basepic
     assert restored.header.invoke_coord == (0.0, 0.0, 0.0, 1.0, 1.0)
-    assert "moduledef" not in restored.__dict__
-    assert "modulecode" not in restored.__dict__
+    assert restored.__dict__["moduledef"] is None
+    assert restored.__dict__["modulecode"] is None
 
 
 # ---- fuzz harness ----

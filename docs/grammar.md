@@ -110,7 +110,9 @@ is preserved rather than rejected.
 `module_body` is `moduleparameters? localvariables? submodules? moduledef
 modulecode?`. The `moduledef` is required. A `ModuleCode` without a
 `ModuleDef` is not accepted, and the corpus fixture
-`ModuleCodeWithoutModuleDef.s` pins that.
+`ModuleCodeWithoutModuleDef.s` pins that. A module body has at most one
+`moduledef`: a second `ModuleDef` before the closing `ENDDEF` is a syntax error,
+and `RepeatedModuleDefBlocks.s` pins that.
 
 ### Data types
 

@@ -131,14 +131,14 @@ def check_identifiers(bp: BasePicture, errors: list[Diagnostic]) -> None:
         check_identifier(moduletype.name, "Moduletype", moduletype.declaration_span, errors)
         _check_variable_names(moduletype.moduleparameters, errors)
         _check_variable_names(moduletype.localvariables, errors)
-        for modulecode in moduletype.modulecodes:
-            _check_modulecode_identifiers(modulecode, errors)
+        if moduletype.modulecode is not None:
+            _check_modulecode_identifiers(moduletype.modulecode, errors)
         for submodule in moduletype.submodules:
             _check_submodule_identifiers(submodule, errors)
     _check_variable_names(bp.moduleparameters, errors)
     _check_variable_names(bp.localvariables, errors)
-    for modulecode in bp.modulecodes:
-        _check_modulecode_identifiers(modulecode, errors)
+    if bp.modulecode is not None:
+        _check_modulecode_identifiers(bp.modulecode, errors)
     for submodule in bp.submodules:
         _check_submodule_identifiers(submodule, errors)
 
@@ -157,8 +157,8 @@ def _check_submodule_identifiers(submodule: Submodule, errors: list[Diagnostic])
     # module, so its identifiers are checked the same way.
     _check_variable_names(submodule.moduleparameters, errors)
     _check_variable_names(submodule.localvariables, errors)
-    for modulecode in submodule.modulecodes:
-        _check_modulecode_identifiers(modulecode, errors)
+    if submodule.modulecode is not None:
+        _check_modulecode_identifiers(submodule.modulecode, errors)
     for nested in submodule.submodules:
         _check_submodule_identifiers(nested, errors)
 

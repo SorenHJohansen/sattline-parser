@@ -14,7 +14,6 @@ if TYPE_CHECKING:
         GraphObject,
         InteractObject,
         ModuleCode,
-        ModuleDef,
         ModuleTypeDef,
         ModuleTypeInstance,
         ParameterMapping,
@@ -54,14 +53,6 @@ def sfc_body_list() -> list[SFCBodyItem]:
 
 
 def submodule_list() -> list[SingleModule | FrameModule | ModuleTypeInstance]:
-    return []
-
-
-def moduledef_list() -> list[ModuleDef]:
-    return []
-
-
-def modulecode_list() -> list[ModuleCode]:
     return []
 
 
@@ -154,9 +145,8 @@ def render_single_module(module: SingleModule) -> str:
         f"Moduleparameters: {format_list(module.moduleparameters)}",
         f"Localvariables  : {format_list(module.localvariables)}",
         f"Submodules      : {format_list(module.submodules)}",
+        f"ModuleDef       : {format_optional(module.moduledef)}",
         f"ModuleCode      : {format_optional(module.modulecode)}",
-        f"ModuleDefBlocks : {len(module.moduledefs)}",
-        f"ModuleCodeBlocks: {len(module.modulecodes)}",
         f"ParameterMappings: {format_list(module.parametermappings)}",
     ]
     return "SingleModule{\n" + textwrap.indent("\n".join(lines), "    ") + "}"
@@ -171,9 +161,8 @@ def render_frame_module(module: FrameModule) -> str:
         f"Invoke_coord : {module.header.invoke_coord!r}",
         f"Datecode     : {module.datecode!r}",
         f"Submodules   : {format_list(module.submodules)}",
+        f"ModuleDef    : {format_optional(module.moduledef)}",
         f"ModuleCode   : {format_optional(module.modulecode)}",
-        f"ModuleDefBlocks : {len(module.moduledefs)}",
-        f"ModuleCodeBlocks: {len(module.modulecodes)}",
     ]
     return "FrameModule{\n" + textwrap.indent("\n".join(lines), "    ") + "}"
 
@@ -203,15 +192,14 @@ def render_moduletype_def(moduletype: ModuleTypeDef) -> str:
         f"Moduleparameters: {format_list(moduletype.moduleparameters)}",
         f"Localvariables  : {format_list(moduletype.localvariables)}",
         f"Submodules      : {format_list(moduletype.submodules)}",
+        f"ModuleDef       : {format_optional(moduletype.moduledef)}",
         f"ModuleCode      : {format_optional(moduletype.modulecode)}",
-        f"ModuleDefBlocks : {len(moduletype.moduledefs)}",
-        f"ModuleCodeBlocks: {len(moduletype.modulecodes)}",
     ]
     return "ModuleType{\n" + textwrap.indent("\n".join(lines), "    ") + "}"
 
 
 def render_base_picture(base_picture: BasePicture) -> str:
-    from ..formatting.formatter import format_list  # noqa: PLC0415
+    from ..formatting.formatter import format_list, format_optional  # noqa: PLC0415
 
     lines = [
         f"Name: {base_picture.name!r}\n"
@@ -221,7 +209,7 @@ def render_base_picture(base_picture: BasePicture) -> str:
         f"Moduleparameters: {format_list(base_picture.moduleparameters)}\n"
         f"Localvariables: {format_list(base_picture.localvariables)}\n\n"
         f"Submodules: {format_list(base_picture.submodules)}\n\n"
-        f"ModuleCode: {base_picture.modulecode}\n\n"
-        f"ModuleDefBlocks: {len(base_picture.moduledefs)}\n\n"
+        f"ModuleDef: {format_optional(base_picture.moduledef)}\n\n"
+        f"ModuleCode: {format_optional(base_picture.modulecode)}\n\n"
     ]
     return "BasePicture{\n" + textwrap.indent("\n  ".join(lines), "    ") + "}"

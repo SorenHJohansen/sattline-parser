@@ -319,6 +319,11 @@
         "parse_error": true
       }
     ],
+    "invalid/RepeatedModuleDefBlocks.s": [
+      {
+        "parse_error": true
+      }
+    ],
     "invalid/ReservedNameVarOff.s": [
       {
         "parse_error": true
@@ -565,9 +570,9 @@
     "valid/InteractWidgets.s": [],
     "valid/MinimalProgram.s": [],
     "valid/ModuleDefTrailingEnddefSemicolon.s": [],
+    "valid/ModuleDefWithCode.s": [],
     "valid/MultiEquationBlocks.s": [],
     "valid/MultiTypedefBlocks.s": [],
-    "valid/MultipleModuleDefBlocks.s": [],
     "valid/NestedSubmodules.s": [],
     "valid/OldNewOnStateField.s": [],
     "valid/OpenSequenceSeqFork.s": [],

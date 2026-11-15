@@ -22,8 +22,6 @@ classDiagram
         submodules: list
         moduledef: ModuleDef | None
         modulecode: ModuleCode | None
-        moduledefs: list[ModuleDef]
-        modulecodes: list[ModuleCode]
         origin_file: str | None
         origin_lib: str | None
         trailing_comments: list[CodeComment]
@@ -56,8 +54,6 @@ classDiagram
         submodules: list
         moduledef: ModuleDef | None
         modulecode: ModuleCode | None
-        moduledefs: list[ModuleDef]
-        modulecodes: list[ModuleCode]
         parametermappings: list[ParameterMapping]
         trailing_comments: list[CodeComment]
     }
@@ -70,8 +66,6 @@ classDiagram
         submodules: list
         moduledef: ModuleDef | None
         modulecode: ModuleCode | None
-        moduledefs: list[ModuleDef]
-        modulecodes: list[ModuleCode]
         trailing_comments: list[CodeComment]
     }
 
@@ -90,8 +84,6 @@ classDiagram
         submodules: list
         moduledef: ModuleDef | None
         modulecode: ModuleCode | None
-        moduledefs: list[ModuleDef]
-        modulecodes: list[ModuleCode]
         groupconn: VarRef | None
         groupconn_global: bool
         origin_file: str | None
@@ -114,8 +106,11 @@ classDiagram
 ```
 
 A `submodules` list holds `SingleModule`, `FrameModule`, and
-`ModuleTypeInstance` values. `moduledef` and `modulecode` are read-only views
-over the last entry of `moduledefs` and `modulecodes`; they are not fields.
+`ModuleTypeInstance` values. `moduledef` and `modulecode` are plain optional
+fields: a parsed module body always carries one `ModuleDef` and may carry one
+`ModuleCode`. The grammar rejects a second block before the closing `ENDDEF`, so
+there is nothing to collect in a list. `None` appears only on a synthetic view
+such as an empty picture or a dependency stub.
 
 `ModuleHeader.arguments` is the canonical invocation argument list: layer,
 `Enable_`, `Module_In_View`, zoom limits and the `Zoomable` marker, marker
@@ -123,14 +118,6 @@ arguments, and `Name = value` assignments. The singular names `layer_info`,
 `enable`, `enable_tail`, `module_in_view`, `zoom_limits`, `zoomable`, and
 `invocation_arguments` are read-only views over that field. `invoke_coord_tails`
 holds only the tails attached to the five invocation coordinates.
-
-### Why `moduledefs` and `modulecodes` are lists
-
-Legacy coded files repeat one `ModuleDef ... [ModuleCode ...] ENDDEF` block per
-layer. A single `moduledef` field would silently drop all but the last block.
-The AST therefore keeps every block in source order in `moduledefs` and
-`modulecodes`, while `moduledef` and `modulecode` expose the last block as a
-convenience view. Nothing is lost.
 
 ## Declarations
 

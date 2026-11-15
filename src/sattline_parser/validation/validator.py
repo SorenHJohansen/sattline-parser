@@ -168,12 +168,12 @@ def validate_basepicture(
     )
     check_sibling_submodules(bp.submodules, errors)
     _check_annotation_tails(bp.header, base_scope, context, errors)
-    for module_def in bp.moduledefs:
-        _check_annotation_tails(module_def, base_scope, context, errors)
+    if bp.moduledef is not None:
+        _check_annotation_tails(bp.moduledef, base_scope, context, errors)
 
-    for code in bp.modulecodes:
+    if bp.modulecode is not None:
         walk_module_code(
-            code,
+            bp.modulecode,
             _code_context(base_scope, context, errors),
             program_sfc_names=context.sfc_names,
         )
@@ -248,11 +248,11 @@ def _walk_moduletype_def(
         allow_unresolved_external_datatypes=context.allow_unresolved_external_datatypes,
     )
     check_sibling_submodules(moduletype.submodules, errors)
-    for module_def in moduletype.moduledefs:
-        _check_annotation_tails(module_def, scope, context, errors)
-    for code in moduletype.modulecodes:
+    if moduletype.moduledef is not None:
+        _check_annotation_tails(moduletype.moduledef, scope, context, errors)
+    if moduletype.modulecode is not None:
         walk_module_code(
-            code,
+            moduletype.modulecode,
             _code_context(scope, context, errors),
             program_sfc_names=context.sfc_names,
         )
@@ -287,11 +287,11 @@ def _walk_definition(
         allow_unresolved_external_datatypes=context.allow_unresolved_external_datatypes,
     )
     check_sibling_submodules(child.submodules, errors)
-    for module_def in child.moduledefs:
-        _check_annotation_tails(module_def, scope, context, errors)
-    for code in child.modulecodes:
+    if child.moduledef is not None:
+        _check_annotation_tails(child.moduledef, scope, context, errors)
+    if child.modulecode is not None:
         walk_module_code(
-            code,
+            child.modulecode,
             _code_context(scope, context, errors),
             program_sfc_names=context.sfc_names,
         )

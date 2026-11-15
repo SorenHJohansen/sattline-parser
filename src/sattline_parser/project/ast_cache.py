@@ -46,7 +46,7 @@ from ._atomic import TEMP_SUFFIX
 from ._atomic import temp_file_is_abandoned as _temp_file_is_abandoned
 from ._atomic import temp_path_for as _temp_path_for
 
-FILE_AST_CACHE_VERSION = 11
+FILE_AST_CACHE_VERSION = 12
 
 _PICKLE_CACHE_MAGIC = b"SATTLINE-PARSER-PICKLE-V1\n"
 _PICKLE_HMAC_KEY_NAME = ".pickle-hmac-key"

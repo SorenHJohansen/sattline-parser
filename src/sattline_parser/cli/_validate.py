@@ -76,13 +76,17 @@ def summarise(name: str, text: str, picture: BasePicture, *, coded: bool = False
             "module_types": sum(isinstance(node, ModuleTypeDef) for node in module_nodes),
             "submodules": sum(len(node.submodules) for node in module_nodes),
             "local_variables": sum(len(node.localvariables) for node in module_nodes),
-            "sequences": sum(len(code.sequences or ()) for node in module_nodes for code in node.modulecodes),
-            "equationblocks": sum(len(code.equationblocks or ()) for node in module_nodes for code in node.modulecodes),
+            "sequences": sum(
+                len(node.modulecode.sequences or ()) for node in module_nodes if node.modulecode is not None
+            ),
+            "equationblocks": sum(
+                len(node.modulecode.equationblocks or ()) for node in module_nodes if node.modulecode is not None
+            ),
             "graph_objects": sum(
-                len(module_def.graph_objects or ()) for node in module_nodes for module_def in node.moduledefs
+                len(node.moduledef.graph_objects or ()) for node in module_nodes if node.moduledef is not None
             ),
             "interact_objects": sum(
-                len(module_def.interact_objects or ()) for node in module_nodes for module_def in node.moduledefs
+                len(node.moduledef.interact_objects or ()) for node in module_nodes if node.moduledef is not None
             ),
         },
     }

@@ -241,8 +241,8 @@ read-only views over `arguments`, so they can never diverge from the payload.
 `ModuleAssemblyMixin` is the largest mixin. It normalizes module bodies and
 assembles the AST:
 
-- splits a `module_body` into parameters, locals, submodules, `moduledefs`, and
-  `modulecodes`;
+- splits a `module_body` into parameters, locals, submodules, `moduledef`, and
+  `modulecode`;
 - builds `SingleModule`, `FrameModule`, and `ModuleTypeInstance`;
 - marks a `(Frame_Module)` invocation with a marker and excludes booleans from
   the datecode collectors, so the marker can never be read as a datecode;
@@ -251,8 +251,8 @@ assembles the AST:
 - gives every variable in a group its own copy of a mutable init payload;
 - builds `ModuleTypeDef` for `TYPEDEFINITIONS ... MODULEDEFINITION` blocks;
 - builds `BasePicture` for the root;
-- keeps every legacy repeated `moduledef` block in `moduledefs` and
-  `modulecodes`;
+- rejects a second `moduledef` or `modulecode` in one body instead of silently
+  overwriting the first;
 - attaches trailing and description comments to the right field;
 - collects parameter mappings for module-type instances.
 

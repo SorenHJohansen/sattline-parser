@@ -683,11 +683,11 @@ def test_every_exported_dataclass_node_is_in_the_walker_registry() -> None:
 
 def test_iter_child_nodes_labels_a_sequence_by_index() -> None:
     picture = _picture()
-    children = list(iter_child_nodes(picture.modulecodes))
+    children = list(iter_child_nodes(picture.submodules))
 
     assert children
     assert children[0][0] == "[0]"
-    assert children[0][1] is picture.modulecodes[0]
+    assert children[0][1] is picture.submodules[0]
 
 
 def test_iter_child_nodes_skips_non_nodes() -> None:

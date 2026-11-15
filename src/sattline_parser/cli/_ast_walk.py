@@ -247,10 +247,10 @@ class _QueryVisitor(NodeVisitor):
                 self.rows.append(_symbol("variable", variable.name, self._module_path()))
             for variable in module.moduleparameters:
                 self.rows.append(_symbol("parameter", variable.name, self._module_path()))
-        for module_def in module.moduledefs:
-            self.visit(module_def)
-        for module_code in module.modulecodes:
-            self.visit(module_code)
+        if module.moduledef is not None:
+            self.visit(module.moduledef)
+        if module.modulecode is not None:
+            self.visit(module.modulecode)
         for submodule in module.submodules:
             self._visit_submodule(submodule)
 

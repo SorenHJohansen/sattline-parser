@@ -52,14 +52,16 @@ def test_fixture_sfc_unnamed_elements_preserves_none_names():
     assert len(step.code.exit) == 1
 
 
-def test_fixture_multiple_moduledef_blocks_preserves_all_in_source_order():
-    bp = _load_fixture("MultipleModuleDefBlocks.s")
-    assert len(bp.moduledefs) == 1
-    assert len(bp.modulecodes) == 1
-    assert bp.moduledefs[0].clipping_bounds == ((-1.0, -1.0), (1.0, 1.0))
-    assert [eq.name for mc in bp.modulecodes for eq in (mc.equationblocks or [])] == ["Lower"]
-    assert bp.moduledef is bp.moduledefs[-1]
-    assert bp.modulecode is bp.modulecodes[-1]
+def test_fixture_module_def_with_code():
+    bp = _load_fixture("ModuleDefWithCode.s")
+    assert bp.moduledef is not None
+    assert bp.modulecode is not None
+    assert bp.moduledef.clipping_bounds == ((-1.0, -1.0), (1.0, 1.0))
+    assert [eq.name for eq in (bp.modulecode.equationblocks or [])] == ["Lower"]
+
+
+def test_fixture_repeated_moduledef_blocks_is_rejected():
+    _rejects_fixture("invalid", "RepeatedModuleDefBlocks.s")
 
 
 def test_fixture_graph_object_enable_tails_keep_tail_content():

@@ -99,16 +99,20 @@ def walk_sequence_body(items: list[SFCBodyItem], context: ValidationContext) -> 
 
 def _iter_program_module_codes(bp: BasePicture) -> list[ModuleCode]:
     """Every ``ModuleCode`` block in one program file, nested modules included."""
-    codes: list[ModuleCode] = [*bp.modulecodes]
+    codes: list[ModuleCode] = []
+    if bp.modulecode is not None:
+        codes.append(bp.modulecode)
     pending: list[SingleModule | FrameModule | ModuleTypeInstance] = list(bp.submodules)
     for moduletype in bp.moduletype_defs:
-        codes.extend(moduletype.modulecodes)
+        if moduletype.modulecode is not None:
+            codes.append(moduletype.modulecode)
         pending.extend(moduletype.submodules)
     while pending:
         child = pending.pop()
         if isinstance(child, ModuleTypeInstance):
             continue
-        codes.extend(child.modulecodes)
+        if child.modulecode is not None:
+            codes.append(child.modulecode)
         pending.extend(child.submodules)
     return codes
 

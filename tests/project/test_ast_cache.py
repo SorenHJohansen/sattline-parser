@@ -146,7 +146,7 @@ def test_typed_tail_nodes_survive_a_pickle_round_trip() -> None:
             invoke_coord_tails=[VarTail("out", LitStringTail("LitString", "Symbol"))],
         ),
         position=(1.0, 2.0, 3.0, 4.0, 5.0),
-        moduledefs=[module_def],
+        moduledef=module_def,
     )
 
     restored = pickle.loads(pickle.dumps(picture))
@@ -155,12 +155,13 @@ def test_typed_tail_nodes_survive_a_pickle_round_trip() -> None:
     assert restored.header.invoke_coord_tails == [VarTail("out", LitStringTail("LitString", "Symbol"))]
     assert restored.header.invoke_coord == (0.0, 0.0, 0.0, 1.0, 1.0)
     assert restored.position == (1.0, 2.0, 3.0, 4.0, 5.0)
-    assert restored.moduledefs[0].clipping_bounds == ((-1.0, -1.0), (1.0, 1.0))
-    assert restored.moduledefs[0].clipping_tails == (corner,)
-    assert restored.moduledefs[0].span == span
-    assert restored.moduledefs[0].graph_objects[0].span == span
-    assert restored.moduledefs[0].interact_objects[0].span == span
-    assert FILE_AST_CACHE_VERSION == 11
+    assert restored.moduledef is not None
+    assert restored.moduledef.clipping_bounds == ((-1.0, -1.0), (1.0, 1.0))
+    assert restored.moduledef.clipping_tails == (corner,)
+    assert restored.moduledef.span == span
+    assert restored.moduledef.graph_objects[0].span == span
+    assert restored.moduledef.interact_objects[0].span == span
+    assert FILE_AST_CACHE_VERSION == 12
 
 
 def test_envelope_round_trip() -> None:
@@ -613,7 +614,8 @@ def test_a_graph_object_geometry_fixture_round_trips_through_the_cache(tmp_path:
     restored = cache.load(fixture, "draft")
     assert restored == picture
     assert restored is not None
-    polygon = next(obj for obj in restored.moduledefs[0].graph_objects if obj.type == "PolygonObject")
+    assert restored.moduledef is not None
+    polygon = next(obj for obj in restored.moduledef.graph_objects if obj.type == "PolygonObject")
     points = polygon.properties.get("points") or []
     assert len(points) == 5
 
