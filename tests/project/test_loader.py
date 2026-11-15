@@ -22,6 +22,7 @@ from sattline_parser.models.ast_model import (
 )
 from sattline_parser.preprocessing.compressed import PreprocessError
 from sattline_parser.project import (
+    ArtifactIdentity,
     ArtifactLoadError,
     DependencyCycleError,
     DependencyNotFoundError,
@@ -1613,7 +1614,7 @@ def test_plan_key_falls_back_to_the_raw_path_when_resolve_fails(monkeypatch: pyt
 
     monkeypatch.setattr(Path, "resolve", _raise)
 
-    assert plan_module.plan_key(Path("/missing/Prog.s")) == str(Path("/missing/Prog.s"))
+    assert plan_module.plan_key(Path("/missing/Prog.s")) == ArtifactIdentity.of(Path("/missing/Prog.s")).key
 
 
 def test_a_structural_error_escapes_the_load(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

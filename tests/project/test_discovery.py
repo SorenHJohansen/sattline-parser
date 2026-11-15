@@ -131,9 +131,9 @@ def test_ordered_lookup_bases_keeps_case_distinct_roots_on_a_case_sensitive_file
     upper = tmp_path / "Library"
     lower = tmp_path / "library"
     upper.mkdir()
-    lower.mkdir()
-    if upper.resolve() == lower.resolve():
+    if lower.exists():
         pytest.skip("filesystem is case-insensitive")
+    lower.mkdir()
 
     ordered = ordered_lookup_bases([upper, lower])
 

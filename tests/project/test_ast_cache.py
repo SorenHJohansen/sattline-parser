@@ -890,11 +890,14 @@ def test_entry_cap_uses_max_entries_and_last_use(tmp_path: Path) -> None:
     paths = [_write_code(tmp_path, name) for name in ("A.s", "B.s", "C.s")]
     for code_path in paths:
         cache.save(code_path, "draft", _picture(code_path))
-    # Pin B and C to explicit old mtimes, so a coarse filesystem and the hash
-    # filename tiebreak cannot change the eviction order. A's load moves it
-    # ahead of both.
+    # Pin B and C to explicit old mtimes one second apart, so neither a coarse
+    # filesystem nor the hash filename tiebreak can change the eviction order.
+    # A's load moves it ahead of both. A whole-second stamp survives filesystems
+    # that clamp a tiny ``ns`` value to the same instant.
+    base = 1_600_000_000_000_000_000
     for index, code_path in enumerate(paths[1:], start=1):
-        os.utime(cache._path(code_path, "draft"), ns=(index, index))
+        stamp = base + index * 1_000_000_000
+        os.utime(cache._path(code_path, "draft"), ns=(stamp, stamp))
 
     assert cache.load(paths[0], "draft") is not None
 
