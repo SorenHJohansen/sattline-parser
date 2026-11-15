@@ -19,8 +19,8 @@ from ._common import add_output_flags, add_source_flags, emit_findings, positive
 
 __all__ = ["KINDS", "register", "run"]
 
-#: ``--what`` values, including the ``definitions`` alias for symbols.
-KINDS: tuple[str, ...] = ("definitions", *QUERY_KINDS)
+#: The structural questions ``--what`` accepts.
+KINDS: tuple[str, ...] = QUERY_KINDS
 
 
 def register(subparsers: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:  # pyright: ignore[reportPrivateUsage]
@@ -62,11 +62,8 @@ def run(args: argparse.Namespace) -> int:
 
 
 def _collect(picture: object, args: argparse.Namespace, *, name: str) -> list[QueryRow]:
-    # ``definitions`` is the historical spelling of ``symbols``: one declaration
-    # row per symbol, never a reference, writer, or caller row.
-    kinds = ("symbols",) if args.what == "definitions" else (args.what,)
     rows: list[QueryRow] = []
-    for row in iter_rows(picture, kinds=kinds, name=args.subject, module=args.module):  # pyright: ignore[reportArgumentType]
+    for row in iter_rows(picture, kinds=(args.what,), name=args.subject, module=args.module):  # pyright: ignore[reportArgumentType]
         rows.append(row)
         if args.limit is not None and len(rows) >= args.limit:
             break

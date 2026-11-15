@@ -1,5 +1,5 @@
 # pyright: reportPrivateUsage=false
-"""Unit tests for Phase 2 file discovery (``project/discovery.py``)."""
+"""Unit tests for file discovery (``project/discovery.py``)."""
 
 from __future__ import annotations
 

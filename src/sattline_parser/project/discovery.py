@@ -1,9 +1,9 @@
 """SattLine artifact discovery across ordered search roots.
 
-Phase 2 (plan §5): per-root indexing, requester-relative ordered lookup, the
-per-artifact draft→official fallback, and the parser-owned file-lookup cache
-integration. This is the parser's file-discovery layer; program loading and
-dependency resolution build on it in later phases.
+Per-root indexing, requester-relative ordered lookup, the per-artifact
+draft→official fallback, and the parser-owned file-lookup cache integration.
+This is the file-discovery layer; program loading and dependency resolution
+build on it.
 """
 
 from __future__ import annotations

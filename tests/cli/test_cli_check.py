@@ -22,7 +22,7 @@ from ._cli_support import (
 def test_unknown_fail_on_value_is_a_usage_error(tmp_path, capsys) -> None:
     source = write_source(tmp_path, "M.s", VALID_SOURCE)
 
-    for value in ("sometimes", "any", "warning"):
+    for value in ("sometimes", "any", "warning", "never"):
         assert main(["check", str(source), "--fail-on", value]) == ExitCode.USAGE
         assert "expected one of" in capsys.readouterr().err
 
@@ -123,7 +123,7 @@ def test_max_findings_limits_output_but_not_the_exit_code(tmp_path, capsys) -> N
 def test_fail_on_policy(tmp_path, capsys) -> None:
     source = write_source(tmp_path, "Steps.s", CONSECUTIVE_STEPS_SOURCE)
 
-    assert main(["check", str(source), "--fail-on", "never"]) == ExitCode.OK
+    assert main(["check", str(source), "--fail-on", "none"]) == ExitCode.OK
     assert "Consecutive SFC steps" in capsys.readouterr().out
 
     assert main(["check", str(source), "--fail-on", "error"]) == ExitCode.FINDINGS

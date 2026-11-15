@@ -1,8 +1,9 @@
-"""Domain model for the SattLine project/artifact layer (Phase 1 skeleton).
+"""Domain model for the SattLine project/artifact layer.
 
 LoadMode, ProgramFormat, the graphics companion model, SattLineProgram, and the
 DependencyGraph are pure value types. They carry no I/O or loading logic; the
-artifact-discovery rules and loading behavior land in later phases.
+discovery rules live in :mod:`sattline_parser.project.formats` and the loading
+behavior in :mod:`sattline_parser.project.loader`.
 """
 
 from __future__ import annotations

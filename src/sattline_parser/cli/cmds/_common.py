@@ -77,17 +77,12 @@ def positive_int(value: str) -> int:
 #: findings so one spelling does not mean different things per subcommand.
 FAIL_ON_CHOICES: tuple[str, ...] = ("none", "error")
 
-#: Spellings earlier releases accepted, mapped onto the canonical value.
-_FAIL_ON_ALIASES: dict[str, str] = {"never": "none"}
-
 
 def fail_on_value(value: str) -> str:
-    """argparse type that normalises the historical ``--fail-on`` spellings."""
-    normalized = _FAIL_ON_ALIASES.get(value, value)
-    if normalized not in FAIL_ON_CHOICES:
-        allowed = ", ".join((*FAIL_ON_CHOICES, *_FAIL_ON_ALIASES))
-        raise argparse.ArgumentTypeError(f"expected one of {allowed}, got {value!r}")
-    return normalized
+    """argparse type that accepts only the canonical ``--fail-on`` values."""
+    if value not in FAIL_ON_CHOICES:
+        raise argparse.ArgumentTypeError(f"expected one of {', '.join(FAIL_ON_CHOICES)}, got {value!r}")
+    return value
 
 
 def add_fail_on(parser: argparse.ArgumentParser) -> None:
@@ -98,7 +93,7 @@ def add_fail_on(parser: argparse.ArgumentParser) -> None:
         choices=FAIL_ON_CHOICES,
         default="error",
         metavar="WHEN",
-        help=("which findings make the exit code 1: none or error (default: error; 'never' is accepted as an alias)"),
+        help="which findings make the exit code 1: none or error (default: error)",
     )
 
 

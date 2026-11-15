@@ -1,9 +1,9 @@
 """SattLineProject: the loaded, resolved view of a SattLine artifact set.
 
-Phases 3-4 wire ``load`` end to end: file discovery, recursive dependency
-resolution, and ``.g`` / ``.y`` graphics companion parsing via the project
-loader. The public ``from_programs`` builder covers tests and consumers that already
-hold parsed programs.
+``load`` walks the whole tree: file discovery, recursive dependency resolution,
+and ``.g`` / ``.y`` graphics companion parsing through the project loader. The
+public ``from_programs`` builder covers tests and consumers that already hold
+parsed programs.
 """
 
 from __future__ import annotations

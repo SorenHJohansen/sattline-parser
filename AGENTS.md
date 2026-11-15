@@ -52,7 +52,7 @@
 | `tests/` | Full suite: `tests/parser/`, `tests/project/`, `tests/cli/`, `tests/builtins/`, packaging tests |
 | `benchmarks/` | pytest-benchmark timings for parse, validation, and traversal |
 | `tests/fixtures/corpus/` | Corpus fixtures (`.s` sources only) for regression and fuzz seeding |
-| `tests/fixtures/validation/` | Golden validation manifest and documented behavior differences |
+| `tests/fixtures/validation/` | Golden validation manifest for every corpus fixture |
 
 ## Critical Invariants
 

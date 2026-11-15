@@ -5,7 +5,7 @@
    single SEQTRANSITION with no SEQSTEP.
    This is a one-shot immediate-transition pattern; the init step transitions
    immediately to done on the first scan.
-   Expected: strict syntax-check passes (WARNING may appear for legacy form). *)
+   Expected: strict syntax-check passes. *)
 
 BasePicture Invocation
    ( 0.0 , 0.0 , 0.0 , 1.0 , 1.0

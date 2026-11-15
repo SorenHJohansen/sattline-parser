@@ -1,5 +1,5 @@
 # pyright: reportPrivateUsage=false
-"""Unit tests for Phase 3 recursive program loading (``project/loader.py``)."""
+"""Unit tests for recursive program loading (``project/loader.py``)."""
 
 from __future__ import annotations
 
@@ -406,7 +406,7 @@ def test_load_reparses_a_same_size_edit_that_keeps_the_mtime(tmp_path: Path) -> 
     assert len(call_count) == 2
 
 
-# --- Phase 4: graphics companion wiring ----------------------------------------
+# --- Graphics companion wiring -------------------------------------------------
 
 
 def test_load_parses_graphics_companion(tmp_path: Path) -> None:

@@ -110,8 +110,7 @@ sattline query M.s --what sequences --json --limit 5
 ```
 
 `--what` accepts `symbols`, `references`, `writers`, `callers`,
-`graph-objects`, `interact-objects`, and `sequences`, plus `definitions`, which
-is an alias for `symbols` and returns declaration rows only. Filters are
+`graph-objects`, `interact-objects`, and `sequences`. Filters are
 case-insensitive: `--name` matches a row name, `--module` matches a
 slash-separated module path, and `--limit N` stops after `N` rows. A query with
 no rows exits `1`, because "nothing found" is a finding for a caller that
@@ -210,9 +209,9 @@ input is `-`, so `sattline check --stdin-name x.g -` is refused exactly like a
 ### `decode`
 
 ```bash
-sattline decode legacy.x
-sattline decode legacy.x --report
-sattline decode legacy.x --json
+sattline decode coded.x
+sattline decode coded.x --report
+sattline decode coded.x --json
 ```
 
 Prints the decoded text by default, a JSON report with `--report`, or the text
@@ -342,7 +341,7 @@ A validation row has no `severity`, because every row it carries is an error.
 | `--rule RULE` | `check` | Filter by rule id or enum name, repeatable; only this command's own synthetic ids (`PARSE_ERROR`, `DECODE_ERROR`) are accepted |
 | `--max-findings N` | `check` | Limit printed findings; the exit code still reflects all of them |
 | `--limit N` | `query` | Stop after `N` rows |
-| `--fail-on none\|error` | `check`, `project`, `corpus` | Which findings make the exit code `1` (`never` is accepted as an alias) |
+| `--fail-on none\|error` | `check`, `project`, `corpus` | Which findings make the exit code `1` |
 | `--compact` | `parse` | Emit JSON on one line |
 | `--depth N` | `parse --tree`, `project --of` | Bound output or traversal |
 

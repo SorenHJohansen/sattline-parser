@@ -175,10 +175,10 @@ clause payload, and tail type together with the traversal helpers:
 The top-level package keeps the root, span, expression, statement, and walker
 names for short scripts, and exports `SLTransformer`. The full model, including
 module, SFC, graphics, declaration, clause, and tail types, is published by
-`sattline_parser.ast`. The class names are still importable from
-`sattline_parser.models.ast_model` and `sattline_parser.models.expressions` for
-historical reasons, but the supported import path is `sattline_parser.ast`. See
-[ast.md](ast.md).
+`sattline_parser.ast`. The modules under `sattline_parser.models` are internal
+implementation modules: the package imports from them, but they are not a
+supported surface and their names may change with the model. Import through
+`sattline_parser.ast`. See [ast.md](ast.md).
 
 ## Graphics
 

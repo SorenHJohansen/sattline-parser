@@ -126,7 +126,8 @@ def _branch_block(
 def format_expr(expr: object, indent: str = _DEFAULT_INDENT) -> str:
     """Pretty-print nested expressions and statements in a SattLine-like format."""
 
-    # New typed nodes take priority over legacy tuple/dict forms
+    # Typed nodes are rendered by their own type; anything unhandled falls back
+    # to ``str`` at the end.
     if isinstance(expr, VarRef):
         state = None if expr.state is None else _STATE_SPELLINGS.get(expr.state, expr.state)
         return expr.name if state is None else f"{expr.name}:{state}"
@@ -172,9 +173,10 @@ def format_expr(expr: object, indent: str = _DEFAULT_INDENT) -> str:
     if isinstance(expr, (int, float, bool, str)):
         return _quote_string(expr) if isinstance(expr, str) else str(expr)
 
-    # Unhandled nodes fall back to ``str``: the formatter also accepts the
-    # legacy tuple/dict expression forms, so an unknown object is rendered
-    # rather than rejected.
+    # An unhandled object is rendered with ``str`` rather than rejected, which
+    # keeps debug output available for a node the formatter does not model yet
+    # (a whole ``BasePicture`` or ``ModuleDef``, for example). Only the typed
+    # node output above is round-trip parseable.
     return str(expr)
 
 

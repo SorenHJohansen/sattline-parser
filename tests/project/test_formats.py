@@ -1,4 +1,4 @@
-"""Unit tests for the Phase 2 artifact format rules (``project/formats.py``)."""
+"""Unit tests for the artifact format rules (``project/formats.py``)."""
 
 from __future__ import annotations
 

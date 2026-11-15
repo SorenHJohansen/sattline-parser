@@ -1,8 +1,8 @@
 """SattLine artifact format rules: preferred extensions and per-mode candidates.
 
-The parser owns SattLine file formats (plan §4). These helpers are the moved
-source of truth for the draft/official selection and the per-artifact
-draft→official fallback that lives in ``LoaderLookup`` logic (`core/syntax.py`).
+The draft/official selection and the per-artifact fallback are decided here.
+Discovery and the project loader read this table instead of carrying their own
+extension lists.
 """
 
 from __future__ import annotations

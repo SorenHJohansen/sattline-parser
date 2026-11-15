@@ -183,7 +183,7 @@ def test_corpus_summary_and_exit_codes(tmp_path, capsys) -> None:
     assert "files: 2  clean: 1  failing: 1" in out
     assert "CONSECUTIVE_SEQUENCE_STEPS: 1" in out
 
-    assert main(["corpus", str(tmp_path), "--fail-on", "never"]) == ExitCode.OK
+    assert main(["corpus", str(tmp_path), "--fail-on", "none"]) == ExitCode.OK
     capsys.readouterr()
 
     assert main(["corpus", str(tmp_path), "--jobs", "2", "--jsonl"]) == ExitCode.FINDINGS
@@ -197,7 +197,7 @@ def test_corpus_summary_and_exit_codes(tmp_path, capsys) -> None:
 def test_corpus_rejects_removed_fail_on_values(tmp_path, capsys) -> None:
     write_source(tmp_path, "Clean.s", VALID_SOURCE)
 
-    for value in ("warning", "any"):
+    for value in ("warning", "any", "never"):
         assert main(["corpus", str(tmp_path), "--fail-on", value]) == ExitCode.USAGE
         assert "expected one of" in capsys.readouterr().err
 
