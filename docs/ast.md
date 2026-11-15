@@ -288,7 +288,7 @@ for consumers that already hold a binding. See [graphics.md](graphics.md).
 `InteractProperties.body` is `list[InteractBodyEntry] | None`, in source order.
 `InteractBodyEntry` is the closed union of what a body line can produce:
 `int` for `Layer_`, `Tail` for a literal or a bound/computed tail, `Alignment`
-for `LeftAligned`/`RightAligned`, and the typed clauses (`EnableClause`,
+for `LeftAligned`/`CenterAligned`/`RightAligned`, and the typed clauses (`EnableClause`,
 `AssignClause`, `FlagClause`, `TailedClause`, `ColourSpec`, `PickButton`,
 `ScaleSelector`). Preserved comments are `CodeComment` values. No Lark tree
 reaches a caller, so a consumer reads body entries directly instead of
@@ -306,7 +306,7 @@ than by drawing effect:
 | `tails` | `list[Tail]` | the flat view of every tail the object carried |
 | `text_vars` | `list[VarRef]` | a text object's `VarName` labels |
 | `width`, `value_fraction`, `format_string` | `TailedClause` | the text object's `Width_`, `ValueFraction`, `Format_String_` clauses |
-| `alignments` | `list[Alignment]` | `LeftAligned`, `RightAligned` |
+| `alignments` | `list[Alignment]` | `LeftAligned`, `CenterAligned`, `RightAligned` |
 | `connection_node` | `GraphObject` | a text object's `ConnectionNode (x, y)` anchor |
 | `enable`, `enable_tail` | `bool`, `Tail` | `Enable_ = ...` and its binding |
 | `colours` | `list[ColourSpec]` | the outline and fill blocks |

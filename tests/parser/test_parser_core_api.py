@@ -398,6 +398,18 @@ def test_private_cache_dir_tightens_existing_permissions(tmp_path):
         assert directory.stat().st_mode & 0o777 == 0o700
 
 
+def test_private_cache_dir_without_getuid_accepts_any_real_directory(monkeypatch, tmp_path):
+    # The documented Windows limitation: there is no POSIX owner or mode to
+    # check, so only the real-directory test applies. Keep the default cache
+    # under the user profile and do not point --cache-dir at a shared path.
+    monkeypatch.setattr(parser_api, "_getuid", None)
+    directory = tmp_path / "shared-cache"
+    directory.mkdir()
+    directory.chmod(0o777)
+
+    assert parser_api.private_cache_dir(directory) == directory
+
+
 def test_private_cache_dir_rejects_a_foreign_owner(monkeypatch, tmp_path):
     # Driven through the resolved uid callable so the case runs everywhere: the
     # current user never owns the synthetic uid.

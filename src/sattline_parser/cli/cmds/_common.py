@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import argparse
 import sys
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 
 from ...project.formats import ALL_DISTRIBUTION_EXTENSIONS, ALL_GRAPHICS_EXTENSIONS
@@ -19,6 +19,7 @@ __all__ = [
     "add_finding_filters",
     "add_output_flags",
     "add_source_flags",
+    "bounded_positive_int",
     "emit_findings",
     "emit_payload",
     "fail_on_value",
@@ -71,6 +72,22 @@ def positive_int(value: str) -> int:
     if number < 1:
         raise argparse.ArgumentTypeError("must be 1 or greater")
     return number
+
+
+def bounded_positive_int(maximum: int) -> Callable[[str], int]:
+    """An argparse type for a count in ``1..maximum``.
+
+    A process or thread count is a resource request, so a value far past the
+    machine's capacity is a usage error rather than a load that exhausts memory.
+    """
+
+    def parse(value: str) -> int:
+        number = positive_int(value)
+        if number > maximum:
+            raise argparse.ArgumentTypeError(f"must be {maximum} or less")
+        return number
+
+    return parse
 
 
 #: Canonical values for ``--fail-on``, shared by every command that reports

@@ -194,6 +194,22 @@ def test_corpus_summary_and_exit_codes(tmp_path, capsys) -> None:
     assert all("warnings" not in row for row in payload["results"])
 
 
+def test_corpus_jobs_match_a_serial_run(tmp_path, capsys) -> None:
+    for index in range(6):
+        write_source(
+            tmp_path,
+            f"Unit{index}.s",
+            VALID_SOURCE if index % 2 else CONSECUTIVE_STEPS_SOURCE,
+        )
+
+    assert main(["corpus", str(tmp_path), "--jobs", "1", "--json"]) == ExitCode.FINDINGS
+    serial = json.loads(capsys.readouterr().out)
+    assert main(["corpus", str(tmp_path), "--jobs", "4", "--json"]) == ExitCode.FINDINGS
+    threaded = json.loads(capsys.readouterr().out)
+
+    assert threaded == serial
+
+
 def test_corpus_rejects_removed_fail_on_values(tmp_path, capsys) -> None:
     write_source(tmp_path, "Clean.s", VALID_SOURCE)
 
@@ -221,3 +237,6 @@ def test_corpus_needs_a_directory(tmp_path, capsys) -> None:
 
     assert main(["corpus", str(tmp_path), "--jobs", "many"]) == ExitCode.USAGE
     assert "expected an integer" in capsys.readouterr().err
+
+    assert main(["corpus", str(tmp_path), "--jobs", "1000"]) == ExitCode.USAGE
+    assert "or less" in capsys.readouterr().err

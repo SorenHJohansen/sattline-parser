@@ -286,6 +286,7 @@ def test_interact_alignment_and_body_rules_return_typed_payloads():
     mixin = _GraphicsHarness()
 
     assert mixin.alignment(Meta(), [Token("LEFTALIGNED", "LeftAligned")]) == Alignment("left")
+    assert mixin.alignment(Meta(), [Token("CENTERALIGNED", "CenterAligned")]) == Alignment("center")
     assert mixin.alignment(Meta(), [Token("RIGHTALIGNED", "RightAligned")]) == Alignment("right")
     with pytest.raises(ValueError, match="alignment expected"):
         mixin.alignment(Meta(), [Token("NAME", "Middle")])

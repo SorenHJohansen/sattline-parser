@@ -177,6 +177,7 @@ GRAMMAR_VALUE_LAYERMODULE: Final = "LayerModule"
 
 # Alignment, graphics objects, and their properties
 GRAMMAR_VALUE_LEFTALIGNED: Final = "LeftAligned"
+GRAMMAR_VALUE_CENTERALIGNED: Final = "CenterAligned"
 GRAMMAR_VALUE_RIGHTALIGNED: Final = "RightAligned"
 GRAMMAR_VALUE_TEXTOBJECT: Final = "TextObject"
 GRAMMAR_VALUE_RECTANGLEOBJECT: Final = "RectangleObject"

@@ -198,6 +198,32 @@ def test_sequence_hold_requires_seqcontrol() -> None:
     assert "SL-V051" in _codes(bp)
 
 
+def test_unknown_step_accessor_is_an_undefined_reference() -> None:
+    step = SFCStep(kind="init", name="S1", code=SFCCodeBlocks())
+    bp = BasePicture(header=_header())
+    bp.modulecode = ModuleCode(
+        equationblocks=[_equation(Assignment(VarRef("Sink"), VarRef("S1.Foo")))],
+        sequences=[_sequence(step, SFCTransition(name="T1", condition=True))],
+    )
+    bp.localvariables = [_var("Sink", "boolean")]
+    assert "SL-V019" in _codes(bp)
+    assert "SL-V051" not in _codes(bp)
+
+
+def test_sequence_x_is_not_a_runtime_accessor() -> None:
+    step = SFCStep(kind="init", name="S1", code=SFCCodeBlocks())
+    bp = BasePicture(header=_header())
+    bp.modulecode = ModuleCode(
+        equationblocks=[_equation(Assignment(VarRef("Sink"), VarRef("Seq.X")))],
+        sequences=[
+            _sequence(step, SFCTransition(name="T1", condition=True), name="Seq", seqcontrol=True),
+        ],
+    )
+    bp.localvariables = [_var("Sink", "boolean")]
+    assert "SL-V019" in _codes(bp)
+    assert "SL-V051" not in _codes(bp)
+
+
 def test_step_auto_variable_variable_root_is_skipped() -> None:
     step = SFCStep(kind="init", name="S1", code=SFCCodeBlocks())
     bp = BasePicture(header=_header())

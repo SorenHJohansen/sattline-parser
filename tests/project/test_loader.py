@@ -13,11 +13,14 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 import pytest
+from lark.exceptions import UnexpectedCharacters, UnexpectedEOF, UnexpectedInput
 
 from sattline_parser.api import parse_source_bytes, parse_source_file
+from sattline_parser.errors import SourceTooDeepError
 from sattline_parser.models.ast_model import (
     BasePicture,
 )
+from sattline_parser.preprocessing.compressed import PreprocessError
 from sattline_parser.project import (
     ArtifactLoadError,
     DependencyCycleError,
@@ -299,6 +302,87 @@ def test_load_dependency_parse_failure_raises_dependency_error(tmp_path: Path) -
         _load(tmp_path)
     assert exc_info.value.program == "Main"
     assert exc_info.value.dependency == "Broken"
+
+
+def test_worker_and_in_process_failures_have_the_same_cause(tmp_path: Path) -> None:
+    write_file(tmp_path, "Main.s", _CODE)
+    write_file(tmp_path, "Main.l", "Broken\n")
+    write_file(tmp_path, "Broken.s", _BROKEN)
+
+    causes: dict[int, BaseException] = {}
+    for workers in (1, 2):
+        with pytest.raises(DependencyParseError) as exc_info:
+            _load(tmp_path, workers=workers)
+        cause = exc_info.value.__cause__
+        assert cause is not None
+        causes[workers] = cause
+
+    in_process = causes[1]
+    worker = causes[2]
+    assert type(worker) is type(in_process)
+    assert isinstance(in_process, UnexpectedInput)
+    assert isinstance(worker, UnexpectedInput)
+    assert worker.line == in_process.line
+    assert worker.column == in_process.column
+
+
+@pytest.mark.parametrize(
+    ("type_name", "expected_type"),
+    [
+        ("UnexpectedCharacters", UnexpectedCharacters),
+        ("UnexpectedEOF", UnexpectedEOF),
+        ("UnexpectedInput", UnexpectedInput),
+        ("PreprocessError", PreprocessError),
+        ("UnicodeDecodeError", UnicodeError),
+        ("UnicodeError", UnicodeError),
+        ("ValueError", ValueError),
+        ("OSError", OSError),
+        ("RuntimeError", RuntimeError),
+    ],
+)
+def test_rebuild_parse_failure_keeps_the_worker_type(type_name: str, expected_type: type[BaseException]) -> None:
+    record = project_loader._ParseFailure(
+        type_name=type_name,
+        message="boom",
+        line=4,
+        column=7,
+        pos_in_stream=11,
+    )
+
+    rebuilt = project_loader._rebuild_parse_failure(record)
+
+    assert type(rebuilt) is expected_type
+
+
+def test_rebuild_parse_failure_keeps_the_source_depth_limit() -> None:
+    record = project_loader._ParseFailure(
+        type_name="SourceTooDeepError",
+        message="too deep",
+        line=4,
+        column=7,
+        pos_in_stream=11,
+        limit=200,
+    )
+
+    rebuilt = project_loader._rebuild_parse_failure(record)
+
+    assert isinstance(rebuilt, SourceTooDeepError)
+    assert rebuilt.limit == 200
+    assert (rebuilt.line, rebuilt.column, rebuilt.pos_in_stream) == (4, 7, 11)
+
+
+def test_rebuild_parse_failure_keeps_a_decode_error() -> None:
+    record = project_loader._ParseFailure(
+        type_name="UnicodeDecodeError",
+        message="bad byte",
+        unicode_error=("utf-8", b"\xff", 0, 1, "invalid start byte"),
+    )
+
+    rebuilt = project_loader._rebuild_parse_failure(record)
+
+    assert isinstance(rebuilt, UnicodeDecodeError)
+    assert rebuilt.start == 0
+    assert rebuilt.reason == "invalid start byte"
 
 
 def test_load_unreadable_deps_file_raises(tmp_path: Path) -> None:
@@ -1067,17 +1151,21 @@ def test_a_shared_dependency_is_parsed_once(tmp_path: Path, workers: int, monkey
 
 
 @pytest.mark.parametrize(
-    ("methods", "threaded", "expected"),
+    ("methods", "threaded", "platform", "version", "expected"),
     [
-        (["fork", "spawn", "forkserver"], False, "fork"),
-        (["fork", "spawn", "forkserver"], True, "forkserver"),
-        (["fork", "spawn"], True, "spawn"),
-        (["fork"], True, "fork"),
-        ([], False, None),
+        (["fork", "spawn", "forkserver"], False, "linux", (3, 13), "fork"),
+        (["fork", "spawn", "forkserver"], True, "linux", (3, 13), "forkserver"),
+        (["fork", "spawn"], True, "linux", (3, 13), "spawn"),
+        (["fork"], True, "linux", (3, 13), None),
+        (["fork", "spawn", "forkserver"], False, "darwin", (3, 13), None),
+        (["forkserver", "spawn", "fork"], False, "linux", (3, 14), None),
+        ([], False, "linux", (3, 13), None),
     ],
 )
-def test_start_method_never_forks_a_threaded_process(methods: list[str], threaded: bool, expected: str | None) -> None:
-    assert project_loader._start_method(methods, threaded=threaded) == expected
+def test_start_method_never_forks_a_threaded_or_modern_process(
+    methods: list[str], threaded: bool, platform: str, version: tuple[int, int], expected: str | None
+) -> None:
+    assert project_loader._start_method(methods, threaded=threaded, platform=platform, version=version) == expected
 
 
 def test_a_daemonic_parent_parses_in_process(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

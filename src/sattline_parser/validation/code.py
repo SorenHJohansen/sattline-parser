@@ -11,7 +11,7 @@ element names.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 
 from sattline_parser.models import walk
 from sattline_parser.models.ast_model import (
@@ -75,6 +75,13 @@ from sattline_parser.validation.typing import (
 
 _EQUALITY_COMPARISON_OPERATORS = frozenset({"==", "=", "!=", "<>"})
 
+#: The runtime fields an SFC element may expose. A root reached only through
+#: ``program_sfc_names`` has no sequence context, so this is the fallback set;
+#: a root declared in the current module uses its element-kind set instead.
+_SFC_STEP_ACCESSOR_SUFFIXES = frozenset({"x", "hold", "reset", "t"})
+_SFC_SEQUENCE_ACCESSOR_SUFFIXES = frozenset({"hold", "reset"})
+_SFC_ACCESSOR_SUFFIXES = _SFC_STEP_ACCESSOR_SUFFIXES
+
 
 @dataclass(frozen=True, slots=True)
 class ValidationContext:
@@ -85,6 +92,7 @@ class ValidationContext:
     type_graph: TypeGraph
     sfc_names: set[str]
     errors: list[Diagnostic]
+    sfc_accessors: dict[str, frozenset[str]] = field(default_factory=dict[str, frozenset[str]])
 
 
 def walk_equation_block(equation: Equation, context: ValidationContext) -> None:
@@ -138,14 +146,22 @@ def walk_module_code(
     *,
     program_sfc_names: frozenset[str] = frozenset(),
 ) -> None:
-    sequences = mc.sequences or ()
+    sequences = list(mc.sequences or ())
     step_names, transition_names = _collect_module_jump_targets(mc.sequences)
     name_counts = _collect_module_sfc_name_counts(mc.sequences)
     all_known = step_names | transition_names
     sfc_names = (
         all_known | {fold_identifier(sequence.name) for sequence in sequences if sequence.name} | program_sfc_names
     )
-    module_context = replace(context, sfc_names=set(sfc_names))
+    _steps, step_features, _sequence_names, sequence_features = _collect_sequence_features(sequences)
+    # The shape map lists the fields an element can expose, not the fields it
+    # currently enables. ``check_step_auto_variables`` reports a missing
+    # SeqControl/SeqTimer, so an unavailable-but-known field stays an accessor
+    # here and does not also become an undefined reference.
+    accessors: dict[str, frozenset[str]] = dict.fromkeys(step_features, _SFC_STEP_ACCESSOR_SUFFIXES)
+    for key in sequence_features:
+        accessors[key] = accessors.get(key, frozenset()) | _SFC_SEQUENCE_ACCESSOR_SUFFIXES
+    module_context = replace(context, sfc_names=set(sfc_names), sfc_accessors=accessors)
     _check_duplicate_sfc_names(mc.sequences, context.errors)
     check_sequence_positions(mc.sequences, context.errors)
     check_step_auto_variables(mc, context)
@@ -212,9 +228,9 @@ def check_step_auto_variables(mc: ModuleCode, context: ValidationContext) -> Non
 
     A step always exposes ``.X``; ``.Hold``/``.Reset`` require ``SeqControl`` on
     the enclosing sequence and ``.T`` requires ``SeqTimer``. A sequence exposes
-    ``.Hold``/``.Reset`` under the same condition. Unknown roots stay with the
-    undefined-variable rule, so this only reports known elements that lack the
-    requested feature.
+    ``.Hold``/``.Reset`` under the same condition. Unknown roots and unknown
+    suffixes stay with the undefined-variable rule, so this only reports known
+    elements that lack the requested feature.
     """
     sequences = mc.sequences or ()
     if not sequences:
@@ -297,7 +313,7 @@ def walk_expression(expr: SLExpression, context: ValidationContext) -> None:
         if (
             resolved is None
             and unresolved_reference_is_a_defect(expr, context.scope, context.type_graph)
-            and not _is_sfc_runtime_accessor(expr, context.sfc_names)
+            and not _is_sfc_runtime_accessor(expr, context.sfc_names, context.sfc_accessors)
         ):
             context.errors.append(
                 Diagnostic(
@@ -553,7 +569,7 @@ def _expression_span(expr: SLExpression) -> SourceSpan | None:
 def _check_assignment(assignment: Assignment, context: ValidationContext) -> None:
     resolved = resolve_var(assignment.target, context.scope, context.records)
     if resolved is None:
-        if _is_sfc_runtime_accessor(assignment.target, context.sfc_names):
+        if _is_sfc_runtime_accessor(assignment.target, context.sfc_names, context.sfc_accessors):
             return
         if unresolved_reference_is_a_defect(assignment.target, context.scope, context.type_graph):
             context.errors.append(
@@ -734,10 +750,23 @@ def _check_call(call: FuncCall, context: ValidationContext) -> None:
             )
 
 
-def _is_sfc_runtime_accessor(ref: VarRef, sfc_names: set[str]) -> bool:
-    """Dotted refs rooted on an SFC element/sequence name are step runtime accessors."""
-    root = ref.name.partition(".")[0]
-    return "." in ref.name and fold_identifier(root) in sfc_names
+def _is_sfc_runtime_accessor(ref: VarRef, sfc_names: set[str], sfc_accessors: dict[str, frozenset[str]]) -> bool:
+    """Whether *ref* is a dotted runtime field of a known SFC element.
+
+    A root declared in the current module uses its element-kind set, so
+    ``Step.X`` and ``Seq.Hold`` are accessors while ``Seq.X`` and ``Step.Foo``
+    are not. A root visible only program-wide (a sequence in a nested frame
+    module) has no element-kind entry here, so the generic accessor names
+    apply.
+    """
+    root, separator, suffix = ref.name.partition(".")
+    if not separator or "." in suffix:
+        return False
+    key = fold_identifier(root)
+    allowed = sfc_accessors.get(key)
+    if allowed is not None:
+        return suffix.casefold() in allowed
+    return key in sfc_names and suffix.casefold() in _SFC_ACCESSOR_SUFFIXES
 
 
 def _collect_module_jump_targets(sequences: list[Sequence] | None) -> tuple[set[str], set[str]]:

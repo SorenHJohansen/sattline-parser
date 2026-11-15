@@ -166,7 +166,7 @@ clause payload, and tail type together with the traversal helpers:
 | `PolygonPoint` | One polygon coordinate pair with the tails written after each value |
 | `AssignClause`, `EnableClause`, `TailedClause`, `ColourSpec`, `PickButton`, `Alignment`, `InteractBodyEntry`, and the other clause payloads | Typed clause payloads and the interactor body union |
 | `VarTail`, `LitStringTail`, `Tail` | Bound and computed tails |
-| `walk` | `(node, *, prune=None, emit_leave=False)` yields every AST node in pre-order |
+| `walk` | `(node, *, prune=None, emit_leave=False)` yields one `WalkEvent` per AST node in pre-order |
 | `NodeVisitor` | `visit_<ClassName>` and `leave_<ClassName>` dispatch with `generic_visit` |
 | `WalkEvent` | `(node, relation, parents, field, indices, phase)` for one visit; `parents` is a sequence view expanded on access and costs O(depth) per read |
 | `iter_child_nodes` | `(node)` yields `(relation, child)` pairs |

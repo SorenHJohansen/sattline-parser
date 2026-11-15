@@ -87,11 +87,15 @@ a hit updates the index. An index hit is re-statted before it is returned, so a
 body deleted after the index was built reports a miss instead of a later
 "failed to parse".
 
-A dependency name is a bare unit name, never a path. A name that carries `/`,
-`\`, or `..` is refused, and the `stat` fallback additionally requires the
-candidate to resolve inside the lookup base. A `.l` line of
-`../outside/Secret`, or an absolute path, therefore resolves to nothing and is
-reported as a missing dependency instead of loading a body outside every root.
+A dependency name is a bare unit name, never a path. It is validated against
+the SattLine identifier charset and the 20-character limit, so separators,
+drive or alternate-stream colons, UNC prefixes, parent references, control
+characters, and the Windows-invalid filename characters are refused on every
+platform; Windows device names are refused on Windows. The `stat` fallback
+additionally requires the candidate to resolve inside the lookup base. A `.l`
+line of `../outside/Secret`, or an absolute path, therefore resolves to nothing
+and is reported as a missing dependency instead of loading a body outside every
+root.
 
 `ProjectLookup.find` resolves only a code body or a dependency sidecar. It
 raises `ValueError` for `ArtifactKind.GRAPHICS` and
@@ -371,10 +375,13 @@ not just the resolved closure.
 
 ## Caches
 
-Both caches are opt-in through `cache_dir=`. When it is `None`, the load is
-fully in-memory and hermetic: no disk writes, no shared state. `sattline
-project` passes a private directory under the user's cache root unless
-`--no-cache` is given, so a repeated load of the same tree skips parsing.
+Both project caches are opt-in through `cache_dir=`. When it is `None`, the
+project layer reads and writes neither cache and shares no state. The compiled
+Lark grammar cache is separate: it lives under the temporary directory and may
+still be written on the first parse, as `sattline --no-cache` documents.
+`sattline project` passes a private directory under the user's cache root
+unless `--no-cache` is given, so a repeated load of the same tree skips
+parsing.
 
 ### Lookup cache
 
@@ -434,19 +441,30 @@ The namespace and file-format magic belong to `sattline-parser`
 key lives beside the entries. It proves the entry was written by whoever could
 write that directory; it is not a defence against that user. The real boundary
 is a private `0700` directory owned by the current user. Both the cache root
-and its `file_ast` subdirectory are checked; an entry that is a symlink, or a
-directory owned by someone else, disables the caches instead of being followed
-or tightened in place. Never point `cache_dir` at a shared location.
+and its `file_ast` subdirectory are checked; a root or subdirectory that is a
+symlink, or a directory owned by someone else, disables the caches instead of
+being followed or tightened in place. An entry file that is a symlink is
+ignored, never followed. Never point `cache_dir` at a shared location.
 
 Only a writer creates the HMAC key. A read with no key is a miss, so a reader
 never writes into the cache directory and the single-writer invariant holds.
 
+On Windows there is no POSIX owner or mode check: `os.getuid` does not exist,
+and the cache validates only that the root and `file_ast` are real directories.
+The default per-user cache location is still private to the profile, but an
+explicit `--cache-dir` on a shared path is not protected against a planted
+pickle. Keep a Windows cache under the user profile or disable it with
+`--no-cache`.
+
 Pruning drops an entry whose envelope, identity, grammar, or code fingerprint no
 longer matches, an entry whose recorded source path no longer exists (a rename,
-a branch switch, a deleted temporary checkout), and the oldest entries past
-`MAX_AST_CACHE_ENTRIES`. The count cap runs on every startup because it only
-stats files; the full fingerprint and path check runs when the cache identity
-changes. Abandoned `*.tmp` siblings older than an hour are removed too.
+a branch switch, a deleted temporary checkout), and the least recently used
+entries past `MAX_AST_CACHE_ENTRIES` (1024 by default; the library constructor
+accepts `max_entries=`). A successful load touches the entry, so eviction
+follows last use rather than the time the entry was written. The count cap runs
+on every startup because it only stats files; the full fingerprint and path
+check runs when the cache identity changes. Abandoned `*.tmp` siblings older
+than an hour are removed too.
 
 A cache write failure is swallowed and logged; it must not turn a successful
 parse into a load failure.
@@ -583,15 +601,16 @@ doubling the plans over an existing registry; construct another loader.
 ### Parallel parsing
 
 `workers` parses bodies in that many processes and defaults to `1`; the CLI
-defaults to `min(8, cpu_count)`. Results do not depend on the worker count:
-discovery fixes the plan order before any parse runs.
+defaults to `min(8, cpu_count)` and accepts at most 32. Results do not depend
+on the worker count: discovery fixes the plan order before any parse runs.
 
-- A single-threaded caller forks, which needs no `__main__` guard. A caller
-  with other threads gets `forkserver`, because forking a threaded process is
-  deprecated in CPython and can inherit a lock another thread held at fork
-  time. Discovery parses nothing, so the parser is not built before the pool
-  starts: every worker builds it from the on-disk Lark cache, about 50 ms and
-  50 MB each.
+- A single-threaded caller on Linux before Python 3.14 uses `fork`, which needs
+  no `__main__` guard. A caller with other threads gets `forkserver`, because
+  forking a threaded process is deprecated in CPython and can inherit a lock
+  another thread held at fork time. macOS and Python 3.14 and later keep the
+  platform default, which no longer prefers `fork`. Discovery parses nothing,
+  so the parser is not built before the pool starts: every worker builds it
+  from the on-disk Lark cache, about 50 ms and 50 MB each.
 - A daemonic process may not start children, so a load called from inside an
   outer pool parses in that process instead of raising.
 - A worker reads the AST cache but never writes it: the parent owns every
@@ -620,3 +639,4 @@ discovery fixes the plan order before any parse runs.
 | `tests/project/test_graphics_parsing.py` | Companion parsing |
 | `tests/project/test_distribution.py` | Distribution companion parsing and pairing |
 | `tests/project/test_graphics_records.py` | Composite and picture display records |
+| `tests/project/test_companion_fixtures.py` | Real `.l`/`.z`/`.g`/`.y`/`.p`/`.q` fixtures and CP1252 sidecars |

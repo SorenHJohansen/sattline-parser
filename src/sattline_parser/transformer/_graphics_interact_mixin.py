@@ -740,16 +740,18 @@ class _GraphicsInteractMixin:
 
     @v_args(meta=True)
     def alignment(self, meta: Any, items: list[TransformerItem]) -> Alignment:
-        """Grammar alignment -> the ``LeftAligned``/``RightAligned`` body marker."""
+        """Grammar alignment -> the left, centre, or right body marker."""
         token = next((item for item in items if isinstance(item, Token)), None)
         if token is None:
-            raise ValueError(f"alignment expected LeftAligned/RightAligned; got: {items!r}")
+            raise ValueError(f"alignment expected LeftAligned/CenterAligned/RightAligned; got: {items!r}")
         folded = str(token).casefold()
         if folded == const.GRAMMAR_VALUE_LEFTALIGNED.casefold():
             return Alignment("left", meta_span(meta))
+        if folded == const.GRAMMAR_VALUE_CENTERALIGNED.casefold():
+            return Alignment("center", meta_span(meta))
         if folded == const.GRAMMAR_VALUE_RIGHTALIGNED.casefold():
             return Alignment("right", meta_span(meta))
-        raise ValueError(f"alignment expected LeftAligned/RightAligned; got: {token}")
+        raise ValueError(f"alignment expected LeftAligned/CenterAligned/RightAligned; got: {token}")
 
     @v_args(meta=True)
     def interact_pick_button(self, meta: Any, items: list[TransformerItem]) -> PickButton:

@@ -110,11 +110,14 @@ sattline query M.s --what sequences --json --limit 5
 ```
 
 `--what` accepts `symbols`, `references`, `writers`, `callers`,
-`graph-objects`, `interact-objects`, and `sequences`. Filters are
-case-insensitive: `--name` matches a row name, `--module` matches a
-slash-separated module path, and `--limit N` stops after `N` rows. A query with
-no rows exits `1`, because "nothing found" is a finding for a caller that
-expected a hit.
+`graph-objects`, `interact-objects`, and `sequences`. `symbols` reports module
+types, submodules, module instances, variables, parameters, datatypes, and
+record fields. Variable, parameter, datatype, and record-field rows carry the
+declaration span in `line`, `column`, `start`, and `end`; a record-field row
+uses its datatype name as the `module` value. Filters are case-insensitive:
+`--name` matches a row name, `--module` matches a slash-separated module path,
+and `--limit N` stops after `N` rows. A query with no rows exits `1`, because
+"nothing found" is a finding for a caller that expected a hit.
 
 `references` includes variable uses in header, graphics, interact, and
 module-layout annotation tails. A bare bound `InVar_`/`OutVar_` name is reported
@@ -176,7 +179,7 @@ empty list. See [project.md](project.md#distribution-companion).
 | `--search-path-base DIR` | Resolve relative `--search-path` entries under `DIR` |
 | `--mode draft\|official` | Which artifacts to resolve. Default `draft` |
 | `--targets A,B` | Only load these program names. Default: every source under the roots |
-| `--workers N` | Parse bodies in `N` processes. Default `min(8, cpu_count)`; `1` parses in this process |
+| `--workers N` | Parse bodies in `N` processes, 1 to 32. Default `min(8, cpu_count)`; `1` parses in this process |
 | `--cache-dir DIR` | Parser cache directory |
 | `--no-cache` | Bypass the project caches |
 | `--validate invoked\|full\|none` | What to validate. Default `invoked` |
@@ -189,7 +192,9 @@ disables the cache. `--no-cache` makes the load hermetic: the project caches
 neither read nor write. The compiled grammar cache under the temporary directory
 is independent of this flag. A first load in an empty directory writes the
 cache; every later load of an unchanged tree skips parsing. The directory holds
-parsed ASTs of the loaded sources, so keep it private.
+parsed ASTs of the loaded sources, so keep it private. On Windows the cache
+cannot check a POSIX owner or mode, so keep `--cache-dir` under the user
+profile; a shared path is not protected against a planted pickle.
 
 `--cycles` is gone, and the JSON payload no longer carries a `cycles` key: a
 recursive dependency chain or a self-instantiating module type is a structural
@@ -244,7 +249,8 @@ sattline corpus tests/fixtures/corpus --summary
 sattline corpus src --jobs 8 --json
 ```
 
-Scans for `.s`/`.x` recursively. `--jobs` uses a thread pool. The output is a
+Scans for `.s`/`.x` recursively. `--jobs N` uses a thread pool of 1 to 32
+workers and produces the same rows in the same order as a serial run. The output is a
 rule histogram plus the failing files, or a full JSON result unless `--summary`
 is given.
 
@@ -308,7 +314,7 @@ reports one unit has nothing to stream:
 | --- | --- |
 | `severity` | `error` for parse, decode, project-load, and validation findings; `warning` for graphics scan messages |
 | `message` | A sentence about the source |
-| `rule` | Machine-only id: `PARSE_ERROR`, `DECODE_ERROR`, `PROJECT_LOAD_ERROR`, `GRAPHICS_SCAN`, a `DiagnosticCode` enum name such as `UNDEFINED_VARIABLE` (`SL-V019` is its id), or a corpus read error |
+| `rule` | Machine-only id: `PARSE_ERROR`, `DECODE_ERROR`, `PROJECT_LOAD_ERROR`, `PROJECT_QUERY_ERROR`, `GRAPHICS_SCAN`, a `DiagnosticCode` enum name such as `UNDEFINED_VARIABLE` (`SL-V019` is its id), or a corpus read error |
 | `file` | Display path |
 | `line`, `column` | One-based location in the original source, or `null` when the failure has no position, as with a decode error |
 | `start`, `end` | Zero-based character range in the original source, or `null` when no range is known, as with a parse error or a decode error |
@@ -326,7 +332,11 @@ diffs.
 | `edges` | `{"from": dependent, "to": dependency}` over casefolded names |
 | `diagnostics` | One row per non-fatal load condition: `kind` (`sidecar-missing`, `sidecar-elsewhere`, `sidecar-empty`, or `sidecar-family-mismatch`), `program`, `detail`, `path` |
 | `validation` | One row per diagnostic: `program`, `code` (`SL-V###`), `message`, `line`, `column` |
-| `findings` | Present only when the tree could not be loaded at all: one `Finding` with rule `PROJECT_LOAD_ERROR` |
+| `findings` | Present only when the tree could not be loaded at all: one `Finding` with rule `PROJECT_LOAD_ERROR`, or when `--of` names a program outside the graph: one `Finding` with rule `PROJECT_QUERY_ERROR` |
+
+`--graph` emits `edges` and `validation` and prints the validation rows in text
+mode, so a finding still visible in the normal report is never hidden by the
+graph projection.
 
 A validation row has no `severity`, because every row it carries is an error.
 `line` and `column` are `null` when the diagnostic has no span.

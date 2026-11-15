@@ -32,6 +32,7 @@ import hmac
 import os
 import pickle  # nosec B403 - HMAC-signed pickle envelope, key creation racy/excl guarded
 import secrets
+import stat
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
@@ -68,8 +69,9 @@ _CODE_FINGERPRINT_SOURCES = (
     "names.py",
 )
 
-#: The cache is an optimisation, not a store: past this many entries the oldest
-#: are dropped so a long-lived cache directory stays bounded.
+#: The cache is an optimisation, not a store: past this many entries the least
+#: recently used are dropped so a long-lived cache directory stays bounded. A
+#: library caller can override it with ``FileASTCache(max_entries=...)``.
 MAX_AST_CACHE_ENTRIES = 1024
 
 
@@ -114,6 +116,15 @@ def _safe_stat(path: Path) -> os.stat_result | None:
         return path.stat()
     except OSError:
         return None
+
+
+def _is_regular_file(path: Path) -> bool:
+    """Whether *path* is a regular file, never following a symlink."""
+    try:
+        info = path.lstat()
+    except OSError:
+        return False
+    return stat.S_ISREG(info.st_mode)
 
 
 def _as_data_dict(value: object) -> dict[object, object] | None:
@@ -309,9 +320,10 @@ class FileASTCache:
     with the file-lookup cache.
     """
 
-    def __init__(self, cache_dir: Path) -> None:
+    def __init__(self, cache_dir: Path, *, max_entries: int = MAX_AST_CACHE_ENTRIES) -> None:
         self.cache_dir = cache_dir / _PICKLE_KEY_DIR_NAME
         self._enabled = False
+        self._max_entries = max(0, max_entries)
         self._startup_pruned_entries = 0
         # Validate the root before touching the subdirectory. A cache under a
         # directory owned by another user must never be read, since that user
@@ -356,29 +368,31 @@ class FileASTCache:
         if not self.cache_dir.exists():
             return 0
         for path in self.cache_dir.iterdir():
-            if not path.is_file() or not path.name.endswith(TEMP_SUFFIX):
+            if not _is_regular_file(path) or not path.name.endswith(TEMP_SUFFIX):
                 continue
             if _temp_file_is_abandoned(path) and _remove_file(path):
                 removed += 1
         return removed
 
     def _enforce_entry_cap(self) -> int:
-        """Drop the oldest entries past :data:`MAX_AST_CACHE_ENTRIES`.
+        """Drop the least recently used entries past the configured cap.
 
         Only the file names and their mtimes are read, so the cap can run on
-        every startup without unpickling the whole cache.
+        every startup without unpickling the whole cache. A successful load
+        touches the entry, so the mtime approximates last use rather than the
+        time the entry was written.
         """
         if not self._enabled or not self.cache_dir.exists():
             return 0
         entries: list[tuple[int, str, Path]] = []
         for path in self.cache_dir.iterdir():
-            if not path.is_file() or not path.name.endswith(".pickle"):
+            if not _is_regular_file(path) or not path.name.endswith(".pickle"):
                 continue
             stat_result = _safe_stat(path)
             if stat_result is None:
                 continue
             entries.append((stat_result.st_mtime_ns, path.name, path))
-        excess = len(entries) - MAX_AST_CACHE_ENTRIES
+        excess = len(entries) - self._max_entries
         if excess <= 0:
             return 0
         entries.sort()
@@ -409,7 +423,7 @@ class FileASTCache:
         if not self._enabled:
             return None
         path = self._path(code_path, mode)
-        if not path.exists():
+        if not _is_regular_file(path):
             return None
         payload = _load_pickle_payload(path)
         payload_map = _as_data_dict(payload)
@@ -438,6 +452,10 @@ class FileASTCache:
         ast = payload_map.get("ast")
         if not isinstance(ast, BasePicture):
             return None
+        # Touch on a hit so the entry cap approximates least-recently-used
+        # eviction instead of dropping whichever entry was written first.
+        with contextlib.suppress(OSError):
+            os.utime(path, None)
         return ast
 
     def save(
@@ -483,9 +501,10 @@ class FileASTCache:
 
         An entry is stale when its envelope, version, parser identity, grammar,
         or code fingerprint no longer matches, when its source path no longer
-        exists, or when it is one of the oldest entries past
-        :data:`MAX_AST_CACHE_ENTRIES`. Returns the number of entries removed. A
-        disabled cache removes nothing.
+        exists, or when it is one of the least recently used entries past the
+        configured cap (``max_entries``, default
+        :data:`MAX_AST_CACHE_ENTRIES`). Returns the number of entries removed.
+        A disabled cache removes nothing.
         """
         if not self._enabled:
             return 0
@@ -494,7 +513,7 @@ class FileASTCache:
         if not directory.exists():
             return 0
         for path in directory.iterdir():
-            if not path.is_file():
+            if not _is_regular_file(path):
                 continue
             if path.name.endswith(TEMP_SUFFIX):
                 if not _temp_file_is_abandoned(path):

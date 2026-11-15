@@ -856,7 +856,7 @@ def test_prune_caps_the_entry_count(tmp_path: Path, monkeypatch: pytest.MonkeyPa
     second = _write_code(tmp_path, "B.s")
     cache.save(first, "draft", _picture(first))
     cache.save(second, "draft", _picture(second))
-    monkeypatch.setattr(f"{_AC_PATH}.MAX_AST_CACHE_ENTRIES", 1)
+    monkeypatch.setattr(cache, "_max_entries", 1)
 
     assert cache.prune_stale_entries() == 1
 
@@ -865,15 +865,47 @@ def test_prune_caps_the_entry_count(tmp_path: Path, monkeypatch: pytest.MonkeyPa
     assert survivors.count(True) == 1
 
 
-def test_startup_prune_enforces_the_cap_when_identity_matches(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_entry_cap_uses_max_entries_and_last_use(tmp_path: Path) -> None:
+    cache = FileASTCache(tmp_path)
+    paths = [_write_code(tmp_path, name) for name in ("A.s", "B.s", "C.s")]
+    for code_path in paths:
+        cache.save(code_path, "draft", _picture(code_path))
+    # Pin B and C to explicit old mtimes, so a coarse filesystem and the hash
+    # filename tiebreak cannot change the eviction order. A's load moves it
+    # ahead of both.
+    for index, code_path in enumerate(paths[1:], start=1):
+        os.utime(cache._path(code_path, "draft"), ns=(index, index))
+
+    assert cache.load(paths[0], "draft") is not None
+
+    restarted = FileASTCache(tmp_path, max_entries=2)
+
+    assert restarted.enabled
+    assert restarted.load(paths[0], "draft") is not None
+    assert restarted.load(paths[1], "draft") is None
+    assert restarted.load(paths[2], "draft") is not None
+
+
+def test_a_symlinked_entry_is_not_followed(tmp_path: Path) -> None:
+    code_path = _write_code(tmp_path)
+    cache = FileASTCache(tmp_path)
+    cache.save(code_path, "draft", _picture(code_path))
+    entry = cache._path(code_path, "draft")
+    outside = tmp_path / "outside.pickle"
+    entry.replace(outside)
+    entry.symlink_to(outside)
+
+    assert cache.load(code_path, "draft") is None
+
+
+def test_startup_prune_enforces_the_cap_when_identity_matches(tmp_path: Path) -> None:
     """A long-lived cache stays bounded even when nothing else changed."""
     cache = FileASTCache(tmp_path)
     for name in ("A.s", "B.s"):
         code_path = _write_code(tmp_path, name)
         cache.save(code_path, "draft", _picture(code_path))
-    monkeypatch.setattr(f"{_AC_PATH}.MAX_AST_CACHE_ENTRIES", 1)
 
-    restarted = FileASTCache(tmp_path)
+    restarted = FileASTCache(tmp_path, max_entries=1)
 
     assert restarted.drain_startup_pruned_entries() == 1
     assert len(list(restarted.cache_dir.glob("*.pickle"))) == 1

@@ -23,6 +23,7 @@ from sattline_parser.project import (
 from sattline_parser.project.discovery import (
     _is_allowed_base,
     _is_relative_to,
+    _is_safe_name,
     _resolved,
 )
 
@@ -453,6 +454,36 @@ def test_lookup_refuses_an_absolute_dependency_name(tmp_path: Path) -> None:
     lookup = ProjectLookup([root], LoadMode.DRAFT)
 
     assert lookup.find_code(str(outside)) is None
+
+
+@pytest.mark.parametrize(
+    ("name", "safe"),
+    [
+        ("Main", True),
+        ("Main_2", True),
+        ("A" * 20, True),
+        ("A" * 21, False),
+        ("", False),
+        ("../outside/Secret", False),
+        ("..\\outside\\Secret", False),
+        ("D:ExternalProgram", False),
+        ("\\\\server\\share\\Prog", False),
+        ("Main.s", False),
+        ("CON", True),
+        ("com1", True),
+        ("Name ", False),
+        ("Name.", False),
+    ],
+)
+def test_unit_names_are_validated_as_sattline_identifiers(name: str, safe: bool) -> None:
+    assert _is_safe_name(name) is safe
+
+
+@pytest.mark.parametrize("name", ["CON", "prn", "COM1", "lpt9"])
+def test_windows_reserved_device_names_are_refused_only_on_windows(name: str, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("sattline_parser.project.discovery._IS_WINDOWS", True)
+
+    assert _is_safe_name(name) is False
 
 
 def test_find_deps_beside_refuses_a_name_with_a_path(tmp_path: Path) -> None:

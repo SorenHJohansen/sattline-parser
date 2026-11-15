@@ -9,8 +9,13 @@ dependency resolution build on it.
 
 from __future__ import annotations
 
+import os
 from collections.abc import Callable, Sequence
 from pathlib import Path
+
+import regex
+
+from sattline_parser.grammar import constants as grammar_constants
 
 from .errors import ProjectLoadError
 from .formats import (
@@ -55,14 +60,33 @@ def _is_allowed_base(roots: Sequence[Path], base: Path) -> bool:
 
 
 #: A dependency name is a bare unit name, never a path. The stat fallback and
-#: the sidecar lookup build ``base / f"{name}{ext}"``, so a name carrying a
-#: separator or a parent reference would resolve outside every configured root.
-_UNSAFE_NAME_FRAGMENTS = ("/", "\\", "..")
+#: the sidecar lookup build ``base / f"{name}{ext}"``, so the name is validated
+#: against the language's own identifier character set rather than a short
+#: blacklist. That rejects separators, drive/ADS colons, UNC prefixes, parent
+#: references, control characters, and the Windows-invalid filename characters
+#: in one rule.
+_NAME_CHARSET = grammar_constants.GRAMMAR_CHARSET_NAME
+_UNIT_NAME_RE = regex.compile(rf"[{_NAME_CHARSET}][{_NAME_CHARSET}]{{0,19}}\Z")
+_IS_WINDOWS = os.name == "nt"
+_WINDOWS_RESERVED_NAMES = frozenset(
+    {
+        "CON",
+        "PRN",
+        "AUX",
+        "NUL",
+        *(f"COM{number}" for number in range(1, 10)),
+        *(f"LPT{number}" for number in range(1, 10)),
+    }
+)
 
 
 def _is_safe_name(name: str) -> bool:
     """Whether *name* is a bare unit name that cannot escape a lookup base."""
-    return not any(fragment in name for fragment in _UNSAFE_NAME_FRAGMENTS)
+    if _UNIT_NAME_RE.fullmatch(name) is None:
+        return False
+    # Windows reserves device names even when the identifier itself is legal.
+    # A POSIX unit named CON is a normal file and must keep resolving there.
+    return not _IS_WINDOWS or name.upper() not in _WINDOWS_RESERVED_NAMES
 
 
 class SourceIndex:

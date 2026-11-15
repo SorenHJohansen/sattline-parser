@@ -15,7 +15,7 @@ from sattline_parser.cli._exit import ExitCode
 from sattline_parser.cli.cmds import project as project_cmd
 from sattline_parser.project._cycles import dependency_cycles
 
-from ._cli_support import PARSE_ERROR_SOURCE, VALID_SOURCE, write_source
+from ._cli_support import CONSECUTIVE_STEPS_SOURCE, PARSE_ERROR_SOURCE, VALID_SOURCE, write_source
 
 
 def _cycles(edges: list[tuple[str, str]]) -> list[list[str]]:
@@ -358,6 +358,31 @@ def test_graph_json_payload(tmp_path, capsys) -> None:
     assert payload["edges"] == [{"from": "child", "to": "base"}]
 
 
+def test_unknown_of_is_a_finding(tmp_path, capsys) -> None:
+    _program(tmp_path, "Base")
+
+    assert main(["project", str(tmp_path), "--graph", "--of", "Nope"]) == ExitCode.FINDINGS
+    out = capsys.readouterr().out
+    assert "not in the loaded graph" in out
+
+    assert main(["project", str(tmp_path), "--graph", "--of", "Nope", "--json"]) == ExitCode.FINDINGS
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["findings"][0]["rule"] == "PROJECT_QUERY_ERROR"
+
+
+def test_graph_mode_prints_and_reports_validation_findings(tmp_path, capsys) -> None:
+    write_source(tmp_path, "Faulty.s", CONSECUTIVE_STEPS_SOURCE)
+
+    assert main(["project", str(tmp_path), "--graph"]) == ExitCode.FINDINGS
+    out = capsys.readouterr().out
+    assert "validation:" in out
+    assert "SL-V016" in out
+
+    assert main(["project", str(tmp_path), "--graph", "--json"]) == ExitCode.FINDINGS
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["validation"][0]["code"] == "SL-V016"
+
+
 def test_dependency_cycle_is_a_load_error(tmp_path, capsys) -> None:
     _program(tmp_path, "Alpha", "Beta")
     _program(tmp_path, "Beta", "Alpha")
@@ -498,6 +523,13 @@ def test_workers_flag_defaults_to_cpu_count_capped(monkeypatch) -> None:
     assert project_cmd._default_workers() == project_cmd._MAX_DEFAULT_WORKERS
     monkeypatch.setattr(project_cmd.os, "cpu_count", lambda: None)
     assert project_cmd._default_workers() == 1
+
+
+def test_workers_flag_rejects_a_count_past_the_cap(tmp_path, capsys) -> None:
+    _program(tmp_path, "Base")
+
+    assert main(["project", str(tmp_path), "--workers", "1000"]) == ExitCode.USAGE
+    assert "or less" in capsys.readouterr().err
 
 
 def test_two_roots_with_a_shared_unit_name_use_the_first_root(tmp_path, capsys) -> None:

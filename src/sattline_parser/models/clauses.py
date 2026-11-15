@@ -61,9 +61,9 @@ class PolygonPoint:
 
 @dataclass(frozen=True)
 class Alignment:
-    """A ``LeftAligned`` or ``RightAligned`` interactor body line."""
+    """A ``LeftAligned``, ``CenterAligned``, or ``RightAligned`` body line."""
 
-    value: Literal["left", "right"]
+    value: Literal["left", "center", "right"]
     span: SourceSpan | None = field(default=None, compare=False, metadata={"layout": True})
 
 

@@ -11,7 +11,7 @@ from sattline_parser.api import create_parser
 from sattline_parser.grammar import constants as const
 from sattline_parser.grammar.keywords import make_keywords_case_insensitive
 from sattline_parser.models.ast_model import BasePicture, IntLiteral, ModuleTypeInstance
-from sattline_parser.models.clauses import AssignClause
+from sattline_parser.models.clauses import Alignment, AssignClause
 from sattline_parser.models.expressions import Assignment, BinOp, TernaryOp, VarRef
 from sattline_parser.models.tails import VarTail
 
@@ -178,6 +178,27 @@ def test_parser_core_accepts_clipping_bounds_and_interact_tail_sequences():
     assert bp.moduledef is not None
     assert bp.moduledef.interact_objects is not None
     assert len(bp.moduledef.interact_objects) == 1
+
+
+def test_parser_core_accepts_center_aligned_interactor_body():
+    code = (
+        '"SyntaxVersion"\n'
+        '"OriginalFileDate"\n'
+        '"ProgramDate"\n'
+        "BasePicture Invocation (0.0,0.0,0.0,1.0,1.0) : MODULEDEFINITION DateCode_ 1\n"
+        "ModuleDef\n"
+        "    ClippingBounds = ( -1.0 , -1.0 ) ( 1.0 , 1.0 )\n"
+        "    InteractObjects :\n"
+        "        TextBox_ ( 0.02 , 1.165 ) ( 0.48 , 1.245 )\n"
+        "            CenterAligned\n"
+        "ENDDEF;\n"
+    )
+
+    bp = parser_core_parse_source_text(code)
+
+    assert bp.moduledef is not None
+    assert bp.moduledef.interact_objects is not None
+    assert bp.moduledef.interact_objects[0].properties["body"] == [Alignment("center")]
 
 
 def test_parser_core_preserves_interact_outvar_tails_for_output_bindings():

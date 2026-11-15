@@ -22,9 +22,16 @@ from sattline_parser.project import (
 
 from .._errors import CliError
 from .._exit import ExitCode
-from .._findings import PROJECT_LOAD_RULE, Finding
+from .._findings import PROJECT_LOAD_RULE, PROJECT_QUERY_RULE, Finding
 from .._json import SCHEMA_PREFIX, dumps
-from ._common import add_fail_on, add_output_flags, emit_findings, fails_on, positive_int
+from ._common import (
+    add_fail_on,
+    add_output_flags,
+    bounded_positive_int,
+    emit_findings,
+    fails_on,
+    positive_int,
+)
 
 __all__ = ["register", "run"]
 
@@ -33,6 +40,10 @@ Edge = dict[str, str]
 #: Upper bound on the default worker count: past a handful of processes the
 #: load is bounded by memory and IPC rather than by cores.
 _MAX_DEFAULT_WORKERS = 8
+
+#: Upper bound a caller may request explicitly. Past this the load is bounded
+#: by memory and IPC, and an unbounded request can exhaust the machine.
+_MAX_WORKERS = 32
 
 
 def _default_cache_dir() -> Path | None:
@@ -99,12 +110,12 @@ def register(subparsers: argparse._SubParsersAction[argparse.ArgumentParser]) ->
     parser.add_argument("--no-cache", action="store_true", help="bypass the parser caches")
     parser.add_argument(
         "--workers",
-        type=positive_int,
+        type=bounded_positive_int(_MAX_WORKERS),
         metavar="N",
         default=_default_workers(),
         help=(
-            "parse program bodies in N processes (default: %(default)s, capped at "
-            f"{_MAX_DEFAULT_WORKERS}; 1 parses in this process)"
+            "parse program bodies in N processes (default: %(default)s, at most "
+            f"{_MAX_WORKERS}; 1 parses in this process)"
         ),
     )
     parser.add_argument(
@@ -117,7 +128,7 @@ def register(subparsers: argparse._SubParsersAction[argparse.ArgumentParser]) ->
         ),
     )
     add_fail_on(parser)
-    parser.add_argument("--graph", action="store_true", help="only print the dependency edges")
+    parser.add_argument("--graph", action="store_true", help="print the dependency edges and validation rows")
     parser.add_argument("--of", metavar="NAME", help="restrict the graph to this program")
     parser.add_argument("--reverse", action="store_true", help="follow dependents instead of dependencies")
     parser.add_argument("--depth", type=positive_int, metavar="N", help="limit the graph traversal depth")
@@ -133,14 +144,32 @@ def run(args: argparse.Namespace) -> int:
         # A tree that cannot be loaded is a finding about the tree. Anything
         # else is a bug in this tool and must reach main()'s internal-error path.
         finding = Finding(severity="error", message=f"cannot load project: {exc}", rule=PROJECT_LOAD_RULE)
-        emit_findings([finding], args=args, schema="project", extra={"programs": []})
+        emit_findings(
+            [finding],
+            args=args,
+            schema="project",
+            extra={"programs": [], "edges": [], "diagnostics": [], "validation": []},
+        )
         return int(ExitCode.FINDINGS)
     programs = project.programs()
     load_diagnostics = project.diagnostics()
     validation_rows = _validation_rows(programs)
+    if args.of is not None and args.of.casefold() not in {name.casefold() for name in programs}:
+        finding = Finding(
+            severity="error",
+            message=f"program {args.of!r} is not in the loaded graph",
+            rule=PROJECT_QUERY_RULE,
+        )
+        emit_findings(
+            [finding],
+            args=args,
+            schema="project",
+            extra={"programs": [], "edges": [], "diagnostics": [], "validation": []},
+        )
+        return int(ExitCode.FINDINGS)
     edges = _edges(project, args)
     if args.graph:
-        _emit_graph(edges, args=args)
+        _emit_graph(edges, validation_rows, args=args)
     else:
         _emit_programs(programs, edges, load_diagnostics, validation_rows, args=args)
     failing = _validation_fails(validation_rows, args.fail_on)
@@ -395,10 +424,26 @@ def _emit_programs(
             print(f"  {row['code']} {row['program']}{location}: {row['message']}")
 
 
-def _emit_graph(edges: Sequence[Edge], *, args: argparse.Namespace) -> None:
+def _emit_graph(
+    edges: Sequence[Edge],
+    validation: Sequence[Mapping[str, object]],
+    *,
+    args: argparse.Namespace,
+) -> None:
     if args.json or args.jsonl:
-        payload = {"schema": f"{SCHEMA_PREFIX}.project", "edges": list(edges)}
+        payload = {
+            "schema": f"{SCHEMA_PREFIX}.project",
+            "edges": list(edges),
+            "validation": list(validation),
+        }
         print(dumps(payload, compact=bool(args.jsonl)))
         return
     for edge in edges:
         print(f"{edge['from']} -> {edge['to']}")
+    if validation:
+        print("validation:")
+        for row in validation:
+            location = ""
+            if row["line"] is not None:
+                location = f" {row['line']}:{row['column']}"
+            print(f"  {row['code']} {row['program']}{location}: {row['message']}")

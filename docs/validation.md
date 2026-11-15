@@ -99,6 +99,10 @@ submodule header, and the module scope for that module's `ModuleDef`. The
 walker emits each tail once, so a tail shared between a typed clause and the
 flat `properties["tails"]` view is not reported twice.
 
+`GroupConn=` names a scan-group path, not a variable. A value such as
+`ApplConfig.ApplSetup.SubSystem` is a label for the group a module joins, so it
+does not resolve through the variable scope and produces no `SL-V019`.
+
 Expression tails are walked like any other expression: an unresolved name is
 `SL-V019`, and ordinary operator diagnostics apply. An `Enable_` expression tail
 must be boolean (`SL-V030`). A `ModuleDef` coordinate tail must be real
@@ -239,6 +243,11 @@ it is a suffix of its host step or transition.
 - A module-type instance whose type is neither declared in the file nor visible
   from a loaded dependency reports `SL-V058`. The single-file escape hatch
   suppresses it; a project load always has the whole closure.
+- Recursion between module types is a project-layer check. The single-file
+  validator follows neither external definitions nor the full instantiation
+  graph, so a file that only this file references can recurse without a
+  single-file finding. `SattLineProject.load` rejects the same graph at load
+  time.
 - When the module type is external, the mapping rule resolves against the
   loaded definition through the project layer.
 

@@ -16,11 +16,15 @@ from .._findings import READ_RULE
 from .._io import read_source_path
 from .._json import SCHEMA_PREFIX, dumps
 from .._validate import Analysis, analyse
-from ._common import add_fail_on, add_output_flags, fails_on, positive_int
+from ._common import add_fail_on, add_output_flags, bounded_positive_int, fails_on
 
 __all__ = ["CorpusRow", "register", "run"]
 
 _SOURCE_SUFFIXES = ALL_CODE_EXTENSIONS
+
+#: Upper bound for ``--jobs``: a thread count past this is a resource request
+#: the machine cannot service, not a faster scan.
+_MAX_JOBS = 32
 
 
 @dataclass(frozen=True, slots=True)
@@ -43,7 +47,13 @@ def register(subparsers: argparse._SubParsersAction[argparse.ArgumentParser]) ->
     parser: argparse.ArgumentParser = subparsers.add_parser("corpus", help="parse and validate a whole tree")
     parser.add_argument("root", metavar="ROOT", help="directory to scan for .s/.x sources")
     add_output_flags(parser)
-    parser.add_argument("--jobs", type=positive_int, default=1, metavar="N", help="files to process at once")
+    parser.add_argument(
+        "--jobs",
+        type=bounded_positive_int(_MAX_JOBS),
+        default=1,
+        metavar="N",
+        help=f"files to process at once (at most {_MAX_JOBS})",
+    )
     parser.add_argument("--summary", action="store_true", help="only print the histogram")
     add_fail_on(parser)
     parser.set_defaults(handler=run)

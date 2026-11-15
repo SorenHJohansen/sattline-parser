@@ -26,14 +26,19 @@ itself.
 from __future__ import annotations
 
 import multiprocessing
+import sys
 import threading
 from collections.abc import Callable, Sequence
 from concurrent.futures import ProcessPoolExecutor
 from concurrent.futures.process import BrokenProcessPool
 from dataclasses import dataclass, replace
 from pathlib import Path
+from typing import Any, cast
 
-from sattline_parser.errors import PARSE_FAILURES
+from lark import Token
+from lark.exceptions import UnexpectedCharacters, UnexpectedEOF, UnexpectedInput, UnexpectedToken
+
+from sattline_parser.errors import PARSE_FAILURES, SourceTooDeepError
 from sattline_parser.models.ast_model import (
     BasePicture,
     DataType,
@@ -41,6 +46,7 @@ from sattline_parser.models.ast_model import (
     SourceSpan,
 )
 from sattline_parser.names import fold_identifier
+from sattline_parser.preprocessing.compressed import PreprocessError
 from sattline_parser.source_io import parse_source_bytes, private_cache_dir, read_text_cp1252
 from sattline_parser.validation import validate_basepicture
 from sattline_parser.validation.diagnostics import Diagnostic, DiagnosticCode
@@ -128,20 +134,112 @@ def _plan_key(code_path: Path) -> str:
 
 
 @dataclass(frozen=True, slots=True)
+class _ParseFailure:
+    """A picklable description of a parse failure raised in a worker.
+
+    The exception object itself is not sent across the process boundary: Lark
+    exceptions carry parser state and tokens. The record keeps the facts the
+    parent needs to rebuild the same exception type and source position.
+    """
+
+    type_name: str
+    message: str
+    line: int | None = None
+    column: int | None = None
+    pos_in_stream: int | None = None
+    token_type: str | None = None
+    token_value: str | None = None
+    expected: tuple[str, ...] = ()
+    char: str | None = None
+    limit: int | None = None
+    unicode_error: tuple[str, bytes, int, int, str] | None = None
+
+
+@dataclass(frozen=True, slots=True)
 class _ParseOutcome:
     """A parsed body, or the text of the failure that stopped it."""
 
     ast: BasePicture | None = None
     failure: str | None = None
-    #: The original failure, kept when the parse ran in this process so a
+    #: The original parse failure, kept when the parse ran in this process so a
     #: caller can still reach a ``SourceTooDeepError`` limit or a decode
-    #: offset through ``__cause__``. A worker returns text only.
-    error: ProjectLoadError | None = None
+    #: offset through ``__cause__``. A worker returns ``failure_record``.
+    error: BaseException | None = None
+    failure_record: _ParseFailure | None = None
     #: The exact source revision the worker parsed, so the parent can refuse to
     #: cache an AST when the file changed while the worker was reading it.
     snapshot: SourceSnapshot | None = None
     #: The AST came from the cache, so it has nothing to store.
     cached: bool = False
+
+
+def _parse_failure_record(exc: BaseException) -> _ParseFailure:
+    """Describe *exc* without pickling parser state."""
+    token = getattr(exc, "token", None)
+    expected = getattr(exc, "expected", None) or getattr(exc, "allowed", ())
+    unicode_error = (
+        (exc.encoding, exc.object, exc.start, exc.end, exc.reason) if isinstance(exc, UnicodeDecodeError) else None
+    )
+    return _ParseFailure(
+        type_name=type(exc).__name__,
+        message=str(exc) or type(exc).__name__,
+        line=_optional_int(getattr(exc, "line", None)),
+        column=_optional_int(getattr(exc, "column", None)),
+        pos_in_stream=_optional_int(getattr(exc, "pos_in_stream", None)),
+        token_type=str(token.type) if isinstance(token, Token) else None,
+        token_value=str(token) if isinstance(token, Token) else None,
+        expected=tuple(sorted(str(item) for item in expected)),
+        char=getattr(exc, "char", None),
+        limit=_optional_int(getattr(exc, "limit", None)),
+        unicode_error=unicode_error,
+    )
+
+
+def _optional_int(value: object) -> int | None:
+    return value if isinstance(value, int) and not isinstance(value, bool) else None
+
+
+def _rebuild_parse_failure(record: _ParseFailure) -> BaseException:
+    """Rebuild a worker failure so ``__cause__`` matches an in-process parse."""
+    line = record.line if record.line is not None else 1
+    column = record.column if record.column is not None else 1
+    pos = record.pos_in_stream if record.pos_in_stream is not None else 0
+    if record.unicode_error is not None:
+        return UnicodeDecodeError(*record.unicode_error)
+    if record.type_name == "SourceTooDeepError" and record.limit is not None:
+        return SourceTooDeepError(
+            record.limit,
+            line=record.line,
+            column=record.column,
+            pos_in_stream=record.pos_in_stream,
+        )
+    if record.type_name == "UnexpectedToken" and record.token_type is not None:
+        token = Token(record.token_type, record.token_value or "")
+        token.line = line
+        token.column = column
+        token.start_pos = pos
+        token.end_pos = pos + len(str(token))
+        return UnexpectedToken(token, list(record.expected))
+    if record.type_name == "UnexpectedCharacters":
+        sequence = " " * pos + (record.char or " ")
+        return UnexpectedCharacters(sequence, pos, line, column, allowed=list(record.expected) or None)
+    if record.type_name == "UnexpectedEOF":
+        return UnexpectedEOF(list(record.expected))
+    if record.type_name == "UnexpectedInput":
+        error = UnexpectedInput(record.message)
+        error.line = line
+        error.column = column
+        cast(Any, error).pos_in_stream = pos
+        return error
+    if record.type_name == "PreprocessError":
+        return PreprocessError(record.message)
+    if record.type_name in {"UnicodeError", "UnicodeDecodeError"}:
+        return UnicodeError(record.message)
+    if record.type_name == "ValueError":
+        return ValueError(record.message)
+    if record.type_name == "OSError":
+        return OSError(record.message)
+    return RuntimeError(record.message)
 
 
 def _program_name(plan: _Plan) -> str:
@@ -199,26 +297,37 @@ def _parse_code_file(task: tuple[str, str, str | None, bool]) -> _ParseOutcome:
     try:
         picture = parse_source_bytes(raw_bytes, source_path=code_path, log_failures=log_failures)
     except PARSE_FAILURES as exc:
-        return _ParseOutcome(failure=str(exc) or type(exc).__name__)
+        return _ParseOutcome(
+            failure=str(exc) or type(exc).__name__,
+            failure_record=_parse_failure_record(exc),
+        )
     return _ParseOutcome(ast=picture, snapshot=snapshot)
 
 
-def _start_method(methods: Sequence[str], *, threaded: bool) -> str | None:
+def _start_method(
+    methods: Sequence[str],
+    *,
+    threaded: bool,
+    platform: str = sys.platform,
+    version: tuple[int, int] = sys.version_info[:2],
+) -> str | None:
     """The preferred pool start method, or ``None`` for the platform default.
 
-    A single-threaded process prefers ``fork``: the caller needs no ``__main__``
-    guard. Forking a process with other threads is deprecated in CPython and
-    can inherit a lock another thread held at fork time, so a threaded host
-    prefers ``forkserver``, then ``spawn``. Platforms that offer only ``fork``
-    still get it: this is a preference, not a guarantee.
+    A single-threaded process on Linux before Python 3.14 prefers ``fork``: the
+    caller needs no ``__main__`` guard. Forking a process with other threads is
+    deprecated in CPython and can inherit a lock another thread held at fork
+    time, so a threaded host prefers ``forkserver``, then ``spawn``. Python 3.14
+    moved the Linux default away from ``fork`` for the same reason, and macOS
+    defaults to ``spawn``, so both keep the platform default instead of forcing
+    ``fork``. Platforms that offer only ``fork`` still get it through that
+    default: this is a preference, not a guarantee.
     """
     if threaded:
         for candidate in ("forkserver", "spawn"):
             if candidate in methods:
                 return candidate
-    for candidate in ("fork", "forkserver", "spawn"):
-        if candidate in methods:
-            return candidate
+    if not threaded and platform.startswith("linux") and version < (3, 14) and "fork" in methods:
+        return "fork"
     return None
 
 
@@ -493,7 +602,10 @@ class ProjectLoader:
                 dependency=_dependency(plan),
             )
         except ProjectLoadError as exc:
-            return _ParseOutcome(failure=str(exc), error=exc)
+            # ``_load_ast`` wraps the parser exception in a load error for its
+            # other callers. Keep the parser exception itself as the cause, so
+            # the in-process and worker paths expose the same chain.
+            return _ParseOutcome(failure=str(exc), error=exc.__cause__ or exc)
         return _ParseOutcome(ast=ast)
 
     def _save_cached(self, plan: _Plan, outcome: _ParseOutcome) -> None:
@@ -525,7 +637,10 @@ class ProjectLoader:
         basepicture = outcome.ast
         if basepicture is None:
             error = _parse_failure(_program_name(plan), artifact.code_path.name, _dependency(plan))
-            raise error from (outcome.error or RuntimeError(outcome.failure))
+            cause = outcome.error
+            if cause is None and outcome.failure_record is not None:
+                cause = _rebuild_parse_failure(outcome.failure_record)
+            raise error from (cause or RuntimeError(outcome.failure))
         _set_origin(basepicture, file_name=artifact.code_path.name, library=artifact.library)
         self._assemble_body(plan, basepicture)
 

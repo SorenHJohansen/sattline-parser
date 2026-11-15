@@ -100,7 +100,7 @@ is preserved rather than rejected.
 | Rule | What it represents |
 | --- | --- |
 | `module_header` | `Name Invocation (x,y,x,y,x) arguments` |
-| `base_picture_module` | The root module, ending in `ENDDEF` and an optional `;` |
+| `base_picture_module` | The root module; the trailing `ENDDEF` and its `;` are both optional |
 | `invocation_new_module` | A nested module body with its own `MODULEDEFINITION ... ENDDEF` |
 | `invocation_module_type` | A reference to a named module type, with optional parameter transfers |
 | `frame_module` | `( Frame_Module )`, a pure container |
@@ -108,8 +108,10 @@ is preserved rather than rejected.
 | `moduletype_definition` | `Name = [PRIVATE_] MODULEDEFINITION ... ENDDEF ;` |
 
 `module_body` is `moduleparameters? localvariables? submodules? moduledef
-modulecode?`. The `moduledef` is required. A `ModuleCode` without a
-`ModuleDef` is not accepted, and the corpus fixture
+modulecode?`. The `moduledef` is required. The root body's closing `ENDDEF`
+(and the optional `;` after it) may be omitted; a nested body still ends at its
+own `ENDDEF`. A `ModuleCode` without a `ModuleDef` is not accepted, and the
+corpus fixture
 `ModuleCodeWithoutModuleDef.s` pins that. A module body has at most one
 `moduledef`: a second `ModuleDef` before the closing `ENDDEF` is a syntax error,
 and `RepeatedModuleDefBlocks.s` pins that.
@@ -263,6 +265,15 @@ not attached and is not retained by the returned AST; it is never silently
 attached somewhere else. In particular, a `comments` run in a `ComButProc_` body
 or inside a colour assignment has no AST field; only `interact_body` comments
 become `CodeComment` values.
+
+Comment positions are structural. A comment is accepted in code, in an SFC
+body, in the header's change-description slot, after a module header or
+definition, after `ENDDEF`, and in a `SUBMODULES` run, including a comment
+between the last submodule and the following `ModuleDef`. It is not accepted
+between two variable declarations, between `MODULECODE` and its first equation
+block or sequence, or at a bare position with no comment production. Those
+positions have no production for a comment, so the parser reports the comment
+rather than silently dropping it.
 
 ### Identifiers and name folding
 

@@ -23,6 +23,7 @@ __all__ = [
     "GRAPHICS_SCAN_RULE",
     "PARSE_RULE",
     "PROJECT_LOAD_RULE",
+    "PROJECT_QUERY_RULE",
     "READ_RULE",
     "Finding",
     "finding_from_diagnostic",
@@ -37,6 +38,8 @@ PARSE_RULE = "PARSE_ERROR"
 DECODE_RULE = "DECODE_ERROR"
 #: Rule id for a project tree that cannot be loaded.
 PROJECT_LOAD_RULE = "PROJECT_LOAD_ERROR"
+#: Rule id for a project question whose subject is not in the loaded graph.
+PROJECT_QUERY_RULE = "PROJECT_QUERY_ERROR"
 #: Rule id for a graphics companion's own scan messages.
 GRAPHICS_SCAN_RULE = "GRAPHICS_SCAN"
 #: Rule id for a corpus file that cannot be read.

@@ -247,7 +247,7 @@ value_fraction_tailed.1:    VALUEFRACTION "=" SIGNED_INT (invar | enable_express
 value_fraction_plain:       VALUEFRACTION "=" SIGNED_INT_NOTAIL
 connection_node:            CONNECTIONNODE "(" REAL "," REAL ")"
 connection_node_bare:       CONNECTIONNODE
-alignment:                  LEFTALIGNED | RIGHTALIGNED
+alignment:                  LEFTALIGNED | CENTERALIGNED | RIGHTALIGNED
 
 //Color handling
 color_properties:           outline_colour | fill_colour
@@ -450,6 +450,7 @@ IGNOREMAXMODULE.10:         "{GRAMMAR_VALUE_IGNOREMAXMODULE}"
 LAYERMODULE.10:             "{GRAMMAR_VALUE_LAYERMODULE}"
 // Alignment
 LEFTALIGNED.10:             "{GRAMMAR_VALUE_LEFTALIGNED}"
+CENTERALIGNED.10:           "{GRAMMAR_VALUE_CENTERALIGNED}"
 RIGHTALIGNED.10:            "{GRAMMAR_VALUE_RIGHTALIGNED}"
 // Graph objects and related
 TEXTOBJECT.10:              "{GRAMMAR_VALUE_TEXTOBJECT}"
