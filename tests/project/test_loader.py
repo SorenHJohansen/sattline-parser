@@ -1,8 +1,9 @@
 # pyright: reportPrivateUsage=false
-"""Unit tests for Phase 3 recursive program loading (``project/loader.py``)."""
+"""Unit tests for recursive program loading (``project/loader.py``)."""
 
 from __future__ import annotations
 
+import os
 from collections.abc import Callable, Generator, Iterator
 from concurrent.futures import ProcessPoolExecutor
 from concurrent.futures.process import BrokenProcessPool
@@ -12,11 +13,14 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 import pytest
+from lark.exceptions import UnexpectedCharacters, UnexpectedEOF, UnexpectedInput
 
-from sattline_parser.api import parse_source_file
+from sattline_parser.api import parse_source_bytes, parse_source_file
+from sattline_parser.errors import SourceTooDeepError
 from sattline_parser.models.ast_model import (
     BasePicture,
 )
+from sattline_parser.preprocessing.compressed import PreprocessError
 from sattline_parser.project import (
     ArtifactLoadError,
     DependencyCycleError,
@@ -29,7 +33,7 @@ from sattline_parser.project import (
     read_dependency_names,
 )
 from sattline_parser.project import loader as project_loader
-from sattline_parser.project.ast_cache import FileASTCache, source_snapshot
+from sattline_parser.project.ast_cache import FileASTCache, SourceSnapshot, source_snapshot
 from sattline_parser.project.models import LoadDiagnosticKind, SidecarState
 
 from ._support import write_file
@@ -131,11 +135,9 @@ def _record_dispatched(monkeypatch: pytest.MonkeyPatch) -> list[str]:
 
 
 def _counting_parse(call_count: list[int]) -> Callable[..., BasePicture]:
-    real_parse = parse_source_file
-
-    def counting_parse(code_path: Path, **_: object) -> BasePicture:
+    def counting_parse(raw_bytes: bytes, **_: object) -> BasePicture:
         call_count.append(1)
-        return real_parse(code_path)
+        return parse_source_bytes(raw_bytes)
 
     return counting_parse
 
@@ -224,7 +226,8 @@ def test_load_targets_canonicalized_by_case(tmp_path: Path) -> None:
     assert project.get("mAiN").name == "Main"
 
 
-def test_load_resolves_dependencies_across_roots(tmp_path: Path) -> None:
+def test_load_resolves_dependencies_through_the_path_order(tmp_path: Path) -> None:
+    """A dependency resolves through the same path, not beside its consumer."""
     consumer = tmp_path / "consumer"
     library = tmp_path / "library"
     write_file(consumer, "Client.s", _CODE)
@@ -240,10 +243,30 @@ def test_load_resolves_dependencies_across_roots(tmp_path: Path) -> None:
 
     project = SattLineProject.load([consumer, library], LoadMode.DRAFT, ["Client"])
 
-    assert project.dependencies_of("Client") == ("LibA",)
+    assert project.get("LibB").resolved_base == consumer.resolve()
     assert project.dependencies_of("LibA") == ("LibB",)
+    assert project.dependencies_of("LibB") == ("ConsumerSide",)
+
+
+def test_load_dependency_path_order_follows_the_reversed_roots(tmp_path: Path) -> None:
+    """With the library first, the same names resolve to the library's bodies."""
+    consumer = tmp_path / "consumer"
+    library = tmp_path / "library"
+    write_file(consumer, "Client.s", _CODE)
+    write_file(consumer, "Client.l", "LibA\n")
+    write_file(library, "LibA.s", _CODE)
+    write_file(library, "LibA.l", "LibB\n")
+    write_file(consumer, "LibB.s", _CODE)
+    write_file(consumer, "LibB.l", "ConsumerSide\n")
+    write_file(library, "LibB.s", _CODE)
+    write_file(library, "LibB.l", "LibrarySide\n")
+    write_file(consumer, "ConsumerSide.s", _CODE)
+    write_file(library, "LibrarySide.s", _CODE)
+
+    project = SattLineProject.load([library, consumer], LoadMode.DRAFT, ["Client"])
+
+    assert project.get("LibB").resolved_base == library.resolve()
     assert project.dependencies_of("LibB") == ("LibrarySide",)
-    assert project.dependencies_of("LibrarySide") == ()
 
 
 def test_load_missing_dependency_raises(tmp_path: Path) -> None:
@@ -279,6 +302,131 @@ def test_load_dependency_parse_failure_raises_dependency_error(tmp_path: Path) -
         _load(tmp_path)
     assert exc_info.value.program == "Main"
     assert exc_info.value.dependency == "Broken"
+
+
+def test_worker_and_in_process_failures_have_the_same_cause(tmp_path: Path) -> None:
+    write_file(tmp_path, "Main.s", _CODE)
+    write_file(tmp_path, "Main.l", "Broken\n")
+    write_file(tmp_path, "Broken.s", _BROKEN)
+
+    causes: dict[int, BaseException] = {}
+    for workers in (1, 2):
+        with pytest.raises(DependencyParseError) as exc_info:
+            _load(tmp_path, workers=workers)
+        cause = exc_info.value.__cause__
+        assert cause is not None
+        causes[workers] = cause
+
+    in_process = causes[1]
+    worker = causes[2]
+    assert type(worker) is type(in_process)
+    assert isinstance(in_process, UnexpectedInput)
+    assert isinstance(worker, UnexpectedInput)
+    assert worker.line == in_process.line
+    assert worker.column == in_process.column
+
+
+@pytest.mark.parametrize(
+    ("type_name", "expected_type"),
+    [
+        ("UnexpectedCharacters", UnexpectedCharacters),
+        ("UnexpectedEOF", UnexpectedEOF),
+        ("UnexpectedInput", UnexpectedInput),
+        ("PreprocessError", PreprocessError),
+        ("UnicodeDecodeError", UnicodeError),
+        ("UnicodeError", UnicodeError),
+        ("ValueError", ValueError),
+        ("OSError", OSError),
+        ("RuntimeError", RuntimeError),
+    ],
+)
+def test_rebuild_parse_failure_keeps_the_worker_type(type_name: str, expected_type: type[BaseException]) -> None:
+    record = project_loader._ParseFailure(
+        type_name=type_name,
+        message="boom",
+        line=4,
+        column=7,
+        pos_in_stream=11,
+    )
+
+    rebuilt = project_loader._rebuild_parse_failure(record)
+
+    assert type(rebuilt) is expected_type
+
+
+def test_rebuild_parse_failure_keeps_the_source_depth_limit() -> None:
+    record = project_loader._ParseFailure(
+        type_name="SourceTooDeepError",
+        message="too deep",
+        line=4,
+        column=7,
+        pos_in_stream=11,
+        limit=200,
+    )
+
+    rebuilt = project_loader._rebuild_parse_failure(record)
+
+    assert isinstance(rebuilt, SourceTooDeepError)
+    assert rebuilt.limit == 200
+    assert (rebuilt.line, rebuilt.column, rebuilt.pos_in_stream) == (4, 7, 11)
+
+
+def test_rebuild_parse_failure_keeps_a_decode_error() -> None:
+    record = project_loader._ParseFailure(
+        type_name="UnicodeDecodeError",
+        message="bad byte",
+        unicode_error=("utf-8", b"\xff", 0, 1, "invalid start byte"),
+    )
+
+    rebuilt = project_loader._rebuild_parse_failure(record)
+
+    assert isinstance(rebuilt, UnicodeDecodeError)
+    assert rebuilt.start == 0
+    assert rebuilt.reason == "invalid start byte"
+
+
+@pytest.mark.skipif(os.name == "nt" or os.geteuid() == 0, reason="needs POSIX permissions as a non-root user")
+@pytest.mark.parametrize("workers", [1, 2])
+def test_load_unreadable_body_is_a_project_error(tmp_path: Path, workers: int) -> None:
+    write_file(tmp_path, "Main.s", _CODE)
+    (tmp_path / "Main.s").chmod(0)
+
+    with pytest.raises(ArtifactLoadError):
+        _load(tmp_path, workers=workers)
+
+
+@pytest.mark.skipif(os.name == "nt" or os.geteuid() == 0, reason="needs POSIX permissions as a non-root user")
+def test_load_unreadable_body_in_a_worker_is_a_project_error(tmp_path: Path) -> None:
+    write_file(tmp_path, "Main.s", _CODE)
+    write_file(tmp_path, "Lib.s", _CODE)
+    (tmp_path / "Main.s").chmod(0)
+
+    with pytest.raises(ArtifactLoadError):
+        _load(tmp_path, targets=("Main", "Lib"), workers=2)
+
+
+@pytest.mark.skipif(os.name == "nt" or os.geteuid() == 0, reason="needs POSIX permissions as a non-root user")
+def test_parse_code_file_reports_an_unreadable_body(tmp_path: Path) -> None:
+    write_file(tmp_path, "Main.s", _CODE)
+    code_path = tmp_path / "Main.s"
+    code_path.chmod(0)
+
+    outcome = project_loader._parse_code_file((str(code_path), "draft", None, False))
+
+    assert outcome.ast is None
+    assert outcome.failure_record is not None
+    assert outcome.failure_record.type_name == "PermissionError"
+
+
+@pytest.mark.skipif(os.name == "nt" or os.geteuid() == 0, reason="needs POSIX permissions as a non-root user")
+def test_load_unreadable_dependency_body_is_a_dependency_error(tmp_path: Path) -> None:
+    write_file(tmp_path, "Main.s", _CODE)
+    write_file(tmp_path, "Main.l", "Broken\n")
+    write_file(tmp_path, "Broken.s", _CODE)
+    (tmp_path / "Broken.s").chmod(0)
+
+    with pytest.raises(DependencyParseError):
+        _load(tmp_path)
 
 
 def test_load_unreadable_deps_file_raises(tmp_path: Path) -> None:
@@ -327,7 +475,7 @@ def test_load_debug_callback(tmp_path: Path) -> None:
 
 @contextmanager
 def _spy_on_parse(call_count: list[int]) -> Generator[None]:
-    with patch.object(project_loader, "parse_source_file", side_effect=_counting_parse(call_count)):
+    with patch.object(project_loader, "parse_source_bytes", side_effect=_counting_parse(call_count)):
         yield
 
 
@@ -390,7 +538,24 @@ def test_load_ast_cache_reparses_after_source_change(tmp_path: Path) -> None:
     assert len(call_count) == 2
 
 
-# --- Phase 4: graphics companion wiring ----------------------------------------
+def test_load_reparses_a_same_size_edit_that_keeps_the_mtime(tmp_path: Path) -> None:
+    """The cache identity is the source bytes, not the stat snapshot."""
+    source = write_file(tmp_path, "Main.s", _CODE)
+    cache_dir = tmp_path / "cache"
+    call_count: list[int] = []
+    with _spy_on_parse(call_count):
+        _load(tmp_path, cache_dir=cache_dir)
+        stat_result = source.stat()
+        edited = _CODE.replace("name: Prog", "name: Proq")
+        assert len(edited) == len(_CODE)
+        source.write_text(edited, encoding="utf-8")
+        os.utime(source, ns=(stat_result.st_atime_ns, stat_result.st_mtime_ns))
+        _load(tmp_path, cache_dir=cache_dir)
+
+    assert len(call_count) == 2
+
+
+# --- Graphics companion wiring -------------------------------------------------
 
 
 def test_load_parses_graphics_companion(tmp_path: Path) -> None:
@@ -828,6 +993,21 @@ def test_sidecar_is_not_paired_across_prefixes(tmp_path: Path) -> None:
     assert [d.path for d in stray] == [other / "Lib.l"]
 
 
+@pytest.mark.skipif(
+    os.name != "posix" or os.geteuid() == 0,
+    reason="mode bits deny reads on POSIX, and root bypasses them",
+)
+def test_an_unreadable_root_is_a_project_load_error(tmp_path: Path) -> None:
+    """A root that cannot be listed is an input problem, not an internal error."""
+    write_file(tmp_path, "Main.s", _CODE)
+    tmp_path.chmod(0o000)
+    try:
+        with pytest.raises(ProjectLoadError, match="cannot read"):
+            _load(tmp_path)
+    finally:
+        tmp_path.chmod(0o755)
+
+
 def test_missing_sidecar_is_reported_not_invented(tmp_path: Path) -> None:
     write_file(tmp_path, "Main.s", _CODE)
 
@@ -943,7 +1123,7 @@ def test_parse_code_file_reads_but_never_writes_the_ast_cache(tmp_path: Path) ->
     """A worker reads the cache and leaves every write to the parent."""
     code = write_file(tmp_path, "Cached.s", _CODE)
     cache_dir = tmp_path / "cache"
-    task = (str(code), LoadMode.DRAFT.value, str(cache_dir))
+    task = (str(code), LoadMode.DRAFT.value, str(cache_dir), True)
 
     first = project_loader._parse_code_file(task)
     second = project_loader._parse_code_file(task)
@@ -959,7 +1139,7 @@ def test_parse_code_file_reads_but_never_writes_the_ast_cache(tmp_path: Path) ->
 def test_parse_code_file_reports_a_parse_failure_as_text(tmp_path: Path) -> None:
     code = write_file(tmp_path, "Broken.s", _BROKEN)
 
-    outcome = project_loader._parse_code_file((str(code), LoadMode.DRAFT.value, None))
+    outcome = project_loader._parse_code_file((str(code), LoadMode.DRAFT.value, None, True))
 
     assert outcome.ast is None
     assert outcome.failure
@@ -968,13 +1148,13 @@ def test_parse_code_file_reports_a_parse_failure_as_text(tmp_path: Path) -> None
 def test_parse_code_file_serves_a_warm_entry_without_reparsing(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     code = write_file(tmp_path, "Cached.s", _CODE)
     cache_dir = tmp_path / "cache"
-    project_loader.FileASTCache(cache_dir).save(code, LoadMode.DRAFT.value, project_loader.parse_source_file(code))
+    project_loader.FileASTCache(cache_dir).save(code, LoadMode.DRAFT.value, parse_source_file(code))
 
     def refuse(*args: object, **kwargs: object) -> object:
         raise AssertionError("a warm entry must not be reparsed")
 
-    monkeypatch.setattr(project_loader, "parse_source_file", refuse)
-    outcome = project_loader._parse_code_file((str(code), LoadMode.DRAFT.value, str(cache_dir)))
+    monkeypatch.setattr(project_loader, "parse_source_bytes", refuse)
+    outcome = project_loader._parse_code_file((str(code), LoadMode.DRAFT.value, str(cache_dir), True))
 
     assert outcome.ast is not None
     assert outcome.cached
@@ -1015,17 +1195,21 @@ def test_a_shared_dependency_is_parsed_once(tmp_path: Path, workers: int, monkey
 
 
 @pytest.mark.parametrize(
-    ("methods", "threaded", "expected"),
+    ("methods", "threaded", "platform", "version", "expected"),
     [
-        (["fork", "spawn", "forkserver"], False, "fork"),
-        (["fork", "spawn", "forkserver"], True, "forkserver"),
-        (["fork", "spawn"], True, "spawn"),
-        (["fork"], True, "fork"),
-        ([], False, None),
+        (["fork", "spawn", "forkserver"], False, "linux", (3, 13), "fork"),
+        (["fork", "spawn", "forkserver"], True, "linux", (3, 13), "forkserver"),
+        (["fork", "spawn"], True, "linux", (3, 13), "spawn"),
+        (["fork"], True, "linux", (3, 13), None),
+        (["fork", "spawn", "forkserver"], False, "darwin", (3, 13), None),
+        (["forkserver", "spawn", "fork"], False, "linux", (3, 14), None),
+        ([], False, "linux", (3, 13), None),
     ],
 )
-def test_start_method_never_forks_a_threaded_process(methods: list[str], threaded: bool, expected: str | None) -> None:
-    assert project_loader._start_method(methods, threaded=threaded) == expected
+def test_start_method_never_forks_a_threaded_or_modern_process(
+    methods: list[str], threaded: bool, platform: str, version: tuple[int, int], expected: str | None
+) -> None:
+    assert project_loader._start_method(methods, threaded=threaded, platform=platform, version=version) == expected
 
 
 def test_a_daemonic_parent_parses_in_process(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -1052,8 +1236,8 @@ def test_parse_code_file_returns_a_cached_body_without_parsing(tmp_path: Path, m
     def no_parse(*args: object, **kwargs: object) -> None:
         raise AssertionError("a cached body must not be parsed again")
 
-    monkeypatch.setattr(project_loader, "parse_source_file", no_parse)
-    outcome = project_loader._parse_code_file((str(code), LoadMode.DRAFT.value, str(cache_dir)))
+    monkeypatch.setattr(project_loader, "parse_source_bytes", no_parse)
+    outcome = project_loader._parse_code_file((str(code), LoadMode.DRAFT.value, str(cache_dir), True))
 
     assert outcome.ast is not None and outcome.failure is None
 
@@ -1102,7 +1286,7 @@ def test_a_cache_write_failure_does_not_fail_a_parallel_load(tmp_path: Path, mon
         mode: str,
         ast: BasePicture,
         *,
-        snapshot: tuple[int, int] | None = None,
+        snapshot: SourceSnapshot | None = None,
     ) -> None:
         raise OSError("disk full")
 
@@ -1121,7 +1305,7 @@ def test_a_parallel_save_records_the_snapshot_the_worker_parsed(
     write_file(tmp_path, "Lib.s", _CODE)
     write_file(tmp_path, "Main.s", _CODE)
     write_file(tmp_path, "Main.l", "Lib\n")
-    seen: list[tuple[int, int] | None] = []
+    seen: list[SourceSnapshot | None] = []
     real_save = FileASTCache.save
 
     def recording_save(
@@ -1130,7 +1314,7 @@ def test_a_parallel_save_records_the_snapshot_the_worker_parsed(
         mode: str,
         ast: BasePicture,
         *,
-        snapshot: tuple[int, int] | None = None,
+        snapshot: SourceSnapshot | None = None,
     ) -> None:
         seen.append(snapshot)
         real_save(self, code_path, mode, ast, snapshot=snapshot)
@@ -1155,7 +1339,7 @@ def test_a_warm_parallel_load_does_not_rewrite_cached_bodies(tmp_path: Path, mon
         mode: str,
         ast: BasePicture,
         *,
-        snapshot: tuple[int, int] | None = None,
+        snapshot: SourceSnapshot | None = None,
     ) -> None:
         saves.append(code_path)
 
@@ -1169,8 +1353,8 @@ def test_a_warm_parallel_load_does_not_rewrite_cached_bodies(tmp_path: Path, mon
 def test_a_body_that_changes_during_the_parse_is_not_cached(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     write_file(tmp_path, "Main.s", _CODE)
 
-    def stale_snapshot(_path: Path) -> tuple[int, int]:
-        return (0, 0)
+    def stale_snapshot(_path: Path, _raw_bytes: bytes | None = None) -> SourceSnapshot:
+        return SourceSnapshot(mtime_ns=0, size=0, sha256="0" * 64)
 
     monkeypatch.setattr(project_loader, "source_snapshot", stale_snapshot)
 
@@ -1266,7 +1450,10 @@ _RECORD_TYPE = (
 
 
 def _two_roots_with_a_shared_unit(tmp_path: Path) -> tuple[Path, Path]:
-    """Two roots, each with its own ``Util`` body, and one consumer per root."""
+    """Two roots, each with its own ``Util`` body, and one consumer per root.
+
+    The two ``Util`` bodies differ: only the first root's declares ``SharedType``.
+    """
     first = tmp_path / "r1"
     second = tmp_path / "r2"
     write_file(first, "Util.s", _source("Util", typedefs=_RECORD_TYPE))
@@ -1281,49 +1468,30 @@ def _two_roots_with_a_shared_unit(tmp_path: Path) -> tuple[Path, Path]:
     return first, second
 
 
-def test_a_same_named_unit_in_two_roots_is_not_served_to_the_other_requester(tmp_path: Path) -> None:
-    """Each requester is validated against the body its own lookup resolved."""
+def test_a_same_named_unit_in_two_roots_resolves_to_the_first_root(tmp_path: Path) -> None:
+    """Earlier roots win; the later body is never planned, parsed, or validated."""
     first, second = _two_roots_with_a_shared_unit(tmp_path)
 
     project = SattLineProject.load([first, second], LoadMode.DRAFT, ["Main1", "Main2"])
 
     assert set(project.programs()) == {"main1", "main2", "util"}
-    # Main1's Util declares SharedType; Main2's does not.
+    assert project.get("Util").resolved_base == first.resolve()
+    # Both consumers validate against the first root's Util, which declares
+    # SharedType, so neither reports an unknown datatype.
     assert project.get("Main1").diagnostics == ()
-    assert [diagnostic.code.value for diagnostic in project.get("Main2").diagnostics] == ["SL-V020"]
+    assert project.get("Main2").diagnostics == ()
 
 
-@pytest.mark.parametrize("targets", [("Main1", "Main2"), ("Main2", "Main1")])
-def test_a_shared_unit_name_conflict_is_reported_whatever_the_target_order(
-    tmp_path: Path, targets: tuple[str, str]
-) -> None:
+@pytest.mark.parametrize("first_named", ["first", "second"])
+def test_root_order_decides_which_same_named_body_wins(tmp_path: Path, first_named: str) -> None:
     first, second = _two_roots_with_a_shared_unit(tmp_path)
+    roots = [first, second] if first_named == "first" else [second, first]
+    winning = roots[0]
 
-    project = SattLineProject.load([first, second], LoadMode.DRAFT, targets)
+    project = SattLineProject.load(roots, LoadMode.DRAFT, ["Main1", "Main2"])
 
-    conflicts = [d for d in project.diagnostics() if d.kind is LoadDiagnosticKind.NAME_RESOLUTION_CONFLICT]
-    assert len(conflicts) == 1
-    assert str((first / "Util.s").resolve()) in conflicts[0].detail
-    assert str((second / "Util.s").resolve()) in conflicts[0].detail
-    # The registry exposes the body the first requester resolved.
-    expected_base = first.resolve() if targets[0] == "Main1" else second.resolve()
-    assert project.get("Util").resolved_base == expected_base
-
-
-@pytest.mark.parametrize(
-    ("targets", "expected_base"),
-    [(("Main2", "Util"), "second"), (("Util", "Main2"), "first")],
-)
-def test_a_shared_unit_that_is_also_a_target_keeps_the_first_resolution(
-    tmp_path: Path, targets: tuple[str, str], expected_base: str
-) -> None:
-    """The exposed body is the one the first requested target resolved."""
-    first, second = _two_roots_with_a_shared_unit(tmp_path)
-
-    project = SattLineProject.load([first, second], LoadMode.DRAFT, targets)
-
-    expected = first if expected_base == "first" else second
-    assert project.get("Util").resolved_base == expected.resolve()
+    assert project.get("Util").resolved_base == winning.resolve()
+    assert project.get("Util").source_path == winning / "Util.s"
 
 
 def _datecode_moduletype(datecode: int) -> str:

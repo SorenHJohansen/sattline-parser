@@ -1,5 +1,5 @@
 # pyright: reportPrivateUsage=false
-"""Phase C: project load validation, provenance, datecodes, and cycles."""
+"""Project load validation, provenance, datecodes, and cycles."""
 
 from __future__ import annotations
 

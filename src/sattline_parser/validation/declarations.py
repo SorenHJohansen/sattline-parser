@@ -24,6 +24,7 @@ from sattline_parser.models.ast_model import (
     ModuleCode,
     ModuleHeader,
     ModuleTypeInstance,
+    ScalarDatatype,
     SFCAlternative,
     SFCBodyItem,
     SFCParallel,
@@ -31,7 +32,6 @@ from sattline_parser.models.ast_model import (
     SFCSubsequence,
     SFCTransition,
     SFCTransitionSub,
-    Simple_DataType,
     SingleModule,
     SourceSpan,
     Variable,
@@ -43,7 +43,7 @@ from sattline_parser.validation.diagnostics import Diagnostic, DiagnosticCode
 Submodule = SingleModule | FrameModule | ModuleTypeInstance
 
 # Datatype names the SattLine language accepts that are not modelled as
-# Simple_DataType nor declared via TYPEDEFINITIONS. GroupData is the reserved
+# ScalarDatatype nor declared via TYPEDEFINITIONS. GroupData is the reserved
 # scan-group connection type used by module definitions with a GroupConn tail.
 #: System datatypes the language accepts without a local definition and without a
 #: field table. Every other system datatype resolves through
@@ -131,14 +131,14 @@ def check_identifiers(bp: BasePicture, errors: list[Diagnostic]) -> None:
         check_identifier(moduletype.name, "Moduletype", moduletype.declaration_span, errors)
         _check_variable_names(moduletype.moduleparameters, errors)
         _check_variable_names(moduletype.localvariables, errors)
-        for modulecode in moduletype.modulecodes:
-            _check_modulecode_identifiers(modulecode, errors)
+        if moduletype.modulecode is not None:
+            _check_modulecode_identifiers(moduletype.modulecode, errors)
         for submodule in moduletype.submodules:
             _check_submodule_identifiers(submodule, errors)
     _check_variable_names(bp.moduleparameters, errors)
     _check_variable_names(bp.localvariables, errors)
-    for modulecode in bp.modulecodes:
-        _check_modulecode_identifiers(modulecode, errors)
+    if bp.modulecode is not None:
+        _check_modulecode_identifiers(bp.modulecode, errors)
     for submodule in bp.submodules:
         _check_submodule_identifiers(submodule, errors)
 
@@ -157,8 +157,8 @@ def _check_submodule_identifiers(submodule: Submodule, errors: list[Diagnostic])
     # module, so its identifiers are checked the same way.
     _check_variable_names(submodule.moduleparameters, errors)
     _check_variable_names(submodule.localvariables, errors)
-    for modulecode in submodule.modulecodes:
-        _check_modulecode_identifiers(modulecode, errors)
+    if submodule.modulecode is not None:
+        _check_modulecode_identifiers(submodule.modulecode, errors)
     for nested in submodule.submodules:
         _check_submodule_identifiers(nested, errors)
 
@@ -293,7 +293,7 @@ def _check_datatype_reference(
     *,
     allow_unresolved_external_datatypes: bool = False,
 ) -> None:
-    if isinstance(variable.datatype, Simple_DataType):
+    if isinstance(variable.datatype, ScalarDatatype):
         return
     name = variable.datatype_text
     folded = fold_identifier(name)

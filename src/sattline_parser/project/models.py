@@ -1,8 +1,9 @@
-"""Domain model for the SattLine project/artifact layer (Phase 1 skeleton).
+"""Domain model for the SattLine project/artifact layer.
 
 LoadMode, ProgramFormat, the graphics companion model, SattLineProgram, and the
 DependencyGraph are pure value types. They carry no I/O or loading logic; the
-artifact-discovery rules and loading behavior land in later phases.
+discovery rules live in :mod:`sattline_parser.project.formats` and the loading
+behavior in :mod:`sattline_parser.project.loader`.
 """
 
 from __future__ import annotations
@@ -165,10 +166,6 @@ class LoadDiagnosticKind(StrEnum):
     #: A sidecar sits beside the body but belongs to the other artifact family,
     #: for example a ``.z`` beside a ``.s`` body. It is never paired.
     SIDECAR_FAMILY_MISMATCH = "sidecar-family-mismatch"
-    #: One folded name resolved to different bodies for different requesters,
-    #: for example ``Util`` in two roots. Both bodies load, but the project
-    #: registry can only expose one program per name.
-    NAME_RESOLUTION_CONFLICT = "name-resolution-conflict"
 
 
 @dataclass(frozen=True, slots=True)
@@ -240,11 +237,11 @@ class SattLineProgram:
     picture, ``graphics`` the parsed companion file (``None`` when absent),
     ``dependencies`` the declared dependency program names, and ``format`` the
     concrete artifact combination this program resolved to. ``dependencies``
-    keeps the declared spelling and order; the loader keeps the resolved body
-    for each edge internally, because one name may resolve to different bodies
-    for different requesters. ``source_path`` is the resolved code file, exposed
-    as provenance for consumer-side diagnostics and indexing; the artifact paths
-    themselves remain on ``format`` and are otherwise internal to the loader.
+    keeps the declared spelling and order. One path order resolves every name,
+    so the loader keeps one resolved body per name. ``source_path`` is the
+    resolved code file, exposed as provenance for consumer-side diagnostics and
+    indexing; the artifact paths themselves remain on ``format`` and are
+    otherwise internal to the loader.
 
     ``library`` is the name of the root directory that resolved the body, and
     ``resolved_base`` is that directory. ``diagnostics`` holds this program's

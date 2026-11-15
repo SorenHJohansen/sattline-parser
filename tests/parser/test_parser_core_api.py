@@ -67,6 +67,22 @@ ENDDEF (*BasePicture*);
     assert bp.name == "BasePicture"
 
 
+def test_source_text_for_parse_returns_the_text_the_parser_takes(tmp_path):
+    code = (
+        '"Syntax version 2.23, date: 2026-04-30-00:00:00.000 N"\n'
+        '"Original file date: ---"\n'
+        '"Program date: 2026-04-30-00:00:00.000, name: Plain"\n'
+        "BasePicture Invocation ( 0.0 , 0.0 , 0.0 , 1.0 , 1.0 ) : MODULEDEFINITION DateCode_ 1\n"
+        "ModuleDef\n"
+        "ClippingBounds = ( -1.0 , -1.0 ) ( 1.0 , 1.0 )\n"
+        "ENDDEF (*BasePicture*);\n"
+    )
+    source_file = tmp_path / "Plain.s"
+    source_file.write_bytes(code.encode("cp1252"))
+
+    assert parser_api.source_text_for_parse(source_file) == code
+
+
 def test_parser_core_reuses_default_parser(monkeypatch):
     code = """
 "SyntaxVersion"
@@ -380,6 +396,18 @@ def test_private_cache_dir_tightens_existing_permissions(tmp_path):
     assert parser_api.private_cache_dir(directory) == directory
     if os.name == "posix":
         assert directory.stat().st_mode & 0o777 == 0o700
+
+
+def test_private_cache_dir_without_getuid_accepts_any_real_directory(monkeypatch, tmp_path):
+    # The documented Windows limitation: there is no POSIX owner or mode to
+    # check, so only the real-directory test applies. Keep the default cache
+    # under the user profile and do not point --cache-dir at a shared path.
+    monkeypatch.setattr(parser_api, "_getuid", None)
+    directory = tmp_path / "shared-cache"
+    directory.mkdir()
+    directory.chmod(0o777)
+
+    assert parser_api.private_cache_dir(directory) == directory
 
 
 def test_private_cache_dir_rejects_a_foreign_owner(monkeypatch, tmp_path):

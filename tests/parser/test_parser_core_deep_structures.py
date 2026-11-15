@@ -166,7 +166,8 @@ def test_chain_boundary_is_exact_and_near_cap_consumers_work() -> None:
 
     assert bp == same
     assert repr(bp)
-    equations = bp.modulecodes[0].equationblocks
+    assert bp.modulecode is not None
+    equations = bp.modulecode.equationblocks
     assert equations is not None
     assert format_expr(equations[0].code[0])
     assert pickle.loads(pickle.dumps(bp)) == bp

@@ -116,6 +116,42 @@ def test_diff_reports_structural_count_changes(tmp_path, capsys) -> None:
     assert "~ equationblocks: 0 -> 1" in capsys.readouterr().out
 
 
+_NESTED_CHILD = (
+    "SUBMODULES\n"
+    "   Child Invocation ( 0.1 , 0.1 , 0.0 , 0.4 , 0.4 ) : MODULEDEFINITION DateCode_ 1\n"
+    "   ModuleDef\n"
+    "   ClippingBounds = ( -1.0 , -1.0 ) ( 1.0 , 1.0 )\n"
+    "{code_block}"
+    "   ENDDEF (*Child*);\n"
+)
+
+_NESTED_SEQUENCE = (
+    "   ModuleCode\n"
+    "      SEQUENCE Inner COORD 0.0, 0.0 OBJSIZE 1.0, 1.0\n"
+    "         SEQINITSTEP Init\n"
+    "         SEQTRANSITION Tr WAIT_FOR True\n"
+    "      ENDSEQUENCE\n"
+)
+
+
+def test_diff_reports_a_nested_only_sequence_change(tmp_path, capsys) -> None:
+    """A sequence added inside a submodule is a count change, not a silent pass."""
+    root = "ModuleDef\nClippingBounds"
+    old = write_source(tmp_path, "Old.s", VALID_SOURCE.replace(root, _NESTED_CHILD.format(code_block="") + root))
+    new = write_source(
+        tmp_path,
+        "New.s",
+        VALID_SOURCE.replace(root, _NESTED_CHILD.format(code_block=_NESTED_SEQUENCE) + root),
+    )
+
+    assert main(["diff", str(old), str(new), "--json"]) == ExitCode.FINDINGS
+
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["findings"]["added"] == []
+    # VALID_SOURCE carries one root sequence; the child adds the second.
+    assert payload["counts"]["changed"] == {"sequences": {"old": 1, "new": 2}}
+
+
 def test_diff_reports_a_source_that_stops_parsing(tmp_path, capsys) -> None:
     old = write_source(tmp_path, "Old.s", VALID_SOURCE)
     new = write_source(tmp_path, "New.s", '"only one header"\n')
@@ -147,7 +183,7 @@ def test_corpus_summary_and_exit_codes(tmp_path, capsys) -> None:
     assert "files: 2  clean: 1  failing: 1" in out
     assert "CONSECUTIVE_SEQUENCE_STEPS: 1" in out
 
-    assert main(["corpus", str(tmp_path), "--fail-on", "never"]) == ExitCode.OK
+    assert main(["corpus", str(tmp_path), "--fail-on", "none"]) == ExitCode.OK
     capsys.readouterr()
 
     assert main(["corpus", str(tmp_path), "--jobs", "2", "--jsonl"]) == ExitCode.FINDINGS
@@ -158,10 +194,26 @@ def test_corpus_summary_and_exit_codes(tmp_path, capsys) -> None:
     assert all("warnings" not in row for row in payload["results"])
 
 
+def test_corpus_jobs_match_a_serial_run(tmp_path, capsys) -> None:
+    for index in range(6):
+        write_source(
+            tmp_path,
+            f"Unit{index}.s",
+            VALID_SOURCE if index % 2 else CONSECUTIVE_STEPS_SOURCE,
+        )
+
+    assert main(["corpus", str(tmp_path), "--jobs", "1", "--json"]) == ExitCode.FINDINGS
+    serial = json.loads(capsys.readouterr().out)
+    assert main(["corpus", str(tmp_path), "--jobs", "4", "--json"]) == ExitCode.FINDINGS
+    threaded = json.loads(capsys.readouterr().out)
+
+    assert threaded == serial
+
+
 def test_corpus_rejects_removed_fail_on_values(tmp_path, capsys) -> None:
     write_source(tmp_path, "Clean.s", VALID_SOURCE)
 
-    for value in ("warning", "any"):
+    for value in ("warning", "any", "never"):
         assert main(["corpus", str(tmp_path), "--fail-on", value]) == ExitCode.USAGE
         assert "expected one of" in capsys.readouterr().err
 
@@ -185,3 +237,6 @@ def test_corpus_needs_a_directory(tmp_path, capsys) -> None:
 
     assert main(["corpus", str(tmp_path), "--jobs", "many"]) == ExitCode.USAGE
     assert "expected an integer" in capsys.readouterr().err
+
+    assert main(["corpus", str(tmp_path), "--jobs", "1000"]) == ExitCode.USAGE
+    assert "or less" in capsys.readouterr().err

@@ -5,15 +5,16 @@ Split into responsibility-based mixins for maintainability.
 
 from __future__ import annotations
 
-from typing import Any, TypeGuard, cast
+from typing import Any, TypeGuard
 
 from lark import Tree
 from lark.visitors import Transformer_NonRecursive
 
 from sattline_parser.models.ast_model import BasePicture
+from sattline_parser.models.header import HeaderInfo
 
 from . import _module_shared as _module_shared
-from ._comments_mixin import CommentsMixin
+from ._comments_mixin import CommentsMixin, build_code_comment
 from ._expressions_mixin import ExpressionsMixin
 from ._graphics_interact_mixin import GraphicsInteractMixin
 from ._module_assembly_mixin import ModuleAssemblyMixin
@@ -45,25 +46,23 @@ def _iter_tree_children(node: object) -> tuple[TransformerItem, ...]:
     return tuple(tree_children(node))
 
 
-def _strip_quoted(text: str) -> str:
-    """Remove wrapping double quotes and unescape doubled inner quotes."""
-    if len(text) >= 2 and text.startswith('"') and text.endswith('"'):
-        return text[1:-1].replace('""', '"').rstrip("\n")
-    return text
+def _header_line_text(tree: TransformerTree) -> str:
+    """The unquoted text of one ``syntax_version_line``-style header tree.
+
+    ``TokensMixin.STRING`` already strips the quotes, so the child is a plain
+    ``str`` here even though the parse tree holds a ``STRING`` token.
+    """
+    for child in _iter_tree_children(tree):
+        if isinstance(child, str):
+            return str(child)
+    return ""
 
 
-def _extract_program_name_from_header_lines(tree: TransformerTree) -> str | None:
-    """Extract program name from the program_date_line header string."""
+def _header_description(tree: TransformerTree) -> Any:
+    """The ``CodeComment`` a ``change_description`` tree carries, when present."""
     for child in tree_children(tree):
-        if _is_tree(child) and child.data == "program_date_line":
-            for token in _iter_tree_children(child):
-                raw = _strip_quoted(str(token))
-                for field in raw.split(","):
-                    name, separator, value = field.partition(":")
-                    if separator and name.strip().casefold() == "name":
-                        program_name = value.strip()
-                        if program_name:
-                            return program_name
+        if _is_tree(child) and child.data == "comment":
+            return build_code_comment(child)
     return None
 
 
@@ -97,17 +96,37 @@ class SLTransformer(
     def __init__(self) -> None:
         super().__init__()
 
+    def header_lines(self, items: list[TransformerItem]) -> HeaderInfo:
+        """Grammar header_lines -> the three quoted lines and the description."""
+        lines: dict[str, str] = {}
+        description: Any = None
+        for item in items:
+            if not _is_tree(item):
+                continue
+            tree = item
+            if tree.data == "change_description":
+                description = _header_description(tree)
+            else:
+                lines[str(tree.data)] = _header_line_text(tree)
+        return HeaderInfo(
+            syntax_version_line=lines.get("syntax_version_line", ""),
+            original_file_date_line=lines.get("original_file_date_line", ""),
+            program_date_line=lines.get("program_date_line", ""),
+            description=description,
+        )
+
     def start(self, items: list[TransformerItem]) -> BasePicture:
         """Grammar start -> BasePicture root from parsed program."""
-        program_name: str | None = None
+        header_info: HeaderInfo | None = None
         base_picture: BasePicture | None = None
         for item in items:
-            if isinstance(item, Tree) and item.data == "header_lines":
-                program_name = _extract_program_name_from_header_lines(cast(TransformerTree, item))
+            if isinstance(item, HeaderInfo):
+                header_info = item
             elif isinstance(item, BasePicture):
                 base_picture = item
         if base_picture is not None:
-            base_picture.program_name = program_name
+            base_picture.header_info = header_info
+            base_picture.program_name = None if header_info is None else header_info.program_name
             return base_picture
         types = ", ".join(type(item).__name__ for item in items)
         raise ValueError(f"start expected a BasePicture; got: {types}")

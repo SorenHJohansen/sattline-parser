@@ -11,9 +11,11 @@ from sattline_parser import NodeVisitor, parse_source_file, walk
 from sattline_parser.models import ast_model, clauses, expressions, iter_child_nodes, tails
 from sattline_parser.models import ast_model as m
 from sattline_parser.models.clauses import (
+    Alignment,
     ColourSpec,
     EnableClause,
     FlagClause,
+    PolygonPoint,
     TailedClause,
 )
 from sattline_parser.models.expressions import (
@@ -29,6 +31,7 @@ from sattline_parser.models.expressions import (
     UnaryOp,
     VarRef,
 )
+from sattline_parser.models.header import HeaderInfo
 from sattline_parser.models.properties import GraphProperties, InteractProperties
 from sattline_parser.models.tails import LitStringTail, VarTail
 from sattline_parser.models.walk import (
@@ -293,6 +296,55 @@ def test_walk_visits_interact_clause_and_body_tails_once() -> None:
     assert not any(event.relation.startswith("properties.tails") for event in events)
 
 
+def test_walk_visits_polygon_points_and_text_clauses_once() -> None:
+    """A point's tails and a text clause's tail are each emitted through their owner."""
+    point_tail = VarRef("PointVar")
+    width_tail = VarRef("WidthVar")
+    point = PolygonPoint(0.0, 1.0, y_tails=(point_tail,))
+    width = TailedClause(key="Width_", value=4, tail=width_tail)
+    anchor = m.GraphObject("ConnectionNode", properties={"coords": (0.5, 0.5)})
+    graph_object = m.GraphObject(
+        "TextObject",
+        properties={
+            "points": [point],
+            "width": width,
+            "connection_node": anchor,
+            "alignments": [Alignment("left")],
+            "tails": [point_tail, width_tail],
+        },
+    )
+
+    events = list(walk(graph_object))
+    relations = [event.relation for event in events]
+
+    assert [event.relation for event in events if event.node is point] == ["properties.points[0]"]
+    assert [event.relation for event in events if event.node is point_tail] == ["y_tails[0]"]
+    assert [event.relation for event in events if event.node is width_tail] == ["tail"]
+    assert [event.relation for event in events if event.node is anchor] == ["properties.connection_node"]
+    assert "properties.alignments[0]" in relations
+    assert not any(relation.startswith("properties.tails") for relation in relations)
+
+
+def test_walk_reaches_the_header_metadata() -> None:
+    description = m.CodeComment("(* changed *)")
+    header_info = HeaderInfo(
+        syntax_version_line="Syntax version 2.23, date: 2026-04-30-00:00:00.000 N",
+        original_file_date_line="Original file date: ---",
+        program_date_line="Program date: 2026-04-30-00:00:00.000, name: Header",
+        description=description,
+    )
+    picture = m.BasePicture(
+        header=m.ModuleHeader(name="BasePicture", invoke_coord=(0.0, 0.0, 0.0, 1.0, 1.0)),
+        header_info=header_info,
+    )
+
+    relations = [event.relation for event in walk(picture)]
+
+    assert "header_info" in relations
+    assert "description" in relations
+    assert [event.relation for event in walk(header_info) if event.node is description] == ["description"]
+
+
 def test_walk_visits_module_def_clipping_tails_once() -> None:
     tail = VarRef("Source")
     module_def = m.ModuleDef(
@@ -515,7 +567,16 @@ def test_walk_property_order_covers_every_typed_dict_key() -> None:
 
 
 def test_walk_property_order_keeps_tails_after_clause_owners() -> None:
-    graph_owners = {"colours", "enable_tail"}
+    graph_owners = {
+        "colours",
+        "enable_tail",
+        "width",
+        "value_fraction",
+        "format_string",
+        "alignments",
+        "connection_node",
+        "points",
+    }
     interact_owners = {"procedure", "assigns", "enables", "flags", "colours", "body"}
 
     assert _GRAPH_PROPERTY_ORDER.index("tails") > max(_GRAPH_PROPERTY_ORDER.index(key) for key in graph_owners)
@@ -622,11 +683,11 @@ def test_every_exported_dataclass_node_is_in_the_walker_registry() -> None:
 
 def test_iter_child_nodes_labels_a_sequence_by_index() -> None:
     picture = _picture()
-    children = list(iter_child_nodes(picture.modulecodes))
+    children = list(iter_child_nodes(picture.submodules))
 
     assert children
     assert children[0][0] == "[0]"
-    assert children[0][1] is picture.modulecodes[0]
+    assert children[0][1] is picture.submodules[0]
 
 
 def test_iter_child_nodes_skips_non_nodes() -> None:

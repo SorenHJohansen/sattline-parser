@@ -687,6 +687,33 @@ def parse_and_validate(
     return basepic, validate_basepicture(basepic)
 
 
+def parse_source_bytes(
+    raw_bytes: bytes,
+    *,
+    parser: Lark | None = None,
+    transformer: SLTransformer | None = None,
+    debug: Callable[[str], None] | None = None,
+    source_path: Path | None = None,
+    log_failures: bool = True,
+) -> BasePicture:
+    """Parse source bytes that the caller already read.
+
+    :func:`parse_source_file` reads the file itself. This entry point exists for
+    a caller that must keep the exact bytes it parses, such as the project
+    cache, which identifies a cached AST by the digest of those bytes. Decoding
+    and provenance are identical, and *source_path* only labels the source.
+    """
+    text = decode_source_bytes(raw_bytes, debug=debug, source_path=source_path, log_failures=log_failures)
+    return parse_source_text(
+        text,
+        parser=parser,
+        transformer=transformer,
+        debug=debug,
+        source_path=source_path,
+        log_failures=log_failures,
+    )
+
+
 def parse_source_file(
     code_path: Path,
     *,
@@ -699,11 +726,10 @@ def parse_source_file(
     if debug is not None:
         debug(f"Parsing file: {source_path}")
     # Read the raw file (byte-coded, compressed or strict Windows-1252) and hand
-    # the resulting text to parse_source_text so compression/decoding and source
+    # the resulting bytes to parse_source_bytes so compression/decoding and source
     # provenance happen exactly once and consistently with parse_source_text().
-    raw = source_text_for_parse(source_path, debug=debug, log_failures=log_failures)
-    return parse_source_text(
-        raw,
+    return parse_source_bytes(
+        source_path.read_bytes(),
         parser=parser,
         transformer=transformer,
         debug=debug,

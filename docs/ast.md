@@ -13,6 +13,7 @@ classDiagram
         header: ModuleHeader
         name: str
         program_name: str | None
+        header_info: HeaderInfo | None
         position: tuple | None
         datatype_defs: list[DataType]
         moduletype_defs: list[ModuleTypeDef]
@@ -21,12 +22,17 @@ classDiagram
         submodules: list
         moduledef: ModuleDef | None
         modulecode: ModuleCode | None
-        moduledefs: list[ModuleDef]
-        modulecodes: list[ModuleCode]
         origin_file: str | None
         origin_lib: str | None
         trailing_comments: list[CodeComment]
         datecode: int | None
+    }
+
+    class HeaderInfo {
+        syntax_version_line: str
+        original_file_date_line: str
+        program_date_line: str
+        description: CodeComment | None
     }
 
     class ModuleHeader {
@@ -48,8 +54,6 @@ classDiagram
         submodules: list
         moduledef: ModuleDef | None
         modulecode: ModuleCode | None
-        moduledefs: list[ModuleDef]
-        modulecodes: list[ModuleCode]
         parametermappings: list[ParameterMapping]
         trailing_comments: list[CodeComment]
     }
@@ -62,8 +66,6 @@ classDiagram
         submodules: list
         moduledef: ModuleDef | None
         modulecode: ModuleCode | None
-        moduledefs: list[ModuleDef]
-        modulecodes: list[ModuleCode]
         trailing_comments: list[CodeComment]
     }
 
@@ -82,8 +84,6 @@ classDiagram
         submodules: list
         moduledef: ModuleDef | None
         modulecode: ModuleCode | None
-        moduledefs: list[ModuleDef]
-        modulecodes: list[ModuleCode]
         groupconn: VarRef | None
         groupconn_global: bool
         origin_file: str | None
@@ -106,8 +106,11 @@ classDiagram
 ```
 
 A `submodules` list holds `SingleModule`, `FrameModule`, and
-`ModuleTypeInstance` values. `moduledef` and `modulecode` are read-only views
-over the last entry of `moduledefs` and `modulecodes`; they are not fields.
+`ModuleTypeInstance` values. `moduledef` and `modulecode` are plain optional
+fields: a parsed module body always carries one `ModuleDef` and may carry one
+`ModuleCode`. The grammar rejects a second block before the closing `ENDDEF`, so
+there is nothing to collect in a list. `None` appears only on a synthetic view
+such as an empty picture or a dependency stub.
 
 `ModuleHeader.arguments` is the canonical invocation argument list: layer,
 `Enable_`, `Module_In_View`, zoom limits and the `Zoomable` marker, marker
@@ -116,21 +119,13 @@ arguments, and `Name = value` assignments. The singular names `layer_info`,
 `invocation_arguments` are read-only views over that field. `invoke_coord_tails`
 holds only the tails attached to the five invocation coordinates.
 
-### Why `moduledefs` and `modulecodes` are lists
-
-Legacy coded files repeat one `ModuleDef ... [ModuleCode ...] ENDDEF` block per
-layer. A single `moduledef` field would silently drop all but the last block.
-The AST therefore keeps every block in source order in `moduledefs` and
-`modulecodes`, while `moduledef` and `modulecode` expose the last block as a
-convenience view. Nothing is lost.
-
 ## Declarations
 
 ```mermaid
 classDiagram
     class Variable {
         name: str
-        datatype: Simple_DataType | str
+        datatype: ScalarDatatype | str
         global_var: bool | None
         const: bool | None
         state: bool | None
@@ -169,18 +164,20 @@ classDiagram
     ParameterMapping --> VarRef
 ```
 
-`Variable.datatype` is normalized at construction. A recognized builtin name
-becomes a `Simple_DataType` member through `fold_identifier`, so `INTEGER`,
-`Integer`, and `integer` are one datatype. An unrecognized name stays a `str`,
-which is how a user-defined record type is represented.
+`Variable.datatype` is normalized at construction. A recognized scalar name
+becomes a `ScalarDatatype` member through `fold_identifier`, so `INTEGER`,
+`Integer`, and `integer` are one datatype. Every other name stays a `str`:
+that is how a user-defined record type is represented, and `AnyType` stays a
+string too. It is a wildcard the validator resolves, not a scalar value, so it
+is not a member of the enum.
 
 `Variable.datatype_text` is the only safe accessor for the written datatype
 name. It returns the enum member's value for a builtin and the string itself for
 a user-defined record, so a consumer compares through `datatype_text` rather
 than against the raw union field.
 
-`Simple_DataType` is a plain `Enum`, while `MappingSource` is a `StrEnum`. The
-asymmetry is deliberate. `Simple_DataType` members are language datatypes and
+`ScalarDatatype` is a plain `Enum`, while `MappingSource` is a `StrEnum`. The
+asymmetry is deliberate. `ScalarDatatype` members are language datatypes and
 must not compare equal to arbitrary strings. A `MappingSource` member is part of
 the parsed spelling (`"variable_name"` or `"value"`) and is stored as that
 string. Neither type should be converted to the other style.
@@ -191,6 +188,13 @@ order matters: `State OpSave` is valid, while `OpSave State` and
 
 `datecode` is `None` when the source omitted it. The parser never stamps an
 import date or invents a default. Stamping is a separate consumer operation.
+
+`BasePicture.header_info` holds the three quoted header lines as written and the
+optional change description comment. `program_name` is the convenience view
+over the `name:` field of the program date line, matched case-insensitively.
+`HeaderInfo` reads the written syntax version, original file date, and program
+date as properties. A line it does not recognise keeps its text and yields
+`None` for the field it lacks; the parser never rejects a header for its shape.
 
 `ParameterMapping.source_type` is a `MappingSource` member: `VARIABLE` for a
 variable or dotted field reference, `VALUE` for a literal or a
@@ -254,8 +258,11 @@ classDiagram
     Equation --> CodeItem
 ```
 
-`Equation.kind` is `"equationblock"` or `"equations"`. The two keywords are
+`ModuleCode.equationblocks` holds the `Equation` nodes, in source order, and the
+same name is the JSON count key. `Equation.kind` is `"equationblock"` or
+`"equations"`, because the rule accepts both keywords. The two spellings are
 kept distinct; their effect is not modelled, so only the spelling is preserved.
+`"equations"` here is a keyword value, not a second field.
 
 `Sequence.layer_info` and `Equation.layer_info` keep the `Layer_ = <int>` value
 written after the `OBJSIZE` pair. The drawing effect is not modelled, but the
@@ -281,16 +288,46 @@ for consumers that already hold a binding. See [graphics.md](graphics.md).
 `InteractProperties.body` is `list[InteractBodyEntry] | None`, in source order.
 `InteractBodyEntry` is the closed union of what a body line can produce:
 `int` for `Layer_`, `Tail` for a literal or a bound/computed tail, `Alignment`
-for `LeftAligned`/`RightAligned`, and the typed clauses (`EnableClause`,
+for `LeftAligned`/`CenterAligned`/`RightAligned`, and the typed clauses (`EnableClause`,
 `AssignClause`, `FlagClause`, `TailedClause`, `ColourSpec`, `PickButton`,
 `ScaleSelector`). Preserved comments are `CodeComment` values. No Lark tree
 reaches a caller, so a consumer reads body entries directly instead of
 unwrapping a grammar node.
 
+A `GraphObject` keeps the geometry its source spells, keyed by spelling rather
+than by drawing effect:
+
+| Key | Node type | Source |
+| --- | --- | --- |
+| `coords` | `tuple` pair or box | a box object's `(x, y) (w, h)` pairs |
+| `segment_point` | `tuple` pair | a `SegmentObject`'s third pair |
+| `polygon_type` | `list[str]` | `Polyline`, `Spline`, `Connection` |
+| `points` | `list[PolygonPoint]` | every polygon coordinate pair |
+| `tails` | `list[Tail]` | the flat view of every tail the object carried |
+| `text_vars` | `list[VarRef]` | a text object's `VarName` labels |
+| `width`, `value_fraction`, `format_string` | `TailedClause` | the text object's `Width_`, `ValueFraction`, `Format_String_` clauses |
+| `alignments` | `list[Alignment]` | `LeftAligned`, `CenterAligned`, `RightAligned` |
+| `connection_node` | `GraphObject` | a text object's `ConnectionNode (x, y)` anchor |
+| `enable`, `enable_tail` | `bool`, `Tail` | `Enable_ = ...` and its binding |
+| `colours` | `list[ColourSpec]` | the outline and fill blocks |
+| `layer` | `int` | `Layer_ = <int>` |
+
+A `PolygonPoint` holds `x`, `y`, `x_tails`, and `y_tails`, so a tail written
+after one value stays attached to that value. A polygon whose coordinate carries
+a nested `ClippingBounds` annotation folds that annotation's tails into the same
+coordinate. The flat `tails` view lists the same tail objects, never copies.
+
+A text-object clause keeps its value and its tail in one payload, so a literal
+and its `InVar_` binding are read together. Compare a clause by `key` and
+`value`, and read `tail` only when the binding matters.
+
 Every payload that reaches the parsed tree (the interact body clauses,
 coordinate and header tails, `ClippingClause`, `ModuleArguments`, graphics and
 interact objects, and module definitions) carries a `span`
 (`SourceSpan | None`) recording the source range of the rule that produced it.
+Two nested payloads are exceptions: a `PolygonPoint` and a text object's
+`ConnectionNode` are built without a meta span, so their `.span` is `None` for
+parsed sources.
 A span is layout metadata: it does not participate in equality, so two
 structurally identical payloads from different files compare equal. Read
 `.span` when you need the provenance. A bound tail exposes the written name
@@ -587,7 +624,7 @@ Property payloads are visited in a fixed order:
 
 | Container | Node-bearing keys, in walk order |
 | --- | --- |
-| `GraphObject` | `colours`, `enable_tail`, `tails`, `text_vars` |
+| `GraphObject` | `colours`, `enable_tail`, `width`, `value_fraction`, `format_string`, `alignments`, `connection_node`, `points`, `tails` |
 | `InteractObject` | `procedure`, `assigns`, `enables`, `flags`, `colours`, `body`, `tails` |
 
 `ModuleHeader.arguments` is walked as a node, so a consumer reaches `enable`,
@@ -616,13 +653,15 @@ A `VarTail` whose value is a `LitStringTail` is a quoted symbol, not a variable
 path, so the collector skips it.
 
 The non-node keys (`coords`, `segment_point`, `polygon_type`, `layer`, `enable`,
-and `layers`) stay in the order tuple so a new property forces a walker
-decision, but they produce no nodes.
+`text_vars`, and `layers`) stay in the order tuple so a new property forces a
+walker decision, but they produce no nodes. `text_vars` holds `VarRef` values,
+which are nodes, and the walk visits them after the clauses.
 
-The flat `properties["tails"]` list is a derived view. A tail owned by a clause
-is emitted through that clause, and only the unowned (coordinate) tails are
-emitted from the flat list. Every tail node therefore appears once, and a query
-or validation pass does not need to deduplicate shared payloads.
+The flat `properties["tails"]` list is a derived view. A tail owned by a clause,
+a polygon point, or a text-object clause is emitted through that owner, and only
+the unowned (coordinate) tails are emitted from the flat list. Every tail node
+therefore appears once, and a query or validation pass does not need to
+deduplicate shared payloads.
 
 `walk` uses an explicit stack and keeps ancestors as a persistent chain.
 `WalkEvent.parents` expands its sequence view only when read, so a deep tree is

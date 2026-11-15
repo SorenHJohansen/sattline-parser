@@ -20,8 +20,8 @@ from sattline_parser.models.ast_model import (
     ModuleTypeDef,
     ModuleTypeInstance,
     ParameterMapping,
+    ScalarDatatype,
     Sequence,
-    Simple_DataType,
     SingleModule,
     SourceSpan,
     Variable,
@@ -40,20 +40,20 @@ def test_ast_model_helpers_cover_reduce_usage_and_string_formats(monkeypatch: py
     assert span.__reduce__() == (SourceSpan, (2, 3, 1, 3))
     assert int_lit.__reduce__() == (IntLiteral, (7, span))
     assert float_lit.__reduce__() == (FloatLiteral, (2.5, span))
-    assert Simple_DataType.from_any(Simple_DataType.BOOLEAN) is Simple_DataType.BOOLEAN
+    assert ScalarDatatype.from_any(ScalarDatatype.BOOLEAN) is ScalarDatatype.BOOLEAN
     assert Variable(name="Flag", datatype="BOOLEAN").datatype_text == "boolean"
     assert Variable(name="RecordValue", datatype="CustomRecord").datatype_text == "CustomRecord"
     assert str(Variable(name="Count", datatype="integer", init_value=0)).startswith("Name: 'Count'")
 
-    with pytest.raises(TypeError, match="Expected Simple_DataType or str"):
-        Simple_DataType.from_any(cast(Any, 123))
-    with pytest.raises(TypeError, match="Expected Simple_DataType or str"):
+    with pytest.raises(TypeError, match="Expected ScalarDatatype or str"):
+        ScalarDatatype.from_any(cast(Any, 123))
+    with pytest.raises(TypeError, match="Expected ScalarDatatype or str"):
         Variable(name="Broken", datatype=cast(Any, 123))
 
     def _raise_value_error(cls, value):
         raise ValueError("bad datatype")
 
-    monkeypatch.setattr(Simple_DataType, "from_any", classmethod(_raise_value_error))
+    monkeypatch.setattr(ScalarDatatype, "from_any", classmethod(_raise_value_error))
     with pytest.raises(ValueError, match="bad datatype"):
         Variable(name="Exploded", datatype=cast(Any, object()))
 
@@ -163,11 +163,11 @@ def test_ast_model_helpers_cover_reduce_usage_and_string_formats(monkeypatch: py
     assert "EquationBlock name='EqEmpty'" in str(empty_statement_module_code)
     assert "Direct = 2" in str(direct_statement_module_code)
     assert "ClippingBounds" in str(module_def)
-    assert "SingleModule{" in str(SingleModule(header=header, moduledefs=[module_def], modulecodes=[module_code]))
-    assert "FrameModule{" in str(FrameModule(header=header, moduledefs=[module_def], modulecodes=[module_code]))
+    assert "SingleModule{" in str(SingleModule(header=header, moduledef=module_def, modulecode=module_code))
+    assert "FrameModule{" in str(FrameModule(header=header, moduledef=module_def, modulecode=module_code))
     assert "ModuleTypeInstance{" in str(child)
-    assert "ModuleType{" in str(ModuleTypeDef(name="ChildType", modulecodes=[module_code], submodules=[child]))
-    assert "BasePicture{" in str(BasePicture(header=header, moduledefs=[module_def], modulecodes=[module_code]))
+    assert "ModuleType{" in str(ModuleTypeDef(name="ChildType", modulecode=module_code, submodules=[child]))
+    assert "BasePicture{" in str(BasePicture(header=header, moduledef=module_def, modulecode=module_code))
 
 
 @pytest.mark.parametrize(
@@ -179,36 +179,26 @@ def test_ast_model_helpers_cover_reduce_usage_and_string_formats(monkeypatch: py
         lambda: BasePicture(header=_module_header("Base")),
     ],
 )
-def test_singular_block_views_are_read_only_views_of_block_lists(
+def test_module_block_fields_are_plain_optional_fields(
     factory: Callable[[], SingleModule | FrameModule | ModuleTypeDef | BasePicture],
 ) -> None:
     module = factory()
-    first_def = ModuleDef()
-    last_def = ModuleDef()
-    first_code = ModuleCode()
-    last_code = ModuleCode()
+    module_def = ModuleDef()
+    module_code = ModuleCode()
 
     field_names = {dataclass_field.name for dataclass_field in dataclasses.fields(module)}
-    assert "moduledef" not in field_names
-    assert "modulecode" not in field_names
+    assert "moduledef" in field_names
+    assert "modulecode" in field_names
+    assert "moduledefs" not in field_names
+    assert "modulecodes" not in field_names
 
     assert module.moduledef is None
     assert module.modulecode is None
 
-    module.moduledefs = [first_def]
-    module.modulecodes = [first_code]
-    assert module.moduledef is first_def
-    assert module.modulecode is first_code
-
-    module.moduledefs.append(last_def)
-    module.modulecodes.append(last_code)
-    assert module.moduledef is last_def
-    assert module.modulecode is last_code
-
-    with pytest.raises(AttributeError):
-        cast(Any, module).moduledef = first_def
-    with pytest.raises(AttributeError):
-        cast(Any, module).modulecode = first_code
+    module.moduledef = module_def
+    module.modulecode = module_code
+    assert module.moduledef is module_def
+    assert module.modulecode is module_code
 
 
 def test_datatype_string_formats_its_variables() -> None:

@@ -9,6 +9,8 @@ from sattline_parser.models.ast_model import CodeComment, SingleModule, SourceSp
 from sattline_parser.models.expressions import Assignment
 from sattline_parser.transformer._comments_mixin import build_code_comment, code_comments_from_run
 
+from ._parser_core_test_support import _repo_path
+
 
 def test_comment_run_helpers_build_code_comments():
     inner = [Token("COMMENT_START", "(*"), Token("COMMENT_TEXT", " note "), Token("COMMENT_END", "*)")]
@@ -133,6 +135,25 @@ ENDDEF (*BasePicture*);
     assert equation is not None
     comment_items = [x for x in equation.code if isinstance(x, CodeComment)]
     assert [c.text for c in comment_items] == ["(* top comment *)", "(* inline equation comment *)"]
+
+
+def test_header_metadata_is_reachable_from_the_root():
+    """Every header line and the change description reach the AST."""
+    source = _repo_path("tests", "fixtures", "corpus", "valid", "HeaderMetadata.s").read_text(encoding="utf-8")
+    bp = parser_core_parse_source_text(source)
+
+    header = bp.header_info
+    assert header is not None
+    assert header.syntax_version == "3.1"
+    assert header.original_file_date == "2026-11-15-08:00:00.000"
+    assert header.program_date == "2026-11-15-10:30:00.000"
+    # The case-insensitive ``Name:`` field still drives the convenience view.
+    assert header.program_name == "HeaderMetadata"
+    assert bp.program_name == "HeaderMetadata"
+    description = header.description
+    assert isinstance(description, CodeComment)
+    assert description.span is not None and description.span.line == 4
+    assert description.text.startswith("(* A header with every field written:")
 
 
 def test_comments_at_discard_sites_do_not_corrupt_ast():

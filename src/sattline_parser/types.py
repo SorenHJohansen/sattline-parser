@@ -15,7 +15,7 @@ import-isolation boundary: importing it still executes the validation package.
 
 from __future__ import annotations
 
-from sattline_parser.models.ast_model import Simple_DataType
+from sattline_parser.models.ast_model import ScalarDatatype
 from sattline_parser.validation.typing import (
     FieldGraph,
     FieldSpec,
@@ -49,7 +49,7 @@ from sattline_parser.validation.typing import (
 __all__ = [
     "FieldGraph",
     "FieldSpec",
-    "Simple_DataType",
+    "ScalarDatatype",
     "TypeFamily",
     "assignment_type_matches",
     "builtin_type_matches",

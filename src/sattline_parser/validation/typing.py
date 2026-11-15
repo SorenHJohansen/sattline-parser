@@ -27,7 +27,7 @@ from sattline_parser.models.ast_model import (
     DataType,
     FloatLiteral,
     IntLiteral,
-    Simple_DataType,
+    ScalarDatatype,
     Variable,
 )
 from sattline_parser.models.expressions import (
@@ -56,28 +56,28 @@ class TypeFamily(StrEnum):
     TEMPORAL = "temporal"
 
 
-#: Primitive -> family. Derived from :class:`Simple_DataType` so a future
+#: Primitive -> family. Derived from :class:`ScalarDatatype` so a future
 #: primitive cannot be silently forgotten; anything absent maps to ``None``.
-_FAMILIES: dict[Simple_DataType, TypeFamily] = {
-    Simple_DataType.INTEGER: TypeFamily.NUMERIC,
-    Simple_DataType.REAL: TypeFamily.NUMERIC,
-    Simple_DataType.BOOLEAN: TypeFamily.BOOLEAN,
-    Simple_DataType.STRING: TypeFamily.STRING,
-    Simple_DataType.IDENTSTRING: TypeFamily.STRING,
-    Simple_DataType.TAGSTRING: TypeFamily.STRING,
-    Simple_DataType.MAXSTRING: TypeFamily.STRING,
-    Simple_DataType.LINESTRING: TypeFamily.STRING,
-    Simple_DataType.TIME: TypeFamily.TEMPORAL,
-    Simple_DataType.DURATION: TypeFamily.TEMPORAL,
+_FAMILIES: dict[ScalarDatatype, TypeFamily] = {
+    ScalarDatatype.INTEGER: TypeFamily.NUMERIC,
+    ScalarDatatype.REAL: TypeFamily.NUMERIC,
+    ScalarDatatype.BOOLEAN: TypeFamily.BOOLEAN,
+    ScalarDatatype.STRING: TypeFamily.STRING,
+    ScalarDatatype.IDENTSTRING: TypeFamily.STRING,
+    ScalarDatatype.TAGSTRING: TypeFamily.STRING,
+    ScalarDatatype.MAXSTRING: TypeFamily.STRING,
+    ScalarDatatype.LINESTRING: TypeFamily.STRING,
+    ScalarDatatype.TIME: TypeFamily.TEMPORAL,
+    ScalarDatatype.DURATION: TypeFamily.TEMPORAL,
 }
 
-_STRING_SIMPLE_TYPES: frozenset[Simple_DataType] = frozenset(
+_STRING_SIMPLE_TYPES: frozenset[ScalarDatatype] = frozenset(
     {
-        Simple_DataType.IDENTSTRING,
-        Simple_DataType.TAGSTRING,
-        Simple_DataType.STRING,
-        Simple_DataType.LINESTRING,
-        Simple_DataType.MAXSTRING,
+        ScalarDatatype.IDENTSTRING,
+        ScalarDatatype.TAGSTRING,
+        ScalarDatatype.STRING,
+        ScalarDatatype.LINESTRING,
+        ScalarDatatype.MAXSTRING,
     }
 )
 
@@ -95,63 +95,63 @@ _TIME_LITERAL_RE = re.compile(r"\d{4}-\d{2}-\d{2}-\d{2}:\d{2}:\d{2}\.\d{3}")
 _TYPO_SUGGESTION_MAX_DISTANCE = 2
 
 
-def datatype_family(datatype: Simple_DataType | str) -> TypeFamily | None:
+def datatype_family(datatype: ScalarDatatype | str) -> TypeFamily | None:
     """Family of a resolved datatype name, or ``None`` for records/unknowns."""
     try:
-        member = Simple_DataType.from_any(datatype)
+        member = ScalarDatatype.from_any(datatype)
     except ValueError:
         return None
     return _FAMILIES.get(member)
 
 
-def family_of(datatype: Simple_DataType | str | None) -> TypeFamily | None:
+def family_of(datatype: ScalarDatatype | str | None) -> TypeFamily | None:
     return None if datatype is None else datatype_family(datatype)
 
 
-def is_numeric(datatype: Simple_DataType | str) -> bool:
+def is_numeric(datatype: ScalarDatatype | str) -> bool:
     return datatype_family(datatype) is TypeFamily.NUMERIC
 
 
-def is_boolean(datatype: Simple_DataType | str) -> bool:
+def is_boolean(datatype: ScalarDatatype | str) -> bool:
     return datatype_family(datatype) is TypeFamily.BOOLEAN
 
 
-def _normalize(datatype: Simple_DataType | str | None) -> Simple_DataType | str | None:
-    if datatype is None or isinstance(datatype, Simple_DataType):
+def _normalize(datatype: ScalarDatatype | str | None) -> ScalarDatatype | str | None:
+    if datatype is None or isinstance(datatype, ScalarDatatype):
         return datatype
     return normalize_builtin_datatype(datatype)
 
 
-def is_numeric_datatype(datatype: Simple_DataType | str | None) -> bool:
+def is_numeric_datatype(datatype: ScalarDatatype | str | None) -> bool:
     """``is_numeric`` for callers that may not have a datatype at all."""
     return datatype is not None and is_numeric(datatype)
 
 
-def is_boolean_datatype(datatype: Simple_DataType | str | None) -> bool:
+def is_boolean_datatype(datatype: ScalarDatatype | str | None) -> bool:
     """``is_boolean`` for callers that may not have a datatype at all."""
     return datatype is not None and is_boolean(datatype)
 
 
-def is_string_simple_type(datatype: Simple_DataType | str | None) -> bool:
+def is_string_simple_type(datatype: ScalarDatatype | str | None) -> bool:
     normalized = _normalize(datatype)
-    return isinstance(normalized, Simple_DataType) and normalized in _STRING_SIMPLE_TYPES
+    return isinstance(normalized, ScalarDatatype) and normalized in _STRING_SIMPLE_TYPES
 
 
-def is_anytype_datatype(datatype: Simple_DataType | str | None) -> bool:
+def is_anytype_datatype(datatype: ScalarDatatype | str | None) -> bool:
     return datatype is not None and fold_identifier(format_datatype(datatype)) == _ANYTYPE
 
 
-def normalize_builtin_datatype(datatype: str) -> Simple_DataType | str:
+def normalize_builtin_datatype(datatype: str) -> ScalarDatatype | str:
     try:
-        return Simple_DataType.from_any(datatype)
+        return ScalarDatatype.from_any(datatype)
     except ValueError:
         return datatype
 
 
-def format_datatype(datatype: Simple_DataType | str | None) -> str:
+def format_datatype(datatype: ScalarDatatype | str | None) -> str:
     if datatype is None:
         return "unknown"
-    if isinstance(datatype, Simple_DataType):
+    if isinstance(datatype, ScalarDatatype):
         return datatype.value
     return str(datatype)
 
@@ -167,7 +167,7 @@ class FieldSpec(Protocol):
     """Structural view of one record field, for graph implementations."""
 
     @property
-    def datatype(self) -> Simple_DataType | str: ...
+    def datatype(self) -> ScalarDatatype | str: ...
 
 
 class FieldGraph(Protocol):
@@ -180,10 +180,10 @@ def resolve_variable_field_datatype(
     variable: Variable,
     field_path: tuple[str, ...],
     type_graph: FieldGraph,
-) -> Simple_DataType | str | None:
-    current: Simple_DataType | str = variable.datatype
+) -> ScalarDatatype | str | None:
+    current: ScalarDatatype | str = variable.datatype
     for field_name in field_path:
-        if isinstance(current, Simple_DataType):
+        if isinstance(current, ScalarDatatype):
             return None
         field = type_graph.field(str(current), field_name)
         if field is None:
@@ -196,7 +196,7 @@ def resolve_ref_datatype(
     ref: VarRef,
     scope: Scope,
     type_graph: FieldGraph,
-) -> Simple_DataType | str | None:
+) -> ScalarDatatype | str | None:
     base_name, field_path = split_dotted_name(ref.name)
     if not base_name:
         return None
@@ -204,6 +204,40 @@ def resolve_ref_datatype(
     if variable is None:
         return None
     return resolve_variable_field_datatype(variable, field_path, type_graph)
+
+
+def unresolved_reference_is_a_defect(ref: VarRef, scope: Scope, type_graph: TypeGraph) -> bool:
+    """Whether an unresolved reference is provably wrong rather than unproven.
+
+    A missing root name is undefined. A field path is walked one step at a time:
+    a field on a scalar is invalid, a field absent from a record whose shape is
+    known is undefined, and any step through a record whose shape is not
+    modelled (an opaque system type or a record from a library that is not
+    loaded) stays unproven, so the caller must remain silent. Temporal values
+    expose date, time, and duration component accessors, so a dotted access on
+    one is not a field typo.
+    """
+    base_name, field_path = split_dotted_name(ref.name)
+    base = scope.lookup(base_name)
+    if base is None:
+        return True
+    if not field_path:
+        return False
+    current: ScalarDatatype | str = base.datatype
+    for field_name in field_path:
+        # A temporal value reached at any point exposes the same component
+        # accessors as a temporal root, so its tail is never a field typo.
+        if current in {ScalarDatatype.TIME, ScalarDatatype.DURATION}:
+            return False
+        if isinstance(current, ScalarDatatype):
+            return True
+        if not type_graph.has_known_fields(str(current)):
+            return False
+        field = type_graph.field(str(current), field_name)
+        if field is None:
+            return True
+        current = field.datatype
+    return False
 
 
 def is_valid_duration_literal(value: object) -> bool:
@@ -250,17 +284,17 @@ def is_valid_time_literal(value: object) -> bool:
     return isinstance(value, str) and _TIME_LITERAL_RE.fullmatch(value.strip()) is not None
 
 
-def infer_literal_datatype(value: object, *, is_duration: bool = False) -> Simple_DataType | str | None:
+def infer_literal_datatype(value: object, *, is_duration: bool = False) -> ScalarDatatype | str | None:
     if isinstance(value, bool):
-        return Simple_DataType.BOOLEAN
+        return ScalarDatatype.BOOLEAN
     if isinstance(value, (IntLiteral, int)) and not isinstance(value, bool):
-        return Simple_DataType.INTEGER
+        return ScalarDatatype.INTEGER
     if isinstance(value, (FloatLiteral, float)):
-        return Simple_DataType.REAL
+        return ScalarDatatype.REAL
     if is_duration and isinstance(value, str) and is_valid_duration_literal(value):
-        return Simple_DataType.DURATION
+        return ScalarDatatype.DURATION
     if isinstance(value, str):
-        return Simple_DataType.STRING
+        return ScalarDatatype.STRING
     if has_time_literal_marker(value):
         return const.GRAMMAR_VALUE_TIME_VALUE
     return None
@@ -268,7 +302,7 @@ def infer_literal_datatype(value: object, *, is_duration: bool = False) -> Simpl
 
 def literal_matches_expected_datatype(
     literal: object,
-    expected: Simple_DataType | str | None,
+    expected: ScalarDatatype | str | None,
     *,
     is_duration: bool = False,
 ) -> bool:
@@ -284,21 +318,21 @@ def literal_matches_expected_datatype(
     )
 
 
-def _is_duration_datatype(datatype: Simple_DataType | str | None) -> bool:
-    if isinstance(datatype, Simple_DataType):
-        return datatype == Simple_DataType.DURATION
-    return isinstance(datatype, str) and fold_identifier(datatype) == fold_identifier(Simple_DataType.DURATION.value)
+def _is_duration_datatype(datatype: ScalarDatatype | str | None) -> bool:
+    if isinstance(datatype, ScalarDatatype):
+        return datatype == ScalarDatatype.DURATION
+    return isinstance(datatype, str) and fold_identifier(datatype) == fold_identifier(ScalarDatatype.DURATION.value)
 
 
-def _is_time_datatype(datatype: Simple_DataType | str | None) -> bool:
-    if isinstance(datatype, Simple_DataType):
-        return datatype == Simple_DataType.TIME
-    return isinstance(datatype, str) and fold_identifier(datatype) == fold_identifier(Simple_DataType.TIME.value)
+def _is_time_datatype(datatype: ScalarDatatype | str | None) -> bool:
+    if isinstance(datatype, ScalarDatatype):
+        return datatype == ScalarDatatype.TIME
+    return isinstance(datatype, str) and fold_identifier(datatype) == fold_identifier(ScalarDatatype.TIME.value)
 
 
 def builtin_type_matches(
-    actual: Simple_DataType | str,
-    expected: Simple_DataType | str,
+    actual: ScalarDatatype | str,
+    expected: ScalarDatatype | str,
     *,
     direction: BuiltinDirection,
 ) -> bool:
@@ -312,12 +346,12 @@ def builtin_type_matches(
         # values are passed where a tObject parameter is declared. A scalar is
         # not one of them, so it stays a mismatch instead of being waved through.
         return isinstance(normalized_actual, str)
-    if expected_name == "ASYNCOPERATION" and normalized_actual == Simple_DataType.INTEGER:
+    if expected_name == "ASYNCOPERATION" and normalized_actual == ScalarDatatype.INTEGER:
         # The asynchronous-operation handle is integer-backed in source code.
         return True
 
-    if isinstance(normalized_expected, Simple_DataType):
-        if not isinstance(normalized_actual, Simple_DataType):
+    if isinstance(normalized_expected, ScalarDatatype):
+        if not isinstance(normalized_actual, ScalarDatatype):
             return False
         if normalized_actual == normalized_expected:
             return True
@@ -325,16 +359,16 @@ def builtin_type_matches(
             return True
         return bool(
             direction == "in"
-            and normalized_expected == Simple_DataType.REAL
-            and normalized_actual == Simple_DataType.INTEGER
+            and normalized_expected == ScalarDatatype.REAL
+            and normalized_actual == ScalarDatatype.INTEGER
         )
 
     return fold_identifier(format_datatype(normalized_actual)) == fold_identifier(format_datatype(normalized_expected))
 
 
 def assignment_type_matches(
-    actual: Simple_DataType | str | None,
-    expected: Simple_DataType | str | None,
+    actual: ScalarDatatype | str | None,
+    expected: ScalarDatatype | str | None,
 ) -> bool:
     normalized_actual = _normalize(actual)
     normalized_expected = _normalize(expected)
@@ -347,27 +381,27 @@ def assignment_type_matches(
         # integer is not rejected because no such assignment is established.
         return True
     if normalized_actual == const.GRAMMAR_VALUE_TIME_VALUE:
-        return normalized_expected in {Simple_DataType.TIME, Simple_DataType.DURATION}
-    if isinstance(normalized_expected, Simple_DataType):
-        if not isinstance(normalized_actual, Simple_DataType):
+        return normalized_expected in {ScalarDatatype.TIME, ScalarDatatype.DURATION}
+    if isinstance(normalized_expected, ScalarDatatype):
+        if not isinstance(normalized_actual, ScalarDatatype):
             return False
         return builtin_type_matches(normalized_actual, normalized_expected, direction="in")
-    if isinstance(normalized_actual, Simple_DataType):
+    if isinstance(normalized_actual, ScalarDatatype):
         return False
     return fold_identifier(format_datatype(normalized_actual)) == fold_identifier(format_datatype(normalized_expected))
 
 
-def merge_numeric_types(datatypes: AbcSequence[Simple_DataType | str | None]) -> Simple_DataType | None:
-    numeric_types = {Simple_DataType.INTEGER, Simple_DataType.REAL}
+def merge_numeric_types(datatypes: AbcSequence[ScalarDatatype | str | None]) -> ScalarDatatype | None:
+    numeric_types = {ScalarDatatype.INTEGER, ScalarDatatype.REAL}
     normalized = [_normalize(datatype) for datatype in datatypes]
     if not normalized or any(datatype not in numeric_types for datatype in normalized):
         return None
-    return Simple_DataType.REAL if Simple_DataType.REAL in normalized else Simple_DataType.INTEGER
+    return ScalarDatatype.REAL if ScalarDatatype.REAL in normalized else ScalarDatatype.INTEGER
 
 
 def merge_compatible_types(
-    datatypes: AbcSequence[Simple_DataType | str | None],
-) -> Simple_DataType | str | None:
+    datatypes: AbcSequence[ScalarDatatype | str | None],
+) -> ScalarDatatype | str | None:
     filtered = [_normalize(datatype) for datatype in datatypes if datatype is not None]
     if not filtered:
         return None
@@ -381,7 +415,7 @@ def merge_compatible_types(
         return numeric
 
     if all(is_string_simple_type(datatype) for datatype in filtered):
-        return Simple_DataType.STRING
+        return ScalarDatatype.STRING
 
     return None
 
@@ -400,20 +434,20 @@ def infer_expression_datatype(
     expr: object,
     scope: Scope,
     type_graph: TypeGraph,
-) -> Simple_DataType | str | None:
+) -> ScalarDatatype | str | None:
     """Static datatype of an expression node, or ``None`` when unproven."""
     if isinstance(expr, bool):
-        return Simple_DataType.BOOLEAN
+        return ScalarDatatype.BOOLEAN
     if isinstance(expr, (IntLiteral, int)) and not isinstance(expr, bool):
-        return Simple_DataType.INTEGER
+        return ScalarDatatype.INTEGER
     if isinstance(expr, (FloatLiteral, float)):
-        return Simple_DataType.REAL
+        return ScalarDatatype.REAL
     if isinstance(expr, str):
-        return Simple_DataType.STRING
+        return ScalarDatatype.STRING
     if isinstance(expr, VarRef):
         return resolve_ref_datatype(expr, scope, type_graph)
     if isinstance(expr, (Compare, BoolOp, NotOp)):
-        return Simple_DataType.BOOLEAN
+        return ScalarDatatype.BOOLEAN
     if isinstance(expr, BinOp):
         return merge_numeric_types(
             [
@@ -559,4 +593,5 @@ __all__ = [
     "resolve_variable_field_datatype",
     "split_dotted_name",
     "suggest_datatype_name",
+    "unresolved_reference_is_a_defect",
 ]

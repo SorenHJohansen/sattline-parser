@@ -16,6 +16,10 @@ _MODULE_SOURCE = (
     '"Program date: 2026-10-28-00:00:00.000, name: Query"\n'
     "BasePicture Invocation ( 0.0 , 0.0 , 0.0 , 1.0 , 1.0 ) : MODULEDEFINITION DateCode_ 1\n"
     "TYPEDEFINITIONS\n"
+    "   Rec = RECORD DateCode_ 1\n"
+    "      Field: integer := 0;\n"
+    "   ENDDEF;\n"
+    "TYPEDEFINITIONS\n"
     "   Child = MODULEDEFINITION DateCode_ 2\n"
     "   LOCALVARIABLES\n"
     "      Inner: integer := 0;\n"
@@ -177,6 +181,21 @@ def test_symbols_cover_every_declaration_kind(tmp_path, capsys) -> None:
     assert "variable Inner [Child]" in out
     assert "step Run" in out
     assert "transition Gate" in out
+    assert "datatype Rec" in out
+    assert "record_field Field [Rec]" in out
+
+
+def test_symbol_rows_carry_the_declaration_span(tmp_path, capsys) -> None:
+    source = write_source(tmp_path, "Query.s", _MODULE_SOURCE)
+
+    assert main(["query", str(source), "--what", "symbols", "--name", "Flag", "--json"]) == ExitCode.OK
+
+    rows = json.loads(capsys.readouterr().out)["rows"]
+    assert len(rows) == 1
+    assert rows[0]["line"] == 22
+    assert rows[0]["column"] == 4
+    assert rows[0]["start"] is not None
+    assert rows[0]["end"] is not None
 
 
 def test_name_module_and_limit_filters(tmp_path, capsys) -> None:
@@ -204,23 +223,29 @@ def test_sequences_report_the_sfc_structure(tmp_path, capsys) -> None:
     assert "4 element(s)" in out
 
 
-def test_definitions_is_an_alias_for_symbols(tmp_path, capsys) -> None:
+def test_symbols_returns_declarations_only(tmp_path, capsys) -> None:
     source = write_source(tmp_path, "Query.s", _MODULE_SOURCE)
 
-    assert main(["query", str(source), "--what", "definitions", "--name", "Gate"]) == ExitCode.OK
+    assert main(["query", str(source), "--what", "symbols", "--name", "Gate"]) == ExitCode.OK
     assert "transition Gate" in capsys.readouterr().out
 
-    # The alias means declarations only, so a name that is both a symbol and a
-    # reference produces one row rather than every kind.
-    assert main(["query", str(source), "--what", "definitions", "--name", "Flag"]) == ExitCode.OK
+    # A name that is both a symbol and a reference produces one declaration row.
+    assert main(["query", str(source), "--what", "symbols", "--name", "Flag"]) == ExitCode.OK
     out = capsys.readouterr().out
     assert "variable Flag" in out
     assert "references Flag" not in out
     assert "writers Flag" not in out
 
-    assert main(["query", str(source), "--what", "definitions", "--name", "Flag", "--json"]) == ExitCode.OK
+    assert main(["query", str(source), "--what", "symbols", "--name", "Flag", "--json"]) == ExitCode.OK
     payload = json.loads(capsys.readouterr().out)
     assert {row["kind"] for row in payload["rows"]} == {"symbols"}
+
+
+def test_definitions_is_no_longer_a_query_kind(tmp_path, capsys) -> None:
+    source = write_source(tmp_path, "Query.s", _MODULE_SOURCE)
+
+    assert main(["query", str(source), "--what", "definitions"]) == ExitCode.USAGE
+    assert "invalid choice" in capsys.readouterr().err
 
 
 def test_references_writers_and_callers(tmp_path, capsys) -> None:

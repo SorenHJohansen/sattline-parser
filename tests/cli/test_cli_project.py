@@ -4,13 +4,18 @@
 from __future__ import annotations
 
 import json
+import logging
+import os
+from pathlib import Path
+
+import pytest
 
 from sattline_parser.cli import main
 from sattline_parser.cli._exit import ExitCode
 from sattline_parser.cli.cmds import project as project_cmd
 from sattline_parser.project._cycles import dependency_cycles
 
-from ._cli_support import VALID_SOURCE, write_source
+from ._cli_support import CONSECUTIVE_STEPS_SOURCE, PARSE_ERROR_SOURCE, VALID_SOURCE, write_source
 
 
 def _cycles(edges: list[tuple[str, str]]) -> list[list[str]]:
@@ -154,6 +159,75 @@ def test_default_cache_dir_honours_an_absolute_xdg_cache_home(tmp_path, monkeypa
     assert project_cmd._default_cache_dir() == tmp_path / "sattline-parser" / "project"
 
 
+def test_search_path_notation_uses_the_written_order(tmp_path, capsys) -> None:
+    gc = tmp_path / "LibA" / "UnitLib"
+    ha = tmp_path / "LibB" / "UnitLib"
+    gc.mkdir(parents=True)
+    ha.mkdir(parents=True)
+    _program(gc, "Program1")
+    _program(ha, "Program1")
+
+    assert (
+        main(
+            [
+                "project",
+                "--search-path",
+                r"LibA\UnitLib,LibB\UnitLib",
+                "--search-path-base",
+                str(tmp_path),
+                "--targets",
+                "Program1",
+                "--json",
+            ]
+        )
+        == ExitCode.OK
+    )
+
+    payload = json.loads(capsys.readouterr().out)
+    assert [row["resolved_base"] for row in payload["programs"]] == [str(gc.resolve())]
+
+
+def test_positional_roots_use_the_written_order(tmp_path, capsys) -> None:
+    gc = tmp_path / "LibA" / "UnitLib"
+    ha = tmp_path / "LibB" / "UnitLib"
+    gc.mkdir(parents=True)
+    ha.mkdir(parents=True)
+    _program(gc, "Program1")
+    _program(ha, "Program1")
+
+    assert main(["project", str(ha), str(gc), "--targets", "Program1", "--json"]) == ExitCode.OK
+    payload = json.loads(capsys.readouterr().out)
+    assert [row["resolved_base"] for row in payload["programs"]] == [str(ha.resolve())]
+
+    assert main(["project", str(gc), str(ha), "--targets", "Program1", "--json"]) == ExitCode.OK
+    payload = json.loads(capsys.readouterr().out)
+    assert [row["resolved_base"] for row in payload["programs"]] == [str(gc.resolve())]
+
+
+def test_search_path_and_positional_roots_are_mutually_exclusive(tmp_path, capsys) -> None:
+    _program(tmp_path, "Program1")
+
+    assert main(["project", str(tmp_path), "--search-path", str(tmp_path)]) == ExitCode.USAGE
+    assert "either ROOT... or --search-path" in capsys.readouterr().err
+
+
+def test_search_path_base_requires_search_path(tmp_path, capsys) -> None:
+    _program(tmp_path, "Program1")
+
+    assert main(["project", str(tmp_path), "--search-path-base", str(tmp_path)]) == ExitCode.USAGE
+    assert "--search-path-base requires --search-path" in capsys.readouterr().err
+
+
+def test_search_path_with_no_entries_is_a_usage_error(tmp_path, capsys) -> None:
+    assert main(["project", "--search-path", " , ,, "]) == ExitCode.USAGE
+    assert "no entries" in capsys.readouterr().err
+
+
+def test_project_without_a_root_is_a_usage_error(capsys) -> None:
+    assert main(["project"]) == ExitCode.USAGE
+    assert "expected at least one root" in capsys.readouterr().err
+
+
 def test_missing_root_and_empty_tree_are_usage_errors(tmp_path, capsys) -> None:
     assert main(["project", str(tmp_path / "Absent")]) == ExitCode.USAGE
     assert "cannot read" in capsys.readouterr().err
@@ -195,6 +269,58 @@ def test_load_failure_is_a_finding(tmp_path, capsys) -> None:
     assert [row["rule"] for row in payload["findings"]] == ["PROJECT_LOAD_ERROR"]
 
 
+def test_a_load_failure_logs_no_parser_trace_without_debug(tmp_path, capsys, caplog) -> None:
+    """A failed parse is the structured finding, not a parser log on stderr."""
+    write_source(tmp_path, "Broken.s", PARSE_ERROR_SOURCE)
+
+    with caplog.at_level(logging.ERROR, logger="sattline_parser"):
+        assert main(["project", str(tmp_path), "--json"]) == ExitCode.FINDINGS
+    captured = capsys.readouterr()
+    assert [row["rule"] for row in json.loads(captured.out)["findings"]] == ["PROJECT_LOAD_ERROR"]
+    assert captured.err == ""
+    assert caplog.records == []
+
+
+def test_debug_keeps_the_parser_trace_for_a_load_failure(tmp_path, caplog) -> None:
+    write_source(tmp_path, "Broken.s", PARSE_ERROR_SOURCE)
+
+    with caplog.at_level(logging.ERROR, logger="sattline_parser"):
+        assert main(["--debug", "project", str(tmp_path), "--json"]) == ExitCode.FINDINGS
+    records = [record for record in caplog.records if record.name == "sattline_parser"]
+    assert records and any(record.exc_info is not None for record in records)
+
+
+def test_cli_an_unreadable_root_is_an_input_error(tmp_path, capsys) -> None:
+    """A root the process may not list is exit 2, never an internal error."""
+    if os.name != "posix" or os.geteuid() == 0:
+        pytest.skip("mode bits deny reads on POSIX, and root bypasses them")
+    root = tmp_path / "closed"
+    root.mkdir()
+    _program(root, "Hidden")
+    root.chmod(0o000)
+    try:
+        assert main(["project", str(root)]) == ExitCode.USAGE
+        assert "cannot read" in capsys.readouterr().err
+    finally:
+        root.chmod(0o755)
+
+
+def test_a_root_that_cannot_be_probed_is_an_input_error(tmp_path, capsys, monkeypatch) -> None:
+    root = tmp_path / "probe"
+    root.mkdir()
+    real_exists = Path.exists
+
+    def failing_exists(self: Path) -> bool:
+        if self == root:
+            raise OSError(13, "Permission denied")
+        return real_exists(self)
+
+    monkeypatch.setattr(Path, "exists", failing_exists)
+
+    assert main(["project", str(root)]) == ExitCode.USAGE
+    assert "cannot read" in capsys.readouterr().err
+
+
 def test_targets_flag_limits_the_load(tmp_path, capsys) -> None:
     _program(tmp_path, "Base")
     _program(tmp_path, "Child", "Base")
@@ -204,6 +330,16 @@ def test_targets_flag_limits_the_load(tmp_path, capsys) -> None:
     out = capsys.readouterr().out
     assert "programs: 2" in out
     assert "Child" in out
+
+
+@pytest.mark.skipif(os.name == "nt" or os.geteuid() == 0, reason="needs POSIX permissions as a non-root user")
+def test_an_unreadable_body_is_a_finding_not_an_internal_error(tmp_path, capsys) -> None:
+    _program(tmp_path, "Broken")
+    (tmp_path / "Broken.s").chmod(0)
+
+    assert main(["project", str(tmp_path), "--json"]) == ExitCode.FINDINGS
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["findings"][0]["rule"] == "PROJECT_LOAD_ERROR"
 
 
 def test_bad_target_is_a_finding(tmp_path, capsys) -> None:
@@ -230,6 +366,31 @@ def test_graph_json_payload(tmp_path, capsys) -> None:
     payload = json.loads(capsys.readouterr().out)
     assert payload["schema"] == "sattline.v1.project"
     assert payload["edges"] == [{"from": "child", "to": "base"}]
+
+
+def test_unknown_of_is_a_finding(tmp_path, capsys) -> None:
+    _program(tmp_path, "Base")
+
+    assert main(["project", str(tmp_path), "--graph", "--of", "Nope"]) == ExitCode.FINDINGS
+    out = capsys.readouterr().out
+    assert "not in the loaded graph" in out
+
+    assert main(["project", str(tmp_path), "--graph", "--of", "Nope", "--json"]) == ExitCode.FINDINGS
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["findings"][0]["rule"] == "PROJECT_QUERY_ERROR"
+
+
+def test_graph_mode_prints_and_reports_validation_findings(tmp_path, capsys) -> None:
+    write_source(tmp_path, "Faulty.s", CONSECUTIVE_STEPS_SOURCE)
+
+    assert main(["project", str(tmp_path), "--graph"]) == ExitCode.FINDINGS
+    out = capsys.readouterr().out
+    assert "validation:" in out
+    assert "SL-V016" in out
+
+    assert main(["project", str(tmp_path), "--graph", "--json"]) == ExitCode.FINDINGS
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["validation"][0]["code"] == "SL-V016"
 
 
 def test_dependency_cycle_is_a_load_error(tmp_path, capsys) -> None:
@@ -374,8 +535,15 @@ def test_workers_flag_defaults_to_cpu_count_capped(monkeypatch) -> None:
     assert project_cmd._default_workers() == 1
 
 
-def test_two_roots_with_a_shared_unit_name_report_the_conflict(tmp_path, capsys) -> None:
-    """The CLI surfaces the ambiguity instead of hiding the second body."""
+def test_workers_flag_rejects_a_count_past_the_cap(tmp_path, capsys) -> None:
+    _program(tmp_path, "Base")
+
+    assert main(["project", str(tmp_path), "--workers", "1000"]) == ExitCode.USAGE
+    assert "or less" in capsys.readouterr().err
+
+
+def test_two_roots_with_a_shared_unit_name_use_the_first_root(tmp_path, capsys) -> None:
+    """The earlier root wins; the later body is not loaded and not reported."""
     first = tmp_path / "r1"
     second = tmp_path / "r2"
     first.mkdir()
@@ -389,6 +557,6 @@ def test_two_roots_with_a_shared_unit_name_report_the_conflict(tmp_path, capsys)
 
     payload = json.loads(capsys.readouterr().out)
     kinds = [row["kind"] for row in payload["diagnostics"]]
-    assert "name-resolution-conflict" in kinds
-    conflict = next(row for row in payload["diagnostics"] if row["kind"] == "name-resolution-conflict")
-    assert "Util" in conflict["detail"]
+    assert "name-resolution-conflict" not in kinds
+    util = next(row for row in payload["programs"] if row["name"] == "Util")
+    assert util["resolved_base"] == str(first.resolve())

@@ -49,6 +49,32 @@ policy are documented in the README.
   map as a read-only `char_map` property (`None` for an identity document), and
   `SourceDocument` is importable from `sattline_parser.preprocessing`.
 
+- **`SattLineProject.from_programs`.** A project can be built directly from a
+  name-to-program mapping, without a filesystem. This is the public form of the
+  private test seam, and it is what makes `cycles()` useful for a hand-built
+  graph.
+
+- **Polygon points and text-object geometry reach the AST.** A `PolygonObject`
+  keeps every coordinate pair in `GraphProperties["points"]` as a
+  `PolygonPoint`, with the tails written after each value attached to that
+  value. A `TextObject` keeps `Width_`, `ValueFraction`, and `Format_String_` as
+  `TailedClause` payloads, its `LeftAligned`/`RightAligned` markers in
+  `alignments`, and its `ConnectionNode` anchor as a `GraphObject`. `PolygonPoint`
+  is exported from `sattline_parser.ast`, and the walk visits each new property
+  once.
+
+- **Header metadata reaches the AST.** `BasePicture.header_info` is a
+  `HeaderInfo` holding the three quoted header lines as written and the optional
+  change description as a `CodeComment`. It reads the written syntax version,
+  original file date, and program date, and `program_name` remains the
+  convenience view over the `name:` field, matched case-insensitively. `HeaderInfo`
+  is exported from `sattline_parser.ast` and visited by `walk`.
+
+- **`parse_source_bytes`.** Parses source bytes the caller already read, with the
+  same decoding and provenance as `parse_source_file`, and keeps the bytes that
+  were parsed in the caller's hands. The project cache uses it to record a
+  digest of exactly the revision it stored.
+
 ### Changed
 
 - **Artifact families no longer mix.** The resolved code body's extension now
@@ -138,14 +164,28 @@ policy are documented in the README.
   display text, not source keywords.
 
 - **Keyword separators are explicit.** An underscore-suffixed keyword such as
-  `DateCode_` or `PRIVATE_` must be separated from the identifier that follows
-  it. `DateCode_1` remains a single identifier, and the grammar doc states the
-  rule.
+  `PRIVATE_` must be separated from the identifier that follows it.
+  `DateCode_` is the exception: a digit may follow it in the datecode slot,
+  while `DateCode_1` remains a single identifier outside that slot. The
+  grammar doc states the rule.
 
 - **Retired rules and identifier resolution.** `DATATYPE_TOO_FEW_FIELDS` and
   `SEQUENCE_REQUIRES_INIT_STEP` are retired because the corpus shows the
   constructs are legal. Datatype lookup no longer falls back to `casefold`, so
   identifiers SattLine treats as distinct stay distinct.
+
+- **The AST cache identifies a source by its bytes.** An entry records the
+  SHA-256 of the exact bytes that were parsed. The `mtime_ns` and `size` stat
+  snapshot is only a cheap first filter, so an edit that keeps the file size and
+  lands inside the filesystem's mtime granularity, or a restore that puts an old
+  mtime back, is a miss and the body is reparsed. `FILE_AST_CACHE_VERSION` is
+  `11`, and entries from an older version are discarded.
+
+- **Three reserved rules retired.** `DIVISION_BY_ZERO` is disproved by the
+  corpus (a valid unit divides by a literal zero, which is runtime semantics),
+  and `SEQUENCE_TRANSITION_AFTER_TRANSITION` and `PARALLEL_BRANCH_INCOMPLETE`
+  are already covered by the sequence position rules. They are listed by
+  `sattline rules --include-retired` as retired.
 
 ### Removed
 
@@ -161,6 +201,24 @@ policy are documented in the README.
   modules `sattline_parser.fuzz_harness`, `sattline_parser.parser_fuzzer`, and
   `sattline_parser.decode_fuzzer` are gone. The harness lives in the repository
   under `fuzzing/`; it is not part of the installed package.
+
+- **`sattline project --no-validate`.** The alias is removed; use
+  `--validate none`.
+
+- **Lenient project loading.** `SattLineProject.load(..., strict=False)`,
+  `ProjectLoader(strict=...)`, and `sattline project --lenient` are removed,
+  together with `Diagnostic.tentative` and
+  `LoadDiagnosticKind.LOAD_SKIPPED`. A missing or unparseable artifact now fails
+  the load, so a project is either complete or not returned, and every
+  validation finding is final. The project JSON loses `validation[].tentative`
+  and the `load-skipped` value of `diagnostics[].kind`.
+
+- **Interim AST payloads leave the model surface.** `CommonProperties`,
+  `ModuleOptions`, `TwoLayers`, `Grid`, `SeqLayers`, `Zoomable`, `ClipValue`, and
+  `CoordinateClipping` are transformer payloads, never AST nodes, and now live
+  in `sattline_parser.transformer._payloads`. They are no longer defined in
+  `sattline_parser.models.clauses` or `sattline_parser.models.tails`, and no
+  longer exported from `sattline_parser.ast`.
 
 ### Fixed
 
@@ -346,6 +404,52 @@ policy are documented in the README.
   propagates through dotted writes and builtin output arguments, `AnyType` is
   accepted in conditions and ternary branches, and every definition of a
   duplicated datatype name is validated.
+
+- **`sattline check --rule` only accepts ids that command can produce.**
+  `PARSE_ERROR` and `DECODE_ERROR` remain valid, and a synthetic id that belongs
+  to another command, such as `READ_ERROR`, is now a usage error instead of a
+  filter that silently matched nothing.
+
+- **`DateCode_1` parses without a separator.** The datecode prefix is the one
+  keyword a digit may follow directly, because the rule after it starts with a
+  number. A letter or underscore still blocks the keyword, so
+  `PRIVATE_MODULEDEFINITION` stays one name and `Enable_1` is still a variable.
+  Outside the datecode slot, `DateCode_1` is a single identifier.
+
+- **Mapping sources and record fields are checked.** A parameter mapping whose
+  source is not a declared variable now reports `UNDEFINED_VARIABLE` at the
+  mapping span. A dotted mapping target resolves through the record's fields, so
+  a boolean field mapped from an integer source reports the type mismatch. A
+  field that a record declared in the same file does not carry reports
+  `UNDEFINED_VARIABLE` for a read and for a write, with nested paths resolved one
+  step at a time. A field on an opaque builtin record, an unloaded external
+  record, or a record name declared more than once stays silent, and a temporal
+  value reached through a record still exposes its component accessors.
+
+- **`sattline project` no longer logs a parser traceback.** A body that fails to
+  parse is reported once, as the structured `PROJECT_LOAD_ERROR` finding, with
+  nothing on stderr. `--debug` still prints the loader's progress and the
+  parser's traceback.
+
+- **`sattline parse` and `sattline diff` count the whole module tree.**
+  Sequences, equation blocks, graph objects, interact objects, local variables,
+  submodules, and module types inside nested submodules and module-type bodies
+  are included, so the summary agrees with a `walk` over the picture. A change
+  inside a nested body is now visible to `diff`.
+
+- **An unreadable project root is an input error, not an internal error.**
+  `sattline project` exits `2` with `cannot read ...` instead of exiting `3` on a
+  `PermissionError`, and the library raises `ProjectLoadError` rather than
+  letting the `OSError` escape.
+
+- **An untranscribed builtin parameter list no longer means zero arguments.**
+  `GetPrivilegeFlag` and `ResetPrivilegeFlag` recorded `typed: false` with an
+  empty parameter list, which the validator read as arity `0..0` and rejected
+  every real call with `SL-V013`. An untyped catalogue entry now records `arity`
+  explicitly: `null` means unknown, so a call to such a name is not arity or
+  argument checked, and an integer pins both bounds to that count. The generator
+  rejects an untyped entry that omits the field and an `arity` on a typed
+  entry.
 
 ## [2026.11.4] - 2026-11-05
 

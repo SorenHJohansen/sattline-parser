@@ -252,14 +252,23 @@ def test_datecode_without_value_is_rejected() -> None:
         )
 
 
-def test_adjacent_datecode_keyword_is_one_identifier_not_two_tokens() -> None:
-    # A keyword ends at a word boundary, so `DateCode_1` is a single name, not
-    # the `DateCode_` keyword followed by `1`. The datecode slot accepts only the
-    # keyword, so the adjacent spelling is rejected rather than silently split.
+def test_datecode_keyword_may_be_followed_directly_by_its_number() -> None:
+    # The datecode rule starts with a number, so `DateCode_1` is the keyword and
+    # a datecode rather than one identifier. Every other keyword still needs a
+    # separator before a name character.
+    picture = parse_source_text(
+        _module_code(_sequence("      SEQSTEP Done\n      SEQTRANSITION TrEnd WAIT_FOR True\n"), datecode="DateCode_1")
+    )
+    assert picture.datecode == 1
+
+
+def test_datecode_keyword_followed_by_a_letter_stays_one_identifier() -> None:
+    # A letter after the underscore keeps the whole word a single name, so the
+    # datecode slot does not accept it.
     with pytest.raises(UnexpectedInput):
         parse_source_text(
             _module_code(
-                _sequence("      SEQSTEP Done\n      SEQTRANSITION TrEnd WAIT_FOR True\n"), datecode="DateCode_1"
+                _sequence("      SEQSTEP Done\n      SEQTRANSITION TrEnd WAIT_FOR True\n"), datecode="DateCode_x"
             )
         )
 
@@ -285,6 +294,39 @@ def test_adjacent_private_moduledefinition_is_one_identifier_not_two_keywords() 
 
     with pytest.raises(UnexpectedInput):
         parse_source_text(_source("   Hidden = PRIVATE_MODULEDEFINITION\n" + body))
+
+
+def test_numeric_adjacency_forms_keep_their_meaning() -> None:
+    """The sign guards on the numeric terminals keep these spellings unambiguous."""
+
+    def operand(written: str) -> object:
+        picture = parse_source_text(
+            _module_code(
+                f"   EQUATIONBLOCK Main COORD 0.0, 0.0 OBJSIZE 1.0, 1.0 :\n      Flag = {written} > -1000.0;\n"
+            )
+        )
+        module_code = picture.modulecode
+        assert module_code is not None and module_code.equationblocks
+        statement = module_code.equationblocks[0].code[0]
+        assert isinstance(statement, Assignment)
+        comparison = statement.value
+        assert isinstance(comparison, Compare)
+        return comparison.left
+
+    assert operand("1+2") == BinOp(1, "+", 2)
+    assert operand("1-2") == BinOp(1, "-", 2)
+    assert operand("-1") == -1
+    assert operand("1e-3") == 0.001
+    assert operand("1.0E+2") == 100.0
+
+
+def test_a_whitespace_separated_signed_literal_stays_one_value() -> None:
+    """A value list separates literals with whitespace, so ``-1.0 -1.0`` is two."""
+    picture = parse_source_text(
+        _module_code("   EQUATIONBLOCK Main COORD 0.0, 0.0 OBJSIZE 1.0, 1.0 :\n      Flag = True;\n")
+    )
+    assert picture.moduledef is not None
+    assert picture.moduledef.clipping_bounds == ((-1.0, -1.0), (1.0, 1.0))
 
 
 def test_record_datecode_is_optional() -> None:

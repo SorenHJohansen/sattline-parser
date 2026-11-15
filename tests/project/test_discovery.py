@@ -1,8 +1,9 @@
 # pyright: reportPrivateUsage=false
-"""Unit tests for Phase 2 file discovery (``project/discovery.py``)."""
+"""Unit tests for file discovery (``project/discovery.py``)."""
 
 from __future__ import annotations
 
+import os
 from collections.abc import Sequence
 from pathlib import Path
 from unittest.mock import patch
@@ -13,15 +14,16 @@ from sattline_parser.project import (
     ArtifactKind,
     FileLookupCache,
     LoadMode,
+    ProjectLoadError,
     ProjectLookup,
     SourceIndex,
     ordered_lookup_bases,
-    shared_lookup_root_for,
+    parse_search_path,
 )
 from sattline_parser.project.discovery import (
-    _first_branch_under,
     _is_allowed_base,
     _is_relative_to,
+    _is_safe_name,
     _resolved,
 )
 
@@ -45,13 +47,6 @@ def test_is_relative_to_edges(tmp_path: Path) -> None:
     assert not _is_relative_to(root, child)
     assert not _is_relative_to(None, root)
     assert not _is_relative_to(child, None)
-
-
-def test_first_branch_under_edges(tmp_path: Path) -> None:
-    assert _first_branch_under(tmp_path, tmp_path / "b" / "c") == "b"
-    assert _first_branch_under(tmp_path, tmp_path) is None
-    assert _first_branch_under(tmp_path, tmp_path.parent) is None
-    assert _first_branch_under(tmp_path, None) is None
 
 
 def test_is_allowed_base(tmp_path: Path) -> None:
@@ -104,83 +99,99 @@ def test_source_index_rejects_missing_and_file_bases(tmp_path: Path) -> None:
     assert index.find_in_index(base=a_file, name="f", extensions=(".s",)) is None
 
 
-def test_shared_lookup_root_for_edges(tmp_path: Path) -> None:
-    assert shared_lookup_root_for(None, []) is None
-    requester = write_file(tmp_path, "cluster/app/.keep")
-    sibling_a = write_file(tmp_path, "cluster/brandA/.keep")
-    sibling_b = write_file(tmp_path, "cluster/brandB/.keep")
-    assert shared_lookup_root_for(requester, [requester, sibling_a, sibling_b]) == tmp_path / "cluster"
-    only_requester = write_file(tmp_path, "lonely/.keep")
-    assert shared_lookup_root_for(only_requester, [only_requester]) is None
-    disjoint = write_file(tmp_path, "disjoint/.keep")
-    assert shared_lookup_root_for(requester, [requester, disjoint]) is None
+def test_ordered_lookup_bases_keeps_the_caller_order(tmp_path: Path) -> None:
+    first = write_file(tmp_path, "first/.keep")
+    second = write_file(tmp_path, "second/.keep")
+    third = write_file(tmp_path, "third/.keep")
 
-
-def test_shared_lookup_root_for_ignores_ancestor_root_as_its_own_branch(tmp_path: Path) -> None:
-    requester = tmp_path / "cluster" / "app"
-    requester.mkdir(parents=True)
-    ancestor = requester.parent
-    assert shared_lookup_root_for(requester, [requester, ancestor]) is None
-
-
-def test_ordered_lookup_bases_cluster_precedence(tmp_path: Path) -> None:
-    prog = tmp_path / "cluster" / "programs"
-    prog.mkdir(parents=True)
-    brand_a = tmp_path / "cluster" / "brandA"
-    brand_a.mkdir()
-    brand_b = tmp_path / "cluster" / "brandB"
-    brand_b.mkdir()
-    abb = tmp_path.parent / "abb-precedence" / "lib"
-    abb.mkdir(parents=True, exist_ok=True)
-    ordered = ordered_lookup_bases([prog, brand_a, brand_b, abb], requester_dir=prog)
-    assert ordered[0] == prog.resolve()
-    assert ordered[-1] == abb.resolve()
-    assert ordered[1:3] == (brand_a.resolve(), brand_b.resolve())
-
-
-def test_ordered_lookup_bases_skips_unallowed_requester_and_dedups(tmp_path: Path) -> None:
-    root_a = write_file(tmp_path, "cluster/a/.keep")
-    root_b = write_file(tmp_path, "cluster/b/.keep")
-    outside = write_file(tmp_path.parent, "outside/.keep")
-    ordered = ordered_lookup_bases([root_a, root_b], requester_dir=outside)
-    assert ordered == (root_a.resolve(), root_b.resolve())
-    ordered_dup = ordered_lookup_bases([root_a, root_a], requester_dir=root_a)
-    assert ordered_dup == (root_a.resolve(),)
-
-
-def test_ordered_lookup_bases_no_cluster_keeps_root_order(tmp_path: Path) -> None:
-    root_a = write_file(tmp_path, "first/.keep")
-    root_b = write_file(tmp_path, "second/.keep")
-    ordered = ordered_lookup_bases([root_a, root_b], requester_dir=root_a)
-    assert ordered == (root_a.resolve(), root_b.resolve())
-
-
-def test_ordered_lookup_bases_without_requester_and_empty(tmp_path: Path) -> None:
-    root_a = write_file(tmp_path, "ra/.keep")
-    root_b = write_file(tmp_path, "rb/.keep")
-    assert ordered_lookup_bases([root_a, root_b], None) == (root_a.resolve(), root_b.resolve())
-    assert ordered_lookup_bases([], None) == ()
-
-
-def test_ordered_lookup_bases_same_branch_before_siblings(tmp_path: Path) -> None:
-    requester = tmp_path / "cluster" / "programs"
-    requester.mkdir(parents=True)
-    inline = requester / "inline"
-    inline.mkdir()
-    brand_a = tmp_path / "cluster" / "brandA"
-    brand_a.mkdir()
-    outside = tmp_path.parent / "extlib-order"
-    outside.mkdir(exist_ok=True)
-    terminal = tmp_path.parent / "term-sorter" / "lib"
-    terminal.mkdir(parents=True, exist_ok=True)
-    ordered = ordered_lookup_bases([requester, inline, brand_a, outside, terminal], requester_dir=requester)
-    assert ordered == (
-        requester.resolve(),
-        inline.resolve(),
-        brand_a.resolve(),
-        outside.resolve(),
-        terminal.resolve(),
+    assert ordered_lookup_bases([first, second, third]) == (
+        first.resolve(),
+        second.resolve(),
+        third.resolve(),
     )
+    assert ordered_lookup_bases([third, first, second]) == (
+        third.resolve(),
+        first.resolve(),
+        second.resolve(),
+    )
+
+
+def test_ordered_lookup_bases_drops_duplicates_keeping_the_first_position(tmp_path: Path) -> None:
+    first = write_file(tmp_path, "first/.keep")
+    second = write_file(tmp_path, "second/.keep")
+
+    assert ordered_lookup_bases([first, second, first]) == (first.resolve(), second.resolve())
+
+
+def test_ordered_lookup_bases_empty() -> None:
+    assert ordered_lookup_bases([]) == ()
+
+
+def test_parse_search_path_accepts_backslashes_and_whitespace(tmp_path: Path) -> None:
+    base = tmp_path / "sattline"
+
+    roots = parse_search_path(r" LibA\UnitLib , LibB/UnitLib ,, ", base=base)
+
+    assert roots == ((base / "LibA/UnitLib").resolve(), (base / "LibB/UnitLib").resolve())
+
+
+def test_parse_search_path_resolves_relative_entries_under_a_base(tmp_path: Path) -> None:
+    base = tmp_path / "sattline"
+    absolute = tmp_path / "elsewhere" / "Lib"
+
+    roots = parse_search_path(f"LibA/UnitLib,{absolute}", base=base)
+
+    assert roots == ((base / "LibA/UnitLib").resolve(), absolute.resolve())
+
+
+@pytest.mark.skipif(os.name == "nt", reason="the POSIX rule is for non-Windows hosts")
+@pytest.mark.parametrize("entry", [r"C:\SattLine\Lib", r"\\server\share\Lib"])
+def test_parse_search_path_rejects_a_windows_absolute_entry_on_posix(entry: str, tmp_path: Path) -> None:
+    with pytest.raises(ValueError, match="Windows path"):
+        parse_search_path(entry, base=tmp_path)
+
+
+def test_parse_search_path_drops_duplicates_and_rejects_an_empty_path(tmp_path: Path) -> None:
+    base = tmp_path / "sattline"
+
+    assert parse_search_path(r"LibA\UnitLib,LibA/UnitLib", base=base) == ((base / "LibA/UnitLib").resolve(),)
+    with pytest.raises(ValueError, match="no entries"):
+        parse_search_path(" , ,, ", base=base)
+
+
+def test_lookup_path_order_wins_over_a_later_root(tmp_path: Path) -> None:
+    """Program1 in LibA and in LibB resolves to LibA; the LibB body never wins."""
+    gc = tmp_path / "LibA" / "UnitLib"
+    ha = tmp_path / "LibB" / "UnitLib"
+    write_file(gc, "Program1.s")
+    write_file(ha, "Program1.s")
+
+    lookup = ProjectLookup([gc, ha], LoadMode.DRAFT)
+
+    assert lookup.find_code("Program1") == gc / "Program1.s"
+
+
+def test_lookup_path_order_wins_in_both_directions(tmp_path: Path) -> None:
+    gc = tmp_path / "LibA" / "UnitLib"
+    ha = tmp_path / "LibB" / "UnitLib"
+    write_file(gc, "Program1.s")
+    write_file(ha, "Program1.s")
+
+    assert ProjectLookup([gc, ha], LoadMode.DRAFT).find_code("Program1") == gc / "Program1.s"
+    assert ProjectLookup([ha, gc], LoadMode.DRAFT).find_code("Program1") == ha / "Program1.s"
+
+
+def test_a_requester_inside_a_later_root_does_not_override_the_path_order(tmp_path: Path) -> None:
+    gc = tmp_path / "LibA" / "UnitLib"
+    ha = tmp_path / "LibB" / "UnitLib"
+    write_file(gc, "Dep.s")
+    write_file(ha, "Dep.s")
+
+    # LibB is the second entry, so its body is the requester's own root; the path
+    # order still decides, and LibA is scanned first.
+    lookup = ProjectLookup([gc, ha], LoadMode.DRAFT)
+
+    assert lookup.find_code("Dep") == gc / "Dep.s"
 
 
 def test_lookup_draft_prefers_s_then_falls_back_to_x(tmp_path: Path) -> None:
@@ -264,16 +275,6 @@ def test_lookup_custom_index_discovers_previously_unindexed_file(tmp_path: Path)
     assert index.find_in_index(base=root, name="NewFile", extensions=(".s",)) == found
 
 
-def test_lookup_requester_dir_relative_hit(tmp_path: Path) -> None:
-    requester = tmp_path / "cluster" / "programs"
-    requester.mkdir(parents=True)
-    dep_root = tmp_path / "cluster" / "libs" / "deps"
-    dep_root.mkdir(parents=True)
-    write_file(dep_root, "A.x")
-    lookup = ProjectLookup([requester, dep_root], LoadMode.DRAFT)
-    assert lookup.find_code("A", requester_dir=requester) == dep_root / "A.x"
-
-
 def test_lookup_uses_and_validates_cached_base(tmp_path: Path) -> None:
     root = tmp_path / "p"
     write_file(root, "A.s")
@@ -291,7 +292,7 @@ def test_find_in_cached_base_direct(tmp_path: Path) -> None:
     cache_dir = tmp_path / "cache"
     cache = FileLookupCache(cache_dir, write_through=True)
     lookup = ProjectLookup([root], LoadMode.OFFICIAL, cache=cache)
-    ordered = ordered_lookup_bases([root], None)
+    ordered = ordered_lookup_bases([root])
 
     plain = ProjectLookup([root], LoadMode.OFFICIAL)
     assert plain._find_in_cached_base("code", "Cached", (".x",), ordered=ordered) is None
@@ -341,7 +342,7 @@ def test_find_in_cached_base_prefers_outranking_base(tmp_path: Path) -> None:
     cache_dir = tmp_path / "cache"
     cache = FileLookupCache(cache_dir, write_through=True)
     lookup = ProjectLookup([requester, dep_root], LoadMode.OFFICIAL, cache=cache)
-    ordered = ordered_lookup_bases([requester, dep_root], requester)
+    ordered = ordered_lookup_bases([requester, dep_root])
     assert ordered[0] == requester.resolve()
     cache.set("code", "A", LoadMode.OFFICIAL.value, dep_root, ".x")
     assert lookup._find_in_cached_base("code", "A", (".x",), ordered=ordered) == (requester / "A.x", requester)
@@ -360,7 +361,7 @@ def test_find_in_cached_base_falls_through_to_cached_base(tmp_path: Path) -> Non
     cache_dir = tmp_path / "cache"
     cache = FileLookupCache(cache_dir, write_through=True)
     lookup = ProjectLookup([requester, dep_root], LoadMode.OFFICIAL, cache=cache)
-    ordered = ordered_lookup_bases([requester, dep_root], requester)
+    ordered = ordered_lookup_bases([requester, dep_root])
     cache.set("code", "B", LoadMode.OFFICIAL.value, dep_root, ".x")
     assert lookup._find_in_cached_base("code", "B", (".x",), ordered=ordered) == (dep_root / "B.x", dep_root)
 
@@ -449,7 +450,7 @@ def test_lookup_refuses_a_dependency_name_with_a_parent_reference(tmp_path: Path
 
     lookup = ProjectLookup([root], LoadMode.DRAFT)
 
-    assert lookup.find_code("../outside/Secret", requester_dir=root) is None
+    assert lookup.find_code("../outside/Secret") is None
 
 
 def test_lookup_refuses_an_absolute_dependency_name(tmp_path: Path) -> None:
@@ -459,7 +460,42 @@ def test_lookup_refuses_an_absolute_dependency_name(tmp_path: Path) -> None:
 
     lookup = ProjectLookup([root], LoadMode.DRAFT)
 
-    assert lookup.find_code(str(outside), requester_dir=root) is None
+    assert lookup.find_code(str(outside)) is None
+
+
+@pytest.mark.parametrize(
+    ("name", "safe"),
+    [
+        ("Main", True),
+        ("Main_2", True),
+        ("A" * 20, True),
+        ("A" * 21, False),
+        ("", False),
+        ("../outside/Secret", False),
+        ("..\\outside\\Secret", False),
+        ("D:ExternalProgram", False),
+        ("\\\\server\\share\\Prog", False),
+        ("Main.s", False),
+        ("Name ", False),
+        ("Name.", False),
+    ],
+)
+def test_unit_names_are_validated_as_sattline_identifiers(name: str, safe: bool) -> None:
+    assert _is_safe_name(name) is safe
+
+
+@pytest.mark.parametrize("name", ["CON", "prn", "COM1", "lpt9"])
+def test_windows_reserved_device_names_are_safe_on_posix(name: str, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("sattline_parser.project.discovery._IS_WINDOWS", False)
+
+    assert _is_safe_name(name) is True
+
+
+@pytest.mark.parametrize("name", ["CON", "prn", "COM1", "lpt9"])
+def test_windows_reserved_device_names_are_refused_only_on_windows(name: str, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("sattline_parser.project.discovery._IS_WINDOWS", True)
+
+    assert _is_safe_name(name) is False
 
 
 def test_find_deps_beside_refuses_a_name_with_a_path(tmp_path: Path) -> None:
@@ -491,8 +527,8 @@ def test_find_in_base_requires_containment_for_the_stat_fallback(
 
     lookup = ProjectLookup([root], LoadMode.DRAFT)
 
-    assert lookup.find_code("../outside/Secret", requester_dir=root) is None
-    assert lookup.find_code(str(tmp_path / "outside" / "Secret"), requester_dir=root) is None
+    assert lookup.find_code("../outside/Secret") is None
+    assert lookup.find_code(str(tmp_path / "outside" / "Secret")) is None
 
 
 def test_lookup_restats_an_index_hit_and_misses_a_deleted_body(tmp_path: Path) -> None:
@@ -519,26 +555,24 @@ def test_lookup_restats_an_index_hit_for_a_sidecar(tmp_path: Path) -> None:
     assert lookup.find_deps_beside(body, "Main") is None
 
 
-def test_project_lookup_requester_ordering_end_to_end(tmp_path: Path) -> None:
-    requester = tmp_path / "cluster" / "programs"
-    requester.mkdir(parents=True)
-    brand_a = tmp_path / "cluster" / "brandA"
-    brand_a.mkdir()
-    brand_b = tmp_path / "cluster" / "brandB"
-    brand_b.mkdir()
-    abb = tmp_path.parent / "abb-end" / "lib"
-    abb.mkdir(parents=True, exist_ok=True)
-    write_file(brand_a, "Dep.x")
-    write_file(brand_b, "Dep.x")
-    lookup = ProjectLookup([requester, brand_b, brand_a, abb], LoadMode.DRAFT)
-    assert lookup.find_code("Dep", requester_dir=requester) == brand_a / "Dep.x"
+def test_an_unreadable_root_is_a_load_error(tmp_path: Path) -> None:
+    if os.name != "posix" or os.geteuid() == 0:
+        pytest.skip("mode bits deny reads on POSIX, and root bypasses them")
+    root = tmp_path / "closed"
+    root.mkdir()
+    root.chmod(0o000)
+    try:
+        with pytest.raises(ProjectLoadError, match="cannot read"):
+            SourceIndex([root]).find_in_index(base=root, name="Main", extensions=[".s"])
+    finally:
+        root.chmod(0o755)
 
 
 def test_warm_cache_preserves_cold_extension_precedence(tmp_path: Path) -> None:
     """A warm lookup must not shadow a preferred extension that appeared later.
 
-    Gap P10: the cache recorded ``.x`` for this prefix; a ``.s`` then appeared.
-    Draft mode prefers ``.s``, so warm and cold lookups must agree.
+    The cache recorded ``.x`` for this prefix; a ``.s`` then appeared. Draft
+    mode prefers ``.s``, so warm and cold lookups must agree.
     """
     root = tmp_path / "p"
     cache_dir = tmp_path / "cache"

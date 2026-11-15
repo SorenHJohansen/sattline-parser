@@ -41,6 +41,19 @@ from ._module_shared import (
 )
 from ._tokens_mixin import DEFAULT_INIT
 
+
+def _only_one_block[Block: (ModuleDef, ModuleCode)](current: Block | None, new: Block, label: str) -> Block:
+    """Return *new*, rejecting a second block where the grammar allows one.
+
+    The grammar allows one ``ModuleDef`` and one optional ``ModuleCode`` per
+    module body. This guard turns a future grammar or rule regression into a
+    failure instead of silently overwriting the first block.
+    """
+    if current is not None:
+        raise ValueError(f"module body has more than one {label}")
+    return new
+
+
 _VARIABLE_MODIFIER_KEYWORDS: dict[str, str] = {
     const.GRAMMAR_VALUE_CONST_KW: "const",
     const.GRAMMAR_VALUE_STATE_KW: "state",
@@ -101,8 +114,8 @@ class ModuleAssemblyMixin:
         localvariables: list[Variable] = []
         moduleparameters: list[Variable] = []
         submodules: list[ModuleInvocation] = []
-        moduledefs: list[ModuleDef] = []
-        modulecodes: list[ModuleCode] = []
+        moduledef: ModuleDef | None = None
+        modulecode: ModuleCode | None = None
         scan_group_info: GroupConnInfo | None = None
         trailing_comments: list[CodeComment] = []
         datecode: int | None = None
@@ -113,9 +126,9 @@ class ModuleAssemblyMixin:
             elif isinstance(it, ModuleTypeDef):
                 moduletype_defs.append(it)
             elif isinstance(it, ModuleDef):
-                moduledefs.append(it)
+                moduledef = _only_one_block(moduledef, it, "ModuleDef")
             elif isinstance(it, ModuleCode):
-                modulecodes.append(it)
+                modulecode = _only_one_block(modulecode, it, "ModuleCode")
             elif isinstance(it, CodeComment):
                 trailing_comments.append(it)
             elif isinstance(it, GroupConnInfo):
@@ -148,8 +161,8 @@ class ModuleAssemblyMixin:
             moduleparameters=moduleparameters,
             localvariables=localvariables,
             submodules=submodules,
-            moduledefs=moduledefs,
-            modulecodes=modulecodes,
+            moduledef=moduledef,
+            modulecode=modulecode,
             trailing_comments=trailing_comments,
             datecode=datecode,
         )
@@ -161,8 +174,8 @@ class ModuleAssemblyMixin:
         moduleparameters: list[Variable] = []
         localvariables: list[Variable] = []
         submodules: list[ModuleInvocation] = []
-        moduledefs: list[ModuleDef] = []
-        modulecodes: list[ModuleCode] = []
+        moduledef: ModuleDef | None = None
+        modulecode: ModuleCode | None = None
         param_mappings: list[ParameterMapping] = []
         scan_group_info: GroupConnInfo | None = None
         trailing_comments: list[CodeComment] = []
@@ -176,9 +189,9 @@ class ModuleAssemblyMixin:
             elif isinstance(item, int) and not isinstance(item, bool) and datecode is None:
                 datecode = item
             elif isinstance(item, ModuleDef):
-                moduledefs.append(item)
+                moduledef = _only_one_block(moduledef, item, "ModuleDef")
             elif isinstance(item, ModuleCode):
-                modulecodes.append(item)
+                modulecode = _only_one_block(modulecode, item, "ModuleCode")
             elif isinstance(item, GroupConnInfo):
                 scan_group_info = item
             elif isinstance(item, Tree):
@@ -206,8 +219,8 @@ class ModuleAssemblyMixin:
                 moduleparameters=moduleparameters,
                 localvariables=localvariables,
                 submodules=submodules,
-                moduledefs=moduledefs,
-                modulecodes=modulecodes,
+                moduledef=moduledef,
+                modulecode=modulecode,
                 trailing_comments=trailing_comments,
             )
         return SingleModule(
@@ -216,8 +229,8 @@ class ModuleAssemblyMixin:
             moduleparameters=moduleparameters,
             localvariables=localvariables,
             submodules=submodules,
-            moduledefs=moduledefs,
-            modulecodes=modulecodes,
+            moduledef=moduledef,
+            modulecode=modulecode,
             parametermappings=param_mappings,
             trailing_comments=trailing_comments,
         )
@@ -282,8 +295,8 @@ class ModuleAssemblyMixin:
         moduleparameters: list[Variable] = []
         localvariables: list[Variable] = []
         submodules: list[ModuleInvocation] = []
-        moduledefs: list[ModuleDef] = []
-        modulecodes: list[ModuleCode] = []
+        moduledef: ModuleDef | None = None
+        modulecode: ModuleCode | None = None
         name: str | None = None
         scan_group_info: GroupConnInfo | None = None
         description_comments: list[CodeComment] = []
@@ -310,9 +323,9 @@ class ModuleAssemblyMixin:
             elif isinstance(it, int) and datecode is None:
                 datecode = it
             elif isinstance(it, ModuleDef):
-                moduledefs.append(it)
+                moduledef = _only_one_block(moduledef, it, "ModuleDef")
             elif isinstance(it, ModuleCode):
-                modulecodes.append(it)
+                modulecode = _only_one_block(modulecode, it, "ModuleCode")
             elif isinstance(it, GroupConnInfo):
                 scan_group_info = it
             elif isinstance(it, Tree):
@@ -337,8 +350,8 @@ class ModuleAssemblyMixin:
             moduleparameters=moduleparameters,
             localvariables=localvariables,
             submodules=submodules,
-            moduledefs=moduledefs,
-            modulecodes=modulecodes,
+            moduledef=moduledef,
+            modulecode=modulecode,
             declaration_span=meta_span(meta),
             description_comments=description_comments,
             trailing_comments=trailing_comments,

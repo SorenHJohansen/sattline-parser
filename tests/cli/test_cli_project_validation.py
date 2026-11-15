@@ -65,6 +65,6 @@ def test_project_text_output_lists_validation_findings(tmp_path, capsys) -> None
 def test_project_rejects_removed_fail_on_values(tmp_path, capsys) -> None:
     write_source(tmp_path, "Sample.s", CONSECUTIVE_STEPS_SOURCE)
 
-    for value in ("warning", "any"):
+    for value in ("warning", "any", "never"):
         assert main(["project", str(tmp_path), "--fail-on", value]) == ExitCode.USAGE
         assert "expected one of" in capsys.readouterr().err

@@ -51,7 +51,13 @@ class InterimCoords:
     """
 
     coords: CoordPair | CoordBox | tuple[float, float, float, float, float]
+    #: Every tail the coordinate run carried, flattened. This is the flat view
+    #: the graph object keeps under ``tails``.
     tails: list[Tail] | None = None
+    #: Per-coordinate tails, index-aligned with the numbers in ``coords`` when the
+    #: run spells one coordinate pair. ``None`` means the rule did not record the
+    #: split, as for a five-value invocation coordinate.
+    coord_tails: tuple[tuple[Tail, ...], ...] | None = None
 
 
 @dataclass(frozen=True)

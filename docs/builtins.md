@@ -30,7 +30,7 @@ A test runs the `--check` path, so a stale catalogue fails the suite.
 | Bucket | Count at the time of writing | Meaning |
 | --- | --- | --- |
 | Documented functions | 171 | Full signature transcribed from the public manuals |
-| Documented, untyped | 2 | `GetPrivilegeFlag`, `ResetPrivilegeFlag`; arity only |
+| Documented, untyped | 2 | `GetPrivilegeFlag`, `ResetPrivilegeFlag`; no transcribed parameter list, and their arity is recorded as unknown |
 | Internal registrations | 191 | Names the system binds for compiled programs; no public manual describes them |
 | Not located | 9 | Names kept only so arity checks keep working; listed under `meta.not_located` |
 | Documented total | 171 | Counts only the manual-documented names |
@@ -71,7 +71,14 @@ declared `String` datatype. The flag lives in the catalogue data, not in
 validator code.
 
 `BuiltinFunction` also carries `kind` (`function` or `procedure`), `return_type`,
-`precision_scangroup`, and `typed`. A `typed=False` entry still has an arity.
+`precision_scangroup`, and `typed`. A `typed=True` entry derives its arity from
+its parameter list. A `typed=False` entry must record `arity` explicitly: a
+non-negative integer, or `null` when the documented arity is not known. `null`
+means no arity, direction, or datatype check runs for a call to that name,
+because an untranscribed list must not be read as "takes no arguments". (The
+string-literal argument rule still applies.) The generator
+rejects an untyped entry that omits `arity`, and rejects an `arity` on a typed
+entry so the two copies cannot drift.
 
 ### Name lookup
 
@@ -136,7 +143,7 @@ not evidence that the callee accepts a value there.
 
 `builtin_datatype_typo` suggests a builtin datatype name when a custom datatype
 string is within a bounded edit distance of exactly one builtin. It never fires
-for an exact match, which is already normalized to `Simple_DataType` by
+for an exact match, which is already normalized to `ScalarDatatype` by
 `Variable`.
 
 ## Public surface

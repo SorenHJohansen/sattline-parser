@@ -18,11 +18,12 @@ from sattline_parser.validation import Diagnostic
 from ._io import display_path
 
 __all__ = [
-    "CLI_RULE_IDS",
+    "CHECK_RULE_IDS",
     "DECODE_RULE",
     "GRAPHICS_SCAN_RULE",
     "PARSE_RULE",
     "PROJECT_LOAD_RULE",
+    "PROJECT_QUERY_RULE",
     "READ_RULE",
     "Finding",
     "finding_from_diagnostic",
@@ -37,15 +38,19 @@ PARSE_RULE = "PARSE_ERROR"
 DECODE_RULE = "DECODE_ERROR"
 #: Rule id for a project tree that cannot be loaded.
 PROJECT_LOAD_RULE = "PROJECT_LOAD_ERROR"
+#: Rule id for a project question whose subject is not in the loaded graph.
+PROJECT_QUERY_RULE = "PROJECT_QUERY_ERROR"
 #: Rule id for a graphics companion's own scan messages.
 GRAPHICS_SCAN_RULE = "GRAPHICS_SCAN"
 #: Rule id for a corpus file that cannot be read.
 READ_RULE = "READ_ERROR"
 
 #: Finding ids that do not come from the validation registry but can still be
-#: selected with ``--rule``. The registry is for validator rules; these describe
-#: the input or the project around it.
-CLI_RULE_IDS: frozenset[str] = frozenset({PARSE_RULE, DECODE_RULE, PROJECT_LOAD_RULE, GRAPHICS_SCAN_RULE, READ_RULE})
+#: selected with ``--rule``. Each command declares the subset it can emit, so an
+#: id that belongs to another command is a usage error rather than a filter that
+#: silently matches nothing. ``check`` reports parse and decode failures; the
+#: validator codes themselves come from the registry.
+CHECK_RULE_IDS: frozenset[str] = frozenset({PARSE_RULE, DECODE_RULE})
 
 
 @dataclass(frozen=True, slots=True)

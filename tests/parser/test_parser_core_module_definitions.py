@@ -95,15 +95,13 @@ def test_modules_mixin_definition_trees_keep_only_supported_children():
         mixin.moduletype_definition(SimpleNamespace(line=1, column=1), [100])
 
 
-def test_modules_mixin_preserves_all_moduledef_and_modulecode_blocks():
+def test_modules_mixin_reads_one_moduledef_and_modulecode():
     mixin = _ModulesHarness()
     first_def = ModuleDef()
     first_code = ModuleCode()
 
     single = mixin.invocation_new_module([True, _module_header("Frm"), 101, first_def, first_code])
     assert isinstance(single, FrameModule)
-    assert single.moduledefs == [first_def]
-    assert single.modulecodes == [first_code]
     assert single.moduledef is first_def
     assert single.modulecode is first_code
 
@@ -111,13 +109,23 @@ def test_modules_mixin_preserves_all_moduledef_and_modulecode_blocks():
         SimpleNamespace(line=1, column=1, start_pos=0, end_pos=1),
         ["PumpType", 400, first_def],
     )
-    assert moduletype.moduledefs == [first_def]
     assert moduletype.moduledef is first_def
-    assert moduletype.modulecodes == []
     assert moduletype.modulecode is None
 
 
-def test_parse_source_text_preserves_all_moduledef_blocks_in_source_order():
+def test_a_second_module_block_in_one_body_is_rejected():
+    """The grammar allows one block; a transformer regression must fail loudly."""
+    mixin = _ModulesHarness()
+    module_def = ModuleDef()
+    module_code = ModuleCode()
+
+    with pytest.raises(ValueError, match="more than one ModuleDef"):
+        mixin.invocation_new_module([True, _module_header("Frm"), module_def, ModuleDef()])
+    with pytest.raises(ValueError, match="more than one ModuleCode"):
+        mixin.invocation_new_module([True, _module_header("Frm"), module_code, ModuleCode()])
+
+
+def test_parse_source_text_reads_the_module_layout_and_code():
     bp = parser_core_parse_source_text(
         '"SyntaxVersion"\n'
         '"OriginalFileDate"\n'
@@ -133,12 +141,10 @@ def test_parse_source_text_preserves_all_moduledef_blocks_in_source_order():
         "ENDDEF (*BasePicture*);\n"
     )
 
-    assert len(bp.moduledefs) == 1
-    assert len(bp.modulecodes) == 1
-    assert bp.moduledefs[0].clipping_bounds == ((-1.0, -1.0), (1.0, 1.0))
-    assert [eq.name for mc in bp.modulecodes for eq in (mc.equationblocks or [])] == ["First"]
-    assert bp.moduledef is bp.moduledefs[-1]
-    assert bp.modulecode is bp.modulecodes[-1]
+    assert bp.moduledef is not None
+    assert bp.modulecode is not None
+    assert bp.moduledef.clipping_bounds == ((-1.0, -1.0), (1.0, 1.0))
+    assert [eq.name for eq in (bp.modulecode.equationblocks or [])] == ["First"]
 
 
 def test_modules_mixin_wrapper_rules_and_invocation_errors():

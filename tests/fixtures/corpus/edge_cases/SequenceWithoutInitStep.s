@@ -1,11 +1,10 @@
 "Syntax version 2.23, date: 2026-04-23-12:00:00.000 N"
 "Original file date: ---"
-"Program date: 2026-04-23-12:00:00.000, name: LegacySeqNoInit"
-(* EDGE CASE: A SEQUENCE that begins with a SEQSTEP instead of SEQINITSTEP.
-   This is a legacy pattern. Validation accepts it but emits a warning about
-   the missing initial step. The file should NOT fail strict syntax-check;
-   it only generates a downgrade-able warning.
-   Expected: strict syntax-check passes (with a possible warning). *)
+"Program date: 2026-04-23-12:00:00.000, name: SequenceWithoutInitStep"
+(* EDGE CASE: A closed SEQUENCE that begins with a SEQSTEP instead of
+   SEQINITSTEP. The real tool loads such a sequence, so the parser accepts it
+   and validation reports nothing: SEQUENCE_REQUIRES_INIT_STEP is retired.
+   Expected: strict syntax-check passes with no diagnostics. *)
 
 BasePicture Invocation
    ( 0.0 , 0.0 , 0.0 , 1.0 , 1.0

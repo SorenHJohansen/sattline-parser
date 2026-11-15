@@ -16,7 +16,6 @@
     "edge_cases/FrameModuleInvocation.s": [],
     "edge_cases/GlobalParameterMapping.s": [],
     "edge_cases/KeywordPrefixedIdentifiers.s": [],
-    "edge_cases/LegacySequenceNoInitStep.s": [],
     "edge_cases/MinimalSequence.s": [],
     "edge_cases/ModuleOptions.s": [],
     "edge_cases/NegativeDurationValue.s": [],
@@ -26,6 +25,7 @@
     "edge_cases/SeqBreak.s": [],
     "edge_cases/SeqForkMultipleTargets.s": [],
     "edge_cases/SequenceAlternative.s": [],
+    "edge_cases/SequenceWithoutInitStep.s": [],
     "edge_cases/SimpleModuleTypeInvocation.s": [],
     "edge_cases/SubSequenceTransition.s": [],
     "edge_cases/TimeValueInit.s": [],
@@ -158,6 +158,14 @@
     "invalid/DeepExpressionChain.s": [
       {
         "parse_error": true
+      }
+    ],
+    "invalid/DottedMappingFieldMismatch.s": [
+      {
+        "code": "SL-V027",
+        "column": 7,
+        "length": 29,
+        "line": 43
       }
     ],
     "invalid/DuplicateDatatypeName.s": [],
@@ -307,6 +315,11 @@
       }
     ],
     "invalid/PropertyInVarBareName.s": [
+      {
+        "parse_error": true
+      }
+    ],
+    "invalid/RepeatedModuleDefBlocks.s": [
       {
         "parse_error": true
       }
@@ -478,6 +491,14 @@
         "line": 20
       }
     ],
+    "invalid/UndefinedMappingSource.s": [
+      {
+        "code": "SL-V019",
+        "column": 7,
+        "length": 28,
+        "line": 32
+      }
+    ],
     "invalid/UndefinedVariableRef.s": [
       {
         "code": "SL-V019",
@@ -492,6 +513,20 @@
         "column": 4,
         "length": 4,
         "line": 14
+      }
+    ],
+    "invalid/UnknownRecordField.s": [
+      {
+        "code": "SL-V019",
+        "column": 7,
+        "length": 18,
+        "line": 27
+      },
+      {
+        "code": "SL-V019",
+        "column": 14,
+        "length": 14,
+        "line": 28
       }
     ],
     "invalid/UnterminatedComment.s": [
@@ -515,6 +550,7 @@
         "line": 27
       }
     ],
+    "valid/AdjacentDatecode.s": [],
     "valid/AllDatatypes.s": [],
     "valid/BuiltinCalls.s": [],
     "valid/CompressedFullGrammar.s": [],
@@ -524,17 +560,19 @@
     "valid/DurationAndTime.s": [],
     "valid/GraphObjectEnableTails.s": [],
     "valid/GraphObjectEnableVariants.s": [],
+    "valid/GraphObjectGeometry.s": [],
     "valid/GraphObjectShapes.s": [],
     "valid/GraphObjectsObjectLayer.s": [],
     "valid/GraphicsObjects.s": [],
+    "valid/HeaderMetadata.s": [],
     "valid/InteractEnableParenTail.s": [],
     "valid/InteractEnableTails.s": [],
     "valid/InteractWidgets.s": [],
     "valid/MinimalProgram.s": [],
     "valid/ModuleDefTrailingEnddefSemicolon.s": [],
+    "valid/ModuleDefWithCode.s": [],
     "valid/MultiEquationBlocks.s": [],
     "valid/MultiTypedefBlocks.s": [],
-    "valid/MultipleModuleDefBlocks.s": [],
     "valid/NestedSubmodules.s": [],
     "valid/OldNewOnStateField.s": [],
     "valid/OpenSequenceSeqFork.s": [],

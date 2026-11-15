@@ -76,10 +76,12 @@ Reads each source exactly like `parse_source_file` and reports parse-or-decode
 failures and validator diagnostics in one shape.
 
 `--rule` accepts a rule id (`SL-V016`), enum name
-(`CONSECUTIVE_SEQUENCE_STEPS`), or a synthetic finding id such as
-`PARSE_ERROR`, and is repeatable, so output can be narrowed to one rule. An
-unknown or inactive rule is a usage error (exit `2`), never a silently empty
-report. See [`rules`](#rules) for the registry.
+(`CONSECUTIVE_SEQUENCE_STEPS`), or one of the two synthetic finding ids this
+command emits itself: `PARSE_ERROR` and `DECODE_ERROR`. It is repeatable, so
+output can be narrowed to one rule. An unknown rule, an inactive rule, or
+another command's synthetic id (such as `READ_ERROR`, which only `corpus`
+reports) is a usage error (exit `2`), never a silently empty report. See
+[`rules`](#rules) for the registry.
 
 ### `parse`
 
@@ -91,11 +93,14 @@ sattline parse M.s --json --compact
 ```
 
 The default output is a structural summary: program name, encoding, and counts
-of module types, submodules, local variables, sequences, equation blocks, graph
-objects, and interact objects. `--tree` emits the AST as JSON, bounded by
-`--depth` (default 5). At the limit a composite value is replaced by a
-placeholder such as `<ModuleDef>` or `<12 items>`, so nothing silently
-disappears. `--compact` prints JSON on one line instead of indented.
+of module types, submodules, local variables, sequences, equation blocks (the
+`equationblocks` key), graph objects, and interact objects. The counts cover the
+whole module tree, so a nested submodule's declarations and code blocks are
+included, and the summary agrees with a `walk` over the picture. `diff` compares
+the same counts. `--tree` emits the AST as JSON, bounded by `--depth` (default
+5). At the limit a composite value is replaced by a placeholder such as
+`<ModuleDef>` or `<12 items>`, so nothing silently disappears. `--compact`
+prints JSON on one line instead of indented.
 
 ### `query`
 
@@ -106,12 +111,14 @@ sattline query M.s --what sequences --json --limit 5
 ```
 
 `--what` accepts `symbols`, `references`, `writers`, `callers`,
-`graph-objects`, `interact-objects`, and `sequences`, plus `definitions`, which
-is an alias for `symbols` and returns declaration rows only. Filters are
-case-insensitive: `--name` matches a row name, `--module` matches a
-slash-separated module path, and `--limit N` stops after `N` rows. A query with
-no rows exits `1`, because "nothing found" is a finding for a caller that
-expected a hit.
+`graph-objects`, `interact-objects`, and `sequences`. `symbols` reports module
+types, submodules, module instances, variables, parameters, datatypes, and
+record fields. Variable, parameter, datatype, and record-field rows carry the
+declaration span in `line`, `column`, `start`, and `end`; a record-field row
+uses its datatype name as the `module` value. Filters are case-insensitive:
+`--name` matches a row name, `--module` matches a slash-separated module path,
+and `--limit N` stops after `N` rows. A query with no rows exits `1`, because
+"nothing found" is a finding for a caller that expected a hit.
 
 `references` includes variable uses in header, graphics, interact, and
 module-layout annotation tails. A bare bound `InVar_`/`OutVar_` name is reported
@@ -151,7 +158,9 @@ sattline project programs/ libs/ --validate full --fail-on error
 ```
 
 A root is a library directory: the loader indexes artifacts directly inside it.
-When `--targets` is omitted, every source directly under each root is a target.
+Roots are searched in the order written, and an earlier root wins: when two
+roots hold a unit with the same name, only the earlier body is loaded. When
+`--targets` is omitted, every source directly under each root is a target.
 A missing or unparseable artifact is a load failure: the command reports
 `cannot load project` with the underlying error and exits `1`, whatever
 `--fail-on` says. A recursive `.l`/`.z` dependency
@@ -167,9 +176,11 @@ empty list. See [project.md](project.md#distribution-companion).
 
 | Flag | Meaning |
 | --- | --- |
+| `--search-path PATH` | Comma-separated roots in lookup order, as an alternative to positional `ROOT...`; backslashes are accepted |
+| `--search-path-base DIR` | Resolve relative `--search-path` entries under `DIR` |
 | `--mode draft\|official` | Which artifacts to resolve. Default `draft` |
 | `--targets A,B` | Only load these program names. Default: every source under the roots |
-| `--workers N` | Parse bodies in `N` processes. Default `min(8, cpu_count)`; `1` parses in this process |
+| `--workers N` | Parse bodies in `N` processes, 1 to 32. Default `min(8, cpu_count)`; `1` parses in this process |
 | `--cache-dir DIR` | Parser cache directory |
 | `--no-cache` | Bypass the project caches |
 | `--validate invoked\|full\|none` | What to validate. Default `invoked` |
@@ -182,7 +193,9 @@ disables the cache. `--no-cache` makes the load hermetic: the project caches
 neither read nor write. The compiled grammar cache under the temporary directory
 is independent of this flag. A first load in an empty directory writes the
 cache; every later load of an unchanged tree skips parsing. The directory holds
-parsed ASTs of the loaded sources, so keep it private.
+parsed ASTs of the loaded sources, so keep it private. On Windows the cache
+cannot check a POSIX owner or mode, so keep `--cache-dir` under the user
+profile; a shared path is not protected against a planted pickle.
 
 `--cycles` is gone, and the JSON payload no longer carries a `cycles` key: a
 recursive dependency chain or a self-instantiating module type is a structural
@@ -206,9 +219,9 @@ input is `-`, so `sattline check --stdin-name x.g -` is refused exactly like a
 ### `decode`
 
 ```bash
-sattline decode legacy.x
-sattline decode legacy.x --report
-sattline decode legacy.x --json
+sattline decode coded.x
+sattline decode coded.x --report
+sattline decode coded.x --json
 ```
 
 Prints the decoded text by default, a JSON report with `--report`, or the text
@@ -237,7 +250,8 @@ sattline corpus tests/fixtures/corpus --summary
 sattline corpus src --jobs 8 --json
 ```
 
-Scans for `.s`/`.x` recursively. `--jobs` uses a thread pool. The output is a
+Scans for `.s`/`.x` recursively. `--jobs N` uses a thread pool of 1 to 32
+workers and produces the same rows in the same order as a serial run. The output is a
 rule histogram plus the failing files, or a full JSON result unless `--summary`
 is given.
 
@@ -301,7 +315,7 @@ reports one unit has nothing to stream:
 | --- | --- |
 | `severity` | `error` for parse, decode, project-load, and validation findings; `warning` for graphics scan messages |
 | `message` | A sentence about the source |
-| `rule` | Machine-only id: `PARSE_ERROR`, `DECODE_ERROR`, `PROJECT_LOAD_ERROR`, `GRAPHICS_SCAN`, a `DiagnosticCode` enum name such as `UNDEFINED_VARIABLE` (`SL-V019` is its id), or a corpus read error |
+| `rule` | Machine-only id: `PARSE_ERROR`, `DECODE_ERROR`, `PROJECT_LOAD_ERROR`, `PROJECT_QUERY_ERROR`, `GRAPHICS_SCAN`, a `DiagnosticCode` enum name such as `UNDEFINED_VARIABLE` (`SL-V019` is its id), or a corpus read error |
 | `file` | Display path |
 | `line`, `column` | One-based location in the original source, or `null` when the failure has no position, as with a decode error |
 | `start`, `end` | Zero-based character range in the original source, or `null` when no range is known, as with a parse error or a decode error |
@@ -317,9 +331,13 @@ diffs.
 | --- | --- |
 | `programs` | One row per loaded artifact: `name`, `code`, `graphics`, `deps`, `distribution`, `sidecar`, `dependencies`, `source`, `library`, `resolved_base`, `has_executing_system`, `executing_systems` |
 | `edges` | `{"from": dependent, "to": dependency}` over casefolded names |
-| `diagnostics` | One row per non-fatal load condition: `kind` (`sidecar-missing`, `sidecar-elsewhere`, `sidecar-empty`, `sidecar-family-mismatch`, or `name-resolution-conflict`), `program`, `detail`, `path` |
+| `diagnostics` | One row per non-fatal load condition: `kind` (`sidecar-missing`, `sidecar-elsewhere`, `sidecar-empty`, or `sidecar-family-mismatch`), `program`, `detail`, `path` |
 | `validation` | One row per diagnostic: `program`, `code` (`SL-V###`), `message`, `line`, `column` |
-| `findings` | Present only when the tree could not be loaded at all: one `Finding` with rule `PROJECT_LOAD_ERROR` |
+| `findings` | Present only when the tree could not be loaded at all: one `Finding` with rule `PROJECT_LOAD_ERROR`, or when `--of` names a program outside the graph: one `Finding` with rule `PROJECT_QUERY_ERROR` |
+
+`--graph` emits `edges` and `validation` and prints the validation rows in text
+mode, so a finding still visible in the normal report is never hidden by the
+graph projection.
 
 A validation row has no `severity`, because every row it carries is an error.
 `line` and `column` are `null` when the diagnostic has no span.
@@ -332,13 +350,13 @@ A validation row has no `severity`, because every row it carries is an error.
 
 | Flag | Applies to | Meaning |
 | --- | --- | --- |
-| `--debug` | top level | Print a traceback for internal errors. It comes before the command |
+| `--debug` | top level | Print loader progress, the parser failure log, and a traceback for internal errors. It comes before the command |
 | `--stdin-name PATH` | source commands | Required when reading `-`, so findings are attributable; a companion suffix here is refused like a companion path |
 | `--paths given\|absolute` | source commands | How to render paths, in findings and in the document-level `file` key. Default `given` |
-| `--rule RULE` | `check` | Filter by rule id or enum name, repeatable; synthetic ids such as `PARSE_ERROR` are accepted |
+| `--rule RULE` | `check` | Filter by rule id or enum name, repeatable; only this command's own synthetic ids (`PARSE_ERROR`, `DECODE_ERROR`) are accepted |
 | `--max-findings N` | `check` | Limit printed findings; the exit code still reflects all of them |
 | `--limit N` | `query` | Stop after `N` rows |
-| `--fail-on none\|error` | `check`, `project`, `corpus` | Which findings make the exit code `1` (`never` is accepted as an alias) |
+| `--fail-on none\|error` | `check`, `project`, `corpus` | Which findings make the exit code `1` |
 | `--compact` | `parse` | Emit JSON on one line |
 | `--depth N` | `parse --tree`, `project --of` | Bound output or traversal |
 

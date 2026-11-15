@@ -29,7 +29,11 @@ The generated header records the numbers. At the time of writing:
 
 - 171 documented functions are carried with a full signature.
 - 2 documented functions are carried without a typed parameter list
-  (`GetPrivilegeFlag`, `ResetPrivilegeFlag`); they still carry their arity.
+  (`GetPrivilegeFlag`, `ResetPrivilegeFlag`). Their documented arity is not
+  known, so it is recorded as `null` and a call is not arity-checked. An
+  untyped entry must record `arity` as an integer or `null`; the generator
+  rejects an entry that omits it, and rejects an `arity` on a typed entry so the
+  two copies cannot drift.
 - 191 further registrations are carried under `meta.internal`. They are not
   language built-ins: the system binds them for compiled programs and shipped
   library sources call them, so they are kept for arity and argument checks.

@@ -1,10 +1,9 @@
 # pyright: reportPrivateUsage=false
-"""Unit tests for the project-layer domain skeleton.
+"""Unit tests for the project-layer domain model.
 
 Covers the ``sattline_parser.project`` value types, the registry contract, the
 DependencyGraph, and the structured load errors. ``SattLineProject.load`` is
-wired end to end in Phase 3; the recursive resolution behavior itself lives in
-``tests/project/test_loader.py``.
+end-to-end in ``tests/project/test_loader.py``.
 """
 
 from __future__ import annotations

@@ -100,7 +100,7 @@
 | Reachability | The walk from a target's module tree into the module types it invokes. |
 | Lookup cache | A JSON cache of `(kind, name, mode) -> (base, extension)` resolutions. |
 | AST cache | An HMAC-signed pickle cache of parsed `BasePicture` values. |
-| Hermetic load | A load with `cache_dir=None`: no disk writes, no shared state. |
+| Hermetic load | A load with `cache_dir=None`: the project caches neither read nor write; the separate Lark grammar cache may still be written. |
 
 ## CLI
 

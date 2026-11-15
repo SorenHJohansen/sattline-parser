@@ -11,7 +11,7 @@ from sattline_parser.models.ast_model import (
     MappingSource,
     ModuleHeader,
     ParameterMapping,
-    Simple_DataType,
+    ScalarDatatype,
     Variable,
 )
 from sattline_parser.models.expressions import (
@@ -52,10 +52,11 @@ from sattline_parser.validation.typing import (
     resolve_variable_field_datatype,
     split_dotted_name,
     suggest_datatype_name,
+    unresolved_reference_is_a_defect,
 )
 
 
-def _var(name: str, datatype: Simple_DataType | str, *, state: bool | None = False) -> Variable:
+def _var(name: str, datatype: ScalarDatatype | str, *, state: bool | None = False) -> Variable:
     return Variable(name=name, datatype=datatype, state=state)
 
 
@@ -80,10 +81,10 @@ def test_type_graph_resolves_records_and_fields() -> None:
     assert record is not None and record.name == "Outer"
     assert graph.record("Missing") is None
     field = graph.field("Outer", "count")
-    assert field is not None and field.datatype == Simple_DataType.INTEGER
+    assert field is not None and field.datatype == ScalarDatatype.INTEGER
     assert graph.field("Outer", "Missing") is None
     assert graph.field("Missing", "Count") is None
-    assert graph.field_type("Outer", "Count") == Simple_DataType.INTEGER
+    assert graph.field_type("Outer", "Count") == ScalarDatatype.INTEGER
     assert graph.field_type("Outer", "Missing") is None
 
 
@@ -91,12 +92,12 @@ def test_type_graph_includes_builtin_records() -> None:
     graph = _graph()
     assert graph.has_record("BooleanSignal") is True
     field = graph.field("BooleanSignal", "Value")
-    assert field is not None and field.datatype == Simple_DataType.BOOLEAN
+    assert field is not None and field.datatype == ScalarDatatype.BOOLEAN
 
 
 def test_type_graph_leaf_paths_for_simple_and_record_types() -> None:
     graph = _graph()
-    assert list(graph.iter_leaf_field_paths(Simple_DataType.INTEGER)) == [()]
+    assert list(graph.iter_leaf_field_paths(ScalarDatatype.INTEGER)) == [()]
     assert set(graph.iter_leaf_field_paths("Outer")) == {
         ("Part", "Value"),
         ("Part", "Flag"),
@@ -137,7 +138,7 @@ def test_type_graph_field_state_is_preserved() -> None:
 
 def test_datatype_predicates_accept_names_and_enum_members() -> None:
     assert is_numeric_datatype("integer") is True
-    assert is_numeric_datatype(Simple_DataType.REAL) is True
+    assert is_numeric_datatype(ScalarDatatype.REAL) is True
     assert is_numeric_datatype("boolean") is False
     assert is_numeric_datatype(None) is False
     assert is_boolean_datatype("boolean") is True
@@ -149,12 +150,12 @@ def test_datatype_predicates_accept_names_and_enum_members() -> None:
 
 def test_format_datatype() -> None:
     assert format_datatype(None) == "unknown"
-    assert format_datatype(Simple_DataType.INTEGER) == "integer"
+    assert format_datatype(ScalarDatatype.INTEGER) == "integer"
     assert format_datatype("MyRecord") == "MyRecord"
 
 
 def test_normalize_builtin_datatype() -> None:
-    assert normalize_builtin_datatype("integer") is Simple_DataType.INTEGER
+    assert normalize_builtin_datatype("integer") is ScalarDatatype.INTEGER
     assert normalize_builtin_datatype("MyRecord") == "MyRecord"
 
 
@@ -168,16 +169,41 @@ def test_resolve_variable_field_datatype() -> None:
     graph = _graph()
     variable = _var("Root", "Outer")
     assert resolve_variable_field_datatype(variable, (), graph) == "Outer"
-    assert resolve_variable_field_datatype(variable, ("Count",), graph) == Simple_DataType.INTEGER
-    assert resolve_variable_field_datatype(variable, ("Part", "Value"), graph) == Simple_DataType.REAL
+    assert resolve_variable_field_datatype(variable, ("Count",), graph) == ScalarDatatype.INTEGER
+    assert resolve_variable_field_datatype(variable, ("Part", "Value"), graph) == ScalarDatatype.REAL
     assert resolve_variable_field_datatype(variable, ("Missing",), graph) is None
     assert resolve_variable_field_datatype(variable, ("Count", "X"), graph) is None
+
+
+def test_unresolved_reference_is_a_defect_judges_the_field_path() -> None:
+    graph = _graph()
+    scope = build_scope(None, [_var("Root", "Outer"), _var("Rate", "real")])
+
+    assert unresolved_reference_is_a_defect(VarRef("Missing"), scope, graph) is True
+    # A resolving base with no path is not a defect, even when the caller only
+    # asks because its own resolution failed for another reason.
+    assert unresolved_reference_is_a_defect(VarRef("Rate"), scope, graph) is False
+    assert unresolved_reference_is_a_defect(VarRef("Root.Missing"), scope, graph) is True
+    assert unresolved_reference_is_a_defect(VarRef("Root.Part.Value"), scope, graph) is False
+    assert unresolved_reference_is_a_defect(VarRef("Rate.Field"), scope, graph) is True
+    assert unresolved_reference_is_a_defect(VarRef("Root.Part.Missing.Deep"), scope, graph) is True
+
+
+def test_unresolved_reference_stays_silent_inside_a_temporal_field() -> None:
+    """A temporal value exposes its component accessors at any depth."""
+    inner = _record("Inner", _var("Stamp", ScalarDatatype.TIME), _var("Elapsed", ScalarDatatype.DURATION))
+    outer = _record("Outer", _var("Part", "Inner"))
+    graph = TypeGraph.from_datatypes([inner, outer])
+    scope = build_scope(None, [_var("Root", "Outer")])
+
+    assert unresolved_reference_is_a_defect(VarRef("Root.Part.Stamp.Time"), scope, graph) is False
+    assert unresolved_reference_is_a_defect(VarRef("Root.Part.Elapsed.Milliseconds"), scope, graph) is False
 
 
 def test_resolve_ref_datatype() -> None:
     graph = _graph()
     scope = build_scope(None, [_var("Root", "Outer")])
-    assert resolve_ref_datatype(VarRef("Root.Count"), scope, graph) == Simple_DataType.INTEGER
+    assert resolve_ref_datatype(VarRef("Root.Count"), scope, graph) == ScalarDatatype.INTEGER
     assert resolve_ref_datatype(VarRef("Root.Missing"), scope, graph) is None
     assert resolve_ref_datatype(VarRef("Missing"), scope, graph) is None
     assert resolve_ref_datatype(VarRef(""), scope, graph) is None
@@ -210,22 +236,22 @@ def test_time_literal_helpers() -> None:
 
 
 def test_infer_literal_datatype() -> None:
-    assert infer_literal_datatype(True) is Simple_DataType.BOOLEAN
-    assert infer_literal_datatype(IntLiteral(3)) is Simple_DataType.INTEGER
-    assert infer_literal_datatype(FloatLiteral(3.5)) is Simple_DataType.REAL
-    assert infer_literal_datatype("1h", is_duration=True) is Simple_DataType.DURATION
-    assert infer_literal_datatype("text") is Simple_DataType.STRING
+    assert infer_literal_datatype(True) is ScalarDatatype.BOOLEAN
+    assert infer_literal_datatype(IntLiteral(3)) is ScalarDatatype.INTEGER
+    assert infer_literal_datatype(FloatLiteral(3.5)) is ScalarDatatype.REAL
+    assert infer_literal_datatype("1h", is_duration=True) is ScalarDatatype.DURATION
+    assert infer_literal_datatype("text") is ScalarDatatype.STRING
     assert infer_literal_datatype({"Time_Value": "2026-01-01-00:00:00.000"}) == "Time_Value"
     assert infer_literal_datatype(object()) is None
 
 
 def test_literal_matches_expected_datatype() -> None:
-    assert literal_matches_expected_datatype(True, Simple_DataType.BOOLEAN) is True
-    assert literal_matches_expected_datatype("1h", Simple_DataType.DURATION, is_duration=True) is True
-    assert literal_matches_expected_datatype("1h", Simple_DataType.DURATION) is True
-    assert literal_matches_expected_datatype("2026-01-01-00:00:00.000", Simple_DataType.TIME) is True
-    assert literal_matches_expected_datatype({"Time_Value": "bad"}, Simple_DataType.TIME) is False
-    assert literal_matches_expected_datatype(1, Simple_DataType.STRING) is False
+    assert literal_matches_expected_datatype(True, ScalarDatatype.BOOLEAN) is True
+    assert literal_matches_expected_datatype("1h", ScalarDatatype.DURATION, is_duration=True) is True
+    assert literal_matches_expected_datatype("1h", ScalarDatatype.DURATION) is True
+    assert literal_matches_expected_datatype("2026-01-01-00:00:00.000", ScalarDatatype.TIME) is True
+    assert literal_matches_expected_datatype({"Time_Value": "bad"}, ScalarDatatype.TIME) is False
+    assert literal_matches_expected_datatype(1, ScalarDatatype.STRING) is False
 
 
 def test_literal_matches_duration_and_time_by_datatype_name() -> None:
@@ -245,7 +271,7 @@ def test_builtin_type_matches() -> None:
     assert builtin_type_matches("MyRecord", "MyRecord", direction="in") is True
     assert builtin_type_matches("MyRecord", "Other", direction="in") is False
     assert builtin_type_matches("integer", "anytype", direction="in") is True
-    assert builtin_type_matches("MyRecord", Simple_DataType.INTEGER, direction="in") is False
+    assert builtin_type_matches("MyRecord", ScalarDatatype.INTEGER, direction="in") is False
     assert builtin_type_matches("textfile", "tObject", direction="in") is True
     assert builtin_type_matches("MyRecord", "tObject", direction="in") is True
     # a scalar is not an object handle, so it stays a mismatch
@@ -267,18 +293,18 @@ def test_assignment_type_matches() -> None:
     assert assignment_type_matches("Time_Value", "integer") is False
     assert assignment_type_matches("MyRecord", "MyRecord") is True
     assert assignment_type_matches("MyRecord", "Other") is False
-    assert assignment_type_matches("MyRecord", Simple_DataType.INTEGER) is False
+    assert assignment_type_matches("MyRecord", ScalarDatatype.INTEGER) is False
 
 
 def test_merge_numeric_and_compatible_types() -> None:
-    assert merge_numeric_types(("integer", "real")) is Simple_DataType.REAL
-    assert merge_numeric_types(("integer", "integer")) is Simple_DataType.INTEGER
+    assert merge_numeric_types(("integer", "real")) is ScalarDatatype.REAL
+    assert merge_numeric_types(("integer", "integer")) is ScalarDatatype.INTEGER
     assert merge_numeric_types(("integer", "boolean")) is None
     assert merge_numeric_types(()) is None
     assert merge_compatible_types(()) is None
-    assert merge_compatible_types(("integer", "integer")) == Simple_DataType.INTEGER
-    assert merge_compatible_types(("integer", "real")) is Simple_DataType.REAL
-    assert merge_compatible_types(("identstring", "tagstring")) is Simple_DataType.STRING
+    assert merge_compatible_types(("integer", "integer")) == ScalarDatatype.INTEGER
+    assert merge_compatible_types(("integer", "real")) is ScalarDatatype.REAL
+    assert merge_compatible_types(("identstring", "tagstring")) is ScalarDatatype.STRING
     assert merge_compatible_types(("integer", "boolean")) is None
 
 
@@ -297,11 +323,11 @@ def test_expression_is_zero_literal() -> None:
 def test_infer_expression_datatype_primitives_and_refs() -> None:
     graph = _graph()
     scope = build_scope(None, [_var("Root", "Outer"), _var("Flag", "boolean")])
-    assert infer_expression_datatype(True, scope, graph) is Simple_DataType.BOOLEAN
-    assert infer_expression_datatype(IntLiteral(1), scope, graph) is Simple_DataType.INTEGER
-    assert infer_expression_datatype(FloatLiteral(1.5), scope, graph) is Simple_DataType.REAL
-    assert infer_expression_datatype("text", scope, graph) is Simple_DataType.STRING
-    assert infer_expression_datatype(VarRef("Flag"), scope, graph) is Simple_DataType.BOOLEAN
+    assert infer_expression_datatype(True, scope, graph) is ScalarDatatype.BOOLEAN
+    assert infer_expression_datatype(IntLiteral(1), scope, graph) is ScalarDatatype.INTEGER
+    assert infer_expression_datatype(FloatLiteral(1.5), scope, graph) is ScalarDatatype.REAL
+    assert infer_expression_datatype("text", scope, graph) is ScalarDatatype.STRING
+    assert infer_expression_datatype(VarRef("Flag"), scope, graph) is ScalarDatatype.BOOLEAN
     # On/Off are boolean literals, so a VarRef with that spelling is undefined.
     assert infer_expression_datatype(VarRef("On"), scope, graph) is None
     assert infer_expression_datatype(VarRef("Missing"), scope, graph) is None
@@ -312,14 +338,14 @@ def test_infer_expression_datatype_operators() -> None:
     scope = build_scope(None, [_var("Count", "integer"), _var("Rate", "real")])
     assert (
         infer_expression_datatype(Compare(VarRef("Count"), "==", VarRef("Count")), scope, graph)
-        is Simple_DataType.BOOLEAN
+        is ScalarDatatype.BOOLEAN
     )
-    assert infer_expression_datatype(BoolOp("AND", (True, False)), scope, graph) is Simple_DataType.BOOLEAN
-    assert infer_expression_datatype(NotOp(True), scope, graph) is Simple_DataType.BOOLEAN
-    assert infer_expression_datatype(BinOp(VarRef("Count"), "+", VarRef("Rate")), scope, graph) is Simple_DataType.REAL
-    assert infer_expression_datatype(UnaryOp("-", VarRef("Count")), scope, graph) is Simple_DataType.INTEGER
+    assert infer_expression_datatype(BoolOp("AND", (True, False)), scope, graph) is ScalarDatatype.BOOLEAN
+    assert infer_expression_datatype(NotOp(True), scope, graph) is ScalarDatatype.BOOLEAN
+    assert infer_expression_datatype(BinOp(VarRef("Count"), "+", VarRef("Rate")), scope, graph) is ScalarDatatype.REAL
+    assert infer_expression_datatype(UnaryOp("-", VarRef("Count")), scope, graph) is ScalarDatatype.INTEGER
     ternary = TernaryOp(branches=((True, VarRef("Count")),), else_expr=VarRef("Rate"))
-    assert infer_expression_datatype(ternary, scope, graph) is Simple_DataType.REAL
+    assert infer_expression_datatype(ternary, scope, graph) is ScalarDatatype.REAL
     empty_ternary = TernaryOp(branches=(), else_expr=None)
     assert infer_expression_datatype(empty_ternary, scope, graph) is None
 
@@ -327,7 +353,7 @@ def test_infer_expression_datatype_operators() -> None:
 def test_infer_expression_datatype_builtin_calls() -> None:
     graph = _graph()
     scope = build_scope(None, [])
-    assert infer_expression_datatype(FuncCall("StringLength", (VarRef("X"),)), scope, graph) is Simple_DataType.INTEGER
+    assert infer_expression_datatype(FuncCall("StringLength", (VarRef("X"),)), scope, graph) is ScalarDatatype.INTEGER
     assert infer_expression_datatype(FuncCall("ResetPrivilegeFlag", ()), scope, graph) is None
     assert infer_expression_datatype(FuncCall("UserProc", ()), scope, graph) is None
     assert infer_expression_datatype(object(), scope, graph) is None

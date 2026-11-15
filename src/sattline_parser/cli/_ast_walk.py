@@ -102,6 +102,10 @@ class _QueryVisitor(NodeVisitor):
 
     def visit_BasePicture(self, picture: m.BasePicture) -> None:
         self.visit(picture.header)
+        for datatype in picture.datatype_defs:
+            self.rows.append(_symbol("datatype", datatype.name, None, datatype.declaration_span))
+            for field in datatype.var_list:
+                self.rows.append(_symbol("record_field", field.name, datatype.name, field.declaration_span))
         for module_type in picture.moduletype_defs:
             self.rows.append(
                 _symbol("module_type", module_type.name, self._module_path(), module_type.declaration_span)
@@ -244,13 +248,13 @@ class _QueryVisitor(NodeVisitor):
     ) -> None:
         if declarations:
             for variable in module.localvariables:
-                self.rows.append(_symbol("variable", variable.name, self._module_path()))
+                self.rows.append(_symbol("variable", variable.name, self._module_path(), variable.declaration_span))
             for variable in module.moduleparameters:
-                self.rows.append(_symbol("parameter", variable.name, self._module_path()))
-        for module_def in module.moduledefs:
-            self.visit(module_def)
-        for module_code in module.modulecodes:
-            self.visit(module_code)
+                self.rows.append(_symbol("parameter", variable.name, self._module_path(), variable.declaration_span))
+        if module.moduledef is not None:
+            self.visit(module.moduledef)
+        if module.modulecode is not None:
+            self.visit(module.modulecode)
         for submodule in module.submodules:
             self._visit_submodule(submodule)
 

@@ -1,9 +1,9 @@
 """SattLineProject: the loaded, resolved view of a SattLine artifact set.
 
-Phases 3-4 wire ``load`` end to end: file discovery, recursive dependency
-resolution, and ``.g`` / ``.y`` graphics companion parsing via the project
-loader. The public ``from_programs`` builder covers tests and consumers that already
-hold parsed programs.
+``load`` walks the whole tree: file discovery, recursive dependency resolution,
+and ``.g`` / ``.y`` graphics companion parsing through the project loader. The
+public ``from_programs`` builder covers tests and consumers that already hold
+parsed programs.
 """
 
 from __future__ import annotations
@@ -71,17 +71,18 @@ class SattLineProject:
         validated in full, while a dependency file contributes only the module
         types the target invokes.
 
-        Each target is resolved across the ordered roots, its ``.l`` / ``.z``
-        dependency file (when present) is read, and dependencies are loaded
-        recursively before the target itself. When a code file has a ``.g`` /
-        ``.y`` sibling, the companion is parsed into the program's graphics
-        model. Programs are canonicalized by casefolded identity: within one
-        resolved body each name is visited and parsed exactly once. A name that
-        resolves to different bodies for different requesters is reported as a
-        ``NAME_RESOLUTION_CONFLICT`` diagnostic, and the registry keeps the
-        first body. A missing or unparseable artifact fails the whole load, so a
-        project is either complete or not returned. A recursive sidecar chain or
-        a module type that instantiates itself is a structural error too.
+        Each target is resolved through ``roots`` in the caller's order, its
+        ``.l`` / ``.z`` dependency file (when present) is read, and dependencies
+        are loaded recursively before the target itself. Earlier roots win: when
+        two roots hold a same-named unit, the body in the earlier root is the
+        one loaded, and the later body is never planned, parsed, or validated.
+        When a code file has a ``.g`` / ``.y`` sibling, the companion is parsed
+        into the program's graphics model. Programs are canonicalized by
+        casefolded identity, so one name resolves to one body and each body is
+        visited and parsed once. A missing or unparseable artifact fails the
+        whole load, so a project is either complete or not returned. A recursive
+        sidecar chain or a module type that instantiates itself is a structural
+        error too.
 
         ``validate=INVOKED`` (default) validates each target in full while a
         dependency file contributes only the module types the target invokes,

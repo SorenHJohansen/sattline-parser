@@ -33,8 +33,8 @@ flowchart TB
 
 ## Encoding: bytes to text
 
-`parse_source_file(path)` calls `source_text_for_parse(path)`, which reads the
-file in binary and hands the bytes to `decode_source_bytes`.
+`parse_source_file(path)` reads the file in binary and hands the bytes to
+`parse_source_bytes`, which decodes them through `decode_source_bytes`.
 
 - A byte-coded stream starts with `\x80 3.1`. It is decoded by
   `decode_coded_stream` before anything else. See [glossary](glossary.md) and
@@ -176,6 +176,7 @@ transformer, or unusually low interpreter recursion limit still raises
 | Function | Input | Decodes | Preprocesses | Parses | Validates |
 | --- | --- | --- | --- | --- | --- |
 | `parse_source_file` | path | yes, including coded and comment-tolerant cp1252 | yes | yes | no |
+| `parse_source_bytes` | `bytes` | yes, including coded and comment-tolerant cp1252 | yes | yes | no |
 | `parse_source_text` | `str` | no | yes | yes | no |
 | `parse_and_validate` | `str` | no | yes | yes | yes, single source |
 | `load_source_text` | path | yes, including compressed | no, returns decoded text | no | no |

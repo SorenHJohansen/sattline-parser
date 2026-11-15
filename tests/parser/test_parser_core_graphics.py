@@ -17,6 +17,7 @@ from sattline_parser.models.clauses import (
     FlagClause,
     ModuleInViewClause,
     PickButton,
+    PolygonPoint,
     ProcedureCall,
     ScaleSelector,
     TailedClause,
@@ -285,6 +286,7 @@ def test_interact_alignment_and_body_rules_return_typed_payloads():
     mixin = _GraphicsHarness()
 
     assert mixin.alignment(Meta(), [Token("LEFTALIGNED", "LeftAligned")]) == Alignment("left")
+    assert mixin.alignment(Meta(), [Token("CENTERALIGNED", "CenterAligned")]) == Alignment("center")
     assert mixin.alignment(Meta(), [Token("RIGHTALIGNED", "RightAligned")]) == Alignment("right")
     with pytest.raises(ValueError, match="alignment expected"):
         mixin.alignment(Meta(), [Token("NAME", "Middle")])
@@ -481,6 +483,90 @@ def _body_payloads(interactor: object) -> list[object]:
     """Return one interactor's typed body entries."""
     properties = getattr(interactor, "properties", {})
     return list(cast("dict[str, Any]", properties).get("body") or ())
+
+
+def test_polygon_object_keeps_points_and_per_coordinate_tails():
+    mixin = _GraphicsHarness()
+    bound = VarTail("in", "PointToggle")
+
+    polygon = mixin.polygon_object(
+        [
+            ["Polyline"],
+            InterimCoords(coords=(0.0, 1.0)),
+            InterimCoords(coords=(1.0, 1.0), tails=[bound], coord_tails=((), (bound,))),
+        ]
+    )
+
+    assert polygon.properties[parser_const.KEY_POINTS] == [
+        PolygonPoint(0.0, 1.0),
+        PolygonPoint(1.0, 1.0, y_tails=(bound,)),
+    ]
+    # The flat view keeps the same tail object, and the walk emits it once.
+    assert polygon.properties[parser_const.KEY_TAILS] == [bound]
+
+
+def test_text_object_keeps_its_typed_clauses_and_connection_node():
+    mixin = _GraphicsHarness()
+    width = TailedClause("Width_", 6)
+    fraction = TailedClause("ValueFraction", 2)
+    format_string = TailedClause("Format_String_", "%g")
+    alignment = Alignment("right")
+    node = GraphObject("ConnectionNode", {"coords": (0.6, 0.2)})
+
+    text = mixin.text_object(
+        [
+            TextContent("LabelValue"),
+            Token(parser_const.TOKEN_VARNAME, "LabelValue"),
+            InterimCoords(coords=((0.0, 0.0), (1.0, 1.0))),
+            width,
+            fraction,
+            format_string,
+            alignment,
+            node,
+        ]
+    )
+    properties = text.properties
+
+    assert properties[parser_const.KEY_WIDTH] is width
+    assert properties[parser_const.KEY_VALUE_FRACTION] is fraction
+    assert properties[parser_const.KEY_FORMAT_STRING] is format_string
+    assert properties[parser_const.KEY_ALIGNMENTS] == [alignment]
+    assert properties[parser_const.KEY_CONNECTION_NODE] is node
+    assert properties[parser_const.KEY_TEXT_VARS] == [VarRef("LabelValue")]
+
+
+def test_graph_object_geometry_fixture_keeps_every_property_it_spells():
+    """End to end: a polygon's points and a text object's clauses reach the AST."""
+    source = _repo_path("tests", "fixtures", "corpus", "valid", "GraphObjectGeometry.s").read_text(encoding="utf-8")
+    bp = parser_core_parse_source_text(source)
+    assert bp.moduledef is not None
+    objects = {graph_object.type: graph_object for graph_object in bp.moduledef.graph_objects}
+
+    polygon = objects[parser_const.GRAMMAR_VALUE_POLYGONOBJECT]
+    points = polygon.properties[parser_const.KEY_POINTS]
+    assert [(point.x, point.y) for point in points] == [
+        (-0.9, 0.9),
+        (-0.5, 0.9),
+        (0.5, 0.9),
+        (0.5, 0.4),
+        (-0.5, 0.4),
+    ]
+    # The bound coordinate is the fourth point's y, and the flat view holds the
+    # same tail object rather than a copy.
+    assert polygon.properties[parser_const.KEY_TAILS] == [points[3].y_tails[0]]
+    bound = points[3].y_tails[0]
+    assert isinstance(bound, VarTail) and bound.value == "PointToggle"
+    assert [point.x_tails for point in points] == [(), (), (), (), ()]
+
+    text = objects[parser_const.GRAMMAR_VALUE_TEXTOBJECT]
+    width = text.properties[parser_const.KEY_WIDTH]
+    assert (width.key, width.value) == ("Width_", 6)
+    assert isinstance(width.tail, VarTail) and width.tail.value == "LabelWidth"
+    assert width.tail is text.properties[parser_const.KEY_TAILS][0]
+    assert text.properties[parser_const.KEY_VALUE_FRACTION].value == 2
+    assert text.properties[parser_const.KEY_FORMAT_STRING].value == "%g"
+    assert [alignment.value for alignment in text.properties[parser_const.KEY_ALIGNMENTS]] == ["right"]
+    assert text.properties[parser_const.KEY_CONNECTION_NODE].properties[parser_const.KEY_COORDS] == (0.6, 0.2)
 
 
 def test_interact_widgets_fixture_preserves_types_names_and_assignments():

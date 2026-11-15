@@ -99,6 +99,10 @@ submodule header, and the module scope for that module's `ModuleDef`. The
 walker emits each tail once, so a tail shared between a typed clause and the
 flat `properties["tails"]` view is not reported twice.
 
+`GroupConn=` names a scan-group path, not a variable. A value such as
+`ApplConfig.ApplSetup.SubSystem` is a label for the group a module joins, so it
+does not resolve through the variable scope and produces no `SL-V019`.
+
 Expression tails are walked like any other expression: an unresolved name is
 `SL-V019`, and ordinary operator diagnostics apply. An `Enable_` expression tail
 must be boolean (`SL-V030`). A `ModuleDef` coordinate tail must be real
@@ -162,10 +166,21 @@ typing that needs a validation scope stays in this layer.
   every segment of a dotted target, so `Rec.Field := 1` is rejected when `Rec`
   is `Const`, and the same rule covers a builtin output argument.
 - References to undefined variables are rejected, except SFC runtime
-  accessors and the `On`/`Off` runtime constants.
+  accessors and the `On`/`Off` runtime constants. A missing root name is
+  undefined. A dotted field path is judged one step at a time: a field on a
+  scalar is invalid, a field absent from a record whose shape is known is
+  undefined, and a step through a record whose shape is not modelled (an opaque
+  system type or an unloaded external record) is unproven, so it stays silent.
+  A record name declared more than once has more than one valid shape, so a
+  missing field there is unproven too. Temporal values expose date, time, and
+  duration component accessors at any depth, so a dotted access on one is not a
+  field typo.
 - Builtin calls are checked for arity and for output arguments that must be
   writable variable references. Arity, argument-direction, and argument-datatype
   checks need a known signature, so they apply only to names in the catalogue.
+  A catalogue name whose documented arity is unknown is carried without a
+  parameter list, so no arity or argument check runs for it; the string-literal
+  argument rule still applies.
 - A string literal argument is rejected in every call, known or unknown,
   because the parser does not evidence that the callee accepts a value there.
 - Numeric operands are required for arithmetic; boolean operands for `AND`,
@@ -213,8 +228,14 @@ it is a suffix of its host step or transition.
   Mapping sources resolve in the invoking scope. A module type definition has no
   mapping list in the grammar, so it carries none to check.
 - Every mapping is checked for a duplicate target, field access, unknown target,
-  and literal or variable type mismatch. The checks are the same for a plain
-  submodule as for a module-type instance.
+  a source that does not resolve, and literal or variable type mismatch. The
+  checks are the same for a plain submodule as for a module-type instance. A
+  source typo is reported even when the target field's shape is unproven,
+  because the source resolves in the invoking scope either way.
+- A dotted target such as `Settings.Flag` resolves through the record's fields,
+  so the source is compared against the field's datatype rather than the
+  record's. A target field that the type graph cannot resolve is the
+  mapping-target rule's finding, and the transfer rule leaves it alone.
 - An absent mapping target is reported when the formal parameter list is known.
   When the target type comes from a definition that is not loaded, the formals
   are unknown: the target check stays silent while the local duplicate-target
@@ -222,6 +243,11 @@ it is a suffix of its host step or transition.
 - A module-type instance whose type is neither declared in the file nor visible
   from a loaded dependency reports `SL-V058`. The single-file escape hatch
   suppresses it; a project load always has the whole closure.
+- Recursion between module types is a project-layer check. The single-file
+  validator follows neither external definitions nor the full instantiation
+  graph, so a file that only this file references can recurse without a
+  single-file finding. `SattLineProject.load` rejects the same graph at load
+  time.
 - When the module type is external, the mapping rule resolves against the
   loaded definition through the project layer.
 

@@ -1,7 +1,7 @@
 """Builtin record field specifications for the SattLine builtin datatypes.
 
 Each entry maps a builtin datatype name to its ordered field list. Field
-datatypes are either a :class:`Simple_DataType` or the name of another record
+datatypes are either a :class:`ScalarDatatype` or the name of another record
 type. Three groups carry an empty spec:
 
 * the native object handles (``tObject``, ``ArrayObject``, ``QueueObject``),
@@ -20,20 +20,20 @@ ships. Names are matched case-insensitively by consumers.
 
 from __future__ import annotations
 
-from sattline_parser.models.ast_model import Simple_DataType
+from sattline_parser.models.ast_model import ScalarDatatype
 
-BuiltinFieldSpec = tuple[str, Simple_DataType | str]
+BuiltinFieldSpec = tuple[str, ScalarDatatype | str]
 
-_BOOL = Simple_DataType.BOOLEAN
-_INT = Simple_DataType.INTEGER
-_REAL = Simple_DataType.REAL
-_STR = Simple_DataType.STRING
-_IDENT = Simple_DataType.IDENTSTRING
-_TAG = Simple_DataType.TAGSTRING
-_LINE = Simple_DataType.LINESTRING
-_MAX = Simple_DataType.MAXSTRING
-_TIME = Simple_DataType.TIME
-_DURATION = Simple_DataType.DURATION
+_BOOL = ScalarDatatype.BOOLEAN
+_INT = ScalarDatatype.INTEGER
+_REAL = ScalarDatatype.REAL
+_STR = ScalarDatatype.STRING
+_IDENT = ScalarDatatype.IDENTSTRING
+_TAG = ScalarDatatype.TAGSTRING
+_LINE = ScalarDatatype.LINESTRING
+_MAX = ScalarDatatype.MAXSTRING
+_TIME = ScalarDatatype.TIME
+_DURATION = ScalarDatatype.DURATION
 
 
 def _status_text_group(index: int) -> tuple[BuiltinFieldSpec, ...]:
@@ -983,7 +983,7 @@ for _untranscribed_name in _UNTRANSCRIBED_BUILTIN_RECORD_NAMES:
     BUILTIN_RECORD_SPECS[_untranscribed_name] = ()
 
 BUILTIN_DECLARED_DATATYPE_NAMES: tuple[str, ...] = tuple(
-    dict.fromkeys([datatype.value for datatype in Simple_DataType] + list(BUILTIN_RECORD_SPECS))
+    dict.fromkeys([datatype.value for datatype in ScalarDatatype] + list(BUILTIN_RECORD_SPECS))
 )
 
 __all__ = [

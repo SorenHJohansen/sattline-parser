@@ -12,7 +12,7 @@ from dataclasses import dataclass
 from functools import cache
 
 from sattline_parser.builtins.records import BUILTIN_RECORD_SPECS
-from sattline_parser.models.ast_model import BasePicture, DataType, Simple_DataType, Variable
+from sattline_parser.models.ast_model import BasePicture, DataType, ScalarDatatype, Variable
 from sattline_parser.names import fold_identifier
 
 
@@ -21,7 +21,7 @@ class FieldDef:
     """One field of a record datatype."""
 
     name: str
-    datatype: Simple_DataType | str
+    datatype: ScalarDatatype | str
     state: bool | None = False
 
 
@@ -40,8 +40,16 @@ class TypeGraph:
     :class:`Variable` in ``DataType.var_list``, plus the builtin record specs.
     """
 
-    def __init__(self, records_by_key: dict[str, RecordDef]) -> None:
+    def __init__(
+        self,
+        records_by_key: dict[str, RecordDef],
+        duplicated_names: frozenset[str] = frozenset(),
+    ) -> None:
         self._records_by_key = records_by_key
+        #: Names declared more than once in the same file. Last definition wins
+        #: for field resolution, but the earlier shape is still a valid reading,
+        #: so a missing field is unproven rather than absent.
+        self._duplicated_names = duplicated_names
 
     @staticmethod
     @cache
@@ -58,13 +66,19 @@ class TypeGraph:
     @classmethod
     def from_datatypes(cls, datatypes: Iterable[DataType]) -> TypeGraph:
         records = dict(cls._builtin_records())
+        seen: set[str] = set()
+        duplicated: set[str] = set()
         for datatype in datatypes:
             fields: dict[str, FieldDef] = {}
             for field in datatype.var_list:
                 definition = FieldDef(name=field.name, datatype=field.datatype, state=field.state)
                 fields[fold_identifier(definition.name)] = definition
-            records[fold_identifier(datatype.name)] = RecordDef(name=datatype.name, fields_by_key=fields)
-        return cls(records)
+            key = fold_identifier(datatype.name)
+            if key in seen:
+                duplicated.add(key)
+            seen.add(key)
+            records[key] = RecordDef(name=datatype.name, fields_by_key=fields)
+        return cls(records, frozenset(duplicated))
 
     @classmethod
     def from_basepicture(cls, bp: BasePicture) -> TypeGraph:
@@ -74,12 +88,16 @@ class TypeGraph:
         return fold_identifier(type_name) in self._records_by_key
 
     def has_known_fields(self, type_name: str) -> bool:
-        """True when the record is declared with a non-empty field table.
+        """True when the record's shape is modelled well enough to judge a field.
 
-        An empty table is a declared type whose shape is not modelled, so a
-        missing field is unproven rather than absent.
+        An empty table is a declared type whose shape is not modelled, and a
+        name declared more than once has more than one valid shape, so in both
+        cases a missing field is unproven rather than absent.
         """
-        record = self.record(type_name)
+        key = fold_identifier(type_name)
+        if key in self._duplicated_names:
+            return False
+        record = self._records_by_key.get(key)
         return record is not None and bool(record.fields_by_key)
 
     def record(self, type_name: str) -> RecordDef | None:
@@ -91,18 +109,18 @@ class TypeGraph:
             return None
         return record.fields_by_key.get(fold_identifier(field_name))
 
-    def field_type(self, record_type: str, field_name: str) -> Simple_DataType | str | None:
+    def field_type(self, record_type: str, field_name: str) -> ScalarDatatype | str | None:
         field = self.field(record_type, field_name)
         return field.datatype if field is not None else None
 
-    def iter_leaf_field_paths(self, root_type: Simple_DataType | str) -> Iterator[tuple[str, ...]]:
+    def iter_leaf_field_paths(self, root_type: ScalarDatatype | str) -> Iterator[tuple[str, ...]]:
         """Yield field paths from a type down to leaf (simple) datatypes.
 
         A simple datatype yields the empty path. A record yields paths such as
         ``("I", "WT001", "value")``. Unknown external types and cycles are
         treated as leaves so expansion always terminates.
         """
-        if isinstance(root_type, Simple_DataType):
+        if isinstance(root_type, ScalarDatatype):
             yield ()
             return
 
@@ -119,7 +137,7 @@ class TypeGraph:
             next_ancestors = ancestors | {type_key}
             for field in record.fields_by_key.values():
                 new_prefix = (*prefix, field.name)
-                if isinstance(field.datatype, Simple_DataType):
+                if isinstance(field.datatype, ScalarDatatype):
                     yield new_prefix
                 else:
                     stack.append((str(field.datatype), new_prefix, next_ancestors))

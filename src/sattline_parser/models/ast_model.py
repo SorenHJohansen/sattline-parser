@@ -15,8 +15,6 @@ from ._ast_model_support import (
     datatype_def_list,
     graph_object_list,
     interact_object_list,
-    modulecode_list,
-    moduledef_list,
     moduletype_def_list,
     parameter_mapping_list,
     render_base_picture,
@@ -49,6 +47,7 @@ from .expressions import (
     UnaryOp,
     VarRef,
 )
+from .header import HeaderInfo
 from .properties import (
     GraphProperties,
     InteractProperties,
@@ -95,8 +94,8 @@ __all__ = [
     "SFCTransitionSub",
     "SLExpression",
     "SLStmt",
+    "ScalarDatatype",
     "Sequence",
-    "Simple_DataType",
     "SingleModule",
     "SourceSpan",
     "TernaryOp",
@@ -158,7 +157,16 @@ class FloatLiteral(float):
         return (type(self), (float(self), self.span))
 
 
-class Simple_DataType(Enum):
+class ScalarDatatype(Enum):
+    """The language's built-in scalar datatypes.
+
+    A recognized datatype name normalizes to a member through :meth:`from_any`
+    and :func:`sattline_parser.names.fold_identifier`, so ``INTEGER``,
+    ``Integer``, and ``integer`` are one datatype. A user-defined record type
+    stays a plain ``str``; the validator resolves its fields through the type
+    graph.
+    """
+
     STRING = "string"
     BOOLEAN = "boolean"
     INTEGER = "integer"
@@ -171,12 +179,12 @@ class Simple_DataType(Enum):
     REAL = "real"
 
     @classmethod
-    def from_any(cls, value: object) -> Simple_DataType:
+    def from_any(cls, value: object) -> ScalarDatatype:
         # Use the concrete class in isinstance for proper type narrowing in type checkers.
-        if isinstance(value, Simple_DataType):
+        if isinstance(value, ScalarDatatype):
             return value
         if not isinstance(value, str):
-            raise TypeError("Expected Simple_DataType or str")
+            raise TypeError("Expected ScalarDatatype or str")
         # Identifiers fold through the same CP1252 table as every other name in
         # the language, so ``INTEGER``/``Integer``/``integer`` are one datatype.
         folded = fold_identifier(value)
@@ -189,7 +197,7 @@ class Simple_DataType(Enum):
 @dataclass
 class Variable:
     name: str
-    datatype: Simple_DataType | str  # accept either at init; we'll normalize
+    datatype: ScalarDatatype | str  # accept either at init; we'll normalize
     global_var: bool | None = False
     const: bool | None = False
     state: bool | None = False
@@ -210,12 +218,12 @@ class Variable:
     @property
     def datatype_text(self) -> str:
         # Always return a string representation
-        return self.datatype.value if isinstance(self.datatype, Simple_DataType) else str(self.datatype)
+        return self.datatype.value if isinstance(self.datatype, ScalarDatatype) else str(self.datatype)
 
     def __post_init__(self):
         # Accept DataType or any-case string
         try:
-            self.datatype = Simple_DataType.from_any(self.datatype)
+            self.datatype = ScalarDatatype.from_any(self.datatype)
         except ValueError:
             if not isinstance(self.datatype, str):
                 raise
@@ -449,46 +457,18 @@ class ModuleHeader:
         return self.arguments.zoomable
 
 
-class _ModuleBlockViews:
-    """Read-only singular views over the ``moduledefs``/``modulecodes`` lists.
-
-    The lists are the single source of truth. ``moduledef`` and ``modulecode``
-    are derived properties so a consumer reading "the last block" can never
-    observe a value that differs from the blocks the transformer stored.
-    """
-
-    # Deliberately a plain class: the annotations below only type the property
-    # access. Decorating this base with ``@dataclass`` would turn them into
-    # duplicate fields and reintroduce the divergence this view prevents.
-    moduledefs: list[ModuleDef]
-    modulecodes: list[ModuleCode]
-
-    @property
-    def moduledef(self) -> ModuleDef | None:
-        """The last ``ModuleDef`` block, or ``None`` when the module has none."""
-        return self.moduledefs[-1] if self.moduledefs else None
-
-    @property
-    def modulecode(self) -> ModuleCode | None:
-        """The last ``ModuleCode`` block, or ``None`` when the module has none."""
-        return self.modulecodes[-1] if self.modulecodes else None
-
-
 @dataclass
-class SingleModule(_ModuleBlockViews):
+class SingleModule:
     header: ModuleHeader
     datecode: int | None = None
     moduleparameters: list[Variable] = field(default_factory=variable_list)
     localvariables: list[Variable] = field(default_factory=variable_list)
     submodules: list[SingleModule | FrameModule | ModuleTypeInstance] = field(default_factory=submodule_list)
-    #: Every ``ModuleDef`` block from a ``moduledef_block*`` run, in source
-    #: order. Legacy coded files repeat one ``ModuleDef ... [ModuleCode ...]
-    #: ENDDEF`` block per layer, so a singular field alone cannot represent them
-    #: without silently dropping all but the last block.
-    moduledefs: list[ModuleDef] = field(default_factory=moduledef_list)
-    #: Every ``ModuleCode`` block from a ``moduledef_block*`` run, in source
-    #: order. ``modulecode`` is a derived read-only property over this list.
-    modulecodes: list[ModuleCode] = field(default_factory=modulecode_list)
+    #: The module body's single layout block. The grammar requires one
+    #: ``ModuleDef`` and allows one optional ``ModuleCode``; ``None`` occurs only
+    #: on a synthetic view such as an empty picture.
+    moduledef: ModuleDef | None = None
+    modulecode: ModuleCode | None = None
     parametermappings: list[ParameterMapping] = field(default_factory=parameter_mapping_list)
     trailing_comments: list[CodeComment] = field(default_factory=code_comment_list)
 
@@ -497,14 +477,17 @@ class SingleModule(_ModuleBlockViews):
 
 
 @dataclass
-class FrameModule(_ModuleBlockViews):
+class FrameModule:
     header: ModuleHeader
     datecode: int | None = None
     moduleparameters: list[Variable] = field(default_factory=variable_list)
     localvariables: list[Variable] = field(default_factory=variable_list)
     submodules: list[SingleModule | FrameModule | ModuleTypeInstance] = field(default_factory=submodule_list)
-    moduledefs: list[ModuleDef] = field(default_factory=moduledef_list)
-    modulecodes: list[ModuleCode] = field(default_factory=modulecode_list)
+    #: The module body's single layout block. The grammar requires one
+    #: ``ModuleDef`` and allows one optional ``ModuleCode``; ``None`` occurs only
+    #: on a synthetic view such as an empty picture.
+    moduledef: ModuleDef | None = None
+    modulecode: ModuleCode | None = None
     trailing_comments: list[CodeComment] = field(default_factory=code_comment_list)
 
     def __str__(self) -> str:
@@ -522,15 +505,18 @@ class ModuleTypeInstance:
 
 
 @dataclass
-class ModuleTypeDef(_ModuleBlockViews):
+class ModuleTypeDef:
     name: str
     datecode: int | None = None
     is_private: bool = False
     moduleparameters: list[Variable] = field(default_factory=variable_list)
     localvariables: list[Variable] = field(default_factory=variable_list)
     submodules: list[SingleModule | FrameModule | ModuleTypeInstance] = field(default_factory=submodule_list)
-    moduledefs: list[ModuleDef] = field(default_factory=moduledef_list)
-    modulecodes: list[ModuleCode] = field(default_factory=modulecode_list)
+    #: The module body's single layout block. The grammar requires one
+    #: ``ModuleDef`` and allows one optional ``ModuleCode``; ``None`` occurs only
+    #: on a synthetic view such as an empty picture.
+    moduledef: ModuleDef | None = None
+    modulecode: ModuleCode | None = None
     groupconn: VarRef | None = None
     groupconn_global: bool = False
     origin_file: str | None = None
@@ -544,10 +530,13 @@ class ModuleTypeDef(_ModuleBlockViews):
 
 
 @dataclass
-class BasePicture(_ModuleBlockViews):
+class BasePicture:
     header: ModuleHeader
     name: str = "BasePicture"
     program_name: str | None = None
+    #: The three quoted header lines and the optional change description, as
+    #: written. ``program_name`` above is the convenience view over it.
+    header_info: HeaderInfo | None = None
     position: tuple[float, float, float, float, float] | None = field(
         default=None, compare=False, metadata={"layout": True}
     )
@@ -556,8 +545,11 @@ class BasePicture(_ModuleBlockViews):
     moduleparameters: list[Variable] = field(default_factory=variable_list)
     localvariables: list[Variable] = field(default_factory=variable_list)
     submodules: list[SingleModule | FrameModule | ModuleTypeInstance] = field(default_factory=submodule_list)
-    moduledefs: list[ModuleDef] = field(default_factory=moduledef_list)
-    modulecodes: list[ModuleCode] = field(default_factory=modulecode_list)
+    #: The module body's single layout block. The grammar requires one
+    #: ``ModuleDef`` and allows one optional ``ModuleCode``; ``None`` occurs only
+    #: on a synthetic view such as an empty picture.
+    moduledef: ModuleDef | None = None
+    modulecode: ModuleCode | None = None
     origin_file: str | None = None
     origin_lib: str | None = None
     trailing_comments: list[CodeComment] = field(default_factory=code_comment_list)

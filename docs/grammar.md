@@ -37,11 +37,16 @@ patterns into one alternation, where a leading flag would be illegal.
 
 The `\b` is deliberate. A keyword is a whole word, so it must end at a
 non-word character. A source therefore separates a keyword from following text
-with whitespace, punctuation, or a line break. `DateCode_1` is one identifier,
-not the `DateCode_` keyword followed by `1`, and `PRIVATE_MODULEDEFINITION` is
-one identifier, not the `PRIVATE_` and `MODULEDEFINITION` keywords. Both
-adjacent spellings are rejected where the grammar requires the keyword, and the
-parser tests pin that rejection.
+with whitespace, punctuation, or a line break, and `PRIVATE_MODULEDEFINITION`
+is one name rather than the `PRIVATE_` and `MODULEDEFINITION` keywords.
+
+`DateCode_` is the one exception: its rule is `DATECODE_PREFIX SL_DATECODE`, so
+a digit after it is the datecode and not part of a longer word. The rewriter
+uses `(?![^\W\d])` after that literal: a letter or underscore still blocks the
+keyword, a digit does not. `DateCode_1` is therefore the keyword and `1` in the
+datecode slot, while `DateCode_x` stays one name there. In an identifier
+position the contextual lexer does not accept `DATECODE_PREFIX`, so
+`DateCode_1` is one identifier again.
 
 ## Grammar shape
 
@@ -82,15 +87,20 @@ before any nested construct is considered.
 ### Header lines
 
 `syntax_version_line`, `original_file_date_line`, and `program_date_line` are
-all `STRING` tokens. `program_date_line` is where the transformer finds
-`program_name` when the header carries a `name:` field.
+all `STRING` tokens. The transformer keeps all three inside `HeaderInfo` on the
+root `BasePicture`, together with the optional `change_description` comment, and
+derives `program_name` from the `name:` field of the program date line.
+`HeaderInfo` also exposes the written syntax version, original file date, and
+program date. A line the package does not recognise keeps its text and yields
+`None` for the field it lacks, so a shadow header from an invalid-input fixture
+is preserved rather than rejected.
 
 ### Module structure
 
 | Rule | What it represents |
 | --- | --- |
 | `module_header` | `Name Invocation (x,y,x,y,x) arguments` |
-| `base_picture_module` | The root module, ending in `ENDDEF` and an optional `;` |
+| `base_picture_module` | The root module; the trailing `ENDDEF` and its `;` are both optional |
 | `invocation_new_module` | A nested module body with its own `MODULEDEFINITION ... ENDDEF` |
 | `invocation_module_type` | A reference to a named module type, with optional parameter transfers |
 | `frame_module` | `( Frame_Module )`, a pure container |
@@ -98,9 +108,13 @@ all `STRING` tokens. `program_date_line` is where the transformer finds
 | `moduletype_definition` | `Name = [PRIVATE_] MODULEDEFINITION ... ENDDEF ;` |
 
 `module_body` is `moduleparameters? localvariables? submodules? moduledef
-modulecode?`. The `moduledef` is required. A `ModuleCode` without a
-`ModuleDef` is not accepted, and the corpus fixture
-`ModuleCodeWithoutModuleDef.s` pins that.
+modulecode?`. The `moduledef` is required. The root body's closing `ENDDEF`
+(and the optional `;` after it) may be omitted; a nested body still ends at its
+own `ENDDEF`. A `ModuleCode` without a `ModuleDef` is not accepted, and the
+corpus fixture
+`ModuleCodeWithoutModuleDef.s` pins that. A module body has at most one
+`moduledef`: a second `ModuleDef` before the closing `ENDDEF` is a syntax error,
+and `RepeatedModuleDefBlocks.s` pins that.
 
 ### Data types
 
@@ -195,7 +209,13 @@ a digit, `)`, `"`, or `]` the sign is the binary operator, not part of the
 next literal. So `1+2`, `1-2`, and `A-1` parse as expressions, while `= -5`,
 `( -1.0`, and `* -2` keep a signed literal. A sign inside an exponent
 (`1e-3`, `1.0E+10`) belongs to the same literal. Signed coordinates and layout
-values are the reason the sign is still accepted at the start of a literal.
+values are the reason the sign is still accepted at the start of a literal: a
+value list separates two literals with nothing but whitespace, so `-1.0 -1.0`
+is two values and the second sign cannot be a binary operator. That keeps the
+sign in the literal, and `unary_expression` covers the positions where no
+literal may start. A consequence is that `1 +2` in an expression reads as two
+values, so a source spells a binary operator with no space after it (`1+2`) or
+with a space on both sides (`1 + 2`).
 
 ## Tokenization
 
@@ -246,6 +266,15 @@ attached somewhere else. In particular, a `comments` run in a `ComButProc_` body
 or inside a colour assignment has no AST field; only `interact_body` comments
 become `CodeComment` values.
 
+Comment positions are structural. A comment is accepted in code, in an SFC
+body, in the header's change-description slot, after a module header or
+definition, after `ENDDEF`, and in a `SUBMODULES` run, including a comment
+between the last submodule and the following `ModuleDef`. It is not accepted
+between two variable declarations, between `MODULECODE` and its first equation
+block or sequence, or at a bare position with no comment production. Those
+positions have no production for a comment, so the parser reports the comment
+rather than silently dropping it.
+
 ### Identifiers and name folding
 
 The `NAME` terminal:
@@ -285,8 +314,9 @@ different question from language identity, which always uses
 substituted. String literals, comment text, and quoted identifiers are
 unaffected because only terminals defined in the template are rewritten. A
 keyword is a whole word, so a source separates it from the following token:
-`DateCode_1` and `PRIVATE_MODULEDEFINITION` are identifiers, not adjacent
-keywords.
+`PRIVATE_MODULEDEFINITION` is one name, not adjacent keywords. The datecode
+prefix is the exception, because the rule after it is a number: `DateCode_1`
+is the keyword and `1`.
 
 ### Raw words in coded files
 

@@ -26,6 +26,7 @@ from sattline_parser.models.clauses import (
     EnableClause,
     FlagClause,
     ModuleInViewClause,
+    PolygonPoint,
     ProcedureCall,
     TailedClause,
 )
@@ -93,6 +94,9 @@ def _tail_context(event: WalkEvent) -> str | None:
     if isinstance(parent, ClippingClause):
         return _COORDINATE if field == "tails" else None
 
+    if isinstance(parent, PolygonPoint):
+        return _COORDINATE if field in {"x_tails", "y_tails"} else None
+
     return None
 
 
@@ -105,7 +109,7 @@ def _check_coordinate_real(
 ) -> None:
     """A coordinate position must be real, never integer (SL-V032)."""
     inferred = infer_expr_type(tail, scope, records, type_graph)
-    if inferred is not None and fold_identifier(inferred) != fold_identifier(m.Simple_DataType.REAL.value):
+    if inferred is not None and fold_identifier(inferred) != fold_identifier(m.ScalarDatatype.REAL.value):
         errors.append(
             Diagnostic(
                 code=DiagnosticCode.COORDINATE_NOT_REAL,

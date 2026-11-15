@@ -36,6 +36,7 @@ statements.
 | --- | --- | --- | --- |
 | `parse_source_text` | both | `(src, *, parser=None, transformer=None, debug=None, source_path=None, log_failures=True)` | `BasePicture` |
 | `parse_source_file` | both | `(path, *, parser=None, transformer=None, debug=None, log_failures=True)` | `BasePicture` |
+| `parse_source_bytes` | both | `(raw_bytes, *, parser=None, transformer=None, debug=None, source_path=None, log_failures=True)` | `BasePicture` |
 | `parse_and_validate` | both | same options as `parse_source_text` | `(BasePicture, tuple[Diagnostic, ...])` |
 | `create_parser` | both | `()` | `Lark` |
 | `build_lark_parser` | `api` | `(*, start="start", propagate_positions=True)` | `Lark` |
@@ -53,7 +54,10 @@ statements.
 | `source_text_for_parse` | `api` | `(path, *, debug=None, log_failures=True)` | text for `parse_source_text` |
 
 `parse_source_text` and `parse_source_file` are the ordinary entry points.
-`parse_and_validate` is the opt-in single-source validation. `preprocess_source`
+`parse_source_bytes` is for a caller that already read the source and needs to
+keep the exact bytes it parsed, such as the project cache, which identifies an
+entry by their digest. `parse_and_validate` is the opt-in single-source
+validation. `preprocess_source`
 returns a `SourceDocument`, and the class itself is importable from
 `sattline_parser.preprocessing`. The rest are power-user helpers for tooling
 that needs an intermediate stage.
@@ -109,15 +113,15 @@ validation scope stays internal behind `validate_basepicture`.
 
 | Group | Names |
 | --- | --- |
-| Core type | `Simple_DataType` |
+| Core type | `ScalarDatatype` |
 | Families | `TypeFamily`, `datatype_family`, `family_of`, `is_numeric`, `is_numeric_datatype`, `is_boolean`, `is_boolean_datatype`, `is_string_simple_type`, `is_anytype_datatype` |
 | Datatype names | `normalize_builtin_datatype`, `format_datatype`, `suggest_datatype_name` |
 | Dotted names and records | `split_dotted_name`, `resolve_variable_field_datatype`, `FieldGraph`, `FieldSpec` |
 | Literals | `infer_literal_datatype`, `literal_matches_expected_datatype`, `is_valid_duration_literal`, `is_valid_time_literal`, `has_time_literal_marker`, `extract_time_literal`, `expression_is_zero_literal` |
 | Compatibility | `assignment_type_matches`, `builtin_type_matches`, `merge_numeric_types`, `merge_compatible_types` |
 
-`infer_literal_datatype` returns `Simple_DataType | str | None`. A time literal
-returns the grammar marker string `"Time_Value"`, not `Simple_DataType.TIME`,
+`infer_literal_datatype` returns `ScalarDatatype | str | None`. A time literal
+returns the grammar marker string `"Time_Value"`, not `ScalarDatatype.TIME`,
 because the marker is compared against the declared datatype before the value
 is parsed. Use `has_time_literal_marker`, or compare through
 `literal_matches_expected_datatype`, when the distinction matters.
@@ -151,6 +155,7 @@ clause payload, and tail type together with the traversal helpers:
 | Name | Meaning |
 | --- | --- |
 | `BasePicture` | Root node |
+| `HeaderInfo` | The quoted file header lines and change description on `BasePicture.header_info` |
 | `SourceSpan` | Original-source range |
 | `ModuleHeader`, `ModuleDef`, `ModuleCode`, `SingleModule`, `FrameModule`, `ModuleTypeInstance`, `ModuleTypeDef` | Module and layout nodes |
 | `Sequence`, `Equation`, `SFCStep`, `SFCTransition`, and the other `SFC*` nodes | Code and SFC nodes |
@@ -158,9 +163,10 @@ clause payload, and tail type together with the traversal helpers:
 | `GraphObject`, `InteractObject` | Graphics and interact AST nodes, visited by `walk` |
 | `GraphicsBinding` | Project graphics value carried by `GraphicsModel.bindings`; not an AST node and never visited by `walk` |
 | `GraphProperties`, `InteractProperties` | Typed property maps carried by graphics and interact nodes |
+| `PolygonPoint` | One polygon coordinate pair with the tails written after each value |
 | `AssignClause`, `EnableClause`, `TailedClause`, `ColourSpec`, `PickButton`, `Alignment`, `InteractBodyEntry`, and the other clause payloads | Typed clause payloads and the interactor body union |
 | `VarTail`, `LitStringTail`, `Tail` | Bound and computed tails |
-| `walk` | `(node, *, prune=None, emit_leave=False)` yields every AST node in pre-order |
+| `walk` | `(node, *, prune=None, emit_leave=False)` yields one `WalkEvent` per AST node in pre-order |
 | `NodeVisitor` | `visit_<ClassName>` and `leave_<ClassName>` dispatch with `generic_visit` |
 | `WalkEvent` | `(node, relation, parents, field, indices, phase)` for one visit; `parents` is a sequence view expanded on access and costs O(depth) per read |
 | `iter_child_nodes` | `(node)` yields `(relation, child)` pairs |
@@ -169,10 +175,10 @@ clause payload, and tail type together with the traversal helpers:
 The top-level package keeps the root, span, expression, statement, and walker
 names for short scripts, and exports `SLTransformer`. The full model, including
 module, SFC, graphics, declaration, clause, and tail types, is published by
-`sattline_parser.ast`. The class names are still importable from
-`sattline_parser.models.ast_model` and `sattline_parser.models.expressions` for
-historical reasons, but the supported import path is `sattline_parser.ast`. See
-[ast.md](ast.md).
+`sattline_parser.ast`. The modules under `sattline_parser.models` are internal
+implementation modules: the package imports from them, but they are not a
+supported surface and their names may change with the model. Import through
+`sattline_parser.ast`. See [ast.md](ast.md).
 
 ## Graphics
 
@@ -214,7 +220,7 @@ wheel, and the top-level package does not re-export them. Import
 | Models | `SattLineProgram`, `DependencyGraph`, `ProgramFormat`, `SidecarState` |
 | Diagnostics | `LoadDiagnostic`, `LoadDiagnosticKind` |
 | Errors | `ProjectLoadError`, `StructuralProjectError`, `DependencyCycleError`, `ModuleTypeCycleError`, `ArtifactLoadError`, `DependencyNotFoundError`, `DependencyParseError` |
-| Discovery | `ProjectLookup`, `SourceIndex`, `ordered_lookup_bases`, `shared_lookup_root_for`, `read_dependency_names` |
+| Discovery | `ProjectLookup`, `SourceIndex`, `ordered_lookup_bases`, `parse_search_path`, `read_dependency_names` |
 | Formats | `ArtifactKind`, `body_mode`, `candidate_extensions`, `code_ext`, `code_ext_candidates`, `deps_ext`, `deps_ext_candidates`, `deps_extensions_for_code`, `distribution_ext`, `distribution_ext_candidates`, `distribution_extensions_for_code`, `find_companion_beside`, `graphics_ext`, `graphics_ext_candidates`, `preferred_extension` |
 | Graphics | `GraphicsModel`, `GraphicsBinding`, `GraphicsMessage`, `GraphicsCompositeRecord`, `GraphicsPictureDisplayRecord`, `GraphicsPathRow`, `parse_graphics_file`, `parse_graphics_text`, `resolve_graphics_companion_path` |
 | Distribution | `DistributionData`, `DistributionTarget`, `DistributionParseError`, `parse_distribution_file`, `parse_distribution_text`, `resolve_distribution_companion_path` |

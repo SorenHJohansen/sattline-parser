@@ -1,3 +1,4 @@
+# pyright: reportPrivateUsage=false
 """Tests for the builtin function registry."""
 
 from __future__ import annotations
@@ -12,6 +13,7 @@ from sattline_parser.builtins import (
     get_function_signature,
     is_builtin_function,
 )
+from sattline_parser.validation.builtins import _adapt
 
 
 def _meta_bucket(key: str) -> dict[str, object]:
@@ -96,13 +98,47 @@ def test_function_with_no_written_positions() -> None:
     assert signature.out_arg_positions == frozenset()
 
 
-def test_untyped_entries_keep_their_arity() -> None:
+def test_an_untyped_entry_with_a_recorded_arity_pins_both_bounds() -> None:
+    signature = BuiltinFunction(
+        name="Documented_Only",
+        kind="procedure",
+        return_type=None,
+        precision_scangroup=False,
+        typed=False,
+        parameters=(),
+        documented_arity=2,
+    )
+
+    adapted = _adapt(signature)
+
+    assert (adapted.min_args, adapted.max_args) == (2, 2)
+
+
+def test_an_unknown_arity_leaves_both_bounds_open() -> None:
+    signature = BuiltinFunction(
+        name="Unknown_Arity",
+        kind="procedure",
+        return_type=None,
+        precision_scangroup=False,
+        typed=False,
+        parameters=(),
+        documented_arity=None,
+    )
+
+    adapted = _adapt(signature)
+
+    assert (adapted.min_args, adapted.max_args) == (None, None)
+
+
+def test_untyped_entries_record_an_unknown_arity_rather_than_zero() -> None:
+    """An untranscribed parameter list must not be read as "takes no arguments"."""
     get_flag = get_function_signature("GetPrivilegeFlag")
     reset_flag = get_function_signature("ResetPrivilegeFlag")
     assert get_flag is not None and get_flag.typed is False
-    assert get_flag.arity == 0
+    assert get_flag.arity is None
+    assert get_flag.parameters == ()
     assert reset_flag is not None and reset_flag.kind == "procedure"
-    assert reset_flag.arity == 0
+    assert reset_flag.arity is None
 
 
 def test_trailing_optional_parameters_are_marked() -> None:

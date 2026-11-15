@@ -43,8 +43,9 @@ class BuiltinFunction:
     """A documented builtin function or procedure signature.
 
     ``typed`` is false for a name the catalogue carries without a full
-    transcribed parameter list; such an entry still has an arity (the number of
-    documented parameters) and can be arity-checked.
+    transcribed parameter list. Such an entry records its arity explicitly, and
+    ``None`` means the documented arity is not known, so a call to it is not
+    arity-checked.
     """
 
     name: str
@@ -53,11 +54,14 @@ class BuiltinFunction:
     precision_scangroup: bool
     typed: bool
     parameters: tuple[BuiltinParameter, ...]
+    #: Recorded arity of an untyped entry; ``None`` when it is not known. A
+    #: typed entry ignores this field and derives the arity from its parameters.
+    documented_arity: int | None = None
 
     @property
-    def arity(self) -> int:
-        """Number of documented parameters."""
-        return len(self.parameters)
+    def arity(self) -> int | None:
+        """Number of documented parameters, or ``None`` when that is unknown."""
+        return len(self.parameters) if self.typed else self.documented_arity
 
     @property
     def out_arg_positions(self) -> frozenset[int]:
@@ -92,6 +96,7 @@ def _parse_function(name: str, raw: object) -> BuiltinFunction:
         precision_scangroup=cast("bool", entry["precision_scangroup"]),
         typed=cast("bool", entry["typed"]),
         parameters=tuple(_parse_parameter(parameter) for parameter in parameters),
+        documented_arity=cast("int | None", entry.get("arity")),
     )
 
 

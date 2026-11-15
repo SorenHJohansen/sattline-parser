@@ -82,17 +82,17 @@ def test_to_jsonable_falls_back_to_repr() -> None:
     assert to_jsonable(Opaque(), depth=3) == "opaque-value"
 
 
-def test_summarise_counts_every_block() -> None:
+def test_summarise_counts_the_module_layout() -> None:
     picture = BasePicture(
         header=ModuleHeader(name="Program", invoke_coord=(0.0, 0.0, 0.0, 1.0, 1.0)),
-        moduledefs=[
-            ModuleDef(graph_objects=[GraphObject(type="Rect")]),
-            ModuleDef(interact_objects=[InteractObject(type="Button")]),
-        ],
-        modulecodes=[
-            ModuleCode(sequences=[Sequence(name="Seq", type="SEQUENCE", position=(0.0, 0.0), size=(1.0, 1.0))]),
-            ModuleCode(equationblocks=[Equation(), Equation()]),
-        ],
+        moduledef=ModuleDef(
+            graph_objects=[GraphObject(type="Rect")],
+            interact_objects=[InteractObject(type="Button")],
+        ),
+        modulecode=ModuleCode(
+            sequences=[Sequence(name="Seq", type="SEQUENCE", position=(0.0, 0.0), size=(1.0, 1.0))],
+            equationblocks=[Equation(), Equation()],
+        ),
     )
 
     counts = summarise("Program.s", "", picture)["counts"]

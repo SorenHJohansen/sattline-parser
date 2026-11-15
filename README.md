@@ -274,9 +274,10 @@ for the extension table.
 ### Project layer: load a whole project
 
 Beyond single sources, `sattline_parser.project` owns the SattLine **project
-layer**: search-root discovery, per-artifact draft→official resolution,
-recursive requester-relative dependency resolution, `.g`/`.y` graphics
-companion parsing, and `.p`/`.q` distribution companion parsing.
+layer**: ordered search-path discovery, per-artifact draft→official resolution,
+recursive dependency resolution through that same path, `.g`/`.y` graphics
+companion parsing, and `.p`/`.q` distribution companion parsing. Roots are
+searched in the order given, so an earlier root wins.
 `SattLineProject.load` resolves one or more targets across
 the ordered roots and returns the complete resolved graph:
 

@@ -19,15 +19,15 @@ from sattline_parser.builtins.functions import (
     BuiltinParameter,
     get_function_signature,
 )
-from sattline_parser.models.ast_model import Simple_DataType
+from sattline_parser.models.ast_model import ScalarDatatype
 from sattline_parser.names import fold_identifier
 from sattline_parser.validation.typing import suggest_datatype_name
 
 #: Canonical (casefolded) names of all primitive datatypes. ``Variable`` normalises
-#: recognised names to ``Simple_DataType`` at init; anything left as ``str`` after
+#: recognised names to ``ScalarDatatype`` at init; anything left as ``str`` after
 #: parsing is a custom (record) type name, so only those strings are candidates for a
 #: built-in-name typo.
-BUILTIN_DATATYPE_NAMES: Final[frozenset[str]] = frozenset(member.value for member in Simple_DataType)
+BUILTIN_DATATYPE_NAMES: Final[frozenset[str]] = frozenset(member.value for member in ScalarDatatype)
 
 
 @dataclass(frozen=True, slots=True)
@@ -36,13 +36,17 @@ class BuiltinFunction:
 
     ``min_args`` / ``max_args`` bound the accepted argument count and
     ``parameters`` carries the documented direction and datatype for the
-    argument-type rule. A written position is derived from the parameter
-    direction, so the view carries no second copy of that fact.
+    argument-type rule. Both bounds are ``None`` when the documented arity is
+    unknown, so a call is not rejected for a count the catalogue never recorded.
+    A typed entry's lower bound is its leading required count; an untyped entry
+    that records an arity pins both bounds to it. A written position is derived
+    from the parameter direction, so the view carries no second copy of that
+    fact.
     """
 
     name: str
-    min_args: int
-    max_args: int
+    min_args: int | None
+    max_args: int | None
     parameters: tuple[BuiltinParameter, ...] = ()
     kind: str = "function"
     return_type: str | None = None
@@ -50,15 +54,27 @@ class BuiltinFunction:
 
 @cache
 def _adapt(signature: _BuiltinFunction) -> BuiltinFunction:
-    required_args = 0
-    for parameter in signature.parameters:
-        if parameter.optional:
-            break
-        required_args += 1
+    arity = signature.arity
+    if arity is None:
+        min_args: int | None = None
+        max_args: int | None = None
+    elif signature.typed:
+        required_args = 0
+        for parameter in signature.parameters:
+            if parameter.optional:
+                break
+            required_args += 1
+        min_args = required_args
+        max_args = arity
+    else:
+        # An untyped entry records only the count, with no per-argument
+        # directions, so every documented argument is required.
+        min_args = arity
+        max_args = arity
     return BuiltinFunction(
         name=signature.name,
-        min_args=required_args,
-        max_args=signature.arity,
+        min_args=min_args,
+        max_args=max_args,
         parameters=signature.parameters,
         kind=signature.kind,
         return_type=signature.return_type,
@@ -78,7 +94,7 @@ def builtin_datatype_typo(datatype: str) -> str | None:
     """Return the built-in datatype name a custom datatype string seems to misspell.
 
     Only fires for names that are not exact matches (those are already normalised
-    to ``Simple_DataType`` by ``Variable``) and that sit within the bounded edit
+    to ``ScalarDatatype`` by ``Variable``) and that sit within the bounded edit
     distance of exactly one built-in; otherwise ``None``.
     """
     return suggest_datatype_name(datatype, sorted(_FOLDED_DATATYPE_NAMES.values()))

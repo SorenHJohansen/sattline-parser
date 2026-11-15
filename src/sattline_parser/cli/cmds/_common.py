@@ -4,13 +4,13 @@ from __future__ import annotations
 
 import argparse
 import sys
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 
 from ...project.formats import ALL_DISTRIBUTION_EXTENSIONS, ALL_GRAPHICS_EXTENSIONS
 from ...validation.rules import RuleStatus, UnknownRuleError, require_rule
 from .._errors import CliError
-from .._findings import CLI_RULE_IDS, Finding
+from .._findings import Finding
 from .._json import SCHEMA_PREFIX, dumps
 
 __all__ = [
@@ -19,6 +19,7 @@ __all__ = [
     "add_finding_filters",
     "add_output_flags",
     "add_source_flags",
+    "bounded_positive_int",
     "emit_findings",
     "emit_payload",
     "fail_on_value",
@@ -73,21 +74,32 @@ def positive_int(value: str) -> int:
     return number
 
 
+def bounded_positive_int(maximum: int) -> Callable[[str], int]:
+    """An argparse type for a count in ``1..maximum``.
+
+    A process or thread count is a resource request, so a value far past the
+    machine's capacity is a usage error rather than a load that exhausts memory.
+    """
+
+    def parse(value: str) -> int:
+        number = positive_int(value)
+        if number > maximum:
+            raise argparse.ArgumentTypeError(f"must be {maximum} or less")
+        return number
+
+    return parse
+
+
 #: Canonical values for ``--fail-on``, shared by every command that reports
 #: findings so one spelling does not mean different things per subcommand.
 FAIL_ON_CHOICES: tuple[str, ...] = ("none", "error")
 
-#: Spellings earlier releases accepted, mapped onto the canonical value.
-_FAIL_ON_ALIASES: dict[str, str] = {"never": "none"}
-
 
 def fail_on_value(value: str) -> str:
-    """argparse type that normalises the historical ``--fail-on`` spellings."""
-    normalized = _FAIL_ON_ALIASES.get(value, value)
-    if normalized not in FAIL_ON_CHOICES:
-        allowed = ", ".join((*FAIL_ON_CHOICES, *_FAIL_ON_ALIASES))
-        raise argparse.ArgumentTypeError(f"expected one of {allowed}, got {value!r}")
-    return normalized
+    """argparse type that accepts only the canonical ``--fail-on`` values."""
+    if value not in FAIL_ON_CHOICES:
+        raise argparse.ArgumentTypeError(f"expected one of {', '.join(FAIL_ON_CHOICES)}, got {value!r}")
+    return value
 
 
 def add_fail_on(parser: argparse.ArgumentParser) -> None:
@@ -98,7 +110,7 @@ def add_fail_on(parser: argparse.ArgumentParser) -> None:
         choices=FAIL_ON_CHOICES,
         default="error",
         metavar="WHEN",
-        help=("which findings make the exit code 1: none or error (default: error; 'never' is accepted as an alias)"),
+        help="which findings make the exit code 1: none or error (default: error)",
     )
 
 
@@ -148,20 +160,20 @@ def add_finding_filters(parser: argparse.ArgumentParser) -> None:
     )
 
 
-def resolve_rule_filters(values: Sequence[str]) -> tuple[str, ...]:
+def resolve_rule_filters(values: Sequence[str], *, synthetic: frozenset[str]) -> tuple[str, ...]:
     """Resolve ``--rule`` values to canonical finding rule ids.
 
     Both the ``SL-V###`` id and the enum name are accepted, case-insensitively.
-    Synthetic finding ids such as ``PARSE_ERROR`` are accepted too, because they
-    appear in output but not in the validation registry. An unknown value or a
-    rule that can never produce a finding is a usage error, so a typo cannot
-    silently pass with an empty report.
+    *synthetic* is the set of non-registry finding ids the calling command can
+    actually emit, such as ``PARSE_ERROR``. An unknown value, a rule that can
+    never produce a finding, or another command's synthetic id is a usage error,
+    so a typo cannot silently pass with an empty report.
     """
     names: list[str] = []
     for value in values:
-        synthetic = value.upper()
-        if synthetic in CLI_RULE_IDS:
-            names.append(synthetic)
+        candidate = value.upper()
+        if candidate in synthetic:
+            names.append(candidate)
             continue
         try:
             rule = require_rule(value)
@@ -174,11 +186,13 @@ def resolve_rule_filters(values: Sequence[str]) -> tuple[str, ...]:
     return tuple(names)
 
 
-def selected_findings(findings: Sequence[Finding], args: argparse.Namespace) -> list[Finding]:
+def selected_findings(
+    findings: Sequence[Finding], args: argparse.Namespace, *, synthetic: frozenset[str]
+) -> list[Finding]:
     """Apply the ``--rule`` filter."""
     selected = list(findings)
     if args.rule:
-        wanted = set(resolve_rule_filters(args.rule))
+        wanted = set(resolve_rule_filters(args.rule, synthetic=synthetic))
         selected = [finding for finding in selected if finding.rule in wanted]
     return selected
 

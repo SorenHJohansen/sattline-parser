@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import os
+import sys
 from collections.abc import Mapping, Sequence
 from pathlib import Path
 
@@ -16,13 +17,21 @@ from sattline_parser.project import (
     SattLineProgram,
     SattLineProject,
     code_ext_candidates,
+    parse_search_path,
 )
 
 from .._errors import CliError
 from .._exit import ExitCode
-from .._findings import PROJECT_LOAD_RULE, Finding
+from .._findings import PROJECT_LOAD_RULE, PROJECT_QUERY_RULE, Finding
 from .._json import SCHEMA_PREFIX, dumps
-from ._common import add_fail_on, add_output_flags, emit_findings, fails_on, positive_int
+from ._common import (
+    add_fail_on,
+    add_output_flags,
+    bounded_positive_int,
+    emit_findings,
+    fails_on,
+    positive_int,
+)
 
 __all__ = ["register", "run"]
 
@@ -31,6 +40,10 @@ Edge = dict[str, str]
 #: Upper bound on the default worker count: past a handful of processes the
 #: load is bounded by memory and IPC rather than by cores.
 _MAX_DEFAULT_WORKERS = 8
+
+#: Upper bound a caller may request explicitly. Past this the load is bounded
+#: by memory and IPC, and an unbounded request can exhaust the machine.
+_MAX_WORKERS = 32
 
 
 def _default_cache_dir() -> Path | None:
@@ -58,7 +71,12 @@ def register(subparsers: argparse._SubParsersAction[argparse.ArgumentParser]) ->
     parser: argparse.ArgumentParser = subparsers.add_parser(
         "project", help="load a project tree: programs, artifacts, dependencies"
     )
-    parser.add_argument("root", metavar="ROOT", nargs="+", help="project root(s)")
+    parser.add_argument(
+        "root",
+        metavar="ROOT",
+        nargs="*",
+        help="project root(s), in lookup order; earlier roots win",
+    )
     add_output_flags(parser)
     parser.add_argument(
         "--mode",
@@ -72,6 +90,19 @@ def register(subparsers: argparse._SubParsersAction[argparse.ArgumentParser]) ->
         help="only load these program names (default: every source under the roots)",
     )
     parser.add_argument(
+        "--search-path",
+        metavar="PATH",
+        help=(
+            "comma-separated roots, in lookup order (earlier wins); accepts backslashes, "
+            "an alternative to the positional roots"
+        ),
+    )
+    parser.add_argument(
+        "--search-path-base",
+        metavar="DIR",
+        help="resolve relative --search-path entries under DIR",
+    )
+    parser.add_argument(
         "--cache-dir",
         metavar="DIR",
         help="parser cache directory (default: $XDG_CACHE_HOME/sattline-parser/project)",
@@ -79,12 +110,12 @@ def register(subparsers: argparse._SubParsersAction[argparse.ArgumentParser]) ->
     parser.add_argument("--no-cache", action="store_true", help="bypass the parser caches")
     parser.add_argument(
         "--workers",
-        type=positive_int,
+        type=bounded_positive_int(_MAX_WORKERS),
         metavar="N",
         default=_default_workers(),
         help=(
-            "parse program bodies in N processes (default: %(default)s, capped at "
-            f"{_MAX_DEFAULT_WORKERS}; 1 parses in this process)"
+            "parse program bodies in N processes (default: %(default)s, at most "
+            f"{_MAX_WORKERS}; 1 parses in this process)"
         ),
     )
     parser.add_argument(
@@ -97,7 +128,7 @@ def register(subparsers: argparse._SubParsersAction[argparse.ArgumentParser]) ->
         ),
     )
     add_fail_on(parser)
-    parser.add_argument("--graph", action="store_true", help="only print the dependency edges")
+    parser.add_argument("--graph", action="store_true", help="print the dependency edges and validation rows")
     parser.add_argument("--of", metavar="NAME", help="restrict the graph to this program")
     parser.add_argument("--reverse", action="store_true", help="follow dependents instead of dependencies")
     parser.add_argument("--depth", type=positive_int, metavar="N", help="limit the graph traversal depth")
@@ -113,14 +144,32 @@ def run(args: argparse.Namespace) -> int:
         # A tree that cannot be loaded is a finding about the tree. Anything
         # else is a bug in this tool and must reach main()'s internal-error path.
         finding = Finding(severity="error", message=f"cannot load project: {exc}", rule=PROJECT_LOAD_RULE)
-        emit_findings([finding], args=args, schema="project", extra={"programs": []})
+        emit_findings(
+            [finding],
+            args=args,
+            schema="project",
+            extra={"programs": [], "edges": [], "diagnostics": [], "validation": []},
+        )
         return int(ExitCode.FINDINGS)
     programs = project.programs()
     load_diagnostics = project.diagnostics()
     validation_rows = _validation_rows(programs)
+    if args.of is not None and args.of.casefold() not in {name.casefold() for name in programs}:
+        finding = Finding(
+            severity="error",
+            message=f"program {args.of!r} is not in the loaded graph",
+            rule=PROJECT_QUERY_RULE,
+        )
+        emit_findings(
+            [finding],
+            args=args,
+            schema="project",
+            extra={"programs": [], "edges": [], "diagnostics": [], "validation": []},
+        )
+        return int(ExitCode.FINDINGS)
     edges = _edges(project, args)
     if args.graph:
-        _emit_graph(edges, args=args)
+        _emit_graph(edges, validation_rows, args=args)
     else:
         _emit_programs(programs, edges, load_diagnostics, validation_rows, args=args)
     failing = _validation_fails(validation_rows, args.fail_on)
@@ -148,12 +197,39 @@ def _validation_fails(rows: Sequence[Mapping[str, object]], fail_on: str) -> boo
     return fails_on(len(rows), fail_on)
 
 
+def _debug_sink(message: str) -> None:
+    """Where ``--debug`` sends the loader's progress and the parser's failures."""
+    print(f"debug: {message}", file=sys.stderr)
+
+
+def _roots(args: argparse.Namespace) -> list[Path]:
+    """The lookup roots, from the positional form or the path-list notation."""
+    if args.search_path and args.root:
+        raise CliError("use either ROOT... or --search-path, not both")
+    if args.search_path_base and not args.search_path:
+        raise CliError("--search-path-base requires --search-path")
+    if args.search_path:
+        base = Path(args.search_path_base) if args.search_path_base else None
+        try:
+            return list(parse_search_path(args.search_path, base=base))
+        except ValueError as exc:
+            raise CliError(str(exc)) from exc
+    if not args.root:
+        raise CliError("expected at least one root, or --search-path")
+    return [Path(root) for root in args.root]
+
+
 def _load(args: argparse.Namespace) -> SattLineProject:
-    roots = [Path(root) for root in args.root]
+    roots = _roots(args)
     for root in roots:
-        if not root.exists():
+        try:
+            present = root.exists()
+            is_dir = root.is_dir()
+        except OSError as exc:
+            raise CliError(f"cannot read {root}: {exc.strerror or exc}") from exc
+        if not present:
             raise CliError(f"cannot read {root}: no such file or directory")
-        if not root.is_dir():
+        if not is_dir:
             raise CliError(f"cannot read {root}: not a directory")
     mode = LoadMode(args.mode)
     targets = (
@@ -168,6 +244,7 @@ def _load(args: argparse.Namespace) -> SattLineProject:
         roots,
         mode=mode,
         targets=targets,
+        debug=_debug_sink if args.debug else None,
         cache_dir=_cache_dir(args),
         validate=LoadValidation(args.validate),
         workers=args.workers,
@@ -203,10 +280,16 @@ def _discover_targets(roots: Sequence[Path], *, mode: LoadMode) -> tuple[str, ..
     extensions = {extension.lower() for extension in code_ext_candidates(mode)}
     names: set[str] = set()
     for root in roots:
-        for path in root.iterdir():
-            if path.is_file() and path.suffix.lower() in extensions:
-                names.add(path.stem)
+        names.update(path.stem for path in _root_entries(root) if path.is_file() and path.suffix.lower() in extensions)
     return tuple(sorted(names))
+
+
+def _root_entries(root: Path) -> list[Path]:
+    """The direct entries of one root, reported as a bad input rather than a crash."""
+    try:
+        return list(root.iterdir())
+    except OSError as exc:
+        raise CliError(f"cannot read {root}: {exc.strerror or exc}") from exc
 
 
 def _edges(project: SattLineProject, args: argparse.Namespace) -> list[Edge]:
@@ -341,10 +424,26 @@ def _emit_programs(
             print(f"  {row['code']} {row['program']}{location}: {row['message']}")
 
 
-def _emit_graph(edges: Sequence[Edge], *, args: argparse.Namespace) -> None:
+def _emit_graph(
+    edges: Sequence[Edge],
+    validation: Sequence[Mapping[str, object]],
+    *,
+    args: argparse.Namespace,
+) -> None:
     if args.json or args.jsonl:
-        payload = {"schema": f"{SCHEMA_PREFIX}.project", "edges": list(edges)}
+        payload = {
+            "schema": f"{SCHEMA_PREFIX}.project",
+            "edges": list(edges),
+            "validation": list(validation),
+        }
         print(dumps(payload, compact=bool(args.jsonl)))
         return
     for edge in edges:
         print(f"{edge['from']} -> {edge['to']}")
+    if validation:
+        print("validation:")
+        for row in validation:
+            location = ""
+            if row["line"] is not None:
+                location = f" {row['line']}:{row['column']}"
+            print(f"  {row['code']} {row['program']}{location}: {row['message']}")

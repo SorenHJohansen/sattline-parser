@@ -428,7 +428,7 @@ RULES: tuple[Rule, ...] = (
         scope=RuleScope.SFC,
         status=RuleStatus.RETIRED,
         details=(
-            "A closed sequence may omit its init step; edge_cases/LegacySequenceNoInitStep.s "
+            "A closed sequence may omit its init step; edge_cases/SequenceWithoutInitStep.s "
             "loads, parses, and validates clean."
         ),
     ),

@@ -31,6 +31,7 @@ __all__ = [
     "ModuleInViewClause",
     "ModuleMarker",
     "PickButton",
+    "PolygonPoint",
     "ProcedureCall",
     "ScaleSelector",
     "TailedClause",
@@ -42,10 +43,27 @@ type CoordBox = tuple[CoordPair, CoordPair]
 
 
 @dataclass(frozen=True)
-class Alignment:
-    """A ``LeftAligned`` or ``RightAligned`` interactor body line."""
+class PolygonPoint:
+    """One ``(x, y)`` pair of a polygon, with the tails written after each value.
 
-    value: Literal["left", "right"]
+    A coordinate may carry its own ``: InVar_ "X"`` tail or a nested
+    ``ClippingBounds`` annotation. Keeping the two positions apart is what lets a
+    consumer map a tail back to the coordinate it belongs to; the object's flat
+    ``tails`` view still lists every tail once.
+    """
+
+    x: float
+    y: float
+    x_tails: tuple[Tail, ...] = ()
+    y_tails: tuple[Tail, ...] = ()
+    span: SourceSpan | None = field(default=None, compare=False, metadata={"layout": True})
+
+
+@dataclass(frozen=True)
+class Alignment:
+    """A ``LeftAligned``, ``CenterAligned``, or ``RightAligned`` body line."""
+
+    value: Literal["left", "center", "right"]
     span: SourceSpan | None = field(default=None, compare=False, metadata={"layout": True})
 
 

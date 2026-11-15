@@ -19,7 +19,7 @@ project.
 from __future__ import annotations
 
 from .ast_cache import FILE_AST_CACHE_VERSION, FileASTCache
-from .discovery import ProjectLookup, SourceIndex, ordered_lookup_bases, shared_lookup_root_for
+from .discovery import ProjectLookup, SourceIndex, ordered_lookup_bases, parse_search_path
 from .distribution import (
     DistributionParseError,
     parse_distribution_file,
@@ -128,9 +128,9 @@ __all__ = [
     "parse_distribution_text",
     "parse_graphics_file",
     "parse_graphics_text",
+    "parse_search_path",
     "preferred_extension",
     "read_dependency_names",
     "resolve_distribution_companion_path",
     "resolve_graphics_companion_path",
-    "shared_lookup_root_for",
 ]

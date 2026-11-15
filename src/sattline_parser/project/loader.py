@@ -11,12 +11,10 @@ program's diagnostics are computed against a complete prefix of its closure.
 The loader asserts that invariant. Invoked-scope validation runs after the graph
 is complete because it needs the whole invocation graph.
 
-A plan is keyed by the resolved code path, not by the folded name. One root's
-``Util.s`` and another root's ``Util.s`` are therefore two plans with two
-bodies, and each requester's closure follows the body its own ordered lookup
-resolved. The public registry still holds one program per folded name; when one
-name resolves to different bodies for different requesters, the loader keeps
-the first and reports a ``NAME_RESOLUTION_CONFLICT`` diagnostic.
+A plan is keyed by the resolved code path, and every name resolves through the
+same ordered path, so one folded name always reaches one body. When two roots
+hold ``Util.s``, the earlier root wins and the later body is never planned,
+parsed, or validated.
 
 Loading fails fast on a missing or unparseable artifact: a load is all or
 nothing, so no diagnostic is ever marked tentative. Validation findings never
@@ -28,14 +26,19 @@ itself.
 from __future__ import annotations
 
 import multiprocessing
+import sys
 import threading
 from collections.abc import Callable, Sequence
 from concurrent.futures import ProcessPoolExecutor
 from concurrent.futures.process import BrokenProcessPool
 from dataclasses import dataclass, replace
 from pathlib import Path
+from typing import Any, cast
 
-from sattline_parser.errors import PARSE_FAILURES
+from lark import Token
+from lark.exceptions import UnexpectedCharacters, UnexpectedEOF, UnexpectedInput, UnexpectedToken
+
+from sattline_parser.errors import PARSE_FAILURES, SourceTooDeepError
 from sattline_parser.models.ast_model import (
     BasePicture,
     DataType,
@@ -43,12 +46,13 @@ from sattline_parser.models.ast_model import (
     SourceSpan,
 )
 from sattline_parser.names import fold_identifier
-from sattline_parser.source_io import parse_source_file, private_cache_dir, read_text_cp1252
+from sattline_parser.preprocessing.compressed import PreprocessError
+from sattline_parser.source_io import parse_source_bytes, private_cache_dir, read_text_cp1252
 from sattline_parser.validation import validate_basepicture
 from sattline_parser.validation.diagnostics import Diagnostic, DiagnosticCode
 
 from ._cycles import canonical_cycle, first_cycle
-from .ast_cache import FileASTCache, source_snapshot
+from .ast_cache import FileASTCache, SourceSnapshot, source_snapshot
 from .discovery import ProjectLookup
 from .distribution import (
     DistributionParseError,
@@ -100,7 +104,6 @@ class _ResolvedArtifact:
     deps_path: Path | None
     sidecar: SidecarState
     dependencies: tuple[str, ...]
-    dependency_requester: Path
 
 
 @dataclass(frozen=True, slots=True)
@@ -131,20 +134,112 @@ def _plan_key(code_path: Path) -> str:
 
 
 @dataclass(frozen=True, slots=True)
+class _ParseFailure:
+    """A picklable description of a parse failure raised in a worker.
+
+    The exception object itself is not sent across the process boundary: Lark
+    exceptions carry parser state and tokens. The record keeps the facts the
+    parent needs to rebuild the same exception type and source position.
+    """
+
+    type_name: str
+    message: str
+    line: int | None = None
+    column: int | None = None
+    pos_in_stream: int | None = None
+    token_type: str | None = None
+    token_value: str | None = None
+    expected: tuple[str, ...] = ()
+    char: str | None = None
+    limit: int | None = None
+    unicode_error: tuple[str, bytes, int, int, str] | None = None
+
+
+@dataclass(frozen=True, slots=True)
 class _ParseOutcome:
     """A parsed body, or the text of the failure that stopped it."""
 
     ast: BasePicture | None = None
     failure: str | None = None
-    #: The original failure, kept when the parse ran in this process so a
+    #: The original parse failure, kept when the parse ran in this process so a
     #: caller can still reach a ``SourceTooDeepError`` limit or a decode
-    #: offset through ``__cause__``. A worker returns text only.
-    error: ProjectLoadError | None = None
-    #: The source stat captured before the parse, so the parent can refuse to
-    #: cache an AST when the file changed while a worker was reading it.
-    snapshot: tuple[int, int] | None = None
+    #: offset through ``__cause__``. A worker returns ``failure_record``.
+    error: BaseException | None = None
+    failure_record: _ParseFailure | None = None
+    #: The exact source revision the worker parsed, so the parent can refuse to
+    #: cache an AST when the file changed while the worker was reading it.
+    snapshot: SourceSnapshot | None = None
     #: The AST came from the cache, so it has nothing to store.
     cached: bool = False
+
+
+def _parse_failure_record(exc: BaseException) -> _ParseFailure:
+    """Describe *exc* without pickling parser state."""
+    token = getattr(exc, "token", None)
+    expected = getattr(exc, "expected", None) or getattr(exc, "allowed", ())
+    unicode_error = (
+        (exc.encoding, exc.object, exc.start, exc.end, exc.reason) if isinstance(exc, UnicodeDecodeError) else None
+    )
+    return _ParseFailure(
+        type_name=type(exc).__name__,
+        message=str(exc) or type(exc).__name__,
+        line=_optional_int(getattr(exc, "line", None)),
+        column=_optional_int(getattr(exc, "column", None)),
+        pos_in_stream=_optional_int(getattr(exc, "pos_in_stream", None)),
+        token_type=str(token.type) if isinstance(token, Token) else None,
+        token_value=str(token) if isinstance(token, Token) else None,
+        expected=tuple(sorted(str(item) for item in expected)),
+        char=getattr(exc, "char", None),
+        limit=_optional_int(getattr(exc, "limit", None)),
+        unicode_error=unicode_error,
+    )
+
+
+def _optional_int(value: object) -> int | None:
+    return value if isinstance(value, int) and not isinstance(value, bool) else None
+
+
+def _rebuild_parse_failure(record: _ParseFailure) -> BaseException:
+    """Rebuild a worker failure so ``__cause__`` matches an in-process parse."""
+    line = record.line if record.line is not None else 1
+    column = record.column if record.column is not None else 1
+    pos = record.pos_in_stream if record.pos_in_stream is not None else 0
+    if record.unicode_error is not None:
+        return UnicodeDecodeError(*record.unicode_error)
+    if record.type_name == "SourceTooDeepError" and record.limit is not None:
+        return SourceTooDeepError(
+            record.limit,
+            line=record.line,
+            column=record.column,
+            pos_in_stream=record.pos_in_stream,
+        )
+    if record.type_name == "UnexpectedToken" and record.token_type is not None:
+        token = Token(record.token_type, record.token_value or "")
+        token.line = line
+        token.column = column
+        token.start_pos = pos
+        token.end_pos = pos + len(str(token))
+        return UnexpectedToken(token, list(record.expected))
+    if record.type_name == "UnexpectedCharacters":
+        sequence = " " * pos + (record.char or " ")
+        return UnexpectedCharacters(sequence, pos, line, column, allowed=list(record.expected) or None)
+    if record.type_name == "UnexpectedEOF":
+        return UnexpectedEOF(list(record.expected))
+    if record.type_name == "UnexpectedInput":
+        error = UnexpectedInput(record.message)
+        error.line = line
+        error.column = column
+        cast(Any, error).pos_in_stream = pos
+        return error
+    if record.type_name == "PreprocessError":
+        return PreprocessError(record.message)
+    if record.type_name in {"UnicodeError", "UnicodeDecodeError"}:
+        return UnicodeError(record.message)
+    if record.type_name == "ValueError":
+        return ValueError(record.message)
+    if record.type_name == "OSError":
+        return OSError(record.message)
+    return RuntimeError(record.message)
 
 
 def _program_name(plan: _Plan) -> str:
@@ -179,7 +274,7 @@ def _worker_cache(cache_text: str) -> FileASTCache:
     return cache
 
 
-def _parse_code_file(task: tuple[str, str, str | None]) -> _ParseOutcome:
+def _parse_code_file(task: tuple[str, str, str | None, bool]) -> _ParseOutcome:
     """Parse one code file into an AST.
 
     Runs in a child process when ``workers`` is greater than one, so it must not
@@ -187,38 +282,55 @@ def _parse_code_file(task: tuple[str, str, str | None]) -> _ParseOutcome:
     it: the parent owns every write, so the per-user cache key is created and
     the entries are signed by a single process. A failure comes back as text,
     because the error type and wording depend on the dependency edge and the
-    parent owns both.
+    parent owns both. ``log_failures`` mirrors the parent's choice: a plain load
+    keeps stderr for the structured finding, and ``--debug`` keeps the parser
+    traceback.
     """
-    code_text, mode, cache_text = task
+    code_text, mode, cache_text, log_failures = task
     code_path = Path(code_text)
     if cache_text is not None:
         cached = _worker_cache(cache_text).load(code_path, mode)
         if cached is not None:
             return _ParseOutcome(ast=cached, cached=True)
-    snapshot = source_snapshot(code_path)
     try:
-        picture = parse_source_file(code_path)
+        raw_bytes = code_path.read_bytes()
+    except OSError as exc:
+        return _ParseOutcome(failure=str(exc), failure_record=_parse_failure_record(exc))
+    snapshot = source_snapshot(code_path, raw_bytes)
+    try:
+        picture = parse_source_bytes(raw_bytes, source_path=code_path, log_failures=log_failures)
     except PARSE_FAILURES as exc:
-        return _ParseOutcome(failure=str(exc) or type(exc).__name__)
+        return _ParseOutcome(
+            failure=str(exc) or type(exc).__name__,
+            failure_record=_parse_failure_record(exc),
+        )
     return _ParseOutcome(ast=picture, snapshot=snapshot)
 
 
-def _start_method(methods: Sequence[str], *, threaded: bool) -> str | None:
+def _start_method(
+    methods: Sequence[str],
+    *,
+    threaded: bool,
+    platform: str = sys.platform,
+    version: tuple[int, int] = sys.version_info[:2],
+) -> str | None:
     """The preferred pool start method, or ``None`` for the platform default.
 
-    A single-threaded process prefers ``fork``: the caller needs no ``__main__``
-    guard. Forking a process with other threads is deprecated in CPython and
-    can inherit a lock another thread held at fork time, so a threaded host
-    prefers ``forkserver``, then ``spawn``. Platforms that offer only ``fork``
-    still get it: this is a preference, not a guarantee.
+    A single-threaded process on Linux before Python 3.14 prefers ``fork``: the
+    caller needs no ``__main__`` guard. Forking a process with other threads is
+    deprecated in CPython and can inherit a lock another thread held at fork
+    time, so a threaded host prefers ``forkserver``, then ``spawn``. Python 3.14
+    moved the Linux default away from ``fork`` for the same reason, and macOS
+    defaults to ``spawn``, so both keep the platform default instead of forcing
+    ``fork``. Platforms that offer only ``fork`` still get it through that
+    default: this is a preference, not a guarantee.
     """
     if threaded:
         for candidate in ("forkserver", "spawn"):
             if candidate in methods:
                 return candidate
-    for candidate in ("fork", "forkserver", "spawn"):
-        if candidate in methods:
-            return candidate
+    if not threaded and platform.startswith("linux") and version < (3, 14) and "fork" in methods:
+        return "fork"
     return None
 
 
@@ -255,16 +367,18 @@ class ProjectLoader:
         self._lookup = ProjectLookup(roots, mode, cache=self._lookup_cache, debug=debug)
         self._mode = mode
         self._debug = debug
+        #: The parser logs a failure with its traceback. A plain load reports the
+        #: problem once as a structured finding, so only a debug run asks for the
+        #: parser's own log line and stack.
+        self._log_failures = debug is not None
         self._validate = validate
         self._workers = max(1, workers)
         self._secure_cache_dir = secure_cache_dir
         #: Discovery order is post-order, so assembly is a single pass. Plans
-        #: are keyed by resolved code path, so a same-named unit in another
-        #: root is a second plan rather than a silent alias.
+        #: are keyed by resolved code path; the ordered path decides which body
+        #: a name resolves to, so a later same-named body is never planned.
         self._plans: list[_Plan] = []
         self._planned: set[str] = set()
-        #: Folded name -> the plan key that first resolved it.
-        self._plan_key_by_name: dict[str, str] = {}
         #: Plan key -> the plan keys of its resolved dependencies.
         self._resolved_dependencies: dict[str, tuple[str, ...]] = {}
         self._parsed: dict[str, _ParseOutcome] = {}
@@ -316,7 +430,7 @@ class ProjectLoader:
         self._resolved = True
         try:
             for target in targets:
-                self._target_plan_keys.add(self._visit(target, requester_dir=None, declared_by=None))
+                self._target_plan_keys.add(self._visit(target, declared_by=None))
             self._parse_planned()
             self._assemble()
             self._assert_registry_post_order()
@@ -371,7 +485,7 @@ class ProjectLoader:
                     )
             seen.add(key)
 
-    def _visit(self, name: str, *, requester_dir: Path | None, declared_by: str | None) -> str:
+    def _visit(self, name: str, *, declared_by: str | None) -> str:
         """Plan one program and return its plan key."""
         key = name.casefold()
         if key in self._loading:
@@ -381,11 +495,11 @@ class ProjectLoader:
             raise DependencyCycleError(canonical_cycle((*loading[start:], key)))
         self._loading[key] = None
         try:
-            return self._discover(name, requester_dir=requester_dir, declared_by=declared_by)
+            return self._discover(name, declared_by=declared_by)
         finally:
             del self._loading[key]
 
-    def _discover(self, name: str, *, requester_dir: Path | None, declared_by: str | None) -> str:
+    def _discover(self, name: str, *, declared_by: str | None) -> str:
         """Resolve one program's artifacts and recurse into its dependencies.
 
         Discovery is path resolution and sidecar reads only: it never parses a
@@ -394,33 +508,22 @@ class ProjectLoader:
         post-order sequence the assembly phase needs.
 
         A name that resolves to a body this load already planned reuses that
-        plan. A name that resolves to a *different* body is a second plan, and
-        the conflict is reported when that body assembles, because the two
-        requesters really did resolve two different units.
+        plan. The ordered path is the same for every name, so a name cannot
+        resolve to two bodies in one load.
         """
         program_name = declared_by if declared_by is not None else name
         dependency = None if declared_by is None else name
         self._dbg(f"Visiting: {name}")
         artifact = self._resolve_artifact(
             name,
-            requester_dir=requester_dir,
             program_name=program_name,
             dependency=dependency,
         )
         plan_key = _plan_key(artifact.code_path)
-        name_key = name.casefold()
-        self._plan_key_by_name.setdefault(name_key, plan_key)
         if plan_key in self._planned:
             return plan_key
         self._planned.add(plan_key)
-        resolved = tuple(
-            self._visit(
-                declared,
-                requester_dir=artifact.dependency_requester,
-                declared_by=name,
-            )
-            for declared in artifact.dependencies
-        )
+        resolved = tuple(self._visit(declared, declared_by=name) for declared in artifact.dependencies)
         self._plans.append(
             _Plan(
                 key=plan_key,
@@ -432,23 +535,6 @@ class ProjectLoader:
         )
         self._resolved_dependencies[plan_key] = resolved
         return plan_key
-
-    def _record_shared_name(self, name: str, plan_key: str) -> None:
-        """Report one folded name resolving to different bodies for different requesters.
-
-        Called when a body assembles, so the diagnostic only ever describes two
-        bodies that really did load.
-        """
-        first = self._plan_key_by_name.get(name.casefold())
-        if first is None or first == plan_key:
-            return
-        self._diagnose(
-            LoadDiagnosticKind.NAME_RESOLUTION_CONFLICT,
-            name,
-            f"name {name!r} resolves to {first} for one requester and {plan_key} for another; "
-            f"both bodies load, and the project registry keeps {first}",
-            Path(plan_key),
-        )
 
     def _parse_planned(self) -> None:
         """Parse every planned body, in parallel when ``workers`` allows it.
@@ -471,7 +557,9 @@ class ProjectLoader:
             return
 
         cache_text = None if self._secure_cache_dir is None else str(self._secure_cache_dir)
-        tasks = [(str(plan.artifact.code_path), self._mode.value, cache_text) for plan in self._plans]
+        tasks = [
+            (str(plan.artifact.code_path), self._mode.value, cache_text, self._log_failures) for plan in self._plans
+        ]
         workers = min(self._workers, len(tasks))
         self._dbg(f"Parsing {len(tasks)} bodies in {workers} processes")
         try:
@@ -517,7 +605,10 @@ class ProjectLoader:
                 dependency=_dependency(plan),
             )
         except ProjectLoadError as exc:
-            return _ParseOutcome(failure=str(exc), error=exc)
+            # ``_load_ast`` wraps the parser exception in a load error for its
+            # other callers. Keep the parser exception itself as the cause, so
+            # the in-process and worker paths expose the same chain.
+            return _ParseOutcome(failure=str(exc), error=exc.__cause__ or exc)
         return _ParseOutcome(ast=ast)
 
     def _save_cached(self, plan: _Plan, outcome: _ParseOutcome) -> None:
@@ -549,7 +640,10 @@ class ProjectLoader:
         basepicture = outcome.ast
         if basepicture is None:
             error = _parse_failure(_program_name(plan), artifact.code_path.name, _dependency(plan))
-            raise error from (outcome.error or RuntimeError(outcome.failure))
+            cause = outcome.error
+            if cause is None and outcome.failure_record is not None:
+                cause = _rebuild_parse_failure(outcome.failure_record)
+            raise error from (cause or RuntimeError(outcome.failure))
         _set_origin(basepicture, file_name=artifact.code_path.name, library=artifact.library)
         self._assemble_body(plan, basepicture)
 
@@ -559,7 +653,6 @@ class ProjectLoader:
         name = plan.name
         program_name = _program_name(plan)
         dependency = _dependency(plan)
-        self._record_shared_name(name, plan.key)
         diagnostics = self._artifact_diagnostics(
             basepicture,
             key=plan.key,
@@ -610,12 +703,11 @@ class ProjectLoader:
         self,
         name: str,
         *,
-        requester_dir: Path | None,
         program_name: str,
         dependency: str | None,
     ) -> _ResolvedArtifact:
         """Find the body, its sidecar, and the declared dependencies."""
-        resolved = self._lookup.find_code_with_base(name, requester_dir=requester_dir)
+        resolved = self._lookup.find_code_with_base(name)
         if resolved is None:
             raise DependencyNotFoundError(
                 program_name,
@@ -626,14 +718,14 @@ class ProjectLoader:
         library = resolved_base.name
         # The sidecar belongs to the selected body's prefix; see
         # ProjectLookup.find_deps_beside.
-        deps_path = self._lookup.find_deps_beside(code_path, name, requester_dir=requester_dir)
+        deps_path = self._lookup.find_deps_beside(code_path, name)
         sidecar = SidecarState.ABSENT
         if deps_path is None:
             # A sidecar in the other family sits at the body's own prefix. Probe
             # for it directly, because a mode-filtered root-ordered search never
             # sees the other family and official mode would report a plain miss.
             same_prefix = find_companion_beside(code_path, sorted(ALL_DEPS_EXTENSIONS))
-            stray = self._lookup.find_deps(name, requester_dir=requester_dir)
+            stray = self._lookup.find_deps(name)
             if same_prefix is not None:
                 self._diagnose(
                     LoadDiagnosticKind.SIDECAR_FAMILY_MISMATCH,
@@ -656,7 +748,6 @@ class ProjectLoader:
                     f"no dependency sidecar beside {code_path.name!r}",
                     code_path,
                 )
-        dependency_requester = deps_path.parent if deps_path is not None else code_path.parent
         dependencies = self._read_deps(name, deps_path, program_name, dependency)
         if deps_path is not None:
             sidecar = SidecarState.PRESENT if dependencies else SidecarState.EMPTY
@@ -674,7 +765,6 @@ class ProjectLoader:
             deps_path=deps_path,
             sidecar=sidecar,
             dependencies=dependencies,
-            dependency_requester=dependency_requester,
         )
 
     def _artifact_diagnostics(
@@ -835,8 +925,8 @@ class ProjectLoader:
             basepicture,
             moduletype_defs=selected,
             submodules=[],
-            moduledefs=[],
-            modulecodes=[],
+            moduledef=None,
+            modulecode=None,
             localvariables=[],
         )
 
@@ -964,12 +1054,27 @@ class ProjectLoader:
             if cached is not None:
                 self._dbg(f"Using cached AST for: {code_path}")
                 return cached
-        # Capture the source revision before reading it, so the entry written
-        # below describes the bytes that were actually parsed.
-        snapshot = source_snapshot(code_path)
+        # Read the source once and hash those bytes: the entry written below then
+        # describes exactly the revision that was parsed, never a later stat.
+        try:
+            raw_bytes = code_path.read_bytes()
+        except OSError as exc:
+            if dependency is None:
+                raise ArtifactLoadError(program_name, f"unable to read {code_path.name}") from exc
+            raise DependencyParseError(
+                program_name,
+                f"unable to read dependency {dependency!r}",
+                dependency=dependency,
+            ) from exc
+        snapshot = source_snapshot(code_path, raw_bytes)
         self._dbg(f"Parsing: {code_path}")
         try:
-            basepicture = parse_source_file(code_path, debug=self._debug)
+            basepicture = parse_source_bytes(
+                raw_bytes,
+                source_path=code_path,
+                debug=self._debug,
+                log_failures=self._log_failures,
+            )
         except PARSE_FAILURES as exc:
             if dependency is None:
                 raise ArtifactLoadError(program_name, f"failed to parse {code_path.name}") from exc
