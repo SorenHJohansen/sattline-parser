@@ -113,7 +113,7 @@ def _check_parameter_contract(
     ``scope`` is the scope the mapping sources resolve in: the invoking scope for
     a submodule, the file scope for a module-type definition.
     """
-    check_parameter_transfers(mappings, parameters, subject, scope, context.records, errors)
+    check_parameter_transfers(mappings, parameters, subject, scope, context.records, context.type_graph, errors)
     expected = {fold_identifier(parameter.name): parameter for parameter in parameters}
     check_parameter_mappings(mappings, expected, scope, context.type_graph, errors)
 

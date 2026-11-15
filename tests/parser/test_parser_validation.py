@@ -1092,6 +1092,77 @@ def test_param_transfer_same_record_and_anytype_clean():
     assert diagnostics == ()
 
 
+def test_param_transfer_undefined_source_is_reported():
+    """A typo in a mapping source is one finding at the mapping span."""
+    moduletype = ModuleTypeDef(name="T", moduleparameters=[_var("EnableFlag", "boolean")])
+    bp = _base_picture()
+    bp.moduletype_defs = [moduletype]
+    bp.submodules = [
+        ModuleTypeInstance(
+            header=_module_header("Inst"),
+            moduletype_name="T",
+            parametermappings=[_transfer("EnableFlag", "NoSuchVariable")],
+        )
+    ]
+
+    diagnostics = validate_basepicture(bp)
+
+    assert [d.code.value for d in diagnostics] == ["SL-V019"]
+    assert "NoSuchVariable" in diagnostics[0].message
+
+
+def test_single_module_undefined_mapping_source_is_reported():
+    child = _single_module("Child", [_var("EnableFlag", "boolean")], [_transfer("EnableFlag", "NoSuchVariable")])
+    bp = _base_picture()
+    bp.submodules = [child]
+
+    assert [d.code.value for d in validate_basepicture(bp)] == ["SL-V019"]
+
+
+def test_mapping_source_stays_silent_when_the_formals_are_not_loaded():
+    """Without formals the target side is unproven, so the source is not judged."""
+    bp = _base_picture()
+    bp.submodules = [
+        ModuleTypeInstance(
+            header=_module_header("Inst"),
+            moduletype_name="NotLoaded",
+            parametermappings=[_transfer("EnableFlag", "NoSuchVariable")],
+        )
+    ]
+
+    diagnostics = validate_basepicture(bp)
+
+    # The unknown module type is still the one finding.
+    assert [d.code.value for d in diagnostics] == ["SL-V058"]
+
+
+def test_dotted_mapping_target_compares_the_field_datatype():
+    """``Settings.Flag => CounterValue`` is a boolean field mapped from an integer."""
+    record = DataType(
+        name="Settings",
+        description=None,
+        datecode=None,
+        var_list=[_var("Flag", "boolean"), _var("Level", "real")],
+    )
+    moduletype = ModuleTypeDef(name="T", moduleparameters=[_var("Settings", "Settings")])
+    bp = _base_picture()
+    bp.datatype_defs = [record]
+    bp.localvariables = [_var("CounterValue", "integer"), _var("GainValue", "real")]
+    bp.moduletype_defs = [moduletype]
+    bp.submodules = [
+        ModuleTypeInstance(
+            header=_module_header("Inst"),
+            moduletype_name="T",
+            parametermappings=[_transfer("Settings.Flag", "CounterValue"), _transfer("Settings.Level", "GainValue")],
+        )
+    ]
+
+    diagnostics = validate_basepicture(bp)
+
+    assert [d.code.value for d in diagnostics] == ["SL-V027"]
+    assert "boolean" in diagnostics[0].message
+
+
 def test_param_transfer_compatibilities_clean():
     moduletype = ModuleTypeDef(
         name="MixType",
@@ -1121,12 +1192,48 @@ def test_param_transfer_compatibilities_clean():
                 _transfer("Count", "Counter"),  # integer => integer
                 _transfer("Gain", "Counter"),  # integer => real: numeric widening
                 _transfer("SharedBias", None, global_=True),  # GLOBAL source: unresolved
-                _transfer("Ghost", "MissingVar"),  # source variable not declared: skip
             ],
         )
     ]
     diagnostics = validate_basepicture(bp)
     assert diagnostics == ()
+
+
+def test_param_transfer_skips_a_dotted_target_the_type_graph_cannot_resolve():
+    """An unknown field is the mapping-target rule's finding, not a transfer one."""
+    record = DataType(name="Settings", description=None, datecode=None, var_list=[_var("Flag", "boolean")])
+    moduletype = ModuleTypeDef(name="T", moduleparameters=[_var("Settings", "Settings")])
+    bp = _base_picture()
+    bp.datatype_defs = [record]
+    bp.localvariables = [_var("CounterValue", "integer")]
+    bp.moduletype_defs = [moduletype]
+    bp.submodules = [
+        ModuleTypeInstance(
+            header=_module_header("Inst"),
+            moduletype_name="T",
+            parametermappings=[_transfer("Settings.Missing", "CounterValue")],
+        )
+    ]
+
+    assert [d.code.value for d in validate_basepicture(bp)] == ["SL-V048"]
+
+
+def test_mapping_source_is_checked_even_when_the_target_field_is_opaque():
+    """A typo in the source is independent of an unmodelled target shape."""
+    opaque = DataType(name="Opaque", description=None, datecode=None)
+    moduletype = ModuleTypeDef(name="T", moduleparameters=[_var("Settings", "Opaque")])
+    bp = _base_picture()
+    bp.datatype_defs = [opaque]
+    bp.moduletype_defs = [moduletype]
+    bp.submodules = [
+        ModuleTypeInstance(
+            header=_module_header("Inst"),
+            moduletype_name="T",
+            parametermappings=[_transfer("Settings.Field", "MissingSource")],
+        )
+    ]
+
+    assert [d.code.value for d in validate_basepicture(bp)] == ["SL-V019"]
 
 
 def test_param_mapping_absent_target_is_reported_on_a_moduletype_instance():
@@ -1872,6 +1979,117 @@ def test_clipping_tail_is_checked_once():
     diagnostics = [d for d in validate_basepicture(bp) if d.code is DiagnosticCode.COORDINATE_NOT_REAL]
 
     assert [d.code.value for d in diagnostics] == ["SL-V032"]
+
+
+def test_an_untyped_builtin_with_unknown_arity_is_not_rejected():
+    """``GetPrivilegeFlag`` has no transcribed parameter list, so a call is not judged."""
+    bp = _base_picture()
+    bp.localvariables = [_var("Flag", "boolean")]
+    bp.modulecodes = [
+        ModuleCode(
+            equationblocks=[
+                _equation(
+                    FuncCallStmt(FuncCall("GetPrivilegeFlag", (VarRef("Flag"),))),
+                    FuncCallStmt(FuncCall("ResetPrivilegeFlag", (VarRef("Flag"),))),
+                )
+            ]
+        )
+    ]
+
+    assert validate_basepicture(bp) == ()
+
+
+def test_a_typed_builtin_still_reports_arity():
+    bp = _base_picture()
+    bp.modulecodes = [ModuleCode(equationblocks=[_equation(FuncCallStmt(FuncCall("Abs", ())))])]
+
+    assert [d.code.value for d in validate_basepicture(bp)] == ["SL-V013"]
+
+
+def test_a_temporal_field_accessor_is_not_an_undefined_field():
+    """A temporal value reached through a record still exposes its accessors."""
+    measured = DataType(name="Measured", description=None, datecode=None, var_list=[_var("Stamp", "time")])
+    readings = DataType(name="Readings", description=None, datecode=None, var_list=[_var("Entry", "Measured")])
+    bp = _base_picture()
+    bp.datatype_defs = [measured, readings]
+    bp.localvariables = [_var("Readings", "Readings"), _var("Sink", "integer")]
+    bp.modulecodes = [
+        ModuleCode(equationblocks=[_equation(Assignment(VarRef("Sink"), VarRef("Readings.Entry.Stamp.Time")))])
+    ]
+
+    assert validate_basepicture(bp) == ()
+
+
+def test_a_field_of_a_duplicated_record_name_stays_silent():
+    """A duplicated name has more than one valid shape, so absence is unproven."""
+    first = DataType(name="SensorType", description=None, datecode=None, var_list=[_var("Value", "integer")])
+    second = DataType(name="SensorType", description=None, datecode=None, var_list=[_var("Level", "real")])
+    bp = _base_picture()
+    bp.datatype_defs = [first, second]
+    bp.localvariables = [_var("Sensor", "SensorType"), _var("Sink", "integer")]
+    bp.modulecodes = [ModuleCode(equationblocks=[_equation(Assignment(VarRef("Sink"), VarRef("Sensor.Value")))])]
+
+    assert validate_basepicture(bp) == ()
+
+
+def test_known_record_bad_field_is_undefined_on_write_and_read():
+    """A field absent from a record declared in this file is a typo, not opacity."""
+    record = DataType(name="Reading", description=None, datecode=None, var_list=[_var("Count", "integer")])
+    bp = _base_picture()
+    bp.datatype_defs = [record]
+    bp.localvariables = [_var("Reading", "Reading"), _var("Sink", "integer")]
+    bp.modulecodes = [
+        ModuleCode(
+            equationblocks=[
+                _equation(
+                    Assignment(VarRef("Reading.Missing"), 1),
+                    Assignment(VarRef("Sink"), VarRef("Reading.Missing")),
+                )
+            ]
+        )
+    ]
+
+    diagnostics = validate_basepicture(bp)
+
+    assert [d.code.value for d in diagnostics] == ["SL-V019", "SL-V019"]
+    assert all("Reading.Missing" in diagnostic.message for diagnostic in diagnostics)
+
+
+def test_known_nested_record_bad_field_is_undefined():
+    inner = DataType(name="Inner", description=None, datecode=None, var_list=[_var("Value", "integer")])
+    outer = DataType(name="Outer", description=None, datecode=None, var_list=[_var("Nested", "Inner")])
+    bp = _base_picture()
+    bp.datatype_defs = [inner, outer]
+    bp.localvariables = [_var("Outer", "Outer"), _var("Sink", "integer")]
+    bp.modulecodes = [
+        ModuleCode(equationblocks=[_equation(Assignment(VarRef("Sink"), VarRef("Outer.Nested.Missing")))])
+    ]
+
+    diagnostics = validate_basepicture(bp)
+
+    assert [d.code.value for d in diagnostics] == ["SL-V019"]
+    assert "Outer.Nested.Missing" in diagnostics[0].message
+
+
+def test_a_field_on_an_unloaded_nested_record_stays_silent():
+    """The middle record is not loaded, so the leaf field is unproven."""
+    outer = DataType(name="Outer", description=None, datecode=None, var_list=[_var("Nested", "NotLoaded")])
+    bp = _base_picture()
+    bp.datatype_defs = [outer]
+    bp.localvariables = [_var("Outer", "Outer"), _var("Sink", "integer")]
+    bp.modulecodes = [
+        ModuleCode(equationblocks=[_equation(Assignment(VarRef("Sink"), VarRef("Outer.Nested.Missing")))])
+    ]
+
+    assert validate_basepicture(bp, allow_unresolved_external_datatypes=True) == ()
+
+
+def test_a_field_on_an_opaque_builtin_record_stays_silent():
+    bp = _base_picture()
+    bp.localvariables = [_var("Message", "ComliMessage"), _var("Sink", "integer")]
+    bp.modulecodes = [ModuleCode(equationblocks=[_equation(Assignment(VarRef("Sink"), VarRef("Message.NoSuchField")))])]
+
+    assert validate_basepicture(bp) == ()
 
 
 def test_sequence_ends_with_step_skips_open_sequences():

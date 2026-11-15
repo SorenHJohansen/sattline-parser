@@ -32,6 +32,7 @@ from sattline_parser.validation.typing import (
     resolve_ref_datatype,
     resolve_variable_field_datatype,
     split_dotted_name,
+    unresolved_reference_is_a_defect,
 )
 
 
@@ -60,6 +61,22 @@ def check_parameter_mappings(
 
         if expected_parameters is None:
             continue
+
+        # The formals are known, so the source must resolve even when the target
+        # field itself is opaque. The check runs before the target rules so a
+        # typo is not hidden behind an unproven target shape.
+        source_datatype: Simple_DataType | str | None = None
+        if mapping.source is not None and not mapping.is_source_global:
+            source_datatype = resolve_ref_datatype(mapping.source, scope, type_graph)
+            if source_datatype is None and unresolved_reference_is_a_defect(mapping.source, scope, type_graph):
+                errors.append(
+                    Diagnostic(
+                        code=DiagnosticCode.UNDEFINED_VARIABLE,
+                        message=f"Parameter mapping source {mapping.source.name!r} is not a defined variable",
+                        span=mapping.span,
+                    )
+                )
+                continue
 
         base_name, field_path = split_dotted_name(target_name)
         target_variable = expected_parameters.get(fold_identifier(base_name))
@@ -96,7 +113,7 @@ def check_parameter_mappings(
                 )
             continue
 
-        actual_datatype, source_description = _mapping_source_datatype(mapping, scope, type_graph, errors)
+        actual_datatype, source_description = _mapping_source_datatype(mapping, source_datatype, errors)
         if actual_datatype is None:
             continue
         if mapping.source_literal is None:
@@ -120,8 +137,7 @@ def check_parameter_mappings(
 
 def _mapping_source_datatype(
     mapping: ParameterMapping,
-    scope: Scope,
-    type_graph: TypeGraph,
+    source_datatype: Simple_DataType | str | None,
     errors: list[Diagnostic],
 ) -> tuple[Simple_DataType | str | None, str | None]:
     if mapping.source_literal is not None:
@@ -149,7 +165,7 @@ def _mapping_source_datatype(
             return None, None
         return infer_literal_datatype(literal, is_duration=mapping.is_duration), repr(literal)
     if mapping.source is not None and not mapping.is_source_global:
-        return resolve_ref_datatype(mapping.source, scope, type_graph), mapping.source.name
+        return source_datatype, mapping.source.name
     return None, None
 
 

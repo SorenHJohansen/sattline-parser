@@ -206,6 +206,40 @@ def resolve_ref_datatype(
     return resolve_variable_field_datatype(variable, field_path, type_graph)
 
 
+def unresolved_reference_is_a_defect(ref: VarRef, scope: Scope, type_graph: TypeGraph) -> bool:
+    """Whether an unresolved reference is provably wrong rather than unproven.
+
+    A missing root name is undefined. A field path is walked one step at a time:
+    a field on a scalar is invalid, a field absent from a record whose shape is
+    known is undefined, and any step through a record whose shape is not
+    modelled (an opaque system type or a record from a library that is not
+    loaded) stays unproven, so the caller must remain silent. Temporal values
+    expose date, time, and duration component accessors, so a dotted access on
+    one is not a field typo.
+    """
+    base_name, field_path = split_dotted_name(ref.name)
+    base = scope.lookup(base_name)
+    if base is None:
+        return True
+    if not field_path:
+        return False
+    current: Simple_DataType | str = base.datatype
+    for field_name in field_path:
+        # A temporal value reached at any point exposes the same component
+        # accessors as a temporal root, so its tail is never a field typo.
+        if current in {Simple_DataType.TIME, Simple_DataType.DURATION}:
+            return False
+        if isinstance(current, Simple_DataType):
+            return True
+        if not type_graph.has_known_fields(str(current)):
+            return False
+        field = type_graph.field(str(current), field_name)
+        if field is None:
+            return True
+        current = field.datatype
+    return False
+
+
 def is_valid_duration_literal(value: object) -> bool:
     if not isinstance(value, str):
         return False
@@ -559,4 +593,5 @@ __all__ = [
     "resolve_variable_field_datatype",
     "split_dotted_name",
     "suggest_datatype_name",
+    "unresolved_reference_is_a_defect",
 ]

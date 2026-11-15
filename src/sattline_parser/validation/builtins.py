@@ -36,13 +36,17 @@ class BuiltinFunction:
 
     ``min_args`` / ``max_args`` bound the accepted argument count and
     ``parameters`` carries the documented direction and datatype for the
-    argument-type rule. A written position is derived from the parameter
-    direction, so the view carries no second copy of that fact.
+    argument-type rule. Both bounds are ``None`` when the documented arity is
+    unknown, so a call is not rejected for a count the catalogue never recorded.
+    A typed entry's lower bound is its leading required count; an untyped entry
+    that records an arity pins both bounds to it. A written position is derived
+    from the parameter direction, so the view carries no second copy of that
+    fact.
     """
 
     name: str
-    min_args: int
-    max_args: int
+    min_args: int | None
+    max_args: int | None
     parameters: tuple[BuiltinParameter, ...] = ()
     kind: str = "function"
     return_type: str | None = None
@@ -50,15 +54,27 @@ class BuiltinFunction:
 
 @cache
 def _adapt(signature: _BuiltinFunction) -> BuiltinFunction:
-    required_args = 0
-    for parameter in signature.parameters:
-        if parameter.optional:
-            break
-        required_args += 1
+    arity = signature.arity
+    if arity is None:
+        min_args: int | None = None
+        max_args: int | None = None
+    elif signature.typed:
+        required_args = 0
+        for parameter in signature.parameters:
+            if parameter.optional:
+                break
+            required_args += 1
+        min_args = required_args
+        max_args = arity
+    else:
+        # An untyped entry records only the count, with no per-argument
+        # directions, so every documented argument is required.
+        min_args = arity
+        max_args = arity
     return BuiltinFunction(
         name=signature.name,
-        min_args=required_args,
-        max_args=signature.arity,
+        min_args=min_args,
+        max_args=max_args,
         parameters=signature.parameters,
         kind=signature.kind,
         return_type=signature.return_type,

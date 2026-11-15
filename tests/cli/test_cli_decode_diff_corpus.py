@@ -116,6 +116,42 @@ def test_diff_reports_structural_count_changes(tmp_path, capsys) -> None:
     assert "~ equationblocks: 0 -> 1" in capsys.readouterr().out
 
 
+_NESTED_CHILD = (
+    "SUBMODULES\n"
+    "   Child Invocation ( 0.1 , 0.1 , 0.0 , 0.4 , 0.4 ) : MODULEDEFINITION DateCode_ 1\n"
+    "   ModuleDef\n"
+    "   ClippingBounds = ( -1.0 , -1.0 ) ( 1.0 , 1.0 )\n"
+    "{code_block}"
+    "   ENDDEF (*Child*);\n"
+)
+
+_NESTED_SEQUENCE = (
+    "   ModuleCode\n"
+    "      SEQUENCE Inner COORD 0.0, 0.0 OBJSIZE 1.0, 1.0\n"
+    "         SEQINITSTEP Init\n"
+    "         SEQTRANSITION Tr WAIT_FOR True\n"
+    "      ENDSEQUENCE\n"
+)
+
+
+def test_diff_reports_a_nested_only_sequence_change(tmp_path, capsys) -> None:
+    """A sequence added inside a submodule is a count change, not a silent pass."""
+    root = "ModuleDef\nClippingBounds"
+    old = write_source(tmp_path, "Old.s", VALID_SOURCE.replace(root, _NESTED_CHILD.format(code_block="") + root))
+    new = write_source(
+        tmp_path,
+        "New.s",
+        VALID_SOURCE.replace(root, _NESTED_CHILD.format(code_block=_NESTED_SEQUENCE) + root),
+    )
+
+    assert main(["diff", str(old), str(new), "--json"]) == ExitCode.FINDINGS
+
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["findings"]["added"] == []
+    # VALID_SOURCE carries one root sequence; the child adds the second.
+    assert payload["counts"]["changed"] == {"sequences": {"old": 1, "new": 2}}
+
+
 def test_diff_reports_a_source_that_stops_parsing(tmp_path, capsys) -> None:
     old = write_source(tmp_path, "Old.s", VALID_SOURCE)
     new = write_source(tmp_path, "New.s", '"only one header"\n')

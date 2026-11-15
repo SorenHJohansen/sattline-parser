@@ -5700,6 +5700,7 @@
       "return_type": "Boolean",
       "precision_scangroup": false,
       "typed": false,
+      "arity": null,
       "parameters": []
     },
     "getprograminfo": {
@@ -9940,6 +9941,7 @@
       "return_type": null,
       "precision_scangroup": false,
       "typed": false,
+      "arity": null,
       "parameters": []
     },
     "restorevariable": {

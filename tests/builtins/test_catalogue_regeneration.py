@@ -68,3 +68,38 @@ def test_generator_rejects_an_unknown_return_datatype() -> None:
         generator.build(source)
 
     assert "NoSuchType" in str(exc_info.value)
+
+
+def test_generator_rejects_an_untyped_entry_without_arity_evidence() -> None:
+    """An untranscribed parameter list must not silently mean "no arguments"."""
+    generator = _load_generator()
+    source = deepcopy(_source())
+    del source["functions"]["getprivilegeflag"]["arity"]
+
+    with pytest.raises(SystemExit) as exc_info:
+        generator.build(source)
+
+    assert "must record arity" in str(exc_info.value)
+
+
+def test_generator_rejects_a_typed_entry_that_records_arity() -> None:
+    """A typed entry derives its arity from its parameters; a second copy can drift."""
+    generator = _load_generator()
+    source = deepcopy(_source())
+    source["functions"]["pid"]["arity"] = 1
+
+    with pytest.raises(SystemExit) as exc_info:
+        generator.build(source)
+
+    assert "derives its arity" in str(exc_info.value)
+
+
+def test_generator_accepts_an_integer_arity_for_an_untyped_entry() -> None:
+    """An untranscribed list may still have a documented count."""
+    generator = _load_generator()
+    source = deepcopy(_source())
+    source["functions"]["getprivilegeflag"]["arity"] = 1
+
+    built = generator.build(source)
+
+    assert built["functions"]["getprivilegeflag"]["arity"] == 1

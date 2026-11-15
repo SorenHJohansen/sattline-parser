@@ -121,6 +121,19 @@ def _validate_function(name: str, raw: object) -> dict[str, object]:
         _validate_datatype(name, return_type, "return_type")
     precision_scangroup = entry.get("precision_scangroup")
     _require(isinstance(precision_scangroup, bool), f"{name}: precision_scangroup must be a boolean")
+    # An untyped entry has no transcribed parameter list, so it must say what is
+    # known about its arity: a non-negative integer, or ``null`` for unknown.
+    # Without that evidence the validator cannot tell "no arguments" from "the
+    # list was never transcribed", and it would reject every real call.
+    if typed:
+        _require("arity" not in entry, f"{name}: a typed entry derives its arity from its parameters")
+    else:
+        _require("arity" in entry, f"{name}: an untyped entry must record arity as an integer or null")
+        arity = entry["arity"]
+        _require(
+            arity is None or (isinstance(arity, int) and not isinstance(arity, bool) and arity >= 0),
+            f"{name}: arity must be a non-negative integer or null",
+        )
     parameters = entry.get("parameters")
     _require(isinstance(parameters, list), f"{name}: parameters must be a list")
     raw_parameters = cast("list[object]", parameters)
@@ -131,13 +144,16 @@ def _validate_function(name: str, raw: object) -> dict[str, object]:
             optional_seen = True
         elif optional_seen:
             _require(False, f"{name}: required parameter {parameter['name']!r} follows an optional parameter")
-    return {
+    validated: dict[str, object] = {
         "kind": kind,
         "return_type": return_type,
         "precision_scangroup": precision_scangroup,
         "typed": typed,
-        "parameters": validated_parameters,
     }
+    if not typed:
+        validated["arity"] = entry["arity"]
+    validated["parameters"] = validated_parameters
+    return validated
 
 
 def build(source: dict[str, object]) -> dict[str, object]:

@@ -37,11 +37,16 @@ patterns into one alternation, where a leading flag would be illegal.
 
 The `\b` is deliberate. A keyword is a whole word, so it must end at a
 non-word character. A source therefore separates a keyword from following text
-with whitespace, punctuation, or a line break. `DateCode_1` is one identifier,
-not the `DateCode_` keyword followed by `1`, and `PRIVATE_MODULEDEFINITION` is
-one identifier, not the `PRIVATE_` and `MODULEDEFINITION` keywords. Both
-adjacent spellings are rejected where the grammar requires the keyword, and the
-parser tests pin that rejection.
+with whitespace, punctuation, or a line break, and `PRIVATE_MODULEDEFINITION`
+is one name rather than the `PRIVATE_` and `MODULEDEFINITION` keywords.
+
+`DateCode_` is the one exception: its rule is `DATECODE_PREFIX SL_DATECODE`, so
+a digit after it is the datecode and not part of a longer word. The rewriter
+uses `(?![^\W\d])` after that literal: a letter or underscore still blocks the
+keyword, a digit does not. `DateCode_1` is therefore the keyword and `1`, while
+`DateCode_x` stays one name. The accepted spelling costs the identifier: a name
+spelled `DateCode_<digit>` can no longer be declared, because the prefix always
+wins in that position.
 
 ## Grammar shape
 
@@ -200,7 +205,13 @@ a digit, `)`, `"`, or `]` the sign is the binary operator, not part of the
 next literal. So `1+2`, `1-2`, and `A-1` parse as expressions, while `= -5`,
 `( -1.0`, and `* -2` keep a signed literal. A sign inside an exponent
 (`1e-3`, `1.0E+10`) belongs to the same literal. Signed coordinates and layout
-values are the reason the sign is still accepted at the start of a literal.
+values are the reason the sign is still accepted at the start of a literal: a
+value list separates two literals with nothing but whitespace, so `-1.0 -1.0`
+is two values and the second sign cannot be a binary operator. That keeps the
+sign in the literal, and `unary_expression` covers the positions where no
+literal may start. A consequence is that `1 +2` in an expression reads as two
+values, so a source spells a binary operator with no space after it (`1+2`) or
+with a space on both sides (`1 + 2`).
 
 ## Tokenization
 
@@ -290,8 +301,9 @@ different question from language identity, which always uses
 substituted. String literals, comment text, and quoted identifiers are
 unaffected because only terminals defined in the template are rewritten. A
 keyword is a whole word, so a source separates it from the following token:
-`DateCode_1` and `PRIVATE_MODULEDEFINITION` are identifiers, not adjacent
-keywords.
+`PRIVATE_MODULEDEFINITION` is one name, not adjacent keywords. The datecode
+prefix is the exception, because the rule after it is a number: `DateCode_1`
+is the keyword and `1`.
 
 ### Raw words in coded files
 

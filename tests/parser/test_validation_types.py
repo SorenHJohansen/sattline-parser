@@ -52,6 +52,7 @@ from sattline_parser.validation.typing import (
     resolve_variable_field_datatype,
     split_dotted_name,
     suggest_datatype_name,
+    unresolved_reference_is_a_defect,
 )
 
 
@@ -172,6 +173,31 @@ def test_resolve_variable_field_datatype() -> None:
     assert resolve_variable_field_datatype(variable, ("Part", "Value"), graph) == Simple_DataType.REAL
     assert resolve_variable_field_datatype(variable, ("Missing",), graph) is None
     assert resolve_variable_field_datatype(variable, ("Count", "X"), graph) is None
+
+
+def test_unresolved_reference_is_a_defect_judges_the_field_path() -> None:
+    graph = _graph()
+    scope = build_scope(None, [_var("Root", "Outer"), _var("Rate", "real")])
+
+    assert unresolved_reference_is_a_defect(VarRef("Missing"), scope, graph) is True
+    # A resolving base with no path is not a defect, even when the caller only
+    # asks because its own resolution failed for another reason.
+    assert unresolved_reference_is_a_defect(VarRef("Rate"), scope, graph) is False
+    assert unresolved_reference_is_a_defect(VarRef("Root.Missing"), scope, graph) is True
+    assert unresolved_reference_is_a_defect(VarRef("Root.Part.Value"), scope, graph) is False
+    assert unresolved_reference_is_a_defect(VarRef("Rate.Field"), scope, graph) is True
+    assert unresolved_reference_is_a_defect(VarRef("Root.Part.Missing.Deep"), scope, graph) is True
+
+
+def test_unresolved_reference_stays_silent_inside_a_temporal_field() -> None:
+    """A temporal value exposes its component accessors at any depth."""
+    inner = _record("Inner", _var("Stamp", Simple_DataType.TIME), _var("Elapsed", Simple_DataType.DURATION))
+    outer = _record("Outer", _var("Part", "Inner"))
+    graph = TypeGraph.from_datatypes([inner, outer])
+    scope = build_scope(None, [_var("Root", "Outer")])
+
+    assert unresolved_reference_is_a_defect(VarRef("Root.Part.Stamp.Time"), scope, graph) is False
+    assert unresolved_reference_is_a_defect(VarRef("Root.Part.Elapsed.Milliseconds"), scope, graph) is False
 
 
 def test_resolve_ref_datatype() -> None:

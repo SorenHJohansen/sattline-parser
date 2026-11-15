@@ -26,7 +26,20 @@ from __future__ import annotations
 
 import re
 
+from sattline_parser.grammar import constants as const
+
 __all__ = ["make_keywords_case_insensitive"]
+
+#: Keyword literals that a digit may follow with no separator. A keyword that
+#: ends the word before a number is the datecode prefix: the grammar rule is
+#: ``DATECODE_PREFIX SL_DATECODE``, so ``DateCode_1`` is the keyword and a
+#: datecode rather than one identifier. For every other keyword a digit is part
+#: of the word, so ``PRIVATE_MODULEDEFINITION`` and ``Enable_1`` stay names.
+_DIGIT_ADJACENT_LITERALS: frozenset[str] = frozenset({const.GRAMMAR_VALUE_DATECODE_PREFIX})
+
+#: End-of-keyword boundary when the next character may be a digit: a word
+#: character that is not a digit blocks the keyword, a digit does not.
+_DIGIT_BOUNDARY = r"(?![^\W\d])"
 
 #: ``TERMINAL.10:   "Literal"`` (optionally with a priority suffix).
 _STRING_TERMINAL_RE = re.compile(
@@ -49,12 +62,12 @@ def _string_terminal(match: re.Match[str]) -> str:
     if not any(character.isalpha() for character in literal):
         return match.group(0)
     # ``\b`` is deliberate: a keyword is a whole word, so the terminal must end
-    # at a non-word character. This is what keeps ``DateCode_1`` a single
-    # identifier instead of the ``DateCode_`` keyword followed by ``1``, and it
-    # is why an adjacent underscore spelling such as ``PRIVATE_MODULEDEFINITION``
-    # is one name rather than two keywords. The language requires a separator
-    # after every keyword; see ``docs/grammar.md``.
-    return _as_case_insensitive_terminal(match.group("name"), re.escape(literal) + r"\b")
+    # at a non-word character. This is why an adjacent underscore spelling such
+    # as ``PRIVATE_MODULEDEFINITION`` is one name rather than two keywords. The
+    # datecode prefix is the one keyword a digit may follow, because its rule
+    # starts with a number. See ``docs/grammar.md``.
+    boundary = _DIGIT_BOUNDARY if literal in _DIGIT_ADJACENT_LITERALS else r"\b"
+    return _as_case_insensitive_terminal(match.group("name"), re.escape(literal) + boundary)
 
 
 def _regex_terminal(match: re.Match[str]) -> str:

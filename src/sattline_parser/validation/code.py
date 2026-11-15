@@ -70,6 +70,7 @@ from sattline_parser.validation.typing import (
     is_boolean,
     is_numeric,
     merge_compatible_types,
+    unresolved_reference_is_a_defect,
 )
 
 _EQUALITY_COMPARISON_OPERATORS = frozenset({"==", "=", "!=", "<>"})
@@ -291,7 +292,7 @@ def walk_expression(expr: SLExpression, context: ValidationContext) -> None:
         _check_old_new(expr, resolved, context.errors)
         if (
             resolved is None
-            and _ref_needs_undefined_diagnostic(expr, context.scope)
+            and unresolved_reference_is_a_defect(expr, context.scope, context.type_graph)
             and not _is_sfc_runtime_accessor(expr, context.sfc_names)
         ):
             context.errors.append(
@@ -550,7 +551,7 @@ def _check_assignment(assignment: Assignment, context: ValidationContext) -> Non
     if resolved is None:
         if _is_sfc_runtime_accessor(assignment.target, context.sfc_names):
             return
-        if _ref_needs_undefined_diagnostic(assignment.target, context.scope):
+        if unresolved_reference_is_a_defect(assignment.target, context.scope, context.type_graph):
             context.errors.append(
                 Diagnostic(
                     code=DiagnosticCode.UNDEFINED_VARIABLE,
@@ -642,15 +643,20 @@ def _check_call(call: FuncCall, context: ValidationContext) -> None:
     signature = builtin_function_signature(call.name)
     if signature is None:
         return
-    if not signature.min_args <= len(call.args) <= signature.max_args:
+    if (
+        signature.min_args is not None
+        and signature.max_args is not None
+        and not signature.min_args <= len(call.args) <= signature.max_args
+    ):
+        expected = (
+            str(signature.min_args)
+            if signature.min_args == signature.max_args
+            else f"{signature.min_args}..{signature.max_args}"
+        )
         context.errors.append(
             Diagnostic(
                 code=DiagnosticCode.BUILTIN_WRONG_ARITY,
-                message=(
-                    f"Built-in {signature.name} expects {signature.min_args}"
-                    f"{'' if signature.min_args == signature.max_args else '..' + str(signature.max_args)} "
-                    f"arguments but was given {len(call.args)}"
-                ),
+                message=(f"Built-in {signature.name} expects {expected} arguments but was given {len(call.args)}"),
                 span=call.span,
             )
         )
@@ -722,23 +728,6 @@ def _check_call(call: FuncCall, context: ValidationContext) -> None:
                     span=call.span,
                 )
             )
-
-
-def _ref_needs_undefined_diagnostic(ref: VarRef, scope: Scope) -> bool:
-    """A missing root is undefined; an unresolved field is not proven undefined.
-
-    A field access on a record whose shape is unknown (an opaque system type or
-    a record from a library that is not loaded) stays silent. A field access on
-    a scalar is provably invalid, so it keeps the undefined-variable finding.
-    """
-    base_name = ref.name.partition(".")[0]
-    base = scope.lookup(base_name)
-    if base is None:
-        return True
-    if base.datatype in {Simple_DataType.TIME, Simple_DataType.DURATION}:
-        # Temporal values expose date/time/duration component accessors.
-        return False
-    return isinstance(base.datatype, Simple_DataType)
 
 
 def _is_sfc_runtime_accessor(ref: VarRef, sfc_names: set[str]) -> bool:

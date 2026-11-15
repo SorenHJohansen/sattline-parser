@@ -6,7 +6,10 @@ from __future__ import annotations
 import io
 import json
 import sys
+from pathlib import Path
 
+from sattline_parser.api import parse_source_file
+from sattline_parser.ast import walk
 from sattline_parser.cli import main
 from sattline_parser.cli._exit import ExitCode
 
@@ -43,6 +46,31 @@ def test_summary_json_and_jsonl(tmp_path, capsys) -> None:
     one_line = capsys.readouterr().out.strip()
     assert "\n" not in one_line
     assert json.loads(one_line)["counts"]["sequences"] == 1
+
+
+def _walk_count(picture, field: str) -> int:
+    return sum(1 for event in walk(picture) if event.field == field)
+
+
+def test_summary_counts_the_whole_module_tree(tmp_path, capsys) -> None:
+    """Nested submodules and module-type bodies contribute to every count."""
+    fixture = Path(__file__).resolve().parents[1] / "fixtures" / "corpus" / "valid" / "UnCompressedFullGrammar.s"
+    picture = parse_source_file(fixture)
+
+    assert main(["parse", str(fixture), "--json"]) == ExitCode.OK
+    counts = json.loads(capsys.readouterr().out)["counts"]
+
+    assert counts == {
+        "module_types": _walk_count(picture, "moduletype_defs"),
+        "submodules": _walk_count(picture, "submodules"),
+        "local_variables": _walk_count(picture, "localvariables"),
+        "sequences": _walk_count(picture, "sequences"),
+        "equationblocks": _walk_count(picture, "equationblocks"),
+        "graph_objects": _walk_count(picture, "graph_objects"),
+        "interact_objects": _walk_count(picture, "interact_objects"),
+    }
+    assert counts["graph_objects"] == 29
+    assert counts["sequences"] == 2
 
 
 def test_tree_serialises_the_ast_with_a_depth_limit(tmp_path, capsys) -> None:

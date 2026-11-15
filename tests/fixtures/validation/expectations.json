@@ -160,6 +160,14 @@
         "parse_error": true
       }
     ],
+    "invalid/DottedMappingFieldMismatch.s": [
+      {
+        "code": "SL-V027",
+        "column": 7,
+        "length": 29,
+        "line": 43
+      }
+    ],
     "invalid/DuplicateDatatypeName.s": [],
     "invalid/DuplicateModuletypeName.s": [],
     "invalid/DuplicateRecordFieldName.s": [],
@@ -478,6 +486,14 @@
         "line": 20
       }
     ],
+    "invalid/UndefinedMappingSource.s": [
+      {
+        "code": "SL-V019",
+        "column": 7,
+        "length": 28,
+        "line": 32
+      }
+    ],
     "invalid/UndefinedVariableRef.s": [
       {
         "code": "SL-V019",
@@ -492,6 +508,20 @@
         "column": 4,
         "length": 4,
         "line": 14
+      }
+    ],
+    "invalid/UnknownRecordField.s": [
+      {
+        "code": "SL-V019",
+        "column": 7,
+        "length": 18,
+        "line": 27
+      },
+      {
+        "code": "SL-V019",
+        "column": 14,
+        "length": 14,
+        "line": 28
       }
     ],
     "invalid/UnterminatedComment.s": [
@@ -515,6 +545,7 @@
         "line": 27
       }
     ],
+    "valid/AdjacentDatecode.s": [],
     "valid/AllDatatypes.s": [],
     "valid/BuiltinCalls.s": [],
     "valid/CompressedFullGrammar.s": [],
