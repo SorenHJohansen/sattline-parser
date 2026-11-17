@@ -61,6 +61,20 @@ jobs:
           fi
           echo "Release commit OK: ${head_sha}"
 
+      # A tag with fragments still pending publishes release notes that mix two
+      # versions: the pending entries describe code already shipped, and they
+      # land in the next section. Assemble them before tagging.
+      - name: Check no pending changelog fragments
+        shell: bash
+        run: |
+          pending="$(git ls-files 'changelog.d/*.md' | grep -v '^changelog.d/README.md$' || true)"
+          if [[ -n "${pending}" ]]; then
+            echo "Pending changelog fragments must be released before tagging:"
+            echo "${pending}"
+            exit 1
+          fi
+          echo "No pending changelog fragments."
+
       # A release may not publish a package whose internal version differs from
       # the git tag (or the explicitly supplied workflow_dispatch version).
       - name: Check tag/version consistency
