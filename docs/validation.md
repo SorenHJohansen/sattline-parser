@@ -225,6 +225,10 @@ These are parse-time rules in the real language, but they are enforced after
 parsing here so comments may appear anywhere. `SEQFORK` occupies no position;
 it is a suffix of its host step or transition.
 
+`SL-V021` applies to real step and transition names only. A `SUBSEQUENCE`,
+`SUBSEQSTEP`, or `SUBSEQTRANSITION` wrapper names a nested construct, so it may
+reuse the name of an element inside its own body.
+
 ### Parameter transfers and mappings
 
 - A submodule declaration and a module-type instance are checked for

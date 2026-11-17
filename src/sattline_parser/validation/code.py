@@ -5,8 +5,8 @@ findings: :Old/:New on non-State symbols, writes to Const variables (direct
 targets and built-in output arguments), references to undefined variables,
 built-in call arity/direction errors, string-literal call arguments, sequence
 structure (consecutive steps, init-step placement, unknown SEQFORK targets),
-SFC structural layout (alternative/parallel branch starts), and duplicate SFC
-element names.
+SFC structural layout (alternative/parallel branch starts), and duplicate step
+and transition names.
 """
 
 from __future__ import annotations
@@ -890,7 +890,7 @@ def _check_fork_targets(
 
 
 def _check_duplicate_sfc_names(sequences: list[Sequence] | None, errors: list[Diagnostic]) -> None:
-    """Flag SFC element names that are reused within a module code block."""
+    """Flag step and transition names that are reused within a module code block."""
     seen: set[str] = set()
     for sequence in sequences or ():
         _record_module_names(sequence.code, seen, errors)
@@ -898,7 +898,7 @@ def _check_duplicate_sfc_names(sequences: list[Sequence] | None, errors: list[Di
 
 def _record_module_names(items: list[SFCBodyItem], seen: set[str], errors: list[Diagnostic]) -> None:
     for item in items:
-        name = _named_sfc_element_name(item)
+        name = _named_step_or_transition_name(item)
         if name is not None:
             folded = fold_identifier(name)
             if folded in seen:
@@ -919,8 +919,22 @@ def _record_module_names(items: list[SFCBodyItem], seen: set[str], errors: list[
 
 
 def _named_sfc_element_name(item: SFCBodyItem) -> str | None:
+    """Name of any SFC element that can be a ``SEQFORK`` target."""
     if isinstance(item, SFCSubsequence):
         return item.name
     if isinstance(item, (SFCStep, SFCTransition, SFCTransitionSub)):
+        return item.name
+    return None
+
+
+def _named_step_or_transition_name(item: SFCBodyItem) -> str | None:
+    """Name in the step/transition namespace guarded by ``SL-V021``.
+
+    ``SFCSubsequence`` (``SUBSEQUENCE`` / ``SUBSEQSTEP``) and
+    ``SFCTransitionSub`` (``SUBSEQTRANSITION``) name a wrapper around a nested
+    body, not a step or transition in the module's element table. A wrapper may
+    therefore reuse the name of an element inside its own body.
+    """
+    if isinstance(item, (SFCStep, SFCTransition)):
         return item.name
     return None

@@ -340,3 +340,46 @@ def test_nested_body_participates_in_name_and_fork_checks() -> None:
         "      ENDSUBSEQUENCE\n" + _STEP.format(n=1) + _TRANSITION.format(n=2)
     )
     assert DiagnosticCode.SEQUENCE_FORK_TARGET_KIND.value in _codes(wrong_kind)
+
+
+def test_a_wrapper_may_reuse_a_name_from_its_own_body() -> None:
+    # SUBSEQTRANSITION Pak_Udpak wrapping SEQTRANSITION Pak_Udpak: the wrapper
+    # names a nested construct, it is not a second transition in the module.
+    sub_transition = _sequence(
+        _STEP.format(n=1)
+        + "      SUBSEQTRANSITION Pak_Udpak\n"
+        + "         SEQTRANSITION Pak_Udpak WAIT_FOR Flag\n"
+        + "      ENDSUBSEQTRANSITION\n"
+    )
+    assert DiagnosticCode.DUPLICATE_SFC_ELEMENT_NAME.value not in _codes(sub_transition)
+
+    # SUBSEQUENCE IdleN2 wrapping SEQSTEP IdleN2.
+    subsequence = _sequence(
+        "      SUBSEQUENCE IdleN2\n"
+        + "         SEQSTEP IdleN2\n"
+        + "         SEQTRANSITION T1 WAIT_FOR Flag\n"
+        + "      ENDSUBSEQUENCE\n"
+        + _STEP.format(n=1)
+        + _TRANSITION.format(n=2)
+    )
+    assert DiagnosticCode.DUPLICATE_SFC_ELEMENT_NAME.value not in _codes(subsequence)
+
+    # SUBSEQSTEP IdleN2 wrapping SEQSTEP IdleN2.
+    substep = _sequence(
+        _STEP.format(n=1)
+        + _TRANSITION.format(n=1)
+        + "      SUBSEQSTEP IdleN2\n"
+        + "         SEQSTEP IdleN2\n"
+        + "      ENDSUBSEQSTEP\n"
+        + _TRANSITION.format(n=2)
+    )
+    assert DiagnosticCode.DUPLICATE_SFC_ELEMENT_NAME.value not in _codes(substep)
+
+
+def test_sibling_steps_and_transitions_must_still_be_unique() -> None:
+    # The wrapper exemption must not weaken the real step/transition namespace.
+    transitions = _sequence(_STEP.format(n=1) + _TRANSITION.format(n=1) + _STEP.format(n=2) + _TRANSITION.format(n=1))
+    assert DiagnosticCode.DUPLICATE_SFC_ELEMENT_NAME.value in _codes(transitions)
+
+    steps = _sequence(_STEP.format(n=1) + _TRANSITION.format(n=1) + _STEP.format(n=1) + _TRANSITION.format(n=2))
+    assert DiagnosticCode.DUPLICATE_SFC_ELEMENT_NAME.value in _codes(steps)

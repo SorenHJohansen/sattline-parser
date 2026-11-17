@@ -9,6 +9,15 @@ policy are documented in the README.
 
 ## [Unreleased]
 
+## [2026.11.7] - 2026-11-17
+
+### Fixed
+
+- **SFC wrappers keep their own name namespace.** A `SUBSEQUENCE`, `SUBSEQSTEP`,
+  or `SUBSEQTRANSITION` wrapper may reuse the name of an element inside its own
+  body without a false `SL-V021` duplicate-name finding. Sibling step and
+  transition names are still checked.
+
 ## [2026.11.6] - 2026-11-15
 
 ### Added
