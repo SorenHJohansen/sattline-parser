@@ -166,6 +166,10 @@ class LoadDiagnosticKind(StrEnum):
     #: A sidecar sits beside the body but belongs to the other artifact family,
     #: for example a ``.z`` beside a ``.s`` body. It is never paired.
     SIDECAR_FAMILY_MISMATCH = "sidecar-family-mismatch"
+    #: Two files or two spellings fold to one project key. The loader keeps the
+    #: first resolution, because a casefolded view can hold only one unit there,
+    #: and reports the layout as ambiguous instead of dropping a unit silently.
+    FOLDED_NAME_COLLISION = "folded-name-collision"
 
 
 @dataclass(frozen=True, slots=True)

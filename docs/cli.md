@@ -30,6 +30,7 @@ flowchart TB
     E -->|3| I["exit 3 internal"]
     D -->|CliError| U
     D -->|KeyboardInterrupt| K["print interrupted<br/>exit 130"]
+    D -->|BrokenPipeError| P["discard stdout<br/>exit 2"]
     D -->|other exception| X{"--debug?"}
     X -->|yes| T["traceback"]
     X -->|no| O["one-line internal error"]
@@ -41,7 +42,7 @@ flowchart TB
 | --- | --- |
 | `0` | Clean |
 | `1` | Findings (or a diff that changed, or a query with no rows) |
-| `2` | Usage or input problem |
+| `2` | Usage, input, or output problem (including a closed stdout) |
 | `3` | Internal error (a bug) |
 | `130` | Interrupted (Ctrl-C), following the shell convention of 128 + SIGINT |
 
@@ -49,6 +50,12 @@ Agents branch on exit codes, not on prose. A traceback is printed only under
 `--debug`. `--debug` is a top-level flag, so it comes before the command:
 `sattline --debug check program.s`. After the command name it is an unknown
 option and exits `2`.
+
+A consumer that closes the output pipe early, as `sattline check SR/*.s | head`
+does, stops the report and exits `2`. No explanation is printed, because the
+stream that would carry it is the one that closed, and the process does not fall
+through to the interpreter's exit flush, which would otherwise report a second
+failure and exit `120`.
 
 ## Commands
 
@@ -98,10 +105,13 @@ of module types, submodules, local variables, sequences, equation blocks (the
 `equationblocks` key), graph objects, and interact objects. The counts cover the
 whole module tree, so a nested submodule's declarations and code blocks are
 included, and the summary agrees with a `walk` over the picture. `diff` compares
-the same counts. `--tree` emits the AST as JSON, bounded by `--depth` (default
-5). At the limit a composite value is replaced by a placeholder such as
-`<ModuleDef>` or `<12 items>`, so nothing silently disappears. `--compact`
-prints JSON on one line instead of indented.
+the same counts. `encoding` names the on-disk flavor and is `plain`,
+`compressed` (marker-compressed text), or `coded` (a byte-coded stream). A coded
+stream stays `coded` even when its decoded text is still marker-compressed.
+`--tree` emits the AST as JSON, bounded by `--depth` (default 5). At the limit a
+composite value is replaced by a placeholder such as `<ModuleDef>` or
+`<12 items>`, so nothing silently disappears. `--compact` prints JSON on one
+line instead of indented.
 
 ### `query`
 
@@ -194,9 +204,10 @@ disables the cache. `--no-cache` makes the load hermetic: the project caches
 neither read nor write. The compiled grammar cache under the temporary directory
 is independent of this flag. A first load in an empty directory writes the
 cache; every later load of an unchanged tree skips parsing. The directory holds
-parsed ASTs of the loaded sources, so keep it private. On Windows the cache
-cannot check a POSIX owner or mode, so keep `--cache-dir` under the user
-profile; a shared path is not protected against a planted pickle.
+parsed ASTs of the loaded sources, so keep it private. On Windows the cache is
+used only when the directory's security descriptor proves that this user owns it
+and that no other trustee can write it; otherwise the caches stay disabled, so a
+shared `--cache-dir` never serves a planted pickle.
 
 `--cycles` is gone, and the JSON payload no longer carries a `cycles` key: a
 recursive dependency chain or a self-instantiating module type is a structural
@@ -215,7 +226,15 @@ Refuses a `.s`/`.x` source. Conversely, `check`, `parse`, `query`, `decode`, and
 companion, so a companion is never reported as broken source. The refusal uses
 the name that identifies the input: the path itself, or `--stdin-name` when the
 input is `-`, so `sattline check --stdin-name x.g -` is refused exactly like a
-`.g` path.
+`.g` path, and `sattline graphics --stdin-name x.s -` is refused exactly like a
+`.s` path. Stdin requires `--stdin-name`, as for every source command.
+
+A scan message is a finding, whether its severity is `warning` (an expression the
+grammar could not parse) or `error` (a malformed record), so any scan message
+exits `1`: the companion was only partly understood. The message is reduced to
+one sentence; the expression parser's expected-token dump and token names are
+not reproduced, because the finding already carries the file position and the
+raw expression.
 
 ### `decode`
 
@@ -242,7 +261,9 @@ official `.x` code body of a unit with its draft `.s` code body. In a unit the
 two versions are the official `.x` and the draft `.s`, never two `.s` files;
 the command itself accepts any two code sources. It compares findings by
 `(rule, message)` and compares structural counts. It is a regression aid, not a
-semantic diff. Exit `1` when anything changed.
+semantic diff. Exit `1` when anything changed. When either side does not parse,
+`counts.changed` is empty: there is no comparable summary, and the parse failure
+is already reported as a finding rather than as every count moving from `null`.
 
 ### `corpus`
 
@@ -329,13 +350,17 @@ reports one unit has nothing to stream:
 A rule id is never printed as prose. It exists for baselines, filters, and
 diffs.
 
+The document-level `ok` field is `true` only when the document carries no finding
+of any severity. A `graphics` warning therefore makes `ok` `false` and the exit
+code `1`, exactly like an error.
+
 `sattline project --json` does not use `Finding`. Its payload carries:
 
 | Key | Shape |
 | --- | --- |
 | `programs` | One row per loaded artifact: `name`, `code`, `graphics`, `deps`, `distribution`, `sidecar`, `dependencies`, `source`, `library`, `resolved_base`, `has_executing_system`, `executing_systems` |
 | `edges` | `{"from": dependent, "to": dependency}` over casefolded names |
-| `diagnostics` | One row per non-fatal load condition: `kind` (`sidecar-missing`, `sidecar-elsewhere`, `sidecar-empty`, or `sidecar-family-mismatch`), `program`, `detail`, `path` |
+| `diagnostics` | One row per non-fatal load condition: `kind` (`sidecar-missing`, `sidecar-elsewhere`, `sidecar-empty`, `sidecar-family-mismatch`, or `folded-name-collision`), `program`, `detail`, `path` |
 | `validation` | One row per diagnostic: `program`, `code` (`SL-V###`), `message`, `line`, `column` |
 | `findings` | Present only when the tree could not be loaded at all: one `Finding` with rule `PROJECT_LOAD_ERROR`, or when `--of` names a program outside the graph: one `Finding` with rule `PROJECT_QUERY_ERROR` |
 
@@ -379,7 +404,7 @@ apply to it, and the exit code is the same as for text output.
 | `--stdin-name PATH` | source commands | Required when reading `-`, so findings are attributable; a companion suffix here is refused like a companion path |
 | `--paths given\|absolute` | source commands | How to render paths, in findings and in the document-level `file` key. Default `given` |
 | `--rule RULE` | `check` | Filter by rule id or enum name, repeatable; only this command's own synthetic ids (`PARSE_ERROR`, `DECODE_ERROR`) are accepted |
-| `--max-findings N` | `check` | Limit printed findings; the exit code still reflects all of them |
+| `--max-findings N` | `check` | Limit printed findings; the exit code still reflects all of them, and the withheld count is noted once on stderr |
 | `--limit N` | `query` | Stop after `N` rows |
 | `--fail-on none\|error` | `check`, `project`, `corpus` | Which findings make the exit code `1` |
 | `--compact` | `parse` | Emit JSON on one line |

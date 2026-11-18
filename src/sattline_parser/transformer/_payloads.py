@@ -95,7 +95,19 @@ class ModuleOptions:
         return cls()
 
     def merge(self, other: ModuleOptions) -> ModuleOptions:
-        """Return the combination, letting ``other`` win where it sets a field."""
+        """Return the combination, letting ``other`` win where it sets a field.
+
+        ``layer_limit``, ``zoom_limits``, and ``grid`` are singular options, so
+        two written values for one of them are ambiguous. The merge rejects the
+        pair instead of letting the later clause win silently. ``zoomable`` is a
+        marker, so a repeat is idempotent.
+        """
+        if other.layer_limit is not None and self.layer_limit is not None:
+            raise ValueError("module definition has more than one Two_Layers_/LayerLimit_ option")
+        if other.zoom_limits is not None and self.zoom_limits is not None:
+            raise ValueError("module definition has more than one ZoomLimits option")
+        if other.grid is not None and self.grid is not None:
+            raise ValueError("module definition has more than one Grid option")
         return ModuleOptions(
             layer_limit=other.layer_limit if other.layer_limit is not None else self.layer_limit,
             zoom_limits=other.zoom_limits if other.zoom_limits is not None else self.zoom_limits,

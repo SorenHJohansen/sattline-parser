@@ -5,14 +5,16 @@ import logging
 import os
 import sys
 from pathlib import Path
-from typing import Any, cast
+from typing import Any, NoReturn, cast
 
 import pytest
-from lark.exceptions import UnexpectedToken
+from lark import Token
+from lark.exceptions import UnexpectedToken, VisitError
 
 from sattline_parser import source_io as parser_api
 from sattline_parser.api import parse_source_file
 from sattline_parser.source_document import SourceDocument
+from sattline_parser.transformer.sl_transformer import SLTransformer
 
 
 def test_resolved_grammar_import_raises_when_grammar_file_is_missing(monkeypatch: pytest.MonkeyPatch):
@@ -398,18 +400,41 @@ def test_private_cache_dir_tightens_existing_permissions(tmp_path):
         assert directory.stat().st_mode & 0o777 == 0o700
 
 
-def test_private_cache_dir_without_getuid_accepts_any_real_directory(monkeypatch, tmp_path):
-    # The documented Windows limitation: there is no POSIX owner or mode to
-    # check, so only the real-directory test applies. Keep the default cache
-    # under the user profile and do not point --cache-dir at a shared path.
+@pytest.mark.skipif(os.name != "posix", reason="POSIX owner check")
+def test_private_cache_dir_rejects_when_no_owner_check_is_available(monkeypatch, tmp_path):
+    # No platform privacy check applies, so the directory cannot be proven
+    # private. The cache is an optimisation and is disabled instead of trusted.
     monkeypatch.setattr(parser_api, "_getuid", None)
     directory = tmp_path / "shared-cache"
     directory.mkdir()
     directory.chmod(0o777)
 
+    assert parser_api.private_cache_dir(directory) is None
+
+
+def test_private_cache_dir_rejects_when_the_windows_check_fails(monkeypatch, tmp_path):
+    monkeypatch.setattr(parser_api, "_IS_WINDOWS", True)
+    monkeypatch.setattr(parser_api, "windows_directory_is_private", lambda path: False)
+
+    assert parser_api.private_cache_dir(tmp_path / "cache") is None
+
+
+def test_private_cache_dir_accepts_when_the_windows_check_proves_privacy(monkeypatch, tmp_path):
+    monkeypatch.setattr(parser_api, "_IS_WINDOWS", True)
+    seen: list[Path] = []
+
+    def private(path: Path) -> bool:
+        seen.append(path)
+        return True
+
+    monkeypatch.setattr(parser_api, "windows_directory_is_private", private)
+    directory = tmp_path / "cache"
+
     assert parser_api.private_cache_dir(directory) == directory
+    assert seen == [directory]
 
 
+@pytest.mark.skipif(os.name != "posix", reason="POSIX owner check")
 def test_private_cache_dir_rejects_a_foreign_owner(monkeypatch, tmp_path):
     # Driven through the resolved uid callable so the case runs everywhere: the
     # current user never owns the synthetic uid.
@@ -471,6 +496,7 @@ def test_private_directory_gives_up_when_it_stays_too_open(tmp_path, monkeypatch
     assert parser_api._private_directory(directory) is None
 
 
+@pytest.mark.skipif(os.name != "posix", reason="POSIX owner check")
 def test_parser_cache_dir_disables_a_cache_under_a_foreign_parent(monkeypatch, tmp_path):
     """A predictable name under the shared temp directory is attacker-reachable."""
     monkeypatch.setattr(parser_api, "gettempdir", lambda: str(tmp_path))
@@ -521,6 +547,20 @@ def test_private_cache_dir_rejects_a_symlinked_directory(tmp_path):
     assert parser_api.private_cache_dir(link) is None
 
 
+@pytest.mark.skipif(os.name != "posix", reason="Windows has no POSIX permission bits")
+def test_a_read_only_directory_check_never_creates_or_tightens(tmp_path):
+    """A reader validates a directory; only a writer may create or chmod one."""
+    missing = tmp_path / "missing"
+    assert parser_api.private_cache_dir(missing, create=False) is None
+    assert not missing.exists()
+
+    directory = tmp_path / "cache"
+    directory.mkdir()
+    directory.chmod(0o755)
+    assert parser_api.private_cache_dir(directory, create=False) is None
+    assert directory.stat().st_mode & 0o777 == 0o755
+
+
 def test_cache_owner_token_falls_back_without_getuid(monkeypatch):
     monkeypatch.setattr(parser_api, "_getuid", None)
 
@@ -543,3 +583,82 @@ def test_read_text_cp1252_rejects_undefined_byte_after_a_closed_comment(tmp_path
 
     with pytest.raises(UnicodeDecodeError):
         parser_api._decode_source_bytes_for_parse(source_file)
+
+
+#: A module header with two ``Layer_`` arguments. The transformer rejects the
+#: second one, so the source parses and fails in the transform stage, which is
+#: exactly where Lark wraps a rule failure in ``VisitError``.
+_DUPLICATE_CLAUSE_SOURCE = """"Syntax version 2.23, date: 2026-04-23-12:00:00.000 N"
+"Original file date: ---"
+"Program date: 2026-04-23-12:00:00.000, name: Duplicate"
+
+BasePicture Invocation ( 0.0 , 0.0 , 0.0 , 1.0 , 1.0 Layer_ = 1 Layer_ = 2 ) : MODULEDEFINITION DateCode_ 1
+
+ModuleDef
+ClippingBounds = ( -1.0 , -1.0 ) ( 1.0 , 1.0 )
+ENDDEF (*BasePicture*);
+"""
+
+
+class _RejectingTransformer(SLTransformer):
+    """Rejects the duplicate clause the way the transformer's own guard does.
+
+    The guard itself belongs to the transformer, so this stub keeps the
+    parse-level contract (Lark wraps a rule failure in ``VisitError`` and
+    ``source_io`` must unwrap it) verifiable without depending on which clauses
+    the guard currently covers.
+    """
+
+    def argument(self, items: list[object]) -> NoReturn:
+        raise ValueError("module header has more than one Layer_ argument")
+
+
+class _RaisingUnexpectedInputTransformer(SLTransformer):
+    """Raises a parse error from a rule, as a rejected clause could."""
+
+    def argument(self, items: list[object]) -> NoReturn:
+        raise UnexpectedToken(Token("NAME", "Layer_"), ["')'"])
+
+
+class _DefectiveTransformer(SLTransformer):
+    """Raises a parser defect, which must not be reported as a broken source."""
+
+    def argument(self, items: list[object]) -> NoReturn:
+        raise RuntimeError("transformer defect")
+
+
+def test_a_transformer_rejection_is_raised_as_its_own_error():
+    with pytest.raises(ValueError, match="more than one Layer_ argument") as exc_info:
+        parser_api.parse_source_text(
+            _DUPLICATE_CLAUSE_SOURCE,
+            transformer=_RejectingTransformer(),
+            log_failures=False,
+        )
+
+    assert type(exc_info.value) is ValueError
+    cause = exc_info.value.__cause__
+    assert isinstance(cause, VisitError)
+    assert cause.orig_exc is exc_info.value
+
+
+def test_a_transformer_parse_error_is_unwrapped_from_visit_error():
+    with pytest.raises(UnexpectedToken) as exc_info:
+        parser_api.parse_source_text(
+            _DUPLICATE_CLAUSE_SOURCE,
+            transformer=_RaisingUnexpectedInputTransformer(),
+            log_failures=False,
+        )
+
+    assert isinstance(exc_info.value.__cause__, VisitError)
+
+
+def test_a_transformer_defect_stays_wrapped_in_visit_error():
+    """A ``RuntimeError`` marks a parser defect, so it is never a finding."""
+    with pytest.raises(VisitError) as exc_info:
+        parser_api.parse_source_text(
+            _DUPLICATE_CLAUSE_SOURCE,
+            transformer=_DefectiveTransformer(),
+            log_failures=False,
+        )
+
+    assert isinstance(exc_info.value.orig_exc, RuntimeError)

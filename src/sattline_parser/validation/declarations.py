@@ -165,9 +165,9 @@ def _check_submodule_identifiers(submodule: Submodule, errors: list[Diagnostic])
 
 def _check_modulecode_identifiers(modulecode: ModuleCode, errors: list[Diagnostic]) -> None:
     for equation in modulecode.equationblocks or ():
-        check_identifier(equation.name, "Equation", None, errors)
+        check_identifier(equation.name, "Equation", equation.declaration_span, errors)
     for sequence in modulecode.sequences or ():
-        check_identifier(sequence.name, "Sequence", None, errors)
+        check_identifier(sequence.name, "Sequence", sequence.declaration_span, errors)
         _check_sequence_identifiers(sequence.code, errors)
 
 

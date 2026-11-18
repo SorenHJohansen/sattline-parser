@@ -4,8 +4,10 @@ from typing import cast
 
 import pytest
 from lark import Token, Tree
+from lark.exceptions import UnexpectedInput
 from lark.tree import Meta
 
+from sattline_parser.errors import describe_parse_error
 from sattline_parser.grammar import constants as parser_const
 from sattline_parser.models.ast_model import (
     CodeItem,
@@ -99,6 +101,7 @@ def test_sfc_mixin_builds_modulecode_sequences_and_equations():
         ],
     )
     sequence = mixin.sequence(
+        Meta(),
         [
             Token(parser_const.GRAMMAR_VALUE_OPENSEQUENCE, parser_const.GRAMMAR_VALUE_OPENSEQUENCE),
             "MainSeq",
@@ -106,25 +109,27 @@ def test_sfc_mixin_builds_modulecode_sequences_and_equations():
             (3, 4),
             seqcontrol_tree,
             body_tree,
-        ]
+        ],
     )
     anonymous_sequence = mixin.sequence(
+        Meta(),
         [
             Token(parser_const.GRAMMAR_VALUE_SEQUENCE, parser_const.GRAMMAR_VALUE_SEQUENCE),
             (1, 2),
             (3, 4),
             body_tree,
-        ]
+        ],
     )
-    equation = mixin.equationblock(["EqA", (5, 6), (7, 8), Assignment(VarRef("X"), IntLiteral(1))])
+    equation = mixin.equationblock(Meta(), ["EqA", (5, 6), (7, 8), Assignment(VarRef("X"), IntLiteral(1))])
     tokenized_equation = mixin.equationblock(
+        Meta(),
         [
             Token(parser_const.GRAMMAR_VALUE_EQUATIONBLOCK, parser_const.GRAMMAR_VALUE_EQUATIONBLOCK),
             "EqToken",
             (6, 7),
             (8, 9),
             Assignment(VarRef("Y"), IntLiteral(2)),
-        ]
+        ],
     )
     nested_sequence = Sequence(name="Nested", type="SEQUENCE", position=(0, 0), size=(1, 1), code=[])
     nested_equation = Equation(name="EqNested", position=(9, 10), size=(11, 12), code=[])
@@ -353,17 +358,19 @@ def test_sfc_mixin_rejects_malformed_shapes_and_missing_required_fields():
     with pytest.raises(ValueError, match="seqfork expected"):
         mixin.seqfork([Token("SEQFORK", "SEQFORK")])
     with pytest.raises(ValueError, match="Position can't be None"):
-        mixin.sequence([Token(parser_const.GRAMMAR_VALUE_SEQUENCE, parser_const.GRAMMAR_VALUE_SEQUENCE), "Seq"])
+        mixin.sequence(Meta(), [Token(parser_const.GRAMMAR_VALUE_SEQUENCE, parser_const.GRAMMAR_VALUE_SEQUENCE), "Seq"])
     with pytest.raises(ValueError, match="Size can't be None"):
-        mixin.sequence([Token(parser_const.GRAMMAR_VALUE_SEQUENCE, parser_const.GRAMMAR_VALUE_SEQUENCE), "Seq", (1, 2)])
+        mixin.sequence(
+            Meta(), [Token(parser_const.GRAMMAR_VALUE_SEQUENCE, parser_const.GRAMMAR_VALUE_SEQUENCE), "Seq", (1, 2)]
+        )
     with pytest.raises(ValueError, match="equationblock unexpected code item"):
-        mixin.equationblock([(1, 2), (3, 4), Tree("Statement", ["stmt"])])
+        mixin.equationblock(Meta(), [(1, 2), (3, 4), Tree("Statement", ["stmt"])])
     # name, position and size are optional in the reader
-    unnamed = mixin.equationblock([(1, 2), (3, 4)])
+    unnamed = mixin.equationblock(Meta(), [(1, 2), (3, 4)])
     assert unnamed.name is None
     assert unnamed.position == (1, 2)
     assert unnamed.size == (3, 4)
-    name_only = mixin.equationblock(["EqA"])
+    name_only = mixin.equationblock(Meta(), ["EqA"])
     assert name_only.name == "EqA"
     assert name_only.position is None
     assert name_only.size is None
@@ -383,7 +390,7 @@ def test_sfc_mixin_fails_loudly_on_unexpected_modulecode_and_branch_structures()
         mixin.seqalternative([Token("ALT", "ALT")])
 
     # layer_info in equationblock is explicitly ignored, not an error.
-    eq = mixin.equationblock(["EqA", (1, 2), (3, 4), 7, Assignment(VarRef("A"), 1)])
+    eq = mixin.equationblock(Meta(), ["EqA", (1, 2), (3, 4), 7, Assignment(VarRef("A"), 1)])
     assert eq.name == "EqA"
 
 
@@ -400,3 +407,49 @@ def test_seqtransitionsub_rejects_invalid_item_shapes():
         )
     with pytest.raises(ValueError, match="seqtransitionsub expected"):
         mixin.seqtransitionsub([Token("SUBSEQTRANSITION", "SUBSEQTRANSITION")])
+
+
+_SFC_PROGRAM_HEAD = (
+    '"SyntaxVersion"\n'
+    '"OriginalFileDate"\n'
+    '"ProgramDate"\n'
+    "BasePicture Invocation (0.0,0.0,0.0,1.0,1.0) : MODULEDEFINITION DateCode_ 1\n"
+    "ModuleDef\n"
+    "ClippingBounds = ( -1.0 , -1.0 ) ( 1.0 , 1.0 )\n"
+    "ModuleCode\n"
+)
+
+
+def _sequence_program(opener: str, closer: str) -> str:
+    return (
+        _SFC_PROGRAM_HEAD + f"{opener} Main COORD 0.0, 0.0 OBJSIZE 1.0, 1.0\n"
+        "   SEQINITSTEP Init\n"
+        f"{closer}\n"
+        "ENDDEF (*BasePicture*);\n"
+    )
+
+
+@pytest.mark.parametrize(("opener", "closer"), [("SEQUENCE", "ENDOPENSEQUENCE"), ("OPENSEQUENCE", "ENDSEQUENCE")])
+def test_a_mismatched_sequence_opener_and_closer_is_rejected(opener: str, closer: str) -> None:
+    # The closer must pair with the opener; the rule is not a free choice.
+    code = _sequence_program(opener, closer)
+
+    with pytest.raises(UnexpectedInput) as exc_info:
+        _parse_to_basepicture(code)
+
+    details = describe_parse_error(exc_info.value, code)
+    assert details.found == closer
+    assert f"'END{opener}'" in details.expected
+
+
+@pytest.mark.parametrize(("opener", "closer"), [("SEQUENCE", "ENDSEQUENCE"), ("OPENSEQUENCE", "ENDOPENSEQUENCE")])
+def test_a_matching_sequence_opener_and_closer_keeps_its_type(opener: str, closer: str) -> None:
+    bp = _parse_to_basepicture(_sequence_program(opener, closer))
+
+    assert bp.modulecode is not None
+    assert bp.modulecode.sequences is not None
+    sequence = bp.modulecode.sequences[0]
+    assert sequence.type == opener
+    assert sequence.name == "Main"
+    assert len(sequence.code) == 1
+    assert isinstance(sequence.code[0], SFCStep)

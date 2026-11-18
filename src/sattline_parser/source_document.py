@@ -41,7 +41,7 @@ character.
 
 from __future__ import annotations
 
-from bisect import bisect_right
+from bisect import bisect_left, bisect_right
 from typing import Protocol, cast
 from weakref import WeakSet
 
@@ -127,7 +127,7 @@ class SourceDocument:
     same offsets.
     """
 
-    __slots__ = ("_char_map", "_line_starts", "normalized_text", "original_text")
+    __slots__ = ("_anchor_index", "_char_map", "_line_starts", "normalized_text", "original_text")
 
     def __init__(
         self,
@@ -142,6 +142,10 @@ class SourceDocument:
         self.original_text = original_text
         self.normalized_text = normalized_text
         self._char_map = char_map
+        # The anchor index is only needed by a document with a map, and only
+        # when a position is mapped, so it is built on first use. Identity
+        # documents never build it at all.
+        self._anchor_index: tuple[tuple[int, ...], tuple[int, ...]] | None = None
         # The line index is only needed when a position is rendered, so it is
         # built on first use. Most parses never ask for a line and column.
         self._line_starts: tuple[int, ...] | None = None
@@ -182,6 +186,24 @@ class SourceDocument:
             self._line_starts = starts
         return starts
 
+    def _anchor_pairs(self) -> tuple[tuple[int, ...], tuple[int, ...]]:
+        """Cached ``(normalized indices, original offsets)`` of the real characters.
+
+        Both tuples ascend: the map is built by a single forward walk over the
+        original text, so a real entry never follows a smaller one. A bisect
+        over the indices therefore finds the nearest real character for any
+        generated offset in logarithmic time, instead of walking a generated run
+        once per requested position (which is quadratic on marker-dense
+        compressed source).
+        """
+        anchors = self._anchor_index
+        if anchors is None:
+            char_map = self._char_map or ()
+            indices = tuple(index for index, value in enumerate(char_map) if value >= 0)
+            anchors = (indices, tuple(char_map[index] for index in indices))
+            self._anchor_index = anchors
+        return anchors
+
     def map_position(self, norm_offset: int) -> int | None:
         """Map a normalized offset to an original offset.
 
@@ -195,26 +217,18 @@ class SourceDocument:
         """
         if norm_offset < 0:
             return None
-        if self._char_map is None:
+        char_map = self._char_map
+        if char_map is None:
             return min(norm_offset, len(self.original_text))
-        if norm_offset >= len(self._char_map):
-            cursor = len(self._char_map) - 1
-            while cursor >= 0:
-                value = self._char_map[cursor]
-                if value >= 0:
-                    return value + 1
-                cursor -= 1
-            return 0
-        value = self._char_map[norm_offset]
+        if norm_offset >= len(char_map):
+            _indices, values = self._anchor_pairs()
+            return values[-1] + 1 if values else 0
+        value = char_map[norm_offset]
         if value >= 0:
             return value
-        cursor = norm_offset - 1
-        while cursor >= 0:
-            value = self._char_map[cursor]
-            if value >= 0:
-                return value
-            cursor -= 1
-        return 0
+        indices, values = self._anchor_pairs()
+        slot = bisect_left(indices, norm_offset) - 1
+        return values[slot] if slot >= 0 else 0
 
     def map_range(self, norm_start: int, norm_end: int) -> tuple[int, int]:
         """Map a normalized half-open range to the tightest original range.
@@ -231,7 +245,8 @@ class SourceDocument:
         at the mapped boundary position. A range ending at the end of the
         normalized text maps to the corresponding original end boundary.
         """
-        if self._char_map is None:
+        char_map = self._char_map
+        if char_map is None:
             if norm_start >= norm_end:
                 boundary = self.map_position(norm_start)
                 pos = 0 if boundary is None else boundary
@@ -246,25 +261,17 @@ class SourceDocument:
             return pos, pos
         mapped_start = self.map_position(norm_start)
         start = 0 if mapped_start is None else mapped_start
-        end: int | None = None
-        cursor = norm_end - 1
-        while cursor >= norm_start:
-            if 0 <= cursor < len(self._char_map):
-                value = self._char_map[cursor]
-                if value >= 0:
-                    end = value + 1
-                    break
-            cursor -= 1
-        if end is None:
-            cursor = norm_end
-            while cursor < len(self._char_map):
-                value = self._char_map[cursor]
-                if value >= 0:
-                    end = value + 1
-                    break
-                cursor += 1
-        if end is None:
-            end = len(self.original_text)
+        indices, values = self._anchor_pairs()
+        # The last real character before the end of the range covers it; when
+        # the range holds none, the first real character after it anchors the
+        # end instead, and a range past the last real character ends at the
+        # original boundary.
+        slot = bisect_left(indices, norm_end) - 1
+        if slot >= 0 and indices[slot] >= norm_start:
+            end = values[slot] + 1
+        else:
+            following = bisect_left(indices, norm_end)
+            end = values[following] + 1 if following < len(indices) else len(self.original_text)
         return start, end
 
     def line_col(self, orig_offset: int) -> tuple[int, int]:
@@ -291,7 +298,9 @@ class SourceDocument:
             return False
         if norm_start < 0 or norm_end <= norm_start or norm_end > len(self._char_map):
             return False
-        return all(value < 0 for value in self._char_map[norm_start:norm_end])
+        indices, _values = self._anchor_pairs()
+        slot = bisect_left(indices, norm_end) - 1
+        return slot < 0 or indices[slot] < norm_start
 
 
 def _remap_span(target: Token | Meta, doc: SourceDocument) -> bool:

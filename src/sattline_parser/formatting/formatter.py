@@ -123,9 +123,63 @@ def _branch_block(
     return "\n".join(lines)
 
 
-def format_expr(expr: object, indent: str = _DEFAULT_INDENT) -> str:
-    """Pretty-print nested expressions and statements in a SattLine-like format."""
+def _precedence(expr: object) -> int:
+    """Binding strength of an expression node, matching the grammar.
 
+    Higher binds tighter. The order is the one documented in
+    ``docs/grammar.md``: ternary, OR, AND, NOT, comparison, additive,
+    multiplicative, unary, term.
+    """
+    if isinstance(expr, TernaryOp):
+        return 1
+    if isinstance(expr, BoolOp):
+        return 2 if expr.op.upper() == "OR" else 3
+    if isinstance(expr, NotOp):
+        return 4
+    if isinstance(expr, Compare):
+        return 5
+    if isinstance(expr, BinOp):
+        return 7 if expr.op in {"*", "/"} else 6
+    if isinstance(expr, UnaryOp):
+        return 8
+    return 9
+
+
+def _needs_parentheses(expr: object, parent_precedence: int, parent_op: str | None) -> bool:
+    """Whether *expr* must be wrapped to keep its tree under its parent."""
+    if isinstance(expr, BinOp):
+        # ``BinOp`` always renders itself parenthesised, so it is already a
+        # complete parenthesised expression at every parent.
+        return False
+    precedence = _precedence(expr)
+    if precedence < parent_precedence:
+        return True
+    if precedence > parent_precedence:
+        return False
+    if isinstance(expr, BoolOp) and parent_op is not None and expr.op.upper() == parent_op.upper():
+        # A chain of one operator is n-ary in the AST. Parentheses are what
+        # preserve a deliberately nested same-operator node.
+        return True
+    # Comparison is non-associative and the grammar admits only one operator.
+    return isinstance(expr, Compare)
+
+
+def _format_child(expr: object, indent: str, parent_precedence: int, parent_op: str | None) -> str:
+    text = _format_expr(expr, indent, parent_precedence=parent_precedence, parent_op=parent_op)
+    return f"({text})" if _needs_parentheses(expr, parent_precedence, parent_op) else text
+
+
+def format_expr(expr: object, indent: str = _DEFAULT_INDENT) -> str:
+    """Pretty-print nested expressions and statements in a SattLine-like format.
+
+    Expression children are parenthesised by precedence, so the output parses
+    back to the same tree rather than to the precedence the source happened to
+    write.
+    """
+    return _format_expr(expr, indent, parent_precedence=0, parent_op=None)
+
+
+def _format_expr(expr: object, indent: str, *, parent_precedence: int, parent_op: str | None) -> str:
     # Typed nodes are rendered by their own type; anything unhandled falls back
     # to ``str`` at the end.
     if isinstance(expr, VarRef):
@@ -133,33 +187,42 @@ def format_expr(expr: object, indent: str = _DEFAULT_INDENT) -> str:
         return expr.name if state is None else f"{expr.name}:{state}"
 
     if isinstance(expr, Assignment):
-        return f"{format_expr(expr.target, indent)} = {format_expr(expr.value, indent)}"
+        return (
+            f"{_format_expr(expr.target, indent, parent_precedence=0, parent_op=None)} = "
+            f"{_format_expr(expr.value, indent, parent_precedence=0, parent_op=None)}"
+        )
 
     if isinstance(expr, FuncCallStmt):
-        return format_expr(expr.call, indent)
+        return _format_expr(expr.call, indent, parent_precedence=0, parent_op=None)
 
     if isinstance(expr, IfStmt):
         return _branch_block(expr.branches, indent=indent, else_block=expr.else_block)
 
     if isinstance(expr, BoolOp):
-        parts = [format_expr(op, indent) for op in expr.operands]
+        precedence = _precedence(expr)
+        parts = [_format_child(op, indent, precedence, expr.op) for op in expr.operands]
         sep = f" {expr.op} \n"
         return sep.join(parts)
 
     if isinstance(expr, NotOp):
-        return f"NOT({format_expr(expr.operand, indent)})"
+        return f"NOT({_format_expr(expr.operand, indent, parent_precedence=0, parent_op=None)})"
 
     if isinstance(expr, Compare):
-        return f"{format_expr(expr.left, indent)} {expr.op} {format_expr(expr.right, indent)}"
+        left = _format_child(expr.left, indent, 5, None)
+        right = _format_child(expr.right, indent, 5, None)
+        return f"{left} {expr.op} {right}"
 
     if isinstance(expr, BinOp):
-        return f"({format_expr(expr.left, indent)} {expr.op} {format_expr(expr.right, indent)})"
+        precedence = _precedence(expr)
+        left = _format_child(expr.left, indent, precedence, None)
+        right = _format_child(expr.right, indent, precedence, None)
+        return f"({left} {expr.op} {right})"
 
     if isinstance(expr, UnaryOp):
-        return f"{expr.op}{format_expr(expr.operand, indent)}"
+        return f"{expr.op}{_format_child(expr.operand, indent, 8, None)}"
 
     if isinstance(expr, FuncCall):
-        args = ", ".join(format_expr(a, indent) for a in expr.args)
+        args = ", ".join(_format_expr(argument, indent, parent_precedence=0, parent_op=None) for argument in expr.args)
         return f"{expr.name}({args})"
 
     if isinstance(expr, TernaryOp):

@@ -47,6 +47,7 @@ from .expressions import (
     UnaryOp,
     VarRef,
 )
+from .freeze import FrozenNode
 from .header import HeaderInfo
 from .properties import (
     GraphProperties,
@@ -134,27 +135,46 @@ type SFCBodyItem = (
 
 
 class IntLiteral(int):
-    span: SourceSpan | None
+    """An integer literal that keeps its source position.
 
-    def __new__(cls, value: int, span: SourceSpan | None = None):
+    Equality is the inherited numeric one, so ``IntLiteral(1) == 1`` and
+    ``IntLiteral(1) == FloatLiteral(1.0)`` are both true. The written form is
+    not part of equality: read ``span`` or ``type(value)`` when the spelling
+    (``1`` versus ``1.0``) matters.
+    """
+
+    span: SourceSpan | None
+    clamped: bool
+
+    def __new__(cls, value: int, span: SourceSpan | None = None, clamped: bool = False):
         obj = int.__new__(cls, value)
         obj.span = span
+        obj.clamped = clamped
         return obj
 
     def __reduce__(self):
-        return (type(self), (int(self), self.span))
+        return (type(self), (int(self), self.span, self.clamped))
 
 
 class FloatLiteral(float):
-    span: SourceSpan | None
+    """A real literal that keeps its source position.
 
-    def __new__(cls, value: float, span: SourceSpan | None = None):
+    Equality is the inherited numeric one, so ``FloatLiteral(1.0) == 1``. The
+    written form is not part of equality; read ``span`` or ``type(value)`` when
+    it matters.
+    """
+
+    span: SourceSpan | None
+    clamped: bool
+
+    def __new__(cls, value: float, span: SourceSpan | None = None, clamped: bool = False):
         obj = float.__new__(cls, value)
         obj.span = span
+        obj.clamped = clamped
         return obj
 
     def __reduce__(self):
-        return (type(self), (float(self), self.span))
+        return (type(self), (float(self), self.span, self.clamped))
 
 
 class ScalarDatatype(Enum):
@@ -195,7 +215,7 @@ class ScalarDatatype(Enum):
 
 
 @dataclass
-class Variable:
+class Variable(FrozenNode):
     name: str
     datatype: ScalarDatatype | str  # accept either at init; we'll normalize
     global_var: bool | None = False
@@ -239,7 +259,7 @@ class Variable:
 
 
 @dataclass
-class DataType:
+class DataType(FrozenNode):
     name: str
     description: str | None
     datecode: int | None
@@ -265,7 +285,7 @@ class MappingSource(StrEnum):
 
 
 @dataclass
-class ParameterMapping:
+class ParameterMapping(FrozenNode):
     target: VarRef
     source_type: MappingSource
     is_duration: bool
@@ -292,7 +312,7 @@ class ParameterMapping:
 
 
 @dataclass
-class GraphObject:
+class GraphObject(FrozenNode):
     type: str
     properties: GraphProperties = field(default_factory=graph_properties)
     #: Source span of the object (its ``graph_object`` rule), when positions are
@@ -301,15 +321,30 @@ class GraphObject:
 
 
 @dataclass
-class InteractObject:
+class InteractObject(FrozenNode):
+    #: The interactor keyword exactly as written (``ComBut_``, ``TextBox_``,
+    #: ``ComButProc_``, ``ProcedureInteract``, or a free-form name). The
+    #: formatter writes this spelling back, so ``ProcedureInteract`` no longer
+    #: collapses to ``ComButProc_``.
     type: str
     properties: InteractProperties = field(default_factory=interact_properties)
     #: Source span of the object rule, when positions are propagated.
     span: SourceSpan | None = field(default=None, compare=False, metadata={"layout": True})
 
+    @property
+    def kind(self) -> str:
+        """The written spelling folded through the language identifier table.
+
+        One rule for every interactor: compare ``kind`` when the written case
+        does not matter. ``ComButProc_`` and ``ProcedureInteract`` stay distinct
+        kinds because the source wrote different keywords and their effect is
+        not modelled.
+        """
+        return fold_identifier(self.type)
+
 
 @dataclass
-class GraphicsBinding:
+class GraphicsBinding(FrozenNode):
     kind: str
     raw_text: str
     value: Any | None = None
@@ -317,13 +352,15 @@ class GraphicsBinding:
 
 
 @dataclass
-class ModuleDef:
+class ModuleDef(FrozenNode):
     #: The ``ClippingBounds`` clause, when the source wrote one. It carries
     #: both the resolved corners and the tails attached to them.
     clipping: ClippingClause | None = None
     zoom_limits: tuple[float, float] | None = None
     seq_layers: float | dict[str, float] | None = None
-    grid: float = 0.2
+    #: ``Grid = <real>``. ``None`` means the source wrote no ``Grid`` clause, so
+    #: a written ``Grid = 0.2`` is not silently dropped as a default.
+    grid: float | None = None
     zoomable: bool = False
     graph_objects: list[GraphObject] = field(default_factory=graph_object_list)
     interact_objects: list[InteractObject] = field(default_factory=interact_object_list)
@@ -354,7 +391,7 @@ class ModuleDef:
 
 
 @dataclass
-class Sequence:
+class Sequence(FrozenNode):
     name: str | None
     type: str
     position: tuple[float, float] = field(compare=False, metadata={"layout": True})
@@ -365,13 +402,15 @@ class Sequence:
     #: ``Layer_ = <int>`` written after the ``OBJSIZE`` pair, when present.
     #: Absence is preserved as ``None``, matching ``Equation.layer_info``.
     layer_info: int | None = None
+    #: Source span of the sequence declaration, when positions are propagated.
+    declaration_span: SourceSpan | None = field(default=None, compare=False, metadata={"layout": True})
 
     def __str__(self) -> str:
         return render_sequence(self)
 
 
 @dataclass
-class Equation:
+class Equation(FrozenNode):
     """``EQUATIONBLOCK`` / ``EQUATIONS`` body.
 
     The form accepts the keyword, an optional name, optional coordinate/size
@@ -388,13 +427,15 @@ class Equation:
     size: tuple[float, float] | None = field(default=None, compare=False, metadata={"layout": True})
     code: list[CodeItem] = field(default_factory=code_item_list)
     layer_info: int | None = None
+    #: Source span of the equation declaration, when positions are propagated.
+    declaration_span: SourceSpan | None = field(default=None, compare=False, metadata={"layout": True})
 
     def __str__(self) -> str:
         return render_equation(self)
 
 
 @dataclass
-class ModuleCode:
+class ModuleCode(FrozenNode):
     sequences: list[Sequence] | None = None
     equationblocks: list[Equation] | None = None
 
@@ -403,7 +444,7 @@ class ModuleCode:
 
 
 @dataclass
-class ModuleHeader:
+class ModuleHeader(FrozenNode):
     name: str
     invoke_coord: tuple[float, float, float, float, float] = field(compare=False, metadata={"layout": True})
     declaration_span: SourceSpan | None = field(default=None, compare=False, metadata={"layout": True})
@@ -463,7 +504,7 @@ class ModuleHeader:
 
 
 @dataclass
-class SingleModule:
+class SingleModule(FrozenNode):
     header: ModuleHeader
     datecode: int | None = None
     moduleparameters: list[Variable] = field(default_factory=variable_list)
@@ -482,7 +523,7 @@ class SingleModule:
 
 
 @dataclass
-class FrameModule:
+class FrameModule(FrozenNode):
     header: ModuleHeader
     datecode: int | None = None
     moduleparameters: list[Variable] = field(default_factory=variable_list)
@@ -493,6 +534,10 @@ class FrameModule:
     #: on a synthetic view such as an empty picture.
     moduledef: ModuleDef | None = None
     modulecode: ModuleCode | None = None
+    #: ``(P => value)`` mappings written after ``ENDDEF``. A frame module takes
+    #: the same optional invocation tail as a single module, so the mappings are
+    #: kept rather than dropped.
+    parametermappings: list[ParameterMapping] = field(default_factory=parameter_mapping_list)
     trailing_comments: list[CodeComment] = field(default_factory=code_comment_list)
 
     def __str__(self) -> str:
@@ -500,7 +545,7 @@ class FrameModule:
 
 
 @dataclass
-class ModuleTypeInstance:
+class ModuleTypeInstance(FrozenNode):
     header: ModuleHeader
     moduletype_name: str
     parametermappings: list[ParameterMapping] = field(default_factory=parameter_mapping_list)
@@ -510,7 +555,7 @@ class ModuleTypeInstance:
 
 
 @dataclass
-class ModuleTypeDef:
+class ModuleTypeDef(FrozenNode):
     name: str
     datecode: int | None = None
     is_private: bool = False
@@ -535,7 +580,7 @@ class ModuleTypeDef:
 
 
 @dataclass
-class BasePicture:
+class BasePicture(FrozenNode):
     header: ModuleHeader
     name: str = "BasePicture"
     program_name: str | None = None
@@ -562,20 +607,24 @@ class BasePicture:
     #: Absent is preserved as ``None``; stamping an import date is a separate
     #: operation and must never be faked during parsing.
     datecode: int | None = None
+    #: The root module's ``(Frame_Module)`` marker, when the source wrote one.
+    #: The marker sits after the datecode on the same definition line, so it is
+    #: not an invocation argument.
+    is_frame_module: bool = False
 
     def __str__(self) -> str:
         return render_base_picture(self)
 
 
 @dataclass
-class SFCCodeBlocks:
+class SFCCodeBlocks(FrozenNode):
     enter: list[CodeItem] = field(default_factory=code_item_list)
     active: list[CodeItem] = field(default_factory=code_item_list)
     exit: list[CodeItem] = field(default_factory=code_item_list)
 
 
 @dataclass
-class SFCStep:
+class SFCStep(FrozenNode):
     kind: str  # 'init' or 'step'
     name: str | None
     code: SFCCodeBlocks
@@ -586,7 +635,7 @@ class SFCStep:
 
 
 @dataclass
-class SFCTransition:
+class SFCTransition(FrozenNode):
     name: str | None
     #: Guard expression; ``None`` when the source omits ``WAIT_FOR`` entirely.
     #: The omission is accepted and the compiler lowers it to true, so absence
@@ -598,19 +647,19 @@ class SFCTransition:
 
 
 @dataclass
-class SFCAlternative:
+class SFCAlternative(FrozenNode):
     branches: list[list[SFCBodyItem]]  # each branch is a list of SFC nodes
     span: SourceSpan | None = field(default=None, compare=False, metadata={"layout": True})
 
 
 @dataclass
-class SFCParallel:
+class SFCParallel(FrozenNode):
     branches: list[list[SFCBodyItem]]
     span: SourceSpan | None = field(default=None, compare=False, metadata={"layout": True})
 
 
 @dataclass
-class SFCSubsequence:
+class SFCSubsequence(FrozenNode):
     #: ``SUBSEQUENCE`` / ``SUBSEQSTEP`` name; both are optional.
     name: str | None
     body: list[SFCBodyItem]
@@ -622,14 +671,14 @@ class SFCSubsequence:
 
 
 @dataclass
-class SFCTransitionSub:
+class SFCTransitionSub(FrozenNode):
     name: str | None
     body: list[SFCBodyItem]
     span: SourceSpan | None = field(default=None, compare=False, metadata={"layout": True})
 
 
 @dataclass
-class SFCFork:
+class SFCFork(FrozenNode):
     """``SEQFORK`` jump list, optionally closed by ``SEQBREAK``.
 
     The form takes one or more comma-separated target names followed by an

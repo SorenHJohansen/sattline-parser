@@ -37,7 +37,9 @@ flowchart TB
 `parse_source_bytes`, which decodes them through `decode_source_bytes`.
 
 - A byte-coded stream starts with `\x80 3.1`. It is decoded by
-  `decode_coded_stream` before anything else. See [glossary](glossary.md) and
+  `decode_coded_stream` before anything else. The framing is decoded before a
+  `SourceDocument` exists, so positions in a coded stream refer to the decoded
+  text, not to the bytes on disk. See [glossary](glossary.md) and
   [source-provenance.md](source-provenance.md) for the framing details.
 - Everything else is decoded as **Windows-1252** (`cp1252`). This is a strict
   decode with no fallback to UTF-8 or Latin-1. A byte that is undefined in
@@ -89,12 +91,14 @@ that were not produced by a standard export:
   regions.
 
 The decoder is lexically aware. `scan_opaque_regions` finds every string
-literal and `(* ... *)` comment, including nested comments and doubled `""`
-quotes. Those regions are replaced by placeholders, the `#NN` markers in the
-remaining text are substituted from `scanner_tokens.json`, and the placeholders
-are restored. Unknown markers raise `PreprocessError`. A replacement that does
-not survive from the source is marked `GENERATED` rather than being given a
-fake original offset.
+literal, quoted identifier, and `(* ... *)` comment, including nested comments
+and doubled `""` quotes. It applies the lexer's own name boundary rule, so a
+quoted identifier is protected exactly where the `NAME` terminal would read one.
+Those regions are replaced by placeholders, the `#NN` markers in the remaining
+text are substituted from `scanner_tokens.json`, and the placeholders are
+restored. Unknown markers raise `PreprocessError` with the marker's offset in
+the original source. A replacement that does not survive from the source is
+marked `GENERATED` rather than being given a fake original offset.
 
 ## Parsing: normalized text to Lark tree
 
@@ -208,20 +212,33 @@ signalling a bug rather than invalid input. Such a failure propagates as a
 traceback instead of becoming a finding, so a defect is never reported as a
 broken source.
 
+Lark wraps every exception raised inside a transformer rule in `VisitError`.
+When the wrapped exception is a `ValueError` or an `UnexpectedInput`,
+`parse_source_text` re-raises the original from the wrapper, so a transformer
+that rejects the source (a duplicate singular clause, a second module block) is
+reported exactly like any other parse failure. Any other wrapped exception stays
+inside `VisitError` and propagates as a defect.
+
 ## Performance notes
 
 - The default parser is cached for the process.
 - Plain text short-circuits both the source map and the tree walk.
 - A `SourceDocument` builds its line index on first use, so a parse that never
   renders a line and column does not scan the original text.
+- A `SourceDocument` builds its anchor index on first use too, and every later
+  position or range lookup is a bisect. Remapping a marker-dense compressed
+  source is linear in the text length; walking a generated run once per token
+  would be quadratic.
 - Decoding appends into one per-character buffer per stage instead of building
   a list of parts and then concatenating a second copy.
 - Parse-tree transformation and position remapping use explicit stacks, so
   their cost follows the tree size rather than the Python call stack.
 - The Lark cache is opt-in only through the private cache directory. It is
   never written into the source tree. The per-user directory under the system
-  temporary directory and its `lark-cache` child are both ownership-checked and
-  created `0700`; a symlink or a directory owned by another user disables the
-  cache instead of being followed.
+  temporary directory and its `lark-cache` child are both checked: POSIX
+  requires ownership and mode `0700`, and Windows requires a security
+  descriptor whose owner is this user and whose DACL grants write access to
+  nobody else. A symlink, a reparse point, or a directory that cannot be proven
+  private disables the cache instead of being followed.
 - `parse_source_text` reuses a caller-supplied parser and transformer, which is
   how the project loader avoids recompiling the grammar per file.

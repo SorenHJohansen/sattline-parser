@@ -38,8 +38,8 @@ def test_ast_model_helpers_cover_reduce_usage_and_string_formats(monkeypatch: py
     float_lit = FloatLiteral(2.5, span)
 
     assert span.__reduce__() == (SourceSpan, (2, 3, 1, 3))
-    assert int_lit.__reduce__() == (IntLiteral, (7, span))
-    assert float_lit.__reduce__() == (FloatLiteral, (2.5, span))
+    assert int_lit.__reduce__() == (IntLiteral, (7, span, False))
+    assert float_lit.__reduce__() == (FloatLiteral, (2.5, span, False))
     assert ScalarDatatype.from_any(ScalarDatatype.BOOLEAN) is ScalarDatatype.BOOLEAN
     assert Variable(name="Flag", datatype="BOOLEAN").datatype_text == "boolean"
     assert Variable(name="RecordValue", datatype="CustomRecord").datatype_text == "CustomRecord"

@@ -1,10 +1,11 @@
 "Syntax version 2.23, date: 2026-04-23-12:00:00.000 N"
 "Original file date: ---"
 "Program date: 2026-04-23-12:00:00.000, name: StringLiteralInCallArgument"
-(* INVALID: A string literal used as an argument to a function call.
-   String literals are rejected in module-code function or procedure call
-   arguments; they are only allowed in parameter mappings (=> "literal").
-   EqualStrings requires string variable references, not inline string literals.
+(* INVALID: A string literal used as an argument to a call with no known signature.
+   A literal is accepted only where a documented signature declares an "in"
+   string parameter, which proves that the callee takes a value there. This
+   callee has no known signature, so nothing evidences that it accepts a value,
+   and the literal is rejected.
    Expected: strict syntax-check fails at stage "validation". *)
 
 BasePicture Invocation
@@ -13,12 +14,11 @@ BasePicture Invocation
 
 LOCALVARIABLES
    Input: string  := "";
-   IsMatch: boolean  := False;
 
 ModuleDef
 ClippingBounds = ( -1.0 , -1.0 ) ( 1.0 , 1.0 )
 ModuleCode
    EQUATIONBLOCK Main COORD 0.0, 0.0 OBJSIZE 1.0, 1.0 :
-      IsMatch = EqualStrings(Input, "Expected", True);
+      UserProcedure("Expected");
 
 ENDDEF (*BasePicture*);

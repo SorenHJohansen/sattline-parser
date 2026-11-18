@@ -12,6 +12,7 @@ from __future__ import annotations
 import ntpath
 import os
 from collections.abc import Callable, Sequence
+from dataclasses import dataclass
 from pathlib import Path
 
 import regex
@@ -26,7 +27,7 @@ from .formats import (
     candidate_extensions,
     deps_extensions_for_code,
 )
-from .identity import ArtifactIdentity
+from .identity import ArtifactIdentity, UnitIdentity
 from .lookup_cache import FileLookupCache
 from .models import LoadMode
 
@@ -76,8 +77,13 @@ def _is_allowed_base(roots: Sequence[Path], base: Path) -> bool:
 #: blacklist. That rejects separators, drive/ADS colons, UNC prefixes, parent
 #: references, control characters, and the Windows-invalid filename characters
 #: in one rule.
+#:
+#: The length of a declared identifier is a language rule reported by
+#: ``SL-V038`` at the declaration, not a resolution rule. Capping it here made a
+#: unit whose name is 21 characters unresolvable, so this guard covers the
+#: character set and the Windows device names only.
 _NAME_CHARSET = grammar_constants.GRAMMAR_CHARSET_NAME
-_UNIT_NAME_RE = regex.compile(rf"[{_NAME_CHARSET}][{_NAME_CHARSET}]{{0,19}}\Z")
+_UNIT_NAME_RE = regex.compile(rf"[{_NAME_CHARSET}]+\Z")
 _IS_WINDOWS = os.name == "nt"
 _WINDOWS_RESERVED_NAMES = frozenset(
     {
@@ -100,11 +106,39 @@ def _is_safe_name(name: str) -> bool:
     return not _IS_WINDOWS or name.upper() not in _WINDOWS_RESERVED_NAMES
 
 
+@dataclass(frozen=True, slots=True)
+class NameCollision:
+    """Two or more files in one root that the language considers one unit.
+
+    A collision means the filesystem holds more than one artifact for one unit
+    name and extension. ``paths`` is in the index's deterministic order, so
+    ``paths[0]`` is the file that resolves and the rest are unreachable through
+    the index.
+    """
+
+    base: Path
+    folded: str
+    extension: str
+    paths: tuple[Path, ...]
+
+    @property
+    def winner(self) -> Path:
+        """The file the index resolves for this name."""
+        return self.paths[0]
+
+
 class SourceIndex:
-    """Per-root artifact index of ``stem.casefold() -> {ext -> Path}``.
+    """Per-root artifact index of ``fold_identifier(stem) -> {ext -> Path}``.
 
     Only code and dependency extensions are indexed. Graphics companions are
     resolved via their code path and never appear here.
+
+    The key is language identity (:func:`sattline_parser.names.fold_identifier`),
+    not Unicode case folding. ``Straße`` and ``STRASSE`` are two entries, so a
+    request for one never returns the other even though ``str.casefold`` equates
+    them. Case differences the language folds, such as ``Util`` and ``UTIL``,
+    do share one entry; when a root holds both files, the first in sorted name
+    order wins and the pair is recorded as a :class:`NameCollision`.
     """
 
     INDEXED_EXTENSIONS = ALL_CODE_EXTENSIONS | ALL_DEPS_EXTENSIONS
@@ -112,18 +146,28 @@ class SourceIndex:
     def __init__(self, roots: Sequence[Path]) -> None:
         self._roots = tuple(Path(root) for root in roots)
         self._indexes: dict[Path, dict[str, dict[str, Path]]] = {}
+        self._collisions: dict[Path, dict[tuple[str, str], NameCollision]] = {}
 
     @property
     def roots(self) -> tuple[Path, ...]:
         return self._roots
 
+    @property
+    def collisions(self) -> tuple[NameCollision, ...]:
+        """Every recorded name collision, in base then name order."""
+        return tuple(
+            collision for base in sorted(self._collisions) for _key, collision in sorted(self._collisions[base].items())
+        )
+
     def _get_base_index(self, base: Path) -> dict[str, dict[str, Path]]:
         if base in self._indexes:
             return self._indexes[base]
         index: dict[str, dict[str, Path]] = {}
+        collisions: dict[tuple[str, str], NameCollision] = {}
         try:
             present = base.exists() and base.is_dir()
-            entries = list(base.iterdir()) if present else []
+            # Sorted so the collision winner does not depend on directory order.
+            entries = sorted(base.iterdir(), key=lambda entry: entry.name) if present else []
         except OSError as exc:
             # A configured root that cannot be read is an input problem, not an
             # internal error: report it as a load failure about that root.
@@ -137,13 +181,21 @@ class SourceIndex:
             ext = entry.suffix.lower()
             if ext not in self.INDEXED_EXTENSIONS:
                 continue
-            stem = entry.stem.casefold()
-            index.setdefault(stem, {})[ext] = entry
+            folded = UnitIdentity.of(entry.stem).key
+            bucket = index.setdefault(folded, {})
+            existing = bucket.get(ext)
+            if existing is None:
+                bucket[ext] = entry
+                continue
+            previous = collisions.get((folded, ext))
+            paths = (*previous.paths, entry) if previous is not None else (existing, entry)
+            collisions[(folded, ext)] = NameCollision(base=base, folded=folded, extension=ext, paths=paths)
         self._indexes[base] = index
+        self._collisions[base] = collisions
         return index
 
     def find_in_index(self, *, base: Path, name: str, extensions: Sequence[str]) -> Path | None:
-        entries = self._get_base_index(base).get(name.casefold())
+        entries = self._get_base_index(base).get(UnitIdentity.of(name).key)
         if not entries:
             return None
         for ext in extensions:
@@ -152,9 +204,19 @@ class SourceIndex:
                 return path
         return None
 
+    def collisions_for_base(self, base: Path, name: str) -> tuple[NameCollision, ...]:
+        """Name collisions recorded for *name* in *base*, one per extension."""
+        self._get_base_index(base)
+        folded = UnitIdentity.of(name).key
+        return tuple(
+            collision
+            for (folded_name, _ext), collision in sorted(self._collisions.get(base, {}).items())
+            if folded_name == folded
+        )
+
     def add(self, *, base: Path, name: str, path: Path) -> None:
         index = self._get_base_index(base)
-        index.setdefault(name.casefold(), {})[path.suffix.lower()] = path
+        index.setdefault(UnitIdentity.of(name).key, {})[path.suffix.lower()] = path
 
 
 def ordered_lookup_bases(roots: Sequence[Path]) -> tuple[Path, ...]:
@@ -255,14 +317,23 @@ class ProjectLookup:
             return indexed
         for ext in extensions:
             candidate = base / f"{name}{ext}"
-            # The index only holds directory entries, but the stat fallback
-            # builds a path from the name, so containment is checked here too.
-            if candidate.exists() and _is_relative_to(candidate, base):
+            # Only a regular file is an artifact: a directory or a FIFO named
+            # like a body must not shadow a real body in a later root, and a
+            # FIFO must never be opened. The parent must stay inside the base,
+            # so a traversal spelling is still refused when the name guard is
+            # bypassed. The candidate itself may be a symlink to a body outside
+            # the base; that is a deliberate layout and both lookup paths accept
+            # it.
+            if candidate.is_file() and _is_relative_to(candidate.parent, base):
                 self._dbg(f"Using ordered lookup file: {candidate}")
                 self._remember(kind, name, base, ext)
                 self._index.add(base=base, name=name, path=candidate)
                 return candidate
         return None
+
+    def collisions_for(self, name: str, base: Path) -> tuple[NameCollision, ...]:
+        """Files in *base* whose stems fold to *name*'s unit identity."""
+        return self._index.collisions_for_base(base, name)
 
     def _find_in_cached_base(
         self,
@@ -310,7 +381,7 @@ class ProjectLookup:
         # fall through to a coarser extension. A stale index only costs a full
         # ordered scan: the caller forgets the entry and rescans.
         found = self._index.find_in_index(base=base, name=name, extensions=extensions)
-        if found is not None:
+        if found is not None and found.is_file():
             self._dbg(f"Using cached {kind} file: {found}")
             self._remember(kind, name, base, found.suffix.lower())
             return found, base
@@ -385,6 +456,7 @@ class ProjectLookup:
 
 
 __all__ = [
+    "NameCollision",
     "ProjectLookup",
     "SourceIndex",
     "ordered_lookup_bases",

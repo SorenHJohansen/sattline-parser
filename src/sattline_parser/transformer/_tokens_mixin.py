@@ -16,6 +16,12 @@ from sattline_parser.models.ast_model import FloatLiteral, IntLiteral, SourceSpa
 from ._module_shared import GLOBAL_KEYWORD, GlobalKeyword
 
 DEFAULT_INIT = object()
+#: The ``Duration_Value`` keyword, compared by identity.
+#:
+#: The keyword and a quoted ``"Duration_Value"`` literal are different
+#: constructs that used to be one string, so a literal could be read as the
+#: keyword. An identity sentinel keeps them apart: no source text can equal it.
+DURATION_VALUE_SENTINEL = object()
 
 _TRUE_BOOL_SPELLINGS = frozenset(spelling.casefold() for spelling in const.BOOL_TRUE_SPELLINGS)
 _FALSE_BOOL_SPELLINGS = frozenset(spelling.casefold() for spelling in const.BOOL_FALSE_SPELLINGS)
@@ -72,7 +78,7 @@ class TokensMixin:
         """
         raw = int(str(tok))
         clamped = max(const.INT_MIN, min(const.INT_MAX, raw))
-        return IntLiteral(clamped, self._token_span(tok))
+        return IntLiteral(clamped, self._token_span(tok), clamped=clamped != raw)
 
     def SIGNED_INT_NOTAIL(self, tok: Token) -> IntLiteral:
         """Grammar SIGNED_INT_NOTAIL terminal -> IntLiteral (no trailing coordinates)."""
@@ -85,7 +91,7 @@ class TokensMixin:
         """
         raw = float(str(tok))
         clamped = max(-const.REAL_MAX, min(const.REAL_MAX, raw)) if raw != 0.0 else raw
-        return FloatLiteral(clamped, self._token_span(tok))
+        return FloatLiteral(clamped, self._token_span(tok), clamped=clamped != raw)
 
     def REAL_NOTAIL(self, tok: Token) -> FloatLiteral:
         """Grammar REAL_NOTAIL terminal -> FloatLiteral (no trailing coordinates)."""
@@ -141,29 +147,20 @@ class TokensMixin:
         """Grammar DEFAULT terminal -> DEFAULT_INIT sentinel."""
         return DEFAULT_INIT
 
-    # Punctuation tokens we don't need as data (returning None is fine; we'll filter Nones)
-
-    def COLON(self, _tok: object) -> None:
-        """Grammar COLON punctuation -> None (filtered out)."""
-        return None
-
-    def COMMA(self, _tok: object) -> None:
-        """Grammar COMMA punctuation -> None (filtered out)."""
-        return None
-
-    def SEMI(self, _tok: object) -> None:
-        """Grammar SEMI punctuation -> None (filtered out)."""
-        return None
-
-    # And the := and optional Duration_Value inside opt_var_init
+    # ``:=`` and the optional Duration_Value inside opt_var_init
 
     def ASSIGN_INIT_VALUE(self, _tok: object) -> None:
         """Grammar ASSIGN_INIT_VALUE (:=) punctuation -> None (filtered out)."""
         return None
 
     def DURATION_VALUE(self, _tok: object) -> object:
-        """Grammar DURATION_VALUE terminal -> GRAMMAR_VALUE_DURATION_VALUE sentinel."""
-        return const.GRAMMAR_VALUE_DURATION_VALUE
+        """Grammar DURATION_VALUE terminal -> identity sentinel.
+
+        A sentinel rather than the keyword string: a quoted
+        ``"Duration_Value"`` literal is a plain ``str`` and must never be read
+        as the keyword.
+        """
+        return DURATION_VALUE_SENTINEL
 
     def DATECODE_PREFIX(self, _tok: object) -> None:
         """Grammar DATECODE_PREFIX terminal (``DateCode_``) -> filtered out.

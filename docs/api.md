@@ -27,7 +27,9 @@ flowchart LR
 ```
 
 Use the top-level package for ordinary parsing. Use `sattline_parser.api` when
-you want the parser pipeline in one import. Use `sattline_parser.ast` when you
+you want the parser pipeline in one import; the graphics and distribution entry
+points on the top-level package are lazy, so this import does not load
+`sattline_parser.project`. Use `sattline_parser.ast` when you
 need the model itself. Use `sattline_parser.types` for scalar type facts and
 literal inference, `sattline_parser.formatting` to render expressions, statements,
 and whole files, and `sattline_parser.serialization` to turn the model into

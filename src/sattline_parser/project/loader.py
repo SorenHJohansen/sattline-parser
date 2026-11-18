@@ -28,7 +28,7 @@ doubling the plans over an existing registry.
 
 from __future__ import annotations
 
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 
 from sattline_parser.source_io import private_cache_dir
@@ -81,6 +81,11 @@ class ProjectLoader:
         #: Non-fatal load findings, and the set that keeps them unique.
         self._diagnostics: list[LoadDiagnostic] = []
         self._diagnostic_set: set[LoadDiagnostic] = set()
+        #: Extra spellings that reached a loaded unit: folded spelling -> (the
+        #: spelling, the project view key of the unit it reached). One body can be
+        #: named twice, for example through a symlink, and every spelling a
+        #: sidecar used must resolve back to the unit it named.
+        self._aliases: dict[str, tuple[str, str]] = {}
 
         self._planner = ProjectPlanner(
             lookup=lookup,
@@ -118,6 +123,16 @@ class ProjectLoader:
         """Non-fatal load findings, in discovery then assembly order."""
         return tuple(self._diagnostics)
 
+    @property
+    def aliases(self) -> Mapping[str, tuple[str, str]]:
+        """Every extra spelling that reached a loaded unit.
+
+        Keys are folded spellings, values are the spelling as it was written and
+        the project view key of the unit it reached. The mapping is filled by
+        :meth:`resolve`.
+        """
+        return self._aliases
+
     def _diagnose(self, kind: LoadDiagnosticKind, program: str, detail: str, path: Path | None = None) -> None:
         diagnostic = LoadDiagnostic(kind=kind, program=program, detail=detail, path=path)
         if diagnostic in self._diagnostic_set:
@@ -138,7 +153,9 @@ class ProjectLoader:
             self._validator.assert_no_moduletype_cycles()
             if self._validate is LoadValidation.INVOKED:
                 self._validator.validate_invoked()
-            return self._name_registry()
+            programs = self._name_registry()
+            self._aliases = self._alias_registry(programs)
+            return programs
         finally:
             if self._lookup_cache is not None:
                 self._lookup_cache.flush()
@@ -149,13 +166,40 @@ class ProjectLoader:
         Every planned body assembles, so the first resolution is always the
         exposed one. The key is ``str.casefold``, the project view's own
         canonical spelling, and ``SattLineProject`` looks up by the same rule.
-        Language identity inside a unit uses the CP1252 table
-        (``fold_identifier``); artifact identity uses :class:`ArtifactIdentity`.
+
+        Two units can share that key even though the language keeps them apart,
+        for example ``Straße`` and ``STRASSE``. The first in plan order wins and
+        the planner has already reported the pair as a folded-name collision,
+        because a casefolded view has no second slot for it. Language identity
+        inside a unit uses the CP1252 table (``fold_identifier``); artifact
+        identity uses :class:`ArtifactIdentity`.
         """
         registry: dict[str, SattLineProgram] = {}
         for program in self._registry.values():
             registry.setdefault(program.name.casefold(), program)
         return registry
+
+    def _alias_registry(self, programs: Mapping[str, SattLineProgram]) -> dict[str, tuple[str, str]]:
+        """Every extra spelling that reached a unit in *programs*.
+
+        A sidecar may name one body twice, for example directly and through a
+        symlink. The body is planned once, so the second spelling would otherwise
+        disappear and ``dependencies_of`` could return a name ``get`` cannot
+        resolve. A spelling whose unit lost the project view to a folded-name
+        collision is dropped: that layout is already reported.
+        """
+        view_of_plan: dict[str, str] = {}
+        for plan_key, program in self._registry.items():
+            view = program.name.casefold()
+            if programs.get(view) is program:
+                view_of_plan[plan_key] = view
+        aliases: dict[str, tuple[str, str]] = {}
+        for key, (spelling, plan_key) in self._planner.resolved_names.items():
+            view = view_of_plan.get(plan_key)
+            if view is None or key == view:
+                continue
+            aliases[key] = (spelling, view)
+        return aliases
 
     def _assert_registry_post_order(self) -> None:
         """Assert that every loaded dependency precedes its consumer."""

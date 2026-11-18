@@ -9,10 +9,17 @@ parsed programs.
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping, Sequence
+from copy import deepcopy
+from dataclasses import replace
 from pathlib import Path
 from types import MappingProxyType
+from typing import cast
+
+from sattline_parser.models.ast_model import BasePicture
+from sattline_parser.models.freeze import freeze_ast
 
 from ._cycles import dependency_cycles
+from .identity import UnitIdentity
 from .index import ProjectIndex
 from .loader import ProjectLoader
 from .models import DependencyGraph, LoadDiagnostic, LoadMode, LoadValidation, SattLineProgram
@@ -23,13 +30,32 @@ class SattLineProject:
 
     Program names use canonical (casefolded) identities internally, giving
     case-insensitive lookup while preserving the caller's original spelling in
-    each ``SattLineProgram.name``.
+    each ``SattLineProgram.name``. A casefolded key is only a view key: a name
+    the language keeps apart from the stored spelling, such as ``STRASSE``
+    beside ``Straße``, is not resolved by it.
     """
 
     def __init__(self) -> None:
         self._programs: dict[str, SattLineProgram] = {}
+        #: Folded spelling -> (spelling, the view key of the unit it reached), for
+        #: names that reached an already-planned body.
+        self._aliases: dict[str, tuple[str, str]] = {}
         self._diagnostics: tuple[LoadDiagnostic, ...] = ()
         self._index: ProjectIndex | None = None
+
+    def _attach(self, programs: Mapping[str, SattLineProgram], *, copy_ast: bool) -> None:
+        """Install the registry as an immutable snapshot.
+
+        ``load`` owns the trees the loader produced, so it freezes them in
+        place. ``from_programs`` receives trees the caller still owns, so it
+        copies first. Freezing replaces every mutable list and mapping reachable
+        from the picture and locks each model node.
+        """
+        registry: dict[str, SattLineProgram] = {}
+        for key, program in programs.items():
+            code = deepcopy(program.code) if copy_ast else program.code
+            registry[key] = replace(program, code=cast(BasePicture, freeze_ast(code)))
+        self._programs = registry
 
     @classmethod
     def from_programs(cls, programs: Mapping[str, SattLineProgram]) -> SattLineProject:
@@ -52,7 +78,7 @@ class SattLineProject:
             if canonical in registry:
                 raise ValueError(f"two mapping keys fold to {canonical!r}")
             registry[canonical] = program
-        project._programs = registry
+        project._attach(registry, copy_ast=True)
         return project
 
     @classmethod
@@ -74,17 +100,18 @@ class SattLineProject:
         types the target invokes.
 
         Each target is resolved through ``roots`` in the caller's order, its
-        ``.l`` / ``.z`` dependency file (when present) is read, and dependencies
-        are loaded recursively before the target itself. Earlier roots win: when
-        two roots hold a same-named unit, the body in the earlier root is the
-        one loaded, and the later body is never planned, parsed, or validated.
-        When a code file has a ``.g`` / ``.y`` sibling, the companion is parsed
-        into the program's graphics model. Programs are canonicalized by
-        casefolded identity, so one name resolves to one body and each body is
-        visited and parsed once. A missing or unparseable artifact fails the
-        whole load, so a project is either complete or not returned. A recursive
-        sidecar chain or a module type that instantiates itself is a structural
-        error too.
+        ``.l`` / ``.z`` dependency file (when present) is read, and the whole
+        dependency closure is planned before the target itself is loaded. Earlier
+        roots win: when two roots hold a same-named unit, the body in the earlier
+        root is the one loaded, and the later body is never planned, parsed, or
+        validated. When a code file has a ``.g`` / ``.y`` sibling, the companion
+        is parsed into the program's graphics model. A name resolves to a body
+        only when it matches under the language name table, so one name reaches
+        one body and each body is visited and parsed once; every spelling that
+        reached a body stays a name for it. A missing or unparseable artifact
+        fails the whole load, so a project is either complete or not returned. A
+        recursive sidecar chain or a module type that instantiates itself is a
+        structural error too.
 
         ``validate=INVOKED`` (default) validates each target in full while a
         dependency file contributes only the module types the target invokes,
@@ -110,22 +137,64 @@ class SattLineProject:
         )
         program_registry = loader.resolve(targets)
         project = cls()
-        project._programs = program_registry
+        project._attach(program_registry, copy_ast=False)
+        project._aliases = dict(loader.aliases)
         project._diagnostics = loader.diagnostics
         return project
+
+    def _resolve(self, name: str) -> SattLineProgram | None:
+        """The loaded unit *name* designates, or ``None``.
+
+        The view key is the caller's spelling casefolded, but a key that only
+        matches under ``str.casefold`` is not a unit the language considers the
+        same. ``Straße`` and ``STRASSE`` share a key and are different units, so
+        a name must either be the view key itself, which is what ``programs()``
+        returns, or match the stored spelling under ``fold_identifier``. A name
+        that reached an already-planned body (an alias or a symlink) resolves
+        through the alias table under the same rule.
+        """
+        key = name.casefold()
+        program = self._programs.get(key)
+        if program is not None and (name == key or UnitIdentity.of(program.name) == UnitIdentity.of(name)):
+            return program
+        alias = self._aliases.get(key)
+        if alias is None:
+            return None
+        spelling, target = alias
+        if name != key and UnitIdentity.of(spelling) != UnitIdentity.of(name):
+            return None
+        return self._programs.get(target)
+
+    def _view_key(self, name: str) -> str:
+        """The view key *name* designates, or its folded spelling when unknown.
+
+        Used for graph edges: a declared dependency that resolved to a loaded
+        unit points at that unit's view key, so every endpoint of a loaded
+        project is also a node.
+        """
+        key = name.casefold()
+        program = self._programs.get(key)
+        if program is not None and (name == key or UnitIdentity.of(program.name) == UnitIdentity.of(name)):
+            return key
+        alias = self._aliases.get(key)
+        if alias is not None and (name == key or UnitIdentity.of(alias[0]) == UnitIdentity.of(name)):
+            return alias[1]
+        return key
 
     def get(self, name: str) -> SattLineProgram:
         """Return the loaded program by name (case-insensitive).
 
-        Raises ``KeyError`` when the program is not part of this project.
+        Case-insensitivity is the language's own rule, so ``util``, ``Util``,
+        and ``UTIL`` all designate one unit while ``STRASSE`` does not designate
+        ``Straße``. Raises ``KeyError`` when the project holds no such unit.
         """
-        try:
-            return self._programs[name.casefold()]
-        except KeyError:
-            raise KeyError(f"no loaded program {name!r} in this project") from None
+        program = self._resolve(name)
+        if program is None:
+            raise KeyError(f"no loaded program {name!r} in this project")
+        return program
 
     def __contains__(self, name: str) -> bool:
-        return name.casefold() in self._programs
+        return self._resolve(name) is not None
 
     def programs(self) -> Mapping[str, SattLineProgram]:
         """Read-only canonical view over the loaded programs."""
@@ -157,31 +226,52 @@ class SattLineProject:
         return tuple(sorted({program.library for program in self._programs.values() if program.library is not None}))
 
     def dependencies_of(self, name: str) -> tuple[str, ...]:
-        """Declared dependencies (as spelled) of ``name``, in declaration order."""
+        """Declared dependencies (as spelled) of ``name``, in declaration order.
+
+        Every returned name designates a loaded unit in a project that came from
+        :meth:`load`, so a caller can pass each one back to :meth:`get`.
+        """
         return self.get(name).dependencies
+
+    def _unit_key(self, name: str) -> str:
+        """The language identity of the unit *name* designates.
+
+        The argument is resolved through :meth:`_resolve` first, so a
+        ``programs()`` view key or an alias compares as the unit it names rather
+        than as its own spelling. A name that designates no unit keeps its own
+        identity, which is what lets a project built with ``from_programs``
+        compare a declared dependency it does not hold.
+        """
+        program = self._resolve(name)
+        return UnitIdentity.of(program.name if program is not None else name).key
 
     def dependents_of(self, name: str) -> tuple[str, ...]:
         """Loaded programs declaring ``name`` as a dependency, in load order.
 
-        Like :meth:`dependencies_of`, the answer is spelled the way each
-        dependent declared itself, so a caller can pass a returned name back to
-        :meth:`get` and read the same program's ``name``.
+        The argument is resolved first, so a view key or an alias designates the
+        unit it names. Like :meth:`dependencies_of`, the answer is spelled the
+        way each dependent declared itself, so a caller can pass a returned name
+        back to :meth:`get` and read the same program's ``name``.
         """
-        key = name.casefold()
+        target = self._unit_key(name)
         return tuple(
             program.name
             for program in self._programs.values()
-            if key in (dependency.casefold() for dependency in program.dependencies)
+            if any(self._unit_key(dependency) == target for dependency in program.dependencies)
         )
 
     def graph(self) -> DependencyGraph:
         """Derived dependency graph: sorted nodes, all declared edges.
 
-        Edge endpoints are canonical (casefolded) identities; edges may reference
-        dependency names that are not themselves nodes until full resolution.
+        Edge endpoints are canonical (casefolded) identities. A declared
+        dependency that resolved to a loaded unit points at that unit's view key,
+        including when the dependency used an alias, so every endpoint of a
+        loaded project is also a node. A project assembled directly with
+        ``from_programs`` may declare an edge to a program it does not hold; that
+        edge keeps the declared spelling's view key and names no node.
         """
         edges = tuple(
-            (owner, dependency.casefold())
+            (owner, self._view_key(dependency))
             for owner, program in self._programs.items()
             for dependency in program.dependencies
         )

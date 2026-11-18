@@ -92,13 +92,15 @@ def test_named_sequence_layers_raise() -> None:
         format_module(ModuleDef(seq_layers={"A": 1.0}))
 
 
-def test_an_empty_equation_gets_a_placeholder_comment() -> None:
+def test_an_empty_equation_is_written_as_a_bare_header() -> None:
     module = ModuleDef()
     code = ModuleCode(equationblocks=[Equation(name=None, position=None, size=None, code=[])])
 
     text = _render(module, code)
 
-    assert "(* empty *)" in text
+    assert "EQUATIONBLOCK :\n" in text
+    # An invented ``(* empty *)`` became a real comment node on reparse.
+    assert "(* empty *)" not in text
 
 
 def test_a_comment_in_a_sequence_body_is_written_once() -> None:
@@ -398,3 +400,15 @@ def test_a_clipping_clause_with_a_partially_grouped_tail_raises() -> None:
         format_module(
             ModuleDef(clipping=ClippingClause(((-1.0, -1.0), (1.0, 1.0)), (tail,), corner_tails=((), (), (), ())))
         )
+
+
+def test_more_than_two_header_description_comments_raise() -> None:
+    picture = _picture()
+    picture.header.description_comments = [
+        CodeComment("(* one *)"),
+        CodeComment("(* two *)"),
+        CodeComment("(* three *)"),
+    ]
+
+    with pytest.raises(UnsupportedFormattingError, match="one comment position"):
+        format_source(picture)

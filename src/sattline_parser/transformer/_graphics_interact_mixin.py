@@ -30,10 +30,22 @@ from sattline_parser.models.clauses import (
 from sattline_parser.models.expressions import SLExpression, VarRef
 from sattline_parser.models.properties import GraphProperties, InteractBodyEntry, InteractProperties
 from sattline_parser.models.tails import Tail
+from sattline_parser.names import fold_identifier
 
 from ._comments_mixin import code_comments_from_run, is_comment_tree
 from ._module_shared import InterimCoords, TextContent, TransformerItem, TransformerTree, meta_span, v_args
 from ._payloads import CommonProperties
+from ._tokens_mixin import token_span
+
+#: The folded spellings the colour and text-object clauses compare their keys
+#: against. A source may write ``Width_`` or ``WIDTH_``; the model keeps the
+#: written spelling, so the comparison has to fold through the identifier table.
+_WIDTH_KEY_FOLDED = fold_identifier(const.GRAMMAR_VALUE_WIDTH_KEY)
+_VALUE_FRACTION_FOLDED = fold_identifier(const.GRAMMAR_VALUE_VALUEFRACTION)
+_FORMAT_STRING_FOLDED = fold_identifier(const.GRAMMAR_VALUE_FORMAT_STRING)
+_COLOUR_STYLE_FOLDED = fold_identifier(const.GRAMMAR_VALUE_COLOURSTYLE)
+#: The two terminals the ``combutproc_item`` rule accepts.
+_PROCEDURE_INTERACTOR_TOKENS = frozenset({"COMBUTPROC", "PROCEDUREINTERACT"})
 
 
 def _is_coord_pair(value: object) -> TypeGuard[CoordPair]:
@@ -128,20 +140,34 @@ def _text_object_properties(go: GraphObject, items: list[TransformerItem]) -> No
     Each clause keeps its own value and tail, so a literal and its binding are
     one payload. The object's flat ``tails`` view still lists the same tail
     objects, and the walk emits each of them once.
+
+    The rule repeats, but ``Width_``, ``ValueFraction``, ``Format_String_``, and
+    ``ConnectionNode`` are singular properties: a second one is ambiguous, so it
+    is rejected instead of silently overwriting the first and losing its tail.
+    Keys are compared through the identifier fold table, because the model keeps
+    the written spelling and a source may write ``WIDTH_``.
     """
     alignments: list[Alignment] = []
     for item in items:
         if isinstance(item, TailedClause):
-            folded = item.key.casefold()
-            if folded == const.GRAMMAR_VALUE_WIDTH_KEY.casefold():
+            folded = fold_identifier(item.key)
+            if folded == _WIDTH_KEY_FOLDED:
+                if const.KEY_WIDTH in go.properties:
+                    raise ValueError("text object has more than one Width_ clause")
                 go.properties[const.KEY_WIDTH] = item
-            elif folded == const.GRAMMAR_VALUE_VALUEFRACTION.casefold():
+            elif folded == _VALUE_FRACTION_FOLDED:
+                if const.KEY_VALUE_FRACTION in go.properties:
+                    raise ValueError("text object has more than one ValueFraction clause")
                 go.properties[const.KEY_VALUE_FRACTION] = item
-            elif folded == const.GRAMMAR_VALUE_FORMAT_STRING.casefold():
+            elif folded == _FORMAT_STRING_FOLDED:
+                if const.KEY_FORMAT_STRING in go.properties:
+                    raise ValueError("text object has more than one Format_String_ clause")
                 go.properties[const.KEY_FORMAT_STRING] = item
         elif isinstance(item, Alignment):
             alignments.append(item)
         elif isinstance(item, GraphObject) and item.type == const.GRAMMAR_VALUE_CONNECTIONNODE:
+            if const.KEY_CONNECTION_NODE in go.properties:
+                raise ValueError("text object has more than one ConnectionNode clause")
             go.properties[const.KEY_CONNECTION_NODE] = item
     if alignments:
         go.properties[const.KEY_ALIGNMENTS] = alignments
@@ -158,7 +184,9 @@ class _GraphicsInteractMixin:
         """Grammar common_properties -> layer/enable/colour content.
 
         ``connection_node_bare`` markers are position-only and carry no property
-        payload, so they are skipped rather than merged.
+        payload, so they are skipped rather than merged. The rule repeats, but
+        ``Layer_`` and ``Enable_`` are singular properties: a second one is
+        ambiguous, so it is rejected instead of silently overwriting the first.
         """
         layer: int | None = None
         enable: EnableClause | None = None
@@ -167,8 +195,12 @@ class _GraphicsInteractMixin:
             if is_comment_tree(item) or isinstance(item, GraphObject):
                 continue
             if isinstance(item, int) and not isinstance(item, bool):
+                if layer is not None:
+                    raise ValueError("graph object has more than one Layer_ clause")
                 layer = item
             elif isinstance(item, EnableClause):
+                if enable is not None:
+                    raise ValueError("graph object has more than one Enable_ clause")
                 enable = item
             elif isinstance(item, ColourSpec):
                 colours.append(item)
@@ -293,14 +325,27 @@ class _GraphicsInteractMixin:
         items: list[TransformerItem],
         span: SourceSpan | None = None,
     ) -> ColourSpec:
+        """Build the colour block from its width, assignments, and style clauses.
+
+        Clause keys are compared through the identifier fold table, because the
+        model keeps the written spelling and a source may write ``WIDTH_``. The
+        grammar allows one ``Width_`` and one ``ColourStyle``; a repeat is
+        rejected rather than silently overwriting the earlier clause and losing
+        its tail.
+        """
         width: TailedClause | None = None
         assignments: tuple[TailedClause, ...] = ()
         style: TailedClause | None = None
         for item in items:
             if isinstance(item, TailedClause):
-                if item.key == const.GRAMMAR_VALUE_WIDTH_KEY:
+                folded = fold_identifier(item.key)
+                if folded == _WIDTH_KEY_FOLDED:
+                    if width is not None:
+                        raise ValueError("colour block has more than one Width_ clause")
                     width = item
-                elif item.key == const.GRAMMAR_VALUE_COLOURSTYLE:
+                elif folded == _COLOUR_STYLE_FOLDED:
+                    if style is not None:
+                        raise ValueError("colour block has more than one ColourStyle clause")
                     style = item
             elif isinstance(item, tuple):
                 assignments = cast(tuple[TailedClause, ...], item)
@@ -337,24 +382,28 @@ class _GraphicsInteractMixin:
         return go
 
     def _text_vars(self, items: list[TransformerItem]) -> list[VarRef]:
+        """Bind each ``VarName`` marker to the text written immediately before it.
+
+        A marker is a postfix of one ``text_content``. Binding the nearest
+        earlier non-empty text let a marker reach past an empty string and take a
+        caption it was not written after, so the rule is positional: the
+        immediately preceding item (comments carry no text and are skipped) must
+        be the text. A marker with no text before it is a grammar-legal shape;
+        it is kept as an empty label instead of raising, because the transformer
+        does not validate and the formatter can write it back.
+        """
         text_vars: list[VarRef] = []
         for index, item in enumerate(items):
             if not (isinstance(item, Token) and item.type == const.TOKEN_VARNAME):
                 continue
             previous = index - 1
-            while previous >= 0:
-                candidate = items[previous]
-                if is_comment_tree(candidate):
-                    previous -= 1
-                    continue
-                if not isinstance(candidate, TextContent):
-                    raise ValueError(
-                        f"_text_vars expected a TextContent before VarName; got {type(candidate).__name__}"
-                    )
-                if candidate.text:
-                    text_vars.append(VarRef(candidate.text, span=candidate.span))
-                    break
+            while previous >= 0 and is_comment_tree(items[previous]):
                 previous -= 1
+            candidate = items[previous] if previous >= 0 else None
+            if isinstance(candidate, TextContent):
+                text_vars.append(VarRef(candidate.text, span=candidate.span))
+            else:
+                text_vars.append(VarRef("", span=token_span(item)))
         return text_vars
 
     def text_object(self, items: list[TransformerItem]) -> GraphObject:
@@ -469,39 +518,27 @@ class _GraphicsInteractMixin:
 
     @v_args(meta=True)
     def graph_object(self, meta: Any, items: list[TransformerItem]) -> GraphObject:
-        """Grammar graph_object -> GraphObject with optional layer and its span."""
-        obj: GraphObject | None = None
-        layer: int | None = None
-        for it in items:
-            if isinstance(it, GraphObject) and obj is None:
-                obj = it
-            elif isinstance(it, int) and not isinstance(it, bool):
-                layer = it
+        """Grammar graph_object -> GraphObject with its span.
 
-        if obj is None:
-            types = ", ".join(type(x).__name__ for x in items)
-            raise ValueError(f"graph_object expected a GraphObject in items; got: {types}")
-
-        if layer is not None:
-            obj.properties[const.KEY_LAYER] = layer
-        obj.span = meta_span(meta)
-        return obj
+        The rule wraps one concrete object rule. A ``Layer_`` is written inside
+        that rule's ``common_properties`` and arrives on the object, never as a
+        separate child here, so there is no layer to apply.
+        """
+        for item in items:
+            if isinstance(item, GraphObject):
+                item.span = meta_span(meta)
+                return item
+        types = ", ".join(type(x).__name__ for x in items)
+        raise ValueError(f"graph_object expected a GraphObject in items; got: {types}")
 
     def graph_objects(self, items: list[TransformerItem]) -> list[GraphObject]:
         """Grammar graph_objects -> list of GraphObjects.
 
-        A section-level ``Layer_ = N`` applies to every object in the section
-        (the grammar allows at most one ``layer_info`` per ``GraphObjects``
-        section), so it is propagated onto objects that do not declare their
-        own explicit layer rather than being silently dropped.
+        ``graph_objects: GRAPHOBJECTS ":" (comments | graph_object)+`` takes no
+        section-level layer: each object's layer comes from its own
+        ``common_properties``, which is where the source writes it.
         """
-        section_layer = next((it for it in items if isinstance(it, int) and not isinstance(it, bool)), None)
-        objects = [it for it in items if isinstance(it, GraphObject)]
-        if section_layer is not None:
-            for obj in objects:
-                if const.KEY_LAYER not in obj.properties:
-                    obj.properties[const.KEY_LAYER] = section_layer
-        return objects
+        return [item for item in items if isinstance(item, GraphObject)]
 
     def interact_objects(self, items: list[TransformerItem]) -> list[InteractObject]:
         """Grammar interact_objects -> list of InteractObjects."""
@@ -527,7 +564,14 @@ class _GraphicsInteractMixin:
 
     @v_args(meta=True)
     def combutproc_item(self, meta: Any, items: list[TransformerItem]) -> InteractObject:
-        """Grammar combutproc_item -> InteractObject (COMBUTPROC with coordinates and procedure)."""
+        """Grammar combutproc_item -> InteractObject (procedure interactor).
+
+        The rule accepts ``ComButProc_`` and ``ProcedureInteract``, and the two
+        are kept as written: ``InteractObject.type`` is the written spelling for
+        every interactor, so the formatter can write the keyword back and
+        ``InteractObject.kind`` provides the folded comparison.
+        """
+        itype = const.GRAMMAR_VALUE_COMBUTPROC
         coords: list[CoordPair | CoordBox] = []
         procedure: ProcedureCall | None = None
         layers: list[int] = []
@@ -536,6 +580,10 @@ class _GraphicsInteractMixin:
         flags: list[FlagClause] = []
         colours: list[ColourSpec] = []
         for item in items:
+            if isinstance(item, Token):
+                if item.type in _PROCEDURE_INTERACTOR_TOKENS:
+                    itype = str(item)
+                continue
             if isinstance(item, InterimCoords):
                 coords.append(_coords_value(item.coords))
             elif isinstance(item, ProcedureCall):
@@ -571,7 +619,7 @@ class _GraphicsInteractMixin:
         if tails:
             properties[const.KEY_TAILS] = tails
         return InteractObject(
-            type=const.GRAMMAR_VALUE_COMBUTPROC,
+            type=itype,
             properties=properties,
             span=meta_span(meta),
         )
@@ -707,6 +755,9 @@ class _GraphicsInteractMixin:
             const.KEY_COORDS: coords or None,
             const.KEY_BODY: body or None,
         }
+        groups = _coordinate_groups(items)
+        if groups:
+            properties[const.KEY_COORD_TAILS] = groups
         tails = _tails_of(items)
         if tails:
             properties[const.KEY_TAILS] = tails

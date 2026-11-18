@@ -19,9 +19,12 @@ lexer instance is shared by the cached parser across parses, so the depth must
 never be stored on ``self``: concurrent parses would otherwise corrupt each
 other's nested-comment state.
 
-To keep the merged LALR states safe, ``COMMENT_END`` and ``COMMENT_TEXT`` are
-removed from every per-state accepted-terminal set (``COMMENT_START`` stays,
-since that is how a comment begins in code context).
+To keep the merged LALR states safe, ``COMMENT_TEXT`` is removed from every
+per-state accepted-terminal set. ``COMMENT_START`` is accepted in every state,
+so a comment opener in a position the grammar does not allow reaches the parser
+as ``(*`` and the diagnostic names it. The fallback root lexer keeps both
+delimiters, so a rejected ``*)`` is reported as the comment end rather than as
+the ``*`` that MULTIPLY matches on its own.
 """
 
 from __future__ import annotations
@@ -118,14 +121,21 @@ class SattLineLexer(ContextualLexer):
             state: [term for term in accepts if term not in _COMMENT_BODY_TERMINALS]
             for state, accepts in states.items()
         }
-        self._stripped_conf = copy(conf)
-        self._stripped_conf.terminals = [term for term in conf.terminals if term.name not in _COMMENT_BODY_TERMINALS]
+        # The fallback root lexer keeps both delimiters so a rejected ``*)`` is
+        # reported as the comment end it spells rather than as the ``*`` that
+        # MULTIPLY matches on its own. Comment text stays out: text without an
+        # opener is not a token in code context.
+        self._root_conf = copy(conf)
+        self._root_conf.terminals = [term for term in conf.terminals if term.name != TOKEN_COMMENT_TEXT]
+        # ``COMMENT_START`` is accepted in every code state, so a comment opener
+        # the grammar rejects reaches the parser as ``(*`` and the diagnostic
+        # names it, instead of reporting the ``*`` that MULTIPLY would match.
         super().__init__(
             conf,
             {state: list(accepts) for state, accepts in stripped_states.items()},
-            always_accept=always_accept,
+            always_accept=[*always_accept, TOKEN_COMMENT_START],
         )
-        self.root_lexer = self.BasicLexer(self._stripped_conf)
+        self.root_lexer = self.BasicLexer(self._root_conf)
 
         comment_conf = copy(conf)
         comment_conf.terminals = [conf.terminals_by_name[name] for name in sorted(COMMENT_TERMINALS)]

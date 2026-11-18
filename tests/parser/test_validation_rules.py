@@ -143,6 +143,40 @@ def test_builtin_argument_datatype_match_is_silent() -> None:
     assert _codes(_bp(call, variables=[_var("Text", "string")])) == []
 
 
+def test_anytype_argument_is_exempt_from_the_builtin_argument_rule() -> None:
+    """``AnyType`` proves nothing about the value, so the parameter accepts it."""
+    call = FuncCallStmt(FuncCall(name="ClearStatusMac", args=(VarRef("Raw"),)))
+    assert _codes(_bp(call, variables=[_var("Raw", "AnyType")])) == []
+
+
+def test_string_literal_is_accepted_for_a_documented_in_string_parameter() -> None:
+    """A documented ``in`` String parameter names a value, so the literal is legal."""
+    call = FuncCallStmt(FuncCall(name="LoggedIn", args=("operator",)))
+    assert _codes(_bp(call, variables=[])) == []
+
+
+def test_string_literal_is_rejected_for_an_unknown_callee() -> None:
+    """No signature means no evidence that the callee takes a value there."""
+    call = FuncCallStmt(FuncCall(name="UserProcedure", args=("text",)))
+    assert _codes(_bp(call, variables=[])) == ["SL-V015"]
+
+
+def test_string_literal_is_rejected_for_a_written_string_parameter() -> None:
+    """CopyString's destination is an ``out`` buffer, not a value position."""
+    call = FuncCallStmt(FuncCall(name="CopyString", args=(VarRef("Source"), "text", VarRef("Status"))))
+    codes = _codes(_bp(call, variables=[_var("Source", "string"), _var("Status", "integer")]))
+    assert "SL-V015" in codes
+    assert "SL-V014" in codes
+
+
+def test_string_literal_is_rejected_for_an_in_var_string_parameter() -> None:
+    """An ``in var`` parameter names a buffer, so a literal is not a value there."""
+    call = FuncCallStmt(FuncCall(name="StringLength", args=("text",)))
+    codes = _codes(_bp(call, variables=[]))
+    assert "SL-V015" in codes
+    assert "SL-V046" in codes
+
+
 def test_step_auto_variable_hold_requires_seqcontrol() -> None:
     step = SFCStep(kind="init", name="S1", code=SFCCodeBlocks())
     bp = BasePicture(header=_header())
@@ -324,6 +358,18 @@ def test_arithmetic_rejects_non_numeric_operands() -> None:
 
 def test_assignment_to_plain_string_is_rejected() -> None:
     assert _codes(_bp(Assignment(VarRef("Text"), 1), variables=[_var("Text", "string")])) == ["SL-V045", "SL-V029"]
+
+
+def test_direct_assignment_is_rejected_only_for_the_plain_string_datatype() -> None:
+    """``SL-V045`` covers ``String``; the other string families stay silent.
+
+    Nothing establishes that the language forbids assigning directly to an
+    ``IdentString``, ``TagString``, ``MaxString``, or ``LineString``, so the rule
+    does not guess. See docs/validation.md, "Open questions".
+    """
+    for datatype in ("identstring", "tagstring", "maxstring", "linestring"):
+        assert _codes(_bp(Assignment(VarRef("Text"), "value"), variables=[_var("Text", datatype)])) == [], datatype
+    assert _codes(_bp(Assignment(VarRef("Text"), "value"), variables=[_var("Text", "string")])) == ["SL-V045"]
 
 
 def test_temporal_numeric_pair_rejects_none() -> None:

@@ -1,5 +1,6 @@
 {
   "fixtures": {
+    "edge_cases/AnyTypeBuiltinArgument.s": [],
     "edge_cases/ArithmeticPrecedence.s": [],
     "edge_cases/BareDurationZero.s": [],
     "edge_cases/CaseInsensitiveIdentifiers.s": [],
@@ -27,9 +28,18 @@
     "edge_cases/SequenceAlternative.s": [],
     "edge_cases/SequenceWithoutInitStep.s": [],
     "edge_cases/SimpleModuleTypeInvocation.s": [],
+    "edge_cases/StringLiteralLoggedIn.s": [],
     "edge_cases/SubSequenceTransition.s": [],
     "edge_cases/TimeValueInit.s": [],
     "edge_cases/UnicodeIdentifiers.s": [],
+    "invalid/AmbiguousDatatypeTypo.s": [
+      {
+        "code": "SL-V020",
+        "column": 4,
+        "length": 7,
+        "line": 15
+      }
+    ],
     "invalid/AmbiguousForkTarget.s": [
       {
         "code": "SL-V021",
@@ -158,6 +168,14 @@
     "invalid/DeepExpressionChain.s": [
       {
         "parse_error": true
+      }
+    ],
+    "invalid/DirectStringAssignment.s": [
+      {
+        "code": "SL-V045",
+        "column": 7,
+        "length": 14,
+        "line": 23
       }
     ],
     "invalid/DottedMappingFieldMismatch.s": [
@@ -394,6 +412,14 @@
         "line": 27
       }
     ],
+    "invalid/StaleMappingTarget.s": [
+      {
+        "code": "SL-V048",
+        "column": 7,
+        "length": 19,
+        "line": 36
+      }
+    ],
     "invalid/StandaloneSeqBreak.s": [
       {
         "parse_error": true
@@ -402,8 +428,8 @@
     "invalid/StringLiteralInCallArgument.s": [
       {
         "code": "SL-V015",
-        "column": 17,
-        "length": 37,
+        "column": 7,
+        "length": 25,
         "line": 22
       }
     ],

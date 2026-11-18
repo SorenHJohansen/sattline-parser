@@ -1,0 +1,1 @@
+- **Sequence openers must match their closers.** `SEQUENCE` must end with `ENDSEQUENCE` and `OPENSEQUENCE` with `ENDOPENSEQUENCE`; a mismatched pair is now a parse error instead of a sequence whose type and closer disagree.

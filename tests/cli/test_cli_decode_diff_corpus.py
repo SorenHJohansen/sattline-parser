@@ -166,6 +166,23 @@ def test_diff_reports_a_source_that_stops_parsing(tmp_path, capsys) -> None:
     assert "does not parse" in out
 
 
+def test_diff_reports_no_count_changes_when_a_side_does_not_parse(tmp_path, capsys) -> None:
+    old = write_source(tmp_path, "Old.s", VALID_SOURCE)
+    new = write_source(tmp_path, "New.s", '"only one header"\n')
+
+    assert main(["diff", str(old), str(new), "--json"]) == ExitCode.FINDINGS
+
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["old"]["parsed"] is True
+    assert payload["new"]["parsed"] is False
+    # A missing summary is not a set of zero counts, so no count is reported as
+    # changed from null.
+    assert payload["counts"]["changed"] == {}
+
+    assert main(["diff", str(old), str(new)]) == ExitCode.FINDINGS
+    assert "~" not in capsys.readouterr().out
+
+
 def test_diff_reports_removed_findings_and_an_unparseable_old(tmp_path, capsys) -> None:
     old = write_source(tmp_path, "Old.s", CONSECUTIVE_STEPS_SOURCE)
     new = write_source(tmp_path, "New.s", VALID_SOURCE)

@@ -338,7 +338,10 @@ def builtin_type_matches(
 ) -> bool:
     normalized_actual = _normalize(actual)
     normalized_expected = _normalize(expected)
-    if is_anytype_datatype(normalized_expected):
+    # ``AnyType`` proves nothing about the value on either side: the parameter
+    # may accept anything, and an actual of that type may be anything. The
+    # documented exemption is symmetrical, so both sides are waved through.
+    if is_anytype_datatype(normalized_expected) or is_anytype_datatype(normalized_actual):
         return True
     expected_name = fold_identifier(format_datatype(normalized_expected))
     if expected_name == "TOBJECT":
@@ -543,9 +546,14 @@ def suggest_datatype_name(name: str, known_datatypes: AbcSequence[str]) -> str |
     Candidates that are a strict prefix of the unknown name are skipped: such
     names extend the candidate (``Timer`` extends ``time``) rather than
     misspelling it.
+
+    Two candidates at the same closest distance are a tie, and a tie returns
+    ``None``. The winner would otherwise be the first candidate the caller
+    happened to pass in, so the suggestion would depend on iteration order
+    rather than on evidence.
     """
-    best_match: str | None = None
     best_distance: int | None = None
+    matches: list[str] = []
     name_folded = fold_identifier(name)
     for candidate in known_datatypes:
         distance = _bounded_levenshtein(name, candidate, max_distance=_TYPO_SUGGESTION_MAX_DISTANCE)
@@ -555,9 +563,13 @@ def suggest_datatype_name(name: str, known_datatypes: AbcSequence[str]) -> str |
         if name_folded.startswith(candidate_folded):
             continue
         if best_distance is None or distance < best_distance:
-            best_match = candidate
             best_distance = distance
-    return best_match
+            matches = [candidate]
+        elif distance == best_distance:
+            folded_matches = {fold_identifier(match) for match in matches}
+            if candidate_folded not in folded_matches:
+                matches.append(candidate)
+    return matches[0] if len(matches) == 1 else None
 
 
 __all__ = [

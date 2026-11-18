@@ -20,11 +20,19 @@ from sattline_parser.models.ast_model import (
     SourceSpan,
     Variable,
 )
-from sattline_parser.models.clauses import ClippingClause, ModuleArguments, ModuleMarker, ZoomLimits
+from sattline_parser.models.clauses import (
+    ClippingClause,
+    EnableClause,
+    ModuleArguments,
+    ModuleInViewClause,
+    ModuleMarker,
+    ZoomLimits,
+)
 from sattline_parser.models.expressions import VarRef
 from sattline_parser.models.tails import VarTail
 from sattline_parser.transformer._module_shared import GLOBAL_KEYWORD, CoordTail, GroupConnInfo, InterimCoords
 from sattline_parser.transformer._payloads import Grid, ModuleOptions, SeqLayers, TwoLayers, Zoomable
+from sattline_parser.transformer._tokens_mixin import DURATION_VALUE_SENTINEL
 
 from ._parser_core_test_support import _module_header, _ModulesHarness
 
@@ -229,7 +237,7 @@ def test_modules_mixin_transfer_and_variable_helpers_cover_fallback_branches():
         [
             VarRef("Target"),
             GLOBAL_KEYWORD,
-            parser_const.GRAMMAR_VALUE_DURATION_VALUE,
+            DURATION_VALUE_SENTINEL,
             {parser_const.GRAMMAR_VALUE_TIME_VALUE: "T#5S"},
         ],
     )
@@ -293,7 +301,9 @@ def test_modules_mixin_layout_helpers_cover_moduledef_and_numeric_errors():
     assert mixin.ZOOMABLE(None) == Zoomable()
     assert mixin.grid([Token("JUNK", ","), 0.5, 1.5]) == Grid(1.5)
     assert mixin.two_layers([Token("JUNK", ":"), 3.0]) == TwoLayers(3.0)
-    assert mixin.moduledef_opts([Grid(0.5), Grid(0.75)]) == ModuleOptions(grid=0.75)
+    # A singular module option written twice is ambiguous, not last-wins.
+    with pytest.raises(ValueError, match="Grid"):
+        mixin.moduledef_opts([Grid(0.5), Grid(0.75)])
 
     moduledef = mixin.moduledef(
         Meta(),
@@ -366,3 +376,92 @@ def test_variable_modifier_scan_stops_at_an_unknown_bare_string():
     assert not any(flags.values())
     assert order == ()
     assert index == 0
+
+
+def test_a_bare_time_value_keeps_no_keyword_text() -> None:
+    mixin = _ModulesHarness()
+
+    assert mixin.time_value([Token("TIME_VALUE", "Time_Value")]) == {parser_const.GRAMMAR_VALUE_TIME_VALUE: None}
+    assert mixin.time_value([Token("TIME_VALUE", "Time_Value"), "1h"]) == {parser_const.GRAMMAR_VALUE_TIME_VALUE: "1h"}
+
+
+def test_a_bare_duration_value_initializer_keeps_the_marker() -> None:
+    mixin = _ModulesHarness()
+
+    variables = mixin.variable_group(
+        [
+            ("D", None, None),
+            "duration",
+            (None, True),
+        ]
+    )
+
+    assert variables[0].init_value is None
+    assert variables[0].init_is_duration is True
+
+
+def test_a_quoted_duration_value_literal_is_not_the_keyword() -> None:
+    mixin = _ModulesHarness()
+
+    mapping = mixin.moduletype_par_transfer(
+        SimpleNamespace(line=2, column=1, start_pos=10, end_pos=20),
+        [VarRef("Target"), "Duration_Value"],
+    )
+
+    assert mapping.is_duration is False
+    assert mapping.source_literal == "Duration_Value"
+    assert mapping.source is None
+
+
+def test_repeated_singular_header_arguments_are_rejected() -> None:
+    mixin = _ModulesHarness()
+    meta = SimpleNamespace(line=2, column=1, start_pos=10, end_pos=20)
+
+    cases = [
+        (1, 2, "Layer_"),
+        (EnableClause(True), EnableClause(False), "Enable_"),
+        (ModuleInViewClause(True), ModuleInViewClause(False), "Module_In_View"),
+        (ZoomLimits(1.0, 2.0), ZoomLimits(3.0, 4.0), "ZoomLimits"),
+    ]
+    for first, second, label in cases:
+        with pytest.raises(ValueError, match=label):
+            mixin.arguments(meta, [first, second])
+
+
+def test_a_frame_module_keeps_its_parameter_mappings() -> None:
+    mixin = _ModulesHarness()
+    mapping = ParameterMapping(
+        target=VarRef("Target"),
+        source_type=MappingSource.VALUE,
+        is_source_global=False,
+        is_duration=False,
+        source_literal=1,
+    )
+    parameter_tree = Tree(parser_const.TREE_TAG_MODULETYPE_PAR_LIST, [mapping])
+
+    frame = mixin.invocation_new_module([True, _module_header("Frame"), ModuleDef(), parameter_tree])
+
+    assert isinstance(frame, FrameModule)
+    assert frame.parametermappings == [mapping]
+
+
+def test_repeated_singular_module_options_are_rejected() -> None:
+    mixin = _ModulesHarness()
+
+    with pytest.raises(ValueError, match="ZoomLimits"):
+        mixin.moduledef_opts([ZoomLimits(1.0, 2.0), ZoomLimits(3.0, 4.0)])
+    with pytest.raises(ValueError, match="Two_Layers_"):
+        mixin.moduledef_opts([TwoLayers(1.0), TwoLayers(2.0)])
+    # A repeated marker is idempotent, not ambiguous.
+    assert mixin.moduledef_opts([Zoomable(), Zoomable()]) == ModuleOptions(zoomable=True)
+
+
+def test_an_empty_argument_list_carries_no_span() -> None:
+    picture = parser_core_parse_source_text(
+        '"SyntaxVersion"\n"OriginalFileDate"\n"ProgramDate"\n'
+        "BasePicture Invocation (0.0,0.0,0.0,1.0,1.0) : MODULEDEFINITION DateCode_ 1\n"
+        "ModuleDef\nClippingBounds = ( -1.0 , -1.0 ) ( 1.0 , 1.0 )\nENDDEF (*BasePicture*);\n"
+    )
+
+    assert picture.header.arguments.span is None
+    assert picture.header.declaration_span is not None

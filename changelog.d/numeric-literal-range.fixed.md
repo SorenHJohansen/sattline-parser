@@ -1,0 +1,1 @@
+- **Out-of-range numeric literals are reported.** An integer or real literal that exceeds the supported 32-bit range now reports `SL-V059` at its source position instead of being clamped without a finding.

@@ -1,0 +1,1 @@
+- **Workers no longer touch the AST cache.** A worker process opens the cache through a read-only handle: it does not prune entries, rewrite the identity marker, move an entry's mtime, or write one. A parallel load leaves the cache file set, the marker bytes, and every mtime unchanged.

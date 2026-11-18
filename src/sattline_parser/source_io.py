@@ -13,7 +13,7 @@ import getpass
 import os
 import stat
 import sys
-from collections.abc import Callable, Collection, Generator, Sequence
+from collections.abc import Callable, Collection, Generator
 from contextlib import contextmanager
 from functools import lru_cache
 from hashlib import sha256
@@ -23,9 +23,9 @@ from typing import NoReturn, Protocol, cast
 
 from lark import Lark, Token, Tree
 from lark import __version__ as lark_version
-from lark.exceptions import VisitError
+from lark.exceptions import UnexpectedInput, VisitError
 
-from sattline_parser.models.ast_model import BasePicture, DataType, ModuleTypeDef
+from sattline_parser.models.ast_model import BasePicture
 from sattline_parser.source_document import (
     SourceDocument,
     mark_remapped,
@@ -33,8 +33,8 @@ from sattline_parser.source_document import (
     remap_tree_to_original,
 )
 from sattline_parser.transformer.sl_transformer import SLTransformer
-from sattline_parser.validation import Diagnostic, validate_basepicture
 
+from ._cache_security import windows_directory_is_private
 from .errors import (
     SourceTooDeepError,
     _log_parser_failure,  # pyright: ignore[reportPrivateUsage]  # imported for internal use
@@ -161,8 +161,11 @@ def _source_too_deep_error(node: object | None = None) -> SourceTooDeepError:
 
 
 # ``os.getuid`` is POSIX-only. Resolving it once keeps the platform probe out of
-# the hot path and lets the tests drive both cases on any platform.
+# the hot path and lets the tests drive both cases on any platform. Windows has
+# no POSIX owner check at all, so it is dispatched to the security-descriptor
+# reader instead; the flag is resolved once for the same reason.
 _getuid: Callable[[], int] | None = getattr(os, "getuid", None)
+_IS_WINDOWS = os.name == "nt"
 
 
 def _cache_owner_token() -> str:
@@ -172,58 +175,77 @@ def _cache_owner_token() -> str:
     return str(_getuid())
 
 
-def _private_directory(path: Path) -> Path | None:
-    """Create or validate one cache directory level ``0700``.
+def _private_directory(path: Path, *, create: bool = True) -> Path | None:
+    """Create or validate one cache directory level as private.
 
     ``lstat`` is deliberate: a symlink is never followed, so a planted link
     cannot redirect a cache write into a directory this user did not create. A
-    level that exists with the wrong owner, or that cannot be tightened to
-    ``0700``, disables the cache (fail closed).
+    level that exists with the wrong owner, that cannot be tightened to
+    ``0700``, or whose Windows security descriptor cannot be proven private
+    disables the cache (fail closed). A platform with no privacy check at all
+    is refused rather than trusted. ``create=False`` is the read-only form: the
+    directory must already exist and is never created or tightened.
     """
-    try:
-        path.mkdir(mode=_CACHE_DIR_MODE)
-    except FileExistsError:
-        pass
-    except OSError:
-        return None
+    if create:
+        try:
+            path.mkdir(mode=_CACHE_DIR_MODE)
+        except FileExistsError:
+            pass
+        except OSError:
+            return None
     try:
         info = path.lstat()
     except OSError:
         return None
     if not stat.S_ISDIR(info.st_mode):
         return None
-    # Ownership and POSIX permission bits are the only check available here.
-    # Windows reports ``0o777`` for every directory and only toggles the
-    # read-only attribute through ``chmod``, so the mode rule stays POSIX-only.
-    if _getuid is not None:
-        if info.st_uid != _getuid():
+    if _IS_WINDOWS:
+        # Windows reports ``0o777`` for every directory and only toggles the
+        # read-only attribute through ``chmod``, so the owner and DACL are the
+        # only real check: mode bits say nothing there.
+        return path if windows_directory_is_private(path) else None
+    if _getuid is None:
+        # No POSIX owner check exists on this platform, so privacy cannot be
+        # established. The cache is an optimisation and is disabled instead.
+        return None
+    if info.st_uid != _getuid():
+        return None
+    if info.st_mode & 0o077:
+        if not create:
+            return None
+        try:
+            path.chmod(_CACHE_DIR_MODE)
+            info = path.lstat()
+        except OSError:
             return None
         if info.st_mode & 0o077:
-            try:
-                path.chmod(_CACHE_DIR_MODE)
-                info = path.lstat()
-            except OSError:
-                return None
-            if info.st_mode & 0o077:
-                return None
+            return None
     return path
 
 
-def private_cache_dir(path: Path) -> Path | None:
+def private_cache_dir(path: Path, *, create: bool = True) -> Path | None:
     """Create ``path`` as a private directory, or return ``None``.
 
     Parents are created with the process umask (so a missing ``.cache`` level
     stays usable), and the final directory is created ``0700``. It is reused
-    only when ``lstat`` shows a real directory owned by this user with no group
-    or world bits set. Anything else (a read-only temp directory, a symlink, a
-    directory planted by another user) disables the cache instead of following
-    or tightening a path this process does not own.
+    only when the platform proves that this user owns it privately: on POSIX a
+    real directory owned by this user with no group or world bits, and on
+    Windows a real directory, not a reparse point, whose owner is this user and
+    whose DACL grants write access to nobody else. Anything else (a read-only
+    temp directory, a symlink, a directory planted by another user, a failed
+    security-descriptor read) disables the cache instead of following or
+    tightening a path this process does not own.
+
+    ``create=False`` is for a reader such as a worker process: the directory
+    must already exist and be private, and this call never creates or changes
+    it.
     """
-    try:
-        path.parent.mkdir(parents=True, exist_ok=True)
-    except OSError:
-        return None
-    return _private_directory(path)
+    if create:
+        try:
+            path.parent.mkdir(parents=True, exist_ok=True)
+        except OSError:
+            return None
+    return _private_directory(path, create=create)
 
 
 def _parser_cache_dir() -> Path | None:
@@ -537,6 +559,28 @@ def _raise_source_too_deep(
     raise deep_error from exc
 
 
+def _transform_tree(transformer: SLTransformer, tree: Tree[Token]) -> object:
+    """Transform *tree*, reporting a transformer rejection as its own error.
+
+    Lark wraps every exception raised inside a rule callback in
+    :class:`~lark.exceptions.VisitError`, which is neither a ``ValueError`` nor
+    an ``UnexpectedInput`` and would therefore escape as a parser crash. A
+    rejection of the source, such as a duplicate singular clause or a second
+    module block, is a statement about the source, so the original exception is
+    re-raised from the wrapper and the rest of the pipeline classifies it as a
+    parse failure. A ``RuntimeError`` stays wrapped: it marks a parser defect,
+    and a defect must surface as a traceback instead of being reported as a
+    broken source.
+    """
+    try:
+        return transformer.transform(tree)
+    except VisitError as exc:
+        original = exc.orig_exc
+        if isinstance(original, (ValueError, UnexpectedInput)):
+            raise original from exc
+        raise
+
+
 @contextmanager
 def _stage(
     stage: str,
@@ -616,7 +660,8 @@ def parse_source_text(
     stage failure with its source location before the exception propagates.
 
     This is a pure parse and transform entry point. Use
-    :func:`parse_and_validate` to also run strict single-source validation.
+    :func:`sattline_parser.api.parse_and_validate` to also run strict
+    single-source validation.
     """
     with _stage("decode", src=src, source_path=source_path, log_failures=log_failures):
         source_doc = preprocess_source(src)
@@ -648,7 +693,7 @@ def parse_source_text(
         debug("Parse OK, transforming with SLTransformer")
 
     with _stage("transform", src=src, source_path=source_path, log_failures=log_failures):
-        transformed = active_transformer.transform(tree)
+        transformed = _transform_tree(active_transformer, tree)
         if not isinstance(transformed, BasePicture):
             raise RuntimeError("Transform result is not BasePicture; check transformer.start()")
 
@@ -658,49 +703,6 @@ def parse_source_text(
         debug(f"Transform result type: {type(transformed).__name__}")
 
     return transformed
-
-
-def parse_and_validate(
-    src: str,
-    *,
-    parser: Lark | None = None,
-    transformer: SLTransformer | None = None,
-    debug: Callable[[str], None] | None = None,
-    source_path: Path | None = None,
-    log_failures: bool = True,
-    external_datatypes: Sequence[DataType] = (),
-    external_moduletype_defs: Sequence[ModuleTypeDef] = (),
-    allow_unresolved_external_datatypes: bool = False,
-) -> tuple[BasePicture, tuple[Diagnostic, ...]]:
-    """Parse a SattLine source and run strict single-source validation.
-
-    Returns ``(basepicture, diagnostics)``; ``diagnostics`` is empty for a
-    source that fully validates. ``parse_source_text`` itself stays a pure
-    parse/transform pipeline — callers opt into validation by using this entry
-    point.
-
-    ``external_datatypes`` and ``external_moduletype_defs`` are the definitions
-    visible from units this one depends on, and are the same arguments
-    :func:`validate_basepicture` takes. Pass them when the caller already holds
-    the dependency definitions, so a reference to a record or module type from
-    a dependency resolves instead of dropping to the validator. A caller that
-    has not loaded those definitions, and only wants the unknown-name findings
-    suppressed, sets ``allow_unresolved_external_datatypes`` instead.
-    """
-    basepic = parse_source_text(
-        src,
-        parser=parser,
-        transformer=transformer,
-        debug=debug,
-        source_path=source_path,
-        log_failures=log_failures,
-    )
-    return basepic, validate_basepicture(
-        basepic,
-        external_datatypes=external_datatypes,
-        external_moduletype_defs=external_moduletype_defs,
-        allow_unresolved_external_datatypes=allow_unresolved_external_datatypes,
-    )
 
 
 def parse_source_bytes(

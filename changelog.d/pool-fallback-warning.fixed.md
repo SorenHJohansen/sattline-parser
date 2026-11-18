@@ -1,0 +1,1 @@
+- **Pool fallback warning.** A load that cannot create a worker pool logs a warning before parsing in the current process, so a silent serial load is visible without `--debug`.

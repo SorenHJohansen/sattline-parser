@@ -8,6 +8,7 @@ from sattline_parser.preprocessing import is_compressed, preprocess_source
 from sattline_parser.preprocessing.compressed import (
     _MARKER_RE,
     SCANNER_TOKENS,
+    PreprocessError,
     _align_replacement,
     _decode_markers,
     _decode_with_map,
@@ -372,3 +373,79 @@ def test_scan_opaque_regions_accepts_a_quoted_identifier_of_any_length():
 
 def test_scan_opaque_regions_does_not_mask_across_a_line_break():
     assert scan_opaque_regions("A := 'open\nB := 1;") == []
+
+
+# ---------------------------------------------------------------------------
+# Quoted identifiers: one boundary rule for the scanner and the lexer
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("text", "regions"),
+    [
+        # Two quoted names written back to back are two regions: the lexer reads
+        # each closing quote as the end of a token, so the second one opens a
+        # new quoted name.
+        ("'A''B'", [("S", 0, 3), ("S", 3, 6)]),
+        # An apostrophe inside an unquoted name is name text, so a quoted-looking
+        # tail is not protected.
+        ("A'B'", []),
+        ("Pump'A", []),
+        # A quoted name may start right after a number: the digit is a literal,
+        # not part of the name.
+        ("1'A'", [("S", 1, 4)]),
+        # An empty quote pair is an unquoted name, not a quoted identifier.
+        ("''A", []),
+        # A quoted name never spans a line break.
+        ("'a\nb'", []),
+        # Unterminated: the apostrophe starts an unquoted name instead.
+        ("'unterminated", []),
+        # Quoted names around a marker leave the marker outside every region.
+        ("'a' #84 'b'", [("S", 0, 3), ("S", 8, 11)]),
+    ],
+)
+def test_scan_opaque_regions_matches_the_lexer_quoted_name_boundary(
+    text: str, regions: list[tuple[str, int, int]]
+) -> None:
+    assert scan_opaque_regions(text) == regions
+
+
+def test_a_marker_between_two_quoted_names_is_decoded():
+    src = "\"Syntax version 2.23 C\"\nSomeVar := '#84' #84 '#84';\n"
+
+    document = preprocess_source(src)
+
+    assert document.normalized_text.endswith("SomeVar := '#84' ModuleCode '#84';\n")
+
+
+def test_a_marker_after_a_quoted_looking_name_tail_is_decoded():
+    # ``A'B'`` is one unquoted name, so the marker after it is code, not string
+    # content.
+    src = "\"Syntax version 2.23 C\"\nA'B' #84 X\n"
+
+    document = preprocess_source(src)
+
+    assert document.normalized_text.endswith("A'B' ModuleCode X\n")
+
+
+# ---------------------------------------------------------------------------
+# Diagnostics in original coordinates
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "prefix",
+    [
+        'X := "a fairly long string literal"; ',
+        "(* a comment *) ",
+        "'quoted name' ",
+        'X := "unterminated description\n',
+    ],
+)
+def test_an_unknown_marker_reports_its_original_source_offset(prefix: str) -> None:
+    # The decoder substitutes markers in a copy where strings and comments are
+    # placeholders, so the offset it reports must be mapped back to the source.
+    source = '"Syntax version 2.23 C"\n' + prefix + "#00\n"
+
+    with pytest.raises(PreprocessError, match=rf"at character offset {source.index('#00')}$"):
+        preprocess_source(source)

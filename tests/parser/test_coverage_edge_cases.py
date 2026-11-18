@@ -241,20 +241,21 @@ def test_sfc_sequence_body_extends_nested_lists() -> None:
 def test_sfc_equationblock_appends_code_comments() -> None:
     sfc = SFCMixin()
     comment = CodeComment("(* c *)")
-    equation = sfc.equationblock(["EqA", (1, 2), (3, 4), comment])
+    equation = sfc.equationblock(Meta(), ["EqA", (1, 2), (3, 4), comment])
     assert equation.code == [comment]
 
 
 def test_sequence_with_seq_control_tokens() -> None:
     step = SFCStep(kind="step", name="s", code=SFCCodeBlocks())
     seq = SFCMixin().sequence(
+        Meta(),
         [
             "myseq",
             (5.0, 6.0),
             (7.0, 8.0),
             Tree(const.KEY_SEQ_CONTROL_OPS, [Token(const.GRAMMAR_VALUE_SEQTIMER, "SEQTIMER"), 44]),
             Tree(const.KEY_SEQUENCE_BODY, [step]),
-        ]
+        ],
     )
     assert seq.name == "myseq"
 
@@ -262,24 +263,26 @@ def test_sequence_with_seq_control_tokens() -> None:
 def test_sequence_rejects_invalid_code_item() -> None:
     with pytest.raises(ValueError, match="sequence unexpected code item"):
         SFCMixin().sequence(
+            Meta(),
             [
                 "myseq",
                 (5.0, 6.0),
                 (7.0, 8.0),
                 Tree(const.KEY_SEQUENCE_BODY, ["not an SFC item"]),
-            ]
+            ],
         )
 
 
 def test_sequence_skips_tokens_inside_body() -> None:
     step = SFCStep(kind="step", name="s", code=SFCCodeBlocks())
     seq = SFCMixin().sequence(
+        Meta(),
         [
             "myseq",
             (5.0, 6.0),
             (7.0, 8.0),
             Tree(const.KEY_SEQUENCE_BODY, [Token("STRAY_TOKEN", "x"), step]),
-        ]
+        ],
     )
     assert seq.code == [step]
 

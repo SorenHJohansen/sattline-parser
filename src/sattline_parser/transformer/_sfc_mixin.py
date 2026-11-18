@@ -356,7 +356,8 @@ class SFCMixin:
                 flat.append(item)
         return Tree(const.KEY_SEQUENCE_BODY, flat)
 
-    def sequence(self, items: list[TransformerItem]) -> Sequence:
+    @v_args(meta=True)
+    def sequence(self, meta: Any, items: list[TransformerItem]) -> Sequence:
         """Grammar sequence -> Sequence with name, position, size, seqcontrol/seqtimer flags, code."""
         name: str | None = None
         position: tuple[float, float] | None = None
@@ -413,9 +414,11 @@ class SFCMixin:
             seqtimer=seqtimer,
             code=code,
             layer_info=layer_info,
+            declaration_span=meta_span(meta),
         )
 
-    def equationblock(self, items: list[TransformerItem]) -> Equation:
+    @v_args(meta=True)
+    def equationblock(self, meta: Any, items: list[TransformerItem]) -> Equation:
         """Grammar equationblock -> Equation; name/position/size are optional.
 
         The form accepts ``EQUATIONBLOCK``/``EQUATIONS`` with no name and no
@@ -456,7 +459,15 @@ class SFCMixin:
             else:
                 raise ValueError(f"equationblock unexpected code item: {type(item).__name__}: {item!r}")
 
-        return Equation(kind=kind, name=name, position=position, size=size, code=code, layer_info=layer_info)
+        return Equation(
+            kind=kind,
+            name=name,
+            position=position,
+            size=size,
+            code=code,
+            layer_info=layer_info,
+            declaration_span=meta_span(meta),
+        )
 
 
 __all__ = ["SFCMixin"]

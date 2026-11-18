@@ -23,7 +23,7 @@ from sattline_parser.models.expressions import (
 )
 from sattline_parser.models.tails import LitStringTail, VarTail
 from sattline_parser.transformer._module_shared import GlobalKeyword
-from sattline_parser.transformer._tokens_mixin import DEFAULT_INIT
+from sattline_parser.transformer._tokens_mixin import DEFAULT_INIT, DURATION_VALUE_SENTINEL
 
 from ._parser_core_test_support import _ExpressionsHarness, _parse_to_basepicture, _repo_path, _TokensHarness
 
@@ -58,11 +58,10 @@ def test_tokens_mixin_coerces_supported_terminals_and_keywords():
     assert mixin.OPSAVE_KW(None) == "OpSave"
     assert mixin.SECURE_KW(None) == "Secure"
     assert mixin.DEFAULT(None) is DEFAULT_INIT
-    assert mixin.COLON(None) is None
-    assert mixin.COMMA(None) is None
-    assert mixin.SEMI(None) is None
     assert mixin.ASSIGN_INIT_VALUE(None) is None
-    assert mixin.DURATION_VALUE(None) == parser_const.GRAMMAR_VALUE_DURATION_VALUE
+    # The keyword is an identity sentinel, so a quoted ``"Duration_Value"``
+    # literal can never be read as the keyword.
+    assert mixin.DURATION_VALUE(None) is DURATION_VALUE_SENTINEL
 
 
 def test_tokens_mixin_rejects_invalid_bool_and_bad_datecode_tokens():

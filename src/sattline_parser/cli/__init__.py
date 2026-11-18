@@ -19,9 +19,11 @@ so an agent needs neither Python glue nor a lookup table:
 * ``sattline version`` — tool and JSON schema versions.
 
 Exit codes are the contract: ``0`` clean, ``1`` findings, ``2`` usage/input,
-``3`` internal error, ``130`` interrupted. Output is plain text unless
-``--json``, ``--jsonl``, or ``--sarif`` is given, and a traceback is only printed
-under ``--debug``. No command edits a
+``3`` internal error, ``130`` interrupted. A consumer that closes the output
+pipe early (``sattline check ... | head``) stops the report and exits ``2``:
+the stream that would carry an explanation is the one that closed. Output is
+plain text unless ``--json``, ``--jsonl``, or ``--sarif`` is given, and a
+traceback is only printed under ``--debug``. No command edits a
 source tree: there is no ``--fix``, no network access and no watch mode. The
 ``project`` command does write its parser cache unless ``--no-cache`` is given.
 """
@@ -29,6 +31,7 @@ source tree: there is no ``--fix``, no network access and no watch mode. The
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 import traceback
 from collections.abc import Sequence
@@ -69,6 +72,17 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv: Sequence[str] | None = None) -> int:
     """Run the CLI and return the process exit code."""
+    try:
+        return _dispatch(argv)
+    except BrokenPipeError:
+        # The consumer closed the pipe. Point stdout at the null device so the
+        # interpreter's exit flush cannot fail a second time and turn a stopped
+        # report into exit 120.
+        _discard_stdout()
+        return int(ExitCode.USAGE)
+
+
+def _dispatch(argv: Sequence[str] | None) -> int:
     parser = build_parser()
     arguments = list(sys.argv[1:] if argv is None else argv)
     try:
@@ -85,8 +99,25 @@ def main(argv: Sequence[str] | None = None) -> int:
     except KeyboardInterrupt:
         print(f"{_PROGRAM}: interrupted", file=sys.stderr)
         return int(ExitCode.INTERRUPTED)
+    except BrokenPipeError:
+        # Handled by ``main``; a closed stdout is not an internal error.
+        raise
     except Exception as exc:  # noqa: BLE001 - the CLI must never leak a traceback by default
         if args.debug:
             traceback.print_exc()
         print(f"{_PROGRAM}: internal error: {type(exc).__name__}: {exc}", file=sys.stderr)
         return int(ExitCode.INTERNAL)
+
+
+def _discard_stdout() -> None:
+    """Point the process stdout at the null device, ignoring a stream without a descriptor."""
+    try:
+        devnull = os.open(os.devnull, os.O_WRONLY)
+    except OSError:  # pragma: no cover - the null device is always available
+        return
+    try:
+        os.dup2(devnull, sys.stdout.fileno())
+    except (AttributeError, OSError, ValueError):
+        pass
+    finally:
+        os.close(devnull)

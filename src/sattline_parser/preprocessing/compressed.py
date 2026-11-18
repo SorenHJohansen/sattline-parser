@@ -174,21 +174,16 @@ def is_compressed(text: str) -> bool:
 # ---------------------------------------------------------------------------
 
 
-#: One character the grammar accepts inside an unquoted name. An apostrophe
-#: preceded by one of these belongs to a name such as ``Pump'A``, not to a
-#: quoted identifier, so it must not open an opaque region.
-_NAME_CHAR_RE = regex.compile(f"[{const.GRAMMAR_CHARSET_NAME}]")
-
-
-def _continues_name(text: str, index: int) -> bool:
-    """True when the character before *index* is part of an unquoted name."""
-    return index > 0 and _NAME_CHAR_RE.match(text[index - 1]) is not None
-
-
-def _next_line_break(text: str, start: int) -> int:
-    """The next CR or LF offset at or after *start*, or ``-1``."""
-    positions = [position for position in (text.find("\n", start), text.find("\r", start)) if position != -1]
-    return min(positions) if positions else -1
+#: One character the grammar accepts at the start of an unquoted name, and one
+#: it accepts inside a name. Both come from ``grammar/constants.py`` so the
+#: scanner and the lexer cannot drift apart: a name may not begin with a digit,
+#: and an apostrophe inside an unquoted name is name text rather than the start
+#: of a quoted identifier.
+_NAME_START_RE = regex.compile(f"[{const.GRAMMAR_CHARSET_NAME_START}]")
+_NAME_TEXT_RE = regex.compile(f"[{const.GRAMMAR_CHARSET_NAME}]+")
+#: A quoted identifier, exactly as the lexer's ``NAME`` terminal spells it: no
+#: apostrophe inside, no line break, at least one character.
+_QUOTED_NAME_RE = regex.compile(const.GRAMMAR_PATTERN_QUOTED_NAME)
 
 
 def _scan_opaque_regions(text: str) -> list[tuple[str, int, int, bool]]:
@@ -233,25 +228,16 @@ def _scan_opaque_regions(text: str) -> list[tuple[str, int, int, bool]]:
                 cursor += 1
             regions.append(("S", index, cursor, True))
             index = cursor
-        elif text[index] == "'":
-            if _continues_name(text, index):
-                # An apostrophe inside an unquoted name is name text, not the
-                # start of a quoted identifier.
-                index += 1
-                continue
-            # The grammar places no length limit on a quoted identifier, so the
-            # closing quote is the next one. A quoted name does not span a line:
-            # stopping at the break keeps a stray apostrophe from masking the
-            # rest of the file.
-            closing = text.find("'", index + 2)
-            line_break = _next_line_break(text, index)
-            if closing == -1 or (line_break != -1 and closing > line_break):
-                index += 1
-                continue
-            regions.append(("S", index, closing + 1, True))
-            index = closing + 1
+        elif text[index] == "'" and (quoted := _QUOTED_NAME_RE.match(text, index)) is not None:
+            regions.append(("S", index, quoted.end(), True))
+            index = quoted.end()
         else:
-            index += 1
+            # Consume a whole name run. An apostrophe inside an unquoted name
+            # such as ``Pump'A`` is name text, and a quoted identifier may not
+            # span a line, so only a run that starts at a name start character
+            # is skipped here; anything else is ordinary code text.
+            run = _NAME_TEXT_RE.match(text, index) if _NAME_START_RE.match(text, index) else None
+            index = run.end() if run is not None else index + 1
     return regions
 
 
@@ -440,7 +426,11 @@ def _decode_markers(text: str, mapping: Mapping[str, str]) -> tuple[_OpaqueRegis
         tok = m.group(0)
         value = mapping.get(tok)
         if value is None:
-            raise PreprocessError(f"Unknown compressed marker {tok!r} at character offset {m.start()}")
+            # ``char_map`` maps the protected text back to the original source,
+            # so the reported offset stays correct when an opaque placeholder
+            # shortened the text before the marker. A marker never overlaps a
+            # placeholder, so its entry is always a real source offset.
+            raise PreprocessError(f"Unknown compressed marker {tok!r} at character offset {char_map[m.start()]}")
         return value
 
     decoded, char_map = _regex_sub(decoded, char_map, _MARKER_RE, _subst)

@@ -82,6 +82,17 @@ def test_to_jsonable_falls_back_to_repr() -> None:
     assert to_jsonable(Opaque(), depth=3) == "opaque-value"
 
 
+def test_summarise_names_the_on_disk_flavor() -> None:
+    picture = BasePicture(
+        header=ModuleHeader(name="Program", invoke_coord=(0.0, 0.0, 0.0, 1.0, 1.0)),
+    )
+    compressed = '"Syntax version 2.23, date: 2026-10-28-00:00:00.000 C"\n'
+
+    assert summarise("M.s", "", picture)["encoding"] == "plain"
+    assert summarise("M.s", compressed, picture)["encoding"] == "compressed"
+    assert summarise("M.x", compressed, picture, coded=True)["encoding"] == "coded"
+
+
 def test_summarise_counts_the_module_layout() -> None:
     picture = BasePicture(
         header=ModuleHeader(name="Program", invoke_coord=(0.0, 0.0, 0.0, 1.0, 1.0)),

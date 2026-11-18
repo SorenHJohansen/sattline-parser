@@ -11,15 +11,19 @@ point in :mod:`sattline_parser.api`.
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+import dataclasses
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from functools import lru_cache
+from typing import cast
 
 from sattline_parser.builtins.records import BUILTIN_RECORD_SPECS
 from sattline_parser.models.ast_model import (
     BasePicture,
     DataType,
+    FloatLiteral,
     FrameModule,
+    IntLiteral,
     ModuleDef,
     ModuleHeader,
     ModuleTypeDef,
@@ -118,6 +122,38 @@ def _check_parameter_contract(
     check_parameter_mappings(mappings, expected, scope, context.type_graph, errors)
 
 
+def _check_numeric_literal_ranges(root: object, errors: list[Diagnostic]) -> None:
+    """Report a literal the transformer had to clamp to the language range."""
+    stack: list[object] = [root]
+    seen: set[int] = set()
+    while stack:
+        value = stack.pop()
+        if isinstance(value, (IntLiteral, FloatLiteral)) and value.clamped:
+            errors.append(
+                Diagnostic(
+                    code=DiagnosticCode.NUMERIC_LITERAL_OUT_OF_RANGE,
+                    message=(
+                        f"Numeric literal {value!r} is outside the supported "
+                        "32-bit integer or real range and was clamped"
+                    ),
+                    span=value.span,
+                )
+            )
+            continue
+        if dataclasses.is_dataclass(value) and not isinstance(value, type):
+            identity = id(value)
+            if identity in seen:
+                continue
+            seen.add(identity)
+            stack.extend(getattr(value, field.name) for field in dataclasses.fields(value))
+        elif isinstance(value, Mapping):
+            mapping = cast("Mapping[object, object]", value)
+            stack.extend(mapping.values())
+        elif isinstance(value, (list, tuple)):
+            sequence = cast("Sequence[object]", value)
+            stack.extend(sequence)
+
+
 def validate_basepicture(
     bp: BasePicture,
     *,
@@ -153,6 +189,7 @@ def validate_basepicture(
     )
 
     check_identifiers(bp, errors)
+    _check_numeric_literal_ranges(bp, errors)
     base_scope = build_scope(None, [*bp.moduleparameters, *bp.localvariables])
     check_variable_declarations(
         [*bp.moduleparameters, *bp.localvariables],

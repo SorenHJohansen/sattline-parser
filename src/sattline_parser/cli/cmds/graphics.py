@@ -15,6 +15,28 @@ from ._common import add_output_flags, add_source_flags, emit_findings, finding_
 
 __all__ = ["register", "run"]
 
+#: Leading words of the expression parser's exception text, which the graphics
+#: scanner appends to its message. A finding carries the source position and the
+#: raw expression already, so the dump behind these words is not repeated.
+_PARSER_DETAIL_PREFIXES: tuple[str, ...] = (
+    "Unexpected",
+    "No terminal",
+    "Expected",
+    "Parse",
+    "VisitError",
+    "Error",
+    "Token",
+)
+
+
+def _normalize_scan_message(message: str) -> str:
+    """Reduce a scan message to one sentence without the parser's token dump."""
+    line = next((part.strip() for part in message.splitlines() if part.strip()), "")
+    head, separator, detail = line.rpartition(": ")
+    if separator and detail.startswith(_PARSER_DETAIL_PREFIXES):
+        line = head
+    return line
+
 
 def register(subparsers: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:  # pyright: ignore[reportPrivateUsage]
     parser: argparse.ArgumentParser = subparsers.add_parser(
@@ -31,12 +53,12 @@ def run(args: argparse.Namespace) -> int:
     file = display_path(name, absolute=args.path_style == "absolute")
     findings = _findings(model, name=file)
     _emit_document(model, args=args, name=file, findings=findings)
-    return int(ExitCode.FINDINGS if any(finding.is_error for finding in findings) else ExitCode.OK)
+    return int(ExitCode.FINDINGS if findings else ExitCode.OK)
 
 
 def _load_model(args: argparse.Namespace) -> tuple[GraphicsModel, str]:
-    require_companion(args.path)
-    source = read_source(args.path, name=args.stdin_name or "<stdin>")
+    require_companion(args.path, stdin_name=args.stdin_name)
+    source = read_source(args.path, name=args.stdin_name)
     return parse_graphics_text(source.text), source.name
 
 
@@ -44,7 +66,7 @@ def _findings(model: GraphicsModel, *, name: str) -> list[Finding]:
     return [
         Finding(
             severity=message.severity,
-            message=message.message,
+            message=_normalize_scan_message(message.message),
             rule=GRAPHICS_SCAN_RULE,
             file=name,
             line=message.line,
@@ -70,7 +92,7 @@ def _message_rows(model: GraphicsModel) -> list[dict[str, object]]:
     return [
         {
             "severity": message.severity,
-            "message": message.message,
+            "message": _normalize_scan_message(message.message),
             "line": message.line,
             "column": message.column,
         }

@@ -75,10 +75,10 @@ validator code.
 its parameter list. A `typed=False` entry must record `arity` explicitly: a
 non-negative integer, or `null` when the documented arity is not known. `null`
 means no arity, direction, or datatype check runs for a call to that name,
-because an untranscribed list must not be read as "takes no arguments". (The
-string-literal argument rule still applies.) The generator
-rejects an untyped entry that omits `arity`, and rejects an `arity` on a typed
-entry so the two copies cannot drift.
+because an untranscribed list must not be read as "takes no arguments". A
+string-literal argument stays rejected there, because no documented parameter
+accepts one. The generator rejects an untyped entry that omits `arity`, and
+rejects an `arity` on a typed entry so the two copies cannot drift.
 
 ### Name lookup
 
@@ -137,9 +137,10 @@ from the parameter direction, so the validator view keeps no second copy of it.
 
 An unknown call name has no signature, so the arity, argument-direction, and
 argument-datatype rules are skipped: the callee may be a user function defined
-elsewhere. One rule still applies to every call, known or unknown: a string
-literal in an argument position is rejected (`SL-V015`), because the parser does
-not evidence that the callee accepts a value there.
+elsewhere. A string literal in an argument position is rejected (`SL-V015`)
+unless the resolved signature documents an `in` parameter of a string datatype
+at that position, as `LoggedIn` does for its user name. An unknown callee
+documents no such parameter, so its literal stays rejected.
 
 `builtin_datatype_typo` suggests a builtin datatype name when a custom datatype
 string is within a bounded edit distance of exactly one builtin. It never fires

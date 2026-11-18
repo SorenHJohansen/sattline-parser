@@ -111,6 +111,9 @@ _INVALID_VALIDATION_FIXTURES: dict[str, str] = {
     "ConsecutiveSeqSteps": "SL-V016",
     "SeqForkUnknownTarget": "SL-V017",
     "BuiltinDatatypeTypo": "SL-V018",
+    "AmbiguousDatatypeTypo": "SL-V020",
+    "DirectStringAssignment": "SL-V045",
+    "StaleMappingTarget": "SL-V048",
     "UndefinedVariableRef": "SL-V019",
     "UnknownDatatypeName": "SL-V020",
     "DuplicateSFCElementNames": "SL-V021",
@@ -1800,6 +1803,19 @@ def test_coordinate_tail_rule_skips_reference_names():
     assert [d.code.value for d in validate_basepicture(bp)] == []
 
 
+def test_coordinate_tail_rule_exempts_anytype():
+    """``AnyType`` proves nothing about a coordinate value, so the rule is silent.
+
+    Whether the language accepts such a tail is an open question, so the rule
+    reports only a value it can prove is not real.
+    """
+    module_def = ModuleDef(clipping=ClippingClause(((-1.0, -1.0), (1.0, 1.0)), (VarRef("Raw"),)))
+    bp = _base_picture()
+    bp.localvariables = [_var("Raw", "AnyType")]
+    bp.moduledef = module_def
+    assert [d.code.value for d in validate_basepicture(bp)] == []
+
+
 def test_graph_enable_tail_reports_undefined_variable():
     """A parenthesised Enable_ tail is a real expression use (SL-V019)."""
     bp = _base_picture()
@@ -2478,3 +2494,46 @@ def test_on_off_runtime_constants_are_boolean_expressions():
     assert "SL-V029" in codes("Num = On;")
     # ...and numeric comparison against them is rejected (error 0x17)
     assert "SL-V028" in codes("Flag = Num > Off;")
+
+
+def test_equation_and_sequence_name_findings_carry_a_span() -> None:
+    source = (
+        '"Syntax version 2.23, date: 2026-10-26-12:00:00.000 N"\n'
+        '"Original file date: ---"\n'
+        '"Program date: 2026-10-26-12:00:00.000, name: NameSpans"\n'
+        "BasePicture Invocation (0.0,0.0,0.0,1.0,1.0) : MODULEDEFINITION DateCode_ 1\n"
+        "ModuleDef\n"
+        "ClippingBounds = ( -1.0 , -1.0 ) ( 1.0 , 1.0 )\n"
+        "ModuleCode\n"
+        "   EQUATIONBLOCK VeryLongEquationName1 COORD 0.0,0.0 OBJSIZE 1.0,1.0 :\n"
+        "   SEQUENCE VeryLongSequenceName12 COORD 0.0,0.0 OBJSIZE 1.0,1.0\n"
+        "      SEQINITSTEP Init\n"
+        "      SEQTRANSITION Done WAIT_FOR True\n"
+        "   ENDSEQUENCE\n"
+        "ENDDEF (*BasePicture*);\n"
+    )
+
+    diagnostics = [d for d in parse_and_validate(source)[1] if d.code.value == "SL-V038"]
+
+    assert {d.message.split()[0] for d in diagnostics} == {"Equation", "Sequence"}
+    assert all(d.span is not None for d in diagnostics)
+
+
+def test_out_of_range_numeric_literals_are_reported() -> None:
+    source = (
+        '"Syntax version 2.23, date: 2026-10-26-12:00:00.000 N"\n'
+        '"Original file date: ---"\n'
+        '"Program date: 2026-10-26-12:00:00.000, name: ClampedLiterals"\n'
+        "BasePicture Invocation (0.0,0.0,0.0,1.0,1.0) : MODULEDEFINITION DateCode_ 1\n"
+        "LOCALVARIABLES\n"
+        "   Big: integer := 2147483648;\n"
+        "   Huge: real := 1.0E39;\n"
+        "ModuleDef\n"
+        "ClippingBounds = ( -1.0 , -1.0 ) ( 1.0 , 1.0 )\n"
+        "ENDDEF (*BasePicture*);\n"
+    )
+
+    diagnostics = [d for d in parse_and_validate(source)[1] if d.code.value == "SL-V059"]
+
+    assert len(diagnostics) == 2
+    assert all(d.span is not None for d in diagnostics)

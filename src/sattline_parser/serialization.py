@@ -13,8 +13,11 @@ the stable contract for the CLI, not this module.
 
 Traversal stops at a ``depth`` limit. A composite value at the limit is replaced
 by a placeholder such as ``"<ModuleDef>"`` or ``"<12 items>"`` instead of
-disappearing, so a truncated payload still shows what was there. The default is
-unlimited, which is what a consumer that wants the whole tree should use.
+disappearing, so a truncated payload still shows what was there. Leaves never
+count as a level and are emitted in full at any depth: scalars, enum members
+(always their plain value, including ``StrEnum``/``IntEnum``), source spans,
+paths, and byte strings. The default is unlimited, which is what a consumer that
+wants the whole tree should use.
 """
 
 from __future__ import annotations
@@ -59,19 +62,23 @@ def to_json(value: object, *, depth: int | None = None, compact: bool = False) -
 
 
 def _convert(value: object, *, remaining: int | None) -> object:
-    if value is None or isinstance(value, (bool, int, float, str)):
-        return value
-    if remaining is not None and remaining <= 0:
-        return _placeholder(value)
-    next_remaining = None if remaining is None else remaining - 1
+    # Leaves are emitted in full even at the depth limit: the limit bounds
+    # composites, not scalars. An enum is checked before the scalar shortcut so
+    # a ``StrEnum``/``IntEnum`` member is emitted as its plain value rather than
+    # as the member object, and before the limit so it is never a placeholder.
     if isinstance(value, Enum):
         return value.value
+    if value is None or isinstance(value, (bool, int, float, str)):
+        return value
     if isinstance(value, SourceSpan):
         return _span(value)
     if isinstance(value, Path):
         return str(value)
     if isinstance(value, (bytes, bytearray)):
         return value.hex()
+    if remaining is not None and remaining <= 0:
+        return _placeholder(value)
+    next_remaining = None if remaining is None else remaining - 1
     if isinstance(value, Mapping):
         pairs = cast("Mapping[object, object]", value)
         return {str(key): _convert(item, remaining=next_remaining) for key, item in pairs.items()}

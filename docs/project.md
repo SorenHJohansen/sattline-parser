@@ -79,25 +79,28 @@ is two roots on a case-sensitive filesystem and one root on Windows.
 Each root is indexed once by `SourceIndex`:
 
 ```
-stem.casefold() -> {extension -> Path}
+fold_identifier(stem) -> {extension -> Path}
 ```
 
 Only code and dependency extensions are indexed. Graphics and distribution
 companions are resolved from their code path and never appear in the index. A
 miss in the index falls back to a `stat` check for each candidate extension, and
-a hit updates the index. An index hit is re-statted before it is returned, so a
-body deleted after the index was built reports a miss instead of a later
-"failed to parse".
+a hit updates the index. Only a regular file resolves: a directory or a FIFO
+named like a body is not one, so it neither shadows a real body in a later root
+nor gets opened. An index hit is re-statted before it is returned, so a body
+deleted after the index was built reports a miss instead of a later "failed to
+parse".
 
 A dependency name is a bare unit name, never a path. It is validated against
-the SattLine identifier charset and the 20-character limit, so separators,
-drive or alternate-stream colons, UNC prefixes, parent references, control
-characters, and the Windows-invalid filename characters are refused on every
-platform; Windows device names are refused on Windows. The `stat` fallback
-additionally requires the candidate to resolve inside the lookup base. A `.l`
-line of `../outside/Secret`, or an absolute path, therefore resolves to nothing
-and is reported as a missing dependency instead of loading a body outside every
-root.
+the SattLine identifier charset, so separators, drive or alternate-stream
+colons, UNC prefixes, parent references, control characters, and the
+Windows-invalid filename characters are refused on every platform; Windows
+device names are refused on Windows. The name is not limited to 20 characters
+here: that length is the declaration rule `SL-V038`, not a resolution rule. The
+`stat` fallback additionally requires the candidate to resolve inside the lookup
+base. A `.l` line of `../outside/Secret`, or an absolute path, therefore resolves
+to nothing and is reported as a missing dependency instead of loading a body
+outside every root.
 
 `ProjectLookup.find` resolves only a code body or a dependency sidecar. It
 raises `ValueError` for `ArtifactKind.GRAPHICS` and
@@ -172,6 +175,16 @@ root is planned, parsed, and validated; the later body is never read. There is
 no ambiguity to report and no second body to expose, so the registry holds one
 unit per name by construction.
 
+Planning is iterative. Each unit is a frame on an explicit stack, so a dependency
+chain of any legal length is planned without growing the Python call stack. A
+400-unit chain loads; a 400-unit loop raises `DependencyCycleError` with its
+canonical path instead of a `RecursionError`.
+
+One body reached under two names, for example directly and through a symlink, is
+one plan with two spellings. Every spelling is kept as an alias, so a dependency
+name returned by `dependencies_of` is always a name `get` resolves, and every
+`graph()` endpoint is a node. See [aliases](#aliases).
+
 Post-order is an invariant: the registry is built dependencies-first, so a
 program's diagnostics are computed against a complete prefix of its closure.
 `_assert_registry_post_order` checks this and raises `RuntimeError` if a
@@ -187,10 +200,10 @@ observable orders:
   `A`'s broken body even when `A` was requested first. Structural errors win
   over everything.
 - **Diagnostics.** `SattLineProject.diagnostics()` reports only the non-fatal
-  load conditions: a missing or empty sidecar, a sidecar elsewhere, and a
-  sidecar from the other artifact family. A failure to resolve or parse raises
-  instead. Discovery rows come first, in discovery order, then assembly rows in
-  plan order.
+  load conditions: a missing or empty sidecar, a sidecar elsewhere, a sidecar
+  from the other artifact family, and a folded-name collision. A failure to
+  resolve or parse raises instead. Discovery rows come first, in discovery
+  order, then assembly rows in plan order.
 
 `validate=INVOKED` runs **after** the graph is complete, because it needs the
 whole invocation graph. The loader first builds the registry, then walks
@@ -199,23 +212,32 @@ invoked-scope diagnostics.
 
 ## Identity
 
-Three comparisons run through the project layer, and conflating them has caused
+The project layer keeps several comparisons apart, and conflating them has caused
 real bugs. They now have names.
 
 | Identity | Type or rule | Used for |
 | --- | --- | --- |
-| Unit name in the project view | `str.casefold()` | `programs()` keys, `get`, `__contains__`, graph node and edge names |
-| Language identity inside a unit | `fold_identifier` (CP1252 table) | record, module-type, field, and variable lookup; the symbol index |
+| Unit name in the project view | `str.casefold()` | `programs()` keys, graph node names |
+| Language identity of a unit | `UnitIdentity`, `fold_identifier` (CP1252 table) | artifact resolution, `get`, `__contains__`, the symbol index, the lookup cache key |
+| Language identity inside a unit | `fold_identifier` | record, module-type, field, and variable lookup |
 | Artifact identity | `ArtifactIdentity`, resolved path compared with `os.path.normcase` | roots, plan keys, the cycle stack |
 | Logical spelling | `SattLineProgram.name`, `UnitIdentity.spelling` | what a diagnostic quotes |
 
-`programs()` keys are the project view's canonical spelling, which is
-`str.casefold`; `get` and `__contains__` fold the caller's spelling with the
-same rule. That key is a view key, not the language name table: two language
-names that differ only outside the CP1252 fold can share one key. Module-type,
-record, field, and variable lookup inside a unit use `fold_identifier` and keep
-them apart. Inside a unit, the symbol table uses the language's own name table
-(`fold_identifier`), which is not Unicode case folding. A filesystem path is
+Artifact resolution uses the language identity, not Unicode case folding. A
+dependency named `STRASSE` never resolves to `Straße.s`, even though
+`str.casefold` equates the two: the candidate's stem must match the requested
+name under `fold_identifier`. `SourceIndex` is keyed by that identity, the
+lookup cache uses the same key (`LOOKUP_CACHE_VERSION` covers the rule), and the
+`stat` fallback requires a regular file inside the root. A `str.casefold` match
+the language rejects is a missing dependency, never a successful resolution.
+
+`programs()` keys stay `str.casefold`, which keeps every ordinary ASCII name at
+the key it has always had. That key is a view key, not the language name table:
+two language names that differ outside the CP1252 fold, such as `Straße` and
+`STRASSE`, share one. `get` and `__contains__` therefore also require the stored
+spelling to match the requested name under `fold_identifier`, so a casefold-only
+name does not designate a unit. Module-type, record, field, and variable lookup
+inside a unit use `fold_identifier` and keep them apart. A filesystem path is
 never case-folded unconditionally: `ArtifactIdentity` resolves it and lets the
 platform decide, so `/lib` and `/Lib` are two roots on a case-sensitive
 filesystem and one directory on Windows.
@@ -223,6 +245,30 @@ filesystem and one directory on Windows.
 `UnitIdentity.of(name)` and `ArtifactIdentity.of(path)` are exported for a
 consumer that needs the same comparisons. Equality and hashing use the key, so
 two spellings of one identity are equal.
+
+### Aliases
+
+One body can be reached under more than one name, for example directly and
+through a symlink. The body is planned once, and every spelling that reached it
+is kept as an alias, so `dependencies_of` only returns names `get` resolves and
+every `graph()` endpoint is also a node. An alias is a name for a unit, not a
+second unit: `programs()` still holds one entry per body, and
+`get(alias).name` is the spelling that planned the body first. An alias resolves
+under the spelling that reached it and under the language's own case rule, never
+under a casefold-only variant. `dependencies_of` and `dependents_of` resolve
+their argument the same way, so a `programs()` view key, an alias, and a source
+spelling all designate the unit they name.
+
+### Folded-name collisions
+
+Two files in one root whose stems fold to one language identity, such as
+`Util.s` and `UTIL.s`, are an ambiguity: the language considers them one unit and
+the filesystem holds two. The index keeps the first in sorted name order and
+records a `NameCollision`; the loader reports
+`LoadDiagnosticKind.FOLDED_NAME_COLLISION` naming every file and the winner. Two
+loaded units whose names share a project view key are reported the same way, and
+the first in plan order stays in the view. The load still succeeds: the layout is
+reported as ambiguous instead of one unit disappearing without a finding.
 
 ## Cycles
 
@@ -420,6 +466,18 @@ assembled directly with `from_programs` may declare an edge to a program it does
 not hold; the graph keeps that edge, because it describes the declared structure,
 not just the resolved closure.
 
+### Snapshot
+
+A project owns an immutable snapshot. `load` freezes the trees the loader
+produced in place; `from_programs` deep-copies first, so the caller keeps
+ownership of the tree it passed in. Freezing replaces every reachable list with
+a tuple, every mapping with a read-only mapping, and locks every mutable model
+node. Assigning a field or appending to a container on an attached tree raises.
+
+The snapshot is what makes the lazy index safe: `project.index` cannot go stale
+because the tree it was built from cannot change. Build a new project if the
+source changed.
+
 ## Symbol index
 
 `SattLineProject.index` answers "who defines X" and "who uses Y" across every
@@ -505,8 +563,10 @@ envelope. The key includes:
 - the load mode;
 - the package version;
 - the resolved grammar fingerprint;
-- a fingerprint of the sources that shape an AST: `models/`, `transformer/`,
-  `source_io.py`, `source_document.py`, and `names.py`;
+- a fingerprint of every regular file shipped in the package, including
+  `grammar/`, `models/`, `transformer/`, `preprocessing/`, and non-Python
+  resources such as `preprocessing/scanner_tokens.json`; bytecode caches are
+  excluded;
 - the digest of the source bytes the AST was parsed from.
 
 A `mtime_ns` and `size` stat snapshot is the cheap first filter; on a match the
@@ -537,7 +597,9 @@ being followed or tightened in place. An entry file that is a symlink is
 ignored, never followed. Never point `cache_dir` at a shared location.
 
 Only a writer creates the HMAC key. A read with no key is a miss, so a reader
-never writes into the cache directory and the single-writer invariant holds.
+never creates a key. Every write revalidates the directory through
+`private_cache_dir`; a directory removed during a long load is recreated
+`0700`, not with the process umask. Entry files are created `0600`.
 
 On Windows there is no POSIX owner or mode check: `os.getuid` does not exist,
 and the cache validates only that the root and `file_ast` are real directories.
@@ -556,8 +618,10 @@ on every startup because it only stats files; the full fingerprint and path
 check runs when the cache identity changes. Abandoned `*.tmp` siblings older
 than an hour are removed too.
 
-A cache write failure is swallowed and logged; it must not turn a successful
-parse into a load failure.
+A cache read or write failure is a miss; it must not turn a successful parse
+into a load failure. The fingerprint is captured when the cache is constructed,
+so an install whose package files disappear mid-run disables caching for that
+process instead of failing each lookup.
 
 ## Graphics companions
 

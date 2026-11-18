@@ -24,6 +24,7 @@ from sattline_parser.models.ast_model import (
 )
 from sattline_parser.names import fold_identifier
 
+from .identity import UnitIdentity
 from .models import SattLineProgram
 
 ModuleNode = SingleModule | FrameModule | ModuleTypeInstance
@@ -46,22 +47,56 @@ def visible_program_keys(
     """The program keys *key* can see: itself plus its transitive dependencies.
 
     Only keys in the closure contribute, so a definition from an unrelated
-    program is never borrowed.
+    program is never borrowed. A declared dependency is resolved in the caller's
+    key space: an exact mapping key first, then the program's own name compared
+    with the language name table, so ``{"Main": main}`` and ``{"main": main}``
+    both answer for a sidecar that declares ``Main``. The result holds the
+    caller's keys, never a spelling invented here.
     """
+    lookup = _key_space(programs)
     visible = {key}
     seen = {key}
-    pending = [dependency.casefold() for dependency in dependencies]
+    pending = list(dependencies)
     while pending:
-        current = pending.pop()
-        if current in seen:
+        current = _resolve_program_key(programs, lookup, pending.pop())
+        if current is None or current in seen:
             continue
         seen.add(current)
-        program = programs.get(current)
-        if program is None:
-            continue
         visible.add(current)
-        pending.extend(dependency.casefold() for dependency in program.dependencies)
+        pending.extend(programs[current].dependencies)
     return frozenset(visible)
+
+
+def _key_space(programs: Mapping[str, SattLineProgram]) -> dict[str, str]:
+    """Program names mapped to their caller keys by language identity.
+
+    Only the program's own name is registered, and only under
+    :func:`~sattline_parser.names.fold_identifier`. A mapping key is not folded:
+    a caller that keys by ``str.casefold`` view key, such as ``strasse`` for
+    ``Straße``, must not make a dependency named ``STRASSE`` resolve to that
+    unit. A caller's exact mapping key still resolves through
+    :func:`_resolve_program_key`, and the first registration wins.
+    """
+    lookup: dict[str, str] = {}
+    for program_key, program in programs.items():
+        lookup.setdefault(UnitIdentity.of(program.name).key, program_key)
+    return lookup
+
+
+def _resolve_program_key(
+    programs: Mapping[str, SattLineProgram],
+    lookup: Mapping[str, str],
+    spelling: str,
+) -> str | None:
+    """The caller's key for *spelling*, or ``None`` when it names no program.
+
+    An exact mapping key is accepted as written. Any other spelling is compared
+    with the program names under the language name table, so case differences the
+    language folds resolve while ``Straße`` and ``STRASSE`` stay apart.
+    """
+    if spelling in programs:
+        return spelling
+    return lookup.get(UnitIdentity.of(spelling).key)
 
 
 def invoked_moduletypes(
@@ -73,19 +108,22 @@ def invoked_moduletypes(
     """Map each program key to the module-type names reached from ``targets``.
 
     ``programs`` is the loader registry: program key to an object with ``code``
-    (a :class:`BasePicture`). ``targets`` are program keys. A target contributes
-    every module type in its own file and every library module type its
-    submodules invoke. Those library definitions contribute their own nested
-    invocations, transitively. Keys are the mapping keys the caller supplied, and
-    the values are module-type names folded with
+    (a :class:`BasePicture`). ``targets`` name programs in the caller's key
+    space: an exact mapping key, or a program name that matches under
+    :func:`~sattline_parser.names.fold_identifier`. A target contributes every
+    module type in its own file and every library module type its submodules
+    invoke. Those library definitions contribute their own nested invocations,
+    transitively. Keys are the mapping keys the caller supplied, and the values
+    are module-type names folded with
     :func:`sattline_parser.names.fold_identifier`, so a caller can compare them
     with the language name table.
 
     ``closure_of`` answers "which program keys can this key see" and defaults to
-    walking the declared dependency names. The loader passes its resolved
-    dependency keys instead, because one name may resolve to different bodies
-    for different requesters.
+    walking the declared dependency names in the caller's key space. The loader
+    passes its resolved dependency keys instead, because one name may resolve to
+    different bodies for different requesters.
     """
+    lookup = _key_space(programs)
     index: dict[str, list[tuple[str, ModuleTypeDef]]] = {}
     closures: dict[str, frozenset[str]] = {}
     for key, program in programs.items():
@@ -98,12 +136,13 @@ def invoked_moduletypes(
 
     pending: deque[tuple[str, str]] = deque()
     for target in targets:
-        program = programs.get(target)
-        if program is None:
+        resolved = _resolve_program_key(programs, lookup, target)
+        if resolved is None:
             continue
-        pending.extend((reference, target) for reference in iter_moduletype_refs(program.code.submodules))
+        program = programs[resolved]
+        pending.extend((reference, resolved) for reference in iter_moduletype_refs(program.code.submodules))
         for moduletype in program.code.moduletype_defs:
-            pending.extend((reference, target) for reference in iter_moduletype_refs(moduletype.submodules))
+            pending.extend((reference, resolved) for reference in iter_moduletype_refs(moduletype.submodules))
 
     reachable: dict[str, set[str]] = {}
     seen: set[tuple[str, str]] = set()

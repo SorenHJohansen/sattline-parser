@@ -38,11 +38,29 @@ def test_serializer_is_unlimited_by_default_and_bounded_on_request() -> None:
     unlimited = to_jsonable(leaf)
     assert isinstance(unlimited, dict)
     assert unlimited["name"] == "X"
+    # A span is a leaf: it is emitted in full even at the depth limit.
     assert to_jsonable(leaf, depth=1) == {
         "name": "X",
         "colour": "red",
-        "span": "<SourceSpan>",
+        "span": {"start": 1, "end": 2, "line": 3, "column": 4},
     }
+    # A composite at the limit is a placeholder, never a dropped value.
+    assert to_jsonable(leaf, depth=0) == "<_Leaf>"
+
+
+def test_serializer_emits_a_str_enum_member_as_its_plain_value_at_any_depth() -> None:
+    # ``StrEnum`` members are ``str`` subclasses, so the enum branch must run
+    # before the scalar shortcut; otherwise the member object leaks through.
+    value = to_jsonable(_Colour.RED, depth=0)
+
+    assert value == "red"
+    assert type(value) is str
+
+
+def test_serializer_emits_leaves_in_full_at_the_depth_limit() -> None:
+    assert to_jsonable(SourceSpan(1, 2, 3, 4), depth=0) == {"start": 1, "end": 2, "line": 3, "column": 4}
+    assert to_jsonable(Path("/a/b"), depth=0) == str(Path("/a/b"))
+    assert to_jsonable(b"\x01\x02", depth=0) == "0102"
 
 
 def test_serializer_handles_paths_and_mappings() -> None:

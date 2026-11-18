@@ -8,6 +8,7 @@ import hmac
 import os
 import pickle
 import shutil
+import stat
 import time
 from pathlib import Path
 from unittest.mock import patch
@@ -37,13 +38,14 @@ from sattline_parser.models.clauses import (
 from sattline_parser.models.tails import LitStringTail, VarTail
 from sattline_parser.project import FILE_AST_CACHE_VERSION, FileASTCache
 from sattline_parser.project.ast_cache import (
-    _CODE_FINGERPRINT_SOURCES,
     _PICKLE_CACHE_MAGIC,
     _PICKLE_HMAC_KEY_NAME,
     SourceSnapshot,
     _as_data_dict,
     _code_fingerprint,
     _code_path_key,
+    _create_pickle_hmac_key_exclusively,
+    _identity_digest,
     _load_or_create_pickle_hmac_key,
     _load_pickle_payload,
     _matches_source_identity,
@@ -52,7 +54,6 @@ from sattline_parser.project.ast_cache import (
     _remove_file,
     _safe_stat,
     _save_pickle_payload,
-    _stored_source_exists,
     _temp_file_is_abandoned,
     _temp_path_for,
     source_snapshot,
@@ -279,29 +280,71 @@ def _key_stat_mode_is_private(directory: Path) -> bool:
     return (key_path.stat().st_mode & 0o777) == 0o600
 
 
-def test_load_or_create_hmac_key_recreates_invalid_existing(tmp_path: Path) -> None:
+def test_load_or_create_hmac_key_leaves_an_invalid_existing_key_alone(tmp_path: Path) -> None:
     key_path = tmp_path / _PICKLE_HMAC_KEY_NAME
     key_path.write_bytes(b"toolong")
-    created = _load_or_create_pickle_hmac_key(tmp_path)
-    assert created is not None and len(created) == 32
-    assert key_path.read_bytes() == created
-
-
-def test_load_or_create_hmac_key_remove_failure(tmp_path: Path) -> None:
-    key_path = tmp_path / _PICKLE_HMAC_KEY_NAME
-    key_path.write_bytes(b"toolong")
-    with patch(f"{_AC_PATH}.Path.unlink", side_effect=OSError("boom")):
-        assert _load_or_create_pickle_hmac_key(tmp_path) is None
+    assert _load_or_create_pickle_hmac_key(tmp_path) is None
+    assert key_path.read_bytes() == b"toolong"
 
 
 def test_load_or_create_hmac_key_race_returns_concurrent_key(tmp_path: Path) -> None:
-    def _race(path: str, flags: int, mode: int) -> int:
-        Path(path).write_bytes(b"y" * 32)
+    """The loser of the link race reads the winner's key instead of deleting it."""
+
+    def _race(source: object, target: object) -> None:
+        Path(str(target)).write_bytes(b"y" * 32)
         raise FileExistsError
 
-    with patch(f"{_AC_PATH}.os.open", side_effect=_race):
+    with patch(f"{_AC_PATH}.os.link", side_effect=_race):
         result = _load_or_create_pickle_hmac_key(tmp_path)
     assert result == b"y" * 32
+    assert (tmp_path / _PICKLE_HMAC_KEY_NAME).read_bytes() == b"y" * 32
+
+
+def test_load_or_create_hmac_key_publishes_complete_bytes(tmp_path: Path) -> None:
+    """The key appears under its final name only after it is fully written."""
+    seen: list[bytes] = []
+    real_link = os.link
+
+    def _link(source: object, target: object) -> None:
+        seen.append(Path(str(source)).read_bytes())
+        real_link(source, target)  # type: ignore[arg-type]
+
+    with patch(f"{_AC_PATH}.os.link", side_effect=_link):
+        key = _load_or_create_pickle_hmac_key(tmp_path)
+
+    assert key is not None and len(key) == 32
+    assert seen == [key]
+    assert not list(tmp_path.glob("*.tmp"))
+
+
+def test_load_or_create_hmac_key_falls_back_without_hard_links(tmp_path: Path) -> None:
+    with patch(f"{_AC_PATH}.os.link", side_effect=OSError("no hard links here")):
+        key = _load_or_create_pickle_hmac_key(tmp_path)
+
+    assert key is not None
+    assert _read_pickle_hmac_key(tmp_path / _PICKLE_HMAC_KEY_NAME) == key
+
+
+def test_the_exclusive_fallback_returns_a_concurrent_key(tmp_path: Path) -> None:
+    key_path = tmp_path / _PICKLE_HMAC_KEY_NAME
+    key_path.write_bytes(b"z" * 32)
+
+    assert _create_pickle_hmac_key_exclusively(key_path, b"k" * 32) == b"z" * 32
+    assert key_path.read_bytes() == b"z" * 32
+
+
+def test_the_exclusive_fallback_gives_up_when_the_open_fails(tmp_path: Path) -> None:
+    with patch(f"{_AC_PATH}.os.open", side_effect=OSError("boom")):
+        assert _create_pickle_hmac_key_exclusively(tmp_path / _PICKLE_HMAC_KEY_NAME, b"k" * 32) is None
+
+
+def test_the_exclusive_fallback_removes_only_its_own_partial_key(tmp_path: Path) -> None:
+    key_path = tmp_path / _PICKLE_HMAC_KEY_NAME
+
+    with patch(f"{_AC_PATH}.os.fsync", side_effect=OSError("boom")):
+        assert _create_pickle_hmac_key_exclusively(key_path, b"k" * 32) is None
+
+    assert not key_path.exists()
 
 
 def test_load_or_create_hmac_key_open_oserror(tmp_path: Path) -> None:
@@ -323,6 +366,12 @@ def test_load_pickle_payload_missing_file(tmp_path: Path) -> None:
 def test_load_pickle_payload_rejects_wrong_signature(tmp_path: Path) -> None:
     target = tmp_path / "e.pickle"
     target.write_bytes(_PICKLE_CACHE_MAGIC + b"a" * 64 + b"\n" + b"payload")
+    assert _load_pickle_payload(target) is None
+
+
+def test_load_pickle_payload_rejects_a_foreign_envelope(tmp_path: Path) -> None:
+    target = tmp_path / "e.pickle"
+    target.write_bytes(b"no cache magic here")
     assert _load_pickle_payload(target) is None
 
 
@@ -354,12 +403,75 @@ def test_save_pickle_payload_round_trip(tmp_path: Path) -> None:
     assert _load_pickle_payload(target) == {"version": 1, "value": "ok"}
 
 
+@pytest.mark.skipif(os.name != "posix", reason="Windows has no POSIX permission bits")
+def test_save_pickle_payload_creates_a_private_entry_file(tmp_path: Path) -> None:
+    target = tmp_path / "e.pickle"
+
+    _save_pickle_payload(target, {"version": 1})
+
+    assert stat.S_IMODE(target.stat().st_mode) == 0o600
+
+
+def test_save_after_directory_deletion_recreates_it_private(tmp_path: Path) -> None:
+    code_path = _write_code(tmp_path)
+    cache = FileASTCache(tmp_path)
+    ast = _picture(code_path)
+    cache.save(code_path, "draft", ast)
+    shutil.rmtree(cache.cache_dir)
+
+    cache.save(code_path, "draft", ast)
+
+    assert cache.cache_dir.is_dir()
+    assert cache._path(code_path, "draft").is_file()
+    if os.name == "posix":
+        assert stat.S_IMODE(cache.cache_dir.stat().st_mode) == 0o700
+        assert stat.S_IMODE(cache._path(code_path, "draft").stat().st_mode) == 0o600
+
+
 def test_save_pickle_payload_replace_failure(tmp_path: Path) -> None:
     target = tmp_path / "e.pickle"
     with patch(f"{_AC_PATH}.os.replace", side_effect=OSError("boom")), pytest.raises(OSError, match="boom"):
         _save_pickle_payload(target, {"version": 1})
     assert not target.exists()
     assert not list(tmp_path.glob("*.tmp"))
+
+
+def test_constructor_disables_the_cache_when_the_fingerprint_is_unreadable(tmp_path: Path) -> None:
+    with patch(f"{_AC_PATH}._code_fingerprint", side_effect=OSError("boom")):
+        cache = FileASTCache(tmp_path)
+
+    assert not cache.enabled
+
+
+def test_constructor_disables_the_cache_when_the_startup_prune_fails(tmp_path: Path) -> None:
+    with patch(f"{_AC_PATH}.FileASTCache._initial_prune", side_effect=OSError("boom")):
+        cache = FileASTCache(tmp_path)
+
+    assert not cache.enabled
+
+
+def test_load_or_create_hmac_key_rejects_a_non_private_directory(tmp_path: Path) -> None:
+    with patch(f"{_AC_PATH}.private_cache_dir", return_value=None):
+        assert _load_or_create_pickle_hmac_key(tmp_path) is None
+
+
+def test_save_is_a_noop_when_pickling_fails(tmp_path: Path) -> None:
+    code_path = _write_code(tmp_path)
+    cache = FileASTCache(tmp_path)
+
+    with patch(f"{_AC_PATH}.pickle.dumps", side_effect=TypeError("boom")):
+        cache.save(code_path, "draft", _picture(code_path))
+
+    assert list(cache.cache_dir.glob("*.pickle")) == []
+
+
+def test_load_returns_none_when_unpickling_raises_an_unexpected_error(tmp_path: Path) -> None:
+    code_path = _write_code(tmp_path)
+    cache = FileASTCache(tmp_path)
+    cache.save(code_path, "draft", _picture(code_path))
+
+    with patch(f"{_AC_PATH}.pickle.loads", side_effect=KeyError("boom")):
+        assert cache.load(code_path, "draft") is None
 
 
 def test_temp_paths_are_unique_per_write(tmp_path: Path) -> None:
@@ -385,6 +497,7 @@ def test_cache_is_disabled_when_the_root_is_not_owned_by_this_user(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     code_path = _write_code(tmp_path)
+    monkeypatch.setattr("sattline_parser.source_io._IS_WINDOWS", False)
     monkeypatch.setattr("sattline_parser.source_io._getuid", lambda: -1)
 
     cache = FileASTCache(tmp_path / "cache")
@@ -402,6 +515,7 @@ def test_cache_is_disabled_when_the_owned_root_cannot_be_made_private(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     code_path = _write_code(tmp_path)
+    monkeypatch.setattr("sattline_parser.source_io._IS_WINDOWS", False)
     monkeypatch.setattr("sattline_parser.source_io._getuid", lambda: -1)
     (tmp_path / "cache").mkdir()
 
@@ -409,6 +523,26 @@ def test_cache_is_disabled_when_the_owned_root_cannot_be_made_private(
 
     assert not cache.enabled
     assert not cache.cache_dir.exists()
+    assert cache.load(code_path, "draft") is None
+
+
+def test_cache_is_disabled_when_the_windows_check_rejects_the_root(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """The Windows branch must disable the cache, not fall back to a mode check."""
+    code_path = _write_code(tmp_path)
+
+    def not_private(path: Path) -> bool:
+        del path
+        return False
+
+    monkeypatch.setattr("sattline_parser.source_io._IS_WINDOWS", True)
+    monkeypatch.setattr("sattline_parser.source_io.windows_directory_is_private", not_private)
+
+    cache = FileASTCache(tmp_path / "cache")
+
+    assert not cache.enabled
+    cache.save(code_path, "draft", _picture(code_path))
     assert cache.load(code_path, "draft") is None
 
 
@@ -498,7 +632,7 @@ def test_load_rejects_version_mismatch(tmp_path: Path) -> None:
                 "mode": "draft",
                 "parser_version": __version__,
                 "grammar": grammar_fingerprint(),
-                "code": _code_fingerprint(),
+                "code": cache._fingerprint,
                 "mtime_ns": stat_result.st_mtime_ns,
                 "size": stat_result.st_size,
                 "sha256": hashlib.sha256(code_path.read_bytes()).hexdigest(),
@@ -518,7 +652,7 @@ def test_cache_key_includes_package_version_grammar_and_code(tmp_path: Path) -> 
         assert cache._key(code_path, "draft") != key
     with patch(f"{_AC_PATH}.grammar_fingerprint", return_value="0" * 64):
         assert cache._key(code_path, "draft") != key
-    with patch(f"{_AC_PATH}._code_fingerprint", return_value="0" * 64):
+    with patch.object(cache, "_fingerprint", "0" * 64):
         assert cache._key(code_path, "draft") != key
 
 
@@ -535,7 +669,7 @@ def test_load_rejects_identity_mismatch(tmp_path: Path, field: str, value: str) 
         "mode": "draft",
         "parser_version": __version__,
         "grammar": grammar_fingerprint(),
-        "code": _code_fingerprint(),
+        "code": cache._fingerprint,
         "mtime_ns": stat_result.st_mtime_ns,
         "size": stat_result.st_size,
     }
@@ -566,7 +700,7 @@ def test_load_rejects_meta_and_payload_shape(tmp_path: Path) -> None:
                 "mode": mode,
                 "parser_version": __version__,
                 "grammar": grammar_fingerprint(),
-                "code": _code_fingerprint(),
+                "code": cache._fingerprint,
                 "mtime_ns": stat_result.st_mtime_ns,
                 "size": stat_result.st_size,
                 "sha256": hashlib.sha256(code_path.read_bytes()).hexdigest(),
@@ -816,22 +950,67 @@ def test_temp_file_without_a_stat_is_abandoned(tmp_path: Path) -> None:
     assert _temp_file_is_abandoned(path)
 
 
-def test_code_fingerprint_covers_the_decoding_and_name_modules() -> None:
-    """A fix in decoding, span remapping, or name folding must invalidate an AST."""
-    assert {"preprocessing", "source_io.py", "source_document.py", "names.py"} <= set(_CODE_FINGERPRINT_SOURCES)
+def test_code_fingerprint_covers_python_and_data_resources(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A lexer fix and a scanner-token change must both invalidate an AST."""
+    package = tmp_path / "package"
+    (package / "grammar").mkdir(parents=True)
+    (package / "preprocessing").mkdir()
+    (package / "grammar" / "sattline_lexer.py").write_text("TOKEN = 1\n", encoding="utf-8")
+    tokens = package / "preprocessing" / "scanner_tokens.json"
+    tokens.write_text('{"#01": "A"}\n', encoding="utf-8")
+    monkeypatch.setattr(f"{_AC_PATH}._PACKAGE_ROOT", package)
+    _code_fingerprint.cache_clear()
+    try:
+        first = _code_fingerprint()
+        tokens.write_text('{"#01": "B"}\n', encoding="utf-8")
+        _code_fingerprint.cache_clear()
+        assert _code_fingerprint() != first
+    finally:
+        _code_fingerprint.cache_clear()
 
 
 def test_code_fingerprint_hashes_a_standalone_module(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     source = tmp_path / "names.py"
     source.write_text("FOLD = 1\n", encoding="utf-8")
     monkeypatch.setattr(f"{_AC_PATH}._PACKAGE_ROOT", tmp_path)
-    monkeypatch.setattr(f"{_AC_PATH}._CODE_FINGERPRINT_SOURCES", ("names.py",))
     _code_fingerprint.cache_clear()
     try:
         first = _code_fingerprint()
         source.write_text("FOLD = 2\n", encoding="utf-8")
         _code_fingerprint.cache_clear()
         assert _code_fingerprint() != first
+    finally:
+        _code_fingerprint.cache_clear()
+
+
+def test_code_fingerprint_changes_when_a_new_resource_appears(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    package = tmp_path / "package"
+    package.mkdir()
+    monkeypatch.setattr(f"{_AC_PATH}._PACKAGE_ROOT", package)
+    _code_fingerprint.cache_clear()
+    try:
+        first = _code_fingerprint()
+        (package / "new_resource.json").write_text("{}\n", encoding="utf-8")
+        _code_fingerprint.cache_clear()
+        assert _code_fingerprint() != first
+    finally:
+        _code_fingerprint.cache_clear()
+
+
+def test_code_fingerprint_ignores_bytecode_caches(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    package = tmp_path / "package"
+    package.mkdir()
+    (package / "module.py").write_text("VALUE = 1\n", encoding="utf-8")
+    monkeypatch.setattr(f"{_AC_PATH}._PACKAGE_ROOT", package)
+    _code_fingerprint.cache_clear()
+    try:
+        first = _code_fingerprint()
+        cache = package / "__pycache__"
+        cache.mkdir()
+        (cache / "module.cpython-312.pyc").write_bytes(b"generated")
+        (package / "module.pyo").write_bytes(b"generated")
+        _code_fingerprint.cache_clear()
+        assert _code_fingerprint() == first
     finally:
         _code_fingerprint.cache_clear()
 
@@ -857,8 +1036,12 @@ def test_load_does_not_create_the_hmac_key(tmp_path: Path) -> None:
     assert not _key_path(cache).exists()
 
 
-def test_prune_drops_an_entry_whose_source_is_gone(tmp_path: Path) -> None:
-    """A renamed or deleted tree must not leave unreachable entries behind."""
+def test_a_gone_source_is_a_miss(tmp_path: Path) -> None:
+    """A renamed or deleted tree leaves an unreachable entry behind.
+
+    The entry is kept: pruning is filename-only and bounded by the entry cap, so
+    the source revision is checked when the entry is loaded instead.
+    """
     code_path = _write_code(tmp_path)
     cache = FileASTCache(tmp_path)
     cache.save(code_path, "draft", _picture(code_path))
@@ -866,8 +1049,8 @@ def test_prune_drops_an_entry_whose_source_is_gone(tmp_path: Path) -> None:
 
     code_path.unlink()
 
-    assert cache.prune_stale_entries() == 1
-    assert list(cache.cache_dir.glob("*.pickle")) == []
+    assert cache.load(code_path, "draft") is None
+    assert len(list(cache.cache_dir.glob("*.pickle"))) == 1
 
 
 def test_prune_caps_the_entry_count(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -934,12 +1117,6 @@ def test_startup_prune_enforces_the_cap_when_identity_matches(tmp_path: Path) ->
     assert len(list(restarted.cache_dir.glob("*.pickle"))) == 1
 
 
-def test_stored_source_exists_rejects_a_missing_or_malformed_path() -> None:
-    assert _stored_source_exists({}) is False
-    assert _stored_source_exists({"path": ""}) is False
-    assert _stored_source_exists({"path": 1}) is False
-
-
 def test_entry_cap_is_a_noop_without_a_cache_directory(tmp_path: Path) -> None:
     cache = FileASTCache(tmp_path)
     shutil.rmtree(cache.cache_dir)
@@ -957,3 +1134,99 @@ def test_entry_cap_skips_a_pickle_whose_stat_disappears(tmp_path: Path, monkeypa
     monkeypatch.setattr(f"{_AC_PATH}._safe_stat", _no_stat)
 
     assert cache._enforce_entry_cap() == 0
+
+
+def test_the_entry_key_includes_the_envelope_version(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A shape change must invalidate entries even before a payload is read."""
+    code_path = _write_code(tmp_path)
+    cache = FileASTCache(tmp_path)
+    before = cache._key(code_path, "draft")
+
+    monkeypatch.setattr(f"{_AC_PATH}.FILE_AST_CACHE_VERSION", FILE_AST_CACHE_VERSION + 1)
+
+    assert cache._key(code_path, "draft") != before
+
+
+def test_entry_names_carry_the_identity_prefix(tmp_path: Path) -> None:
+    code_path = _write_code(tmp_path)
+    cache = FileASTCache(tmp_path)
+    cache.save(code_path, "draft", _picture(code_path))
+
+    entry = cache._path(code_path, "draft")
+
+    assert cache._identity == _identity_digest(cache._identity_text())
+    assert entry.name.startswith(f"{cache._identity}-")
+
+
+def test_a_changed_identity_prunes_foreign_entry_names_only(tmp_path: Path) -> None:
+    """Pruning compares the identity prefix, so it never unpickles an entry."""
+    code_path = _write_code(tmp_path)
+    cache = FileASTCache(tmp_path)
+    cache.save(code_path, "draft", _picture(code_path))
+    entry = cache._path(code_path, "draft")
+    foreign = cache.cache_dir / f"{'0' * 64}-foreign.pickle"
+    foreign.write_bytes(b"x")
+    (cache.cache_dir / ".parser-identity").write_text("stale identity\n", encoding="ascii")
+
+    restarted = FileASTCache(tmp_path)
+
+    assert restarted.drain_startup_pruned_entries() == 1
+    assert entry.is_file()
+    assert not foreign.exists()
+    assert restarted.load(code_path, "draft") is not None
+
+
+def test_a_read_only_handle_never_writes_or_touches_an_entry(tmp_path: Path) -> None:
+    code_path = _write_code(tmp_path)
+    writer = FileASTCache(tmp_path)
+    writer.save(code_path, "draft", _picture(code_path))
+    entry = writer._path(code_path, "draft")
+    stamp = entry.stat().st_mtime_ns
+
+    reader = FileASTCache(tmp_path, read_only=True)
+
+    assert reader.enabled
+    assert reader.read_only
+    assert reader.load(code_path, "draft") is not None
+    assert entry.stat().st_mtime_ns == stamp
+    reader.save(code_path, "draft", _picture(code_path))
+    assert entry.stat().st_mtime_ns == stamp
+    assert reader.prune_stale_entries() == 0
+    assert reader._prune_temporary_files() == 0
+    assert reader._enforce_entry_cap() == 0
+    assert reader.drain_startup_pruned_entries() == 0
+
+
+def test_a_read_only_handle_leaves_maintenance_to_the_parent(tmp_path: Path) -> None:
+    writer = FileASTCache(tmp_path)
+    abandoned = writer.cache_dir / "leftover.pickle.tmp"
+    abandoned.write_bytes(b"x")
+    old = time.time() - 7200
+    os.utime(abandoned, (old, old))
+    foreign = writer.cache_dir / "foreign.pickle"
+    foreign.write_bytes(b"x")
+    marker = writer.cache_dir / ".parser-identity"
+    marker_bytes = marker.read_bytes()
+
+    reader = FileASTCache(tmp_path, read_only=True)
+
+    assert reader.enabled
+    assert abandoned.exists()
+    assert foreign.exists()
+    assert marker.read_bytes() == marker_bytes
+
+
+def test_a_read_only_handle_does_not_create_the_cache_directory(tmp_path: Path) -> None:
+    reader = FileASTCache(tmp_path / "cache", read_only=True)
+
+    assert not reader.enabled
+    assert not (tmp_path / "cache").exists()
+
+
+def test_a_read_only_handle_still_requires_a_private_directory(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    cache_dir = tmp_path / "cache"
+    (cache_dir / "file_ast").mkdir(parents=True)
+    monkeypatch.setattr("sattline_parser.source_io._IS_WINDOWS", False)
+    monkeypatch.setattr("sattline_parser.source_io._getuid", lambda: -1)
+
+    assert not FileASTCache(cache_dir, read_only=True).enabled

@@ -50,7 +50,7 @@ from sattline_parser.models.expressions import (
     VarRef,
 )
 from sattline_parser.names import fold_identifier
-from sattline_parser.validation.builtins import builtin_function_signature
+from sattline_parser.validation.builtins import BuiltinFunction, builtin_function_signature
 from sattline_parser.validation.diagnostics import Diagnostic, DiagnosticCode
 from sattline_parser.validation.sequences import check_sequence_positions
 from sattline_parser.validation.symbols import (
@@ -69,6 +69,7 @@ from sattline_parser.validation.typing import (
     is_anytype_datatype,
     is_boolean,
     is_numeric,
+    is_string_simple_type,
     merge_compatible_types,
     unresolved_reference_is_a_defect,
 )
@@ -591,6 +592,11 @@ def _check_assignment(assignment: Assignment, context: ValidationContext) -> Non
     _check_old_new(assignment.target, resolved, context.errors)
     _check_old_write_target(assignment.target, resolved, context.errors)
     if resolved.datatype == ScalarDatatype.STRING:
+        # Scope: plain ``String`` only. The other string families
+        # (``IdentString``, ``TagString``, ``MaxString``, ``LineString``) are
+        # grouped with it for compatibility, but nothing establishes that the
+        # language forbids assigning to them directly, so they stay silent.
+        # See docs/validation.md, "Open questions".
         context.errors.append(
             Diagnostic(
                 code=DiagnosticCode.STRING_ASSIGNMENT_NOT_ALLOWED,
@@ -651,8 +657,9 @@ def _check_old_new(ref: VarRef, resolved: Variable | None, errors: list[Diagnost
 
 
 def _check_call(call: FuncCall, context: ValidationContext) -> None:
-    for arg in call.args:
-        if isinstance(arg, str):
+    signature = builtin_function_signature(call.name)
+    for position, arg in enumerate(call.args, start=1):
+        if isinstance(arg, str) and not _accepts_string_literal(signature, position):
             context.errors.append(
                 Diagnostic(
                     code=DiagnosticCode.STRING_LITERAL_CALL_ARGUMENT,
@@ -660,7 +667,6 @@ def _check_call(call: FuncCall, context: ValidationContext) -> None:
                     span=call.span,
                 )
             )
-    signature = builtin_function_signature(call.name)
     if signature is None:
         return
     if (
@@ -748,6 +754,22 @@ def _check_call(call: FuncCall, context: ValidationContext) -> None:
                     span=call.span,
                 )
             )
+
+
+def _accepts_string_literal(signature: BuiltinFunction | None, position: int) -> bool:
+    """Whether the resolved signature documents a value position for a string literal.
+
+    A literal is a value, so it is accepted only where the documented parameter
+    is an ``in`` parameter of a string datatype: ``LoggedIn`` declares its
+    user-name parameter that way, so ``LoggedIn("operator")`` passes. A written
+    position (``in var``, ``out``, ``inout``) names a buffer that the call fills
+    or advances, so a literal there is still rejected, and an unknown callee
+    proves nothing, so its literal stays rejected too.
+    """
+    if signature is None or position > len(signature.parameters):
+        return False
+    parameter = signature.parameters[position - 1]
+    return parameter.direction == "in" and is_string_simple_type(parameter.datatype)
 
 
 def _is_sfc_runtime_accessor(ref: VarRef, sfc_names: set[str], sfc_accessors: dict[str, frozenset[str]]) -> bool:

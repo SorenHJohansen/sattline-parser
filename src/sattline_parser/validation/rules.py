@@ -447,6 +447,11 @@ RULES: tuple[Rule, ...] = (
         "A module-type instance must name a declared type or one visible from a loaded dependency.",
         scope=RuleScope.MAPPINGS,
     ),
+    _rule(
+        DiagnosticCode.NUMERIC_LITERAL_OUT_OF_RANGE,
+        "A numeric literal must fit the declared 32-bit integer or real range.",
+        scope=RuleScope.CODE,
+    ),
 )
 
 RULES_BY_CODE: dict[DiagnosticCode, Rule] = {rule.code: rule for rule in RULES}

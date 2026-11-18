@@ -10,13 +10,15 @@ bodies. A tail is written after the value it followed, using the positional
 views ``ModuleHeader.coordinate_tails``, ``ClippingClause.corner_tails``, and
 the graph and interact ``coord_tails`` property key.
 
-Four shapes are refused rather than written somewhere they did not appear:
+Five shapes are refused rather than written somewhere they did not appear:
 
 * a hand-assembled model that carries a tail without its positional grouping;
 * a parameter mapping whose source literal is absent;
 * named sequence layers, because ``ModuleDef.seq_layers`` folds the
   ``Two_Layers_`` and named-layer forms into one field;
-* a multi-key ``time_value`` payload, whose written keyword is not modelled.
+* a multi-key ``time_value`` payload, whose written keyword is not modelled;
+* more than two module-header description comments, because the grammar has one
+  position before ``Invocation`` and one after it.
 
 The output is display text: it is not guaranteed to be byte-identical to any
 particular editor's layout, and it is not a supported interchange format.
@@ -148,8 +150,9 @@ def format_source(picture: BasePicture, *, indent: str = "    ") -> str:
     if description is not None:
         printer.emit(0, description.text)
     datecode = f" DateCode_ {picture.datecode}" if picture.datecode is not None else ""
+    frame = " (Frame_Module)" if picture.is_frame_module else ""
     header = _module_header(picture.header)
-    printer.emit(0, f"{header} : MODULEDEFINITION{datecode}")
+    printer.emit(0, f"{header} : MODULEDEFINITION{datecode}{frame}")
     _emit_scan_group(printer, picture.header, 0)
     _emit_body(printer, picture, 0)
     printer.emit(0, _enddef_text(picture.trailing_comments))
@@ -229,7 +232,8 @@ def _emit_definitions(
 
 
 def _emit_datatype(printer: _Printer, datatype: DataType, level: int) -> None:
-    description = f" {_string(datatype.description)}" if datatype.description else ""
+    # An empty written description is a description, not an absent one.
+    description = f" {_string(datatype.description)}" if datatype.description is not None else ""
     datecode = f" DateCode_ {datatype.datecode}" if datatype.datecode is not None else ""
     printer.emit(level, f"{datatype.name}{description} = RECORD{datecode}")
     _emit_variable_groups(printer, datatype.var_list, level + 1)
@@ -309,7 +313,11 @@ def _variable_group_text(group: list[Variable]) -> str:
     global_keyword = "GLOBAL " if first.global_var else ""
     datatype = _datatype_text(first.datatype)
     modifiers = "".join(f" {keyword}" for keyword in _modifier_keywords(first))
-    initial = "" if first.init_value is None and not first.has_explicit_default else f" := {_init_value_text(first)}"
+    initial = (
+        ""
+        if first.init_value is None and not first.has_explicit_default and not first.init_is_duration
+        else f" := {_init_value_text(first)}"
+    )
     return f"{items}: {global_keyword}{datatype}{modifiers}{initial};"
 
 
@@ -337,15 +345,24 @@ def _init_value_text(variable: Variable) -> str:
     if variable.init_is_duration:
         if isinstance(value, str):
             return f"{const.GRAMMAR_VALUE_DURATION_VALUE} {_string(value)}"
+        if value is None:
+            # A bare ``Duration_Value`` initializer has no payload text; the
+            # marker alone is the initializer.
+            return const.GRAMMAR_VALUE_DURATION_VALUE
         return str(value)
     if isinstance(value, dict):
-        if len(value) == 1:
-            ((keyword, text),) = value.items()
-            if text is None:
-                return keyword
-            return f"{keyword} {_string(text)}"
-        raise UnsupportedFormattingError("a multi-key time_value payload cannot be rendered from its parsed dict")
+        return _time_value_text(value)
     return _value_text(value)
+
+
+def _time_value_text(payload: dict[str, str | None]) -> str:
+    """Render a parsed ``Time_Value`` payload as the source spelling."""
+    if len(payload) != 1:
+        raise UnsupportedFormattingError("a multi-key time_value payload cannot be rendered from its parsed dict")
+    ((keyword, text),) = payload.items()
+    if text is None:
+        return keyword
+    return f"{keyword} {_string(text)}"
 
 
 def _datatype_text(datatype: ScalarDatatype | str) -> str:
@@ -376,7 +393,7 @@ def _emit_submodule(printer: _Printer, submodule: SingleModule | FrameModule | M
         _emit_module_def(printer, submodule.moduledef, level + 1)
     if submodule.modulecode is not None:
         _emit_module_code(printer, submodule.modulecode, level + 1)
-    mappings = ", ".join(_mapping_text(mapping) for mapping in getattr(submodule, "parametermappings", ()))
+    mappings = ", ".join(_mapping_text(mapping) for mapping in submodule.parametermappings)
     tail = f" ({mappings})" if mappings else ""
     printer.emit(level, _enddef_text(submodule.trailing_comments, tail=tail))
 
@@ -396,7 +413,7 @@ def _emit_module_def(printer: _Printer, module: ModuleDef, level: int) -> None:
         printer.emit(level, f"ZoomLimits = {_real(module.zoom_limits[0])} {_real(module.zoom_limits[1])}")
     if module.zoomable:
         printer.emit(level, "Zoomable")
-    if module.grid != 0.2:
+    if module.grid is not None:
         printer.emit(level, f"Grid = {_real(module.grid)}")
     if module.graph_objects:
         printer.emit(level, f"{const.GRAMMAR_VALUE_GRAPHOBJECTS} :")
@@ -435,8 +452,19 @@ def _module_header(header: ModuleHeader) -> str:
     )
     arguments = _arguments_text(header.arguments)
     inner = f"( {coordinames}" + (f" {arguments}" if arguments else "") + " )"
-    comments = "".join(f" {comment.text}" for comment in header.description_comments)
-    return f"{header.name}{comments} Invocation {inner}"
+    # The grammar has one description-comment position before ``Invocation`` and
+    # one after it. The model keeps them in one ordered list, so the first one
+    # goes back to the first position and the second to the second; writing both
+    # before ``Invocation`` produced source the grammar rejects.
+    comments = header.description_comments
+    if len(comments) > 2:
+        raise UnsupportedFormattingError(
+            "module header description comments: the grammar has one comment position "
+            "before Invocation and one after it"
+        )
+    before = "".join(f" {comment.text}" for comment in comments[:1])
+    after = "".join(f" {comment.text}" for comment in comments[1:])
+    return f"{header.name}{before} Invocation{after} {inner}"
 
 
 def _arguments_text(arguments: ModuleArguments) -> str:
@@ -495,9 +523,6 @@ def _emit_equation(printer: _Printer, equation: Equation, level: int) -> None:
     size = f" OBJSIZE {_real(equation.size[0])}, {_real(equation.size[1])}" if equation.size else ""
     layer = f" {_layer_text(equation.layer_info)}" if equation.layer_info is not None else ""
     printer.emit(level, f"{keyword}{name}{coord}{size}{layer} :")
-    if not equation.code:
-        printer.emit(level + 1, "(* empty *)")
-        return
     _emit_code_items(printer, equation.code, level + 1)
 
 
@@ -648,7 +673,7 @@ def _graph_head(properties: GraphProperties, kind: str, used: set[int]) -> list[
     if coords is not None:
         if kind == const.GRAMMAR_VALUE_SEGMENTOBJECT:
             head.append(_tailed_coords_text(coords, groups, 0))
-            _mark_groups(used, groups, 0, 2)
+            _mark_groups(used, groups, 0, 4)
         else:
             head.append(_tailed_coords_text(coords, groups, 0))
             _mark_groups(used, groups, 0, len(groups))
@@ -657,8 +682,8 @@ def _graph_head(properties: GraphProperties, kind: str, used: set[int]) -> list[
         for tail in (*point.x_tails, *point.y_tails):
             used.add(id(tail))
     if kind == const.GRAMMAR_VALUE_SEGMENTOBJECT and const.KEY_SEGMENT_POINT in properties:
-        head.append(_tailed_coords_text(properties[const.KEY_SEGMENT_POINT], groups, 2))
-        _mark_groups(used, groups, 2, 4)
+        head.append(_tailed_coords_text(properties[const.KEY_SEGMENT_POINT], groups, 4))
+        _mark_groups(used, groups, 4, 6)
     return head
 
 
@@ -885,8 +910,13 @@ def _tail_arg_text(value: object) -> str:
 
 
 def _interact_body_text(entry: object) -> str:
-    if isinstance(entry, int):
+    # ``layer_info`` is a plain int. A literal integer body value is an
+    # ``IntLiteral``, which is an int subclass, so the exact type is what
+    # separates the two.
+    if type(entry) is int:
         return _layer_text(entry)
+    if isinstance(entry, (bool, int, float, str)):
+        return _value_text(entry)
     if isinstance(entry, CodeComment):
         return entry.text
     if isinstance(entry, Alignment):
@@ -967,12 +997,17 @@ def _mapping_text(mapping: ParameterMapping) -> str:
     prefix = f"{mapping.target.name} => {global_keyword}{duration_keyword}"
     if mapping.source is not None:
         return f"{prefix}{mapping.source.name}"
-    if mapping.source_literal is None:
+    literal = mapping.source_literal
+    if literal is None:
         raise UnsupportedFormattingError(
             f"mapping {mapping.target.name!r}: the model kept no source literal, "
             "so a written falsy literal cannot be reproduced"
         )
-    return f"{prefix}{_value_text(mapping.source_literal)}"
+    if isinstance(literal, dict):
+        # A ``Time_Value`` payload is a parsed dict, not a Python literal: it
+        # has to be written back as the keyword and its optional time string.
+        return f"{prefix}{_time_value_text(literal)}"
+    return f"{prefix}{_value_text(literal)}"
 
 
 def _tails_text(groups: tuple[tuple[Tail, ...], ...], index: int) -> str:

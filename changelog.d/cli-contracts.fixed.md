@@ -1,0 +1,1 @@
+- **CLI output and exit-code contracts.** A closed stdout now exits `2` instead of `3` or `120`, `diff` reports no count changes when a side does not parse, `graphics` applies the shared `--stdin-name` rule, exits `1` on a scan message, and prints one sentence instead of the expression parser's token dump, and `--max-findings` notes the withheld count once under `--json`.

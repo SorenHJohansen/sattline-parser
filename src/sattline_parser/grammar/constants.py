@@ -43,7 +43,6 @@ TREE_TAG_DATATYPE_LIST: Final = "datatype_list"
 TREE_TAG_MODULETYPE_LIST: Final = "moduletype_list"
 TREE_TAG_VAR_LIST: Final = "var_list"
 TREE_TAG_MODULETYPE_PAR_LIST: Final = "moduletype_par_list"
-TREE_TAG_MODULEDEF_BLOCK: Final = "moduledef_block"
 TREE_TAG_BASE_MODULE_BODY: Final = "base_module_body"
 TREE_TAG_MODULE_BODY: Final = "module_body"
 TREE_TAG_SUBMODULES: Final = "submodules"
@@ -285,6 +284,15 @@ def _cp1252_name_characters() -> str:
 
 
 GRAMMAR_CHARSET_NAME: Final = r"\p{L}\p{Nl}\p{M}\p{Nd}_'" + _cp1252_name_characters() + r"\uFFFD"
+#: Characters that may begin an unquoted identifier: the name class without the
+#: decimal digits. A leading digit would be read as a numeric literal wherever a
+#: literal may start, so ``1E5`` is the number ``100000.0`` rather than a name
+#: and a name may not begin with a digit. The quoted form spells such a name.
+GRAMMAR_CHARSET_NAME_START: Final = r"\p{L}\p{Nl}\p{M}_'" + _cp1252_name_characters() + r"\uFFFD"
+#: A quoted identifier. Its body is literal text, so it holds no apostrophe and
+#: never spans a line break. The lexer and the compressed-source scanner share
+#: this pattern, so both find the same opener and closer.
+GRAMMAR_PATTERN_QUOTED_NAME: Final = r"'[^'\r\n]+'"
 _NAME_EXCLUDED_KEYWORDS: Final = (
     GRAMMAR_VALUE_IF,
     GRAMMAR_VALUE_THEN,
@@ -301,12 +309,12 @@ _NAME_EXCLUDED_KEYWORDS: Final = (
 _NAME_EXCLUDED: Final = "|".join(_NAME_EXCLUDED_KEYWORDS)
 
 GRAMMAR_REGEX_NAME: Final = (
-    r"/(?i:'[^']+'|"
+    rf"/(?i:{GRAMMAR_PATTERN_QUOTED_NAME}|"
     r"(?!"
     rf"(?:{_NAME_EXCLUDED})"
     rf"(?![{GRAMMAR_CHARSET_NAME}])"
     r")"
-    rf"[{GRAMMAR_CHARSET_NAME}]+"
+    rf"[{GRAMMAR_CHARSET_NAME_START}][{GRAMMAR_CHARSET_NAME}]*"
     rf"(?![{GRAMMAR_CHARSET_NAME}]))/"
 )
 

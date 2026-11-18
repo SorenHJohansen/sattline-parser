@@ -100,7 +100,7 @@ is preserved rather than rejected.
 | Rule | What it represents |
 | --- | --- |
 | `module_header` | `Name Invocation (x,y,x,y,x) arguments` |
-| `base_picture_module` | The root module; the trailing `ENDDEF` and its `;` are both optional |
+| `base_picture_module` | The root module; the trailing `ENDDEF` and its `;` may be omitted together, but a written `ENDDEF` requires its `;` |
 | `invocation_new_module` | A nested module body with its own `MODULEDEFINITION ... ENDDEF` |
 | `invocation_module_type` | A reference to a named module type, with optional parameter transfers |
 | `frame_module` | `( Frame_Module )`, a pure container |
@@ -108,9 +108,9 @@ is preserved rather than rejected.
 | `moduletype_definition` | `Name = [PRIVATE_] MODULEDEFINITION ... ENDDEF ;` |
 
 `module_body` is `moduleparameters? localvariables? submodules? moduledef
-modulecode?`. The `moduledef` is required. The root body's closing `ENDDEF`
-(and the optional `;` after it) may be omitted; a nested body still ends at its
-own `ENDDEF`. A `ModuleCode` without a `ModuleDef` is not accepted, and the
+modulecode?`. The `moduledef` is required. The root body's closing `ENDDEF` and
+its `;` may be omitted together; a written `ENDDEF` requires the `;`. A nested
+body still ends at its own `ENDDEF`. A `ModuleCode` without a `ModuleDef` is not accepted, and the
 corpus fixture
 `ModuleCodeWithoutModuleDef.s` pins that. A module body has at most one
 `moduledef`: a second `ModuleDef` before the closing `ENDDEF` is a syntax error,
@@ -162,12 +162,18 @@ with an operand tuple.
 ### Sequences and SFC
 
 ```
-sequence:       (SEQUENCE | OPENSEQUENCE) NAME? seq_control_opt? codeblock_coord objsizedef layer_info?
-                sequence_body (ENDSEQUENCE | ENDOPENSEQUENCE)
+sequence:       (SEQUENCE _sequence_tail ENDSEQUENCE
+                | OPENSEQUENCE _sequence_tail ENDOPENSEQUENCE)
+_sequence_tail: NAME? seq_control_opt? codeblock_coord objsizedef layer_info? sequence_body
 sequence_body:  (code_comment | seq_element)+
 seq_element:    seqinitstep | seqstep | seqtransition | seqtransitionsub
                 | seqsubstep | seqsub | seqalternative | seqparallel
 ```
+
+The opener and the closer must match: `SEQUENCE` ends with `ENDSEQUENCE` and
+`OPENSEQUENCE` ends with `ENDOPENSEQUENCE`. The shared tail is an inlined rule
+(a leading underscore), so the transformer sees the same item order as a single
+rule would give it. `Sequence.type` keeps the opener spelling.
 
 Every position-bearing element goes through `seq_element`, so one transformer
 hook can attach the element's source span. `SEQFORK` is a suffix of its host
@@ -243,9 +249,13 @@ per-state lexer. At depth greater than 0 it delegates to a dedicated comment
 lexer that only recognizes `COMMENT_START`, `COMMENT_END`, and `COMMENT_TEXT`
 and is oblivious to parser state.
 
-`COMMENT_END` and `COMMENT_TEXT` are stripped from every per-state accepted
-terminal set. `COMMENT_START` stays, because that is how a comment begins in
-code context.
+`COMMENT_TEXT` is removed from every per-state accepted-terminal set, so comment
+text is only ever produced by the dedicated comment lexer. Both delimiters are
+kept for the error path: `COMMENT_START` is accepted in every state, so a
+comment opener in a position the grammar does not allow reaches the parser as
+`(*` and the diagnostic names it, and the fallback lexer keeps `COMMENT_END`, so
+a rejected `*)` is reported as the comment end rather than as the `*` that
+`MULTIPLY` matches on its own.
 
 ### Comment roles
 
@@ -281,16 +291,26 @@ The `NAME` terminal:
 
 - does not match any keyword (`IF`, `THEN`, `ELSE`, `ELSIF`, `ENDIF`, `AND`,
   `OR`, `NOT`, `True`, `False`, `On`, `Off`, `SUBSEQSTEP`);
-- accepts a quoted identifier `'...'`;
-- accepts letters, marks, digits, `_`, `'`, and every printable CP1252 byte;
+- may not begin with a decimal digit. A leading digit would be read as a numeric
+  literal wherever a literal may start, so `1E5` is the number `100000.0` in an
+  expression and a declaration named `1E5` is rejected with `expected a name`
+  rather than becoming a name no expression can reference. The quoted form
+  spells such a name: `'1E5'`;
+- accepts letters, marks, `_`, `'`, digits after the first character, and every
+  printable CP1252 byte;
+- accepts a quoted identifier `'...'`, whose body holds no apostrophe and never
+  spans a line break. The lexer and the compressed-source scanner share this
+  boundary (see [source-provenance.md](source-provenance.md));
 - accepts an identifier of any length.
 
 The language limits a declared identifier to 20 characters, so a longer spelling
 is a validation finding (`SL-V038`) with the declaration's span, not a lexer
 error. Keeping the lexer permissive means the source parses and the finding says
 what is wrong, instead of pointing at the twenty-first character as an
-unexpected one. A sidecar dependency name is still capped at 20 characters,
-because that name builds a filesystem path and is not a parsed declaration.
+unexpected one. A sidecar dependency name is not length-capped either: it is
+validated against the identifier character set so it cannot carry a path, and a
+body whose declaration exceeds 20 characters is reported by `SL-V038` like any
+other declaration.
 
 Identifier comparison is not Unicode case folding. `names.fold_identifier`
 implements the CP1252 byte table used by the language:

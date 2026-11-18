@@ -1,0 +1,1 @@
+- **Sidecar findings name the affected unit.** A non-fatal sidecar diagnostic is attributed to the library whose artifact is affected, not to each consumer that imported it. A warm lookup also re-stats its hit, and a symlinked body resolves the same way in the warm and cold paths.

@@ -2,9 +2,16 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
+from dataclasses import FrozenInstanceError
 from pathlib import Path
+from typing import cast
+
+import pytest
 
 from sattline_parser import parse_source_text
+from sattline_parser.models.ast_model import Variable
+from sattline_parser.models.freeze import freeze_ast
 from sattline_parser.project import LoadMode, ProjectIndex, SattLineProgram, SattLineProject, SymbolKind
 
 from ._support import write_file
@@ -105,6 +112,63 @@ def test_index_is_built_once_per_project() -> None:
     assert project.index is project.index
     assert isinstance(project.index, ProjectIndex)
     assert "PumpType" in project.index.defined_names()
+
+
+def test_attached_ast_is_frozen() -> None:
+    project = _project()
+    code = project.get("SimpleModuleTypeInv").code
+
+    with pytest.raises(FrozenInstanceError):
+        code.localvariables[0].name = "RenamedVariable"
+    with pytest.raises(AttributeError):
+        code.localvariables.append(code.localvariables[0])
+    with pytest.raises(FrozenInstanceError):
+        del code.localvariables
+
+
+def test_freeze_ast_converts_containers() -> None:
+    frozen = cast("Mapping[str, object]", freeze_ast({"items": [1, 2]}))
+
+    assert frozen["items"] == (1, 2)
+    with pytest.raises(TypeError):
+        cast("dict[str, object]", frozen)["other"] = 3
+
+
+def test_an_unfrozen_node_still_allows_attribute_deletion() -> None:
+    variable = Variable(name="X", datatype="integer")
+
+    del variable.name
+
+    assert not hasattr(variable, "name")
+
+
+def test_index_cannot_go_stale_after_a_rejected_mutation() -> None:
+    project = _project()
+    before = project.index.definitions_of("SpeedRef")
+
+    with pytest.raises(FrozenInstanceError):
+        project.get("SimpleModuleTypeInv").code.localvariables[0].name = "RenamedVariable"
+
+    assert project.index.definitions_of("SpeedRef") == before
+    assert project.index.definitions_of("RenamedVariable") == ()
+
+
+def test_from_programs_does_not_freeze_the_callers_ast() -> None:
+    source = parse_source_text(_SOURCE)
+    project = SattLineProject.from_programs(
+        {"SimpleModuleTypeInv": SattLineProgram(name="SimpleModuleTypeInv", code=source)}
+    )
+
+    source.localvariables[0].name = "CallerOwned"
+    assert project.get("SimpleModuleTypeInv").code.localvariables[0].name == "SpeedRef"
+
+
+def test_load_returns_a_frozen_tree(tmp_path: Path) -> None:
+    write_file(tmp_path, "SimpleModuleTypeInv.s", _SOURCE)
+    project = SattLineProject.load([tmp_path], mode=LoadMode.DRAFT, targets=["SimpleModuleTypeInv"])
+
+    with pytest.raises(FrozenInstanceError):
+        project.get("SimpleModuleTypeInv").code.localvariables[0].name = "RenamedVariable"
 
 
 def test_index_covers_a_loaded_project(tmp_path: Path) -> None:

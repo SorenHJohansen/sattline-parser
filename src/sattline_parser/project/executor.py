@@ -43,6 +43,28 @@ __all__ = [
 
 _LOGGER = getLogger(__name__)
 
+#: OSError subclasses a worker can report. The subclass carries meaning for the
+#: caller (a permission problem, a vanished file, a directory where a file was
+#: expected), so the parent rebuilds the same type instead of collapsing it.
+_OSERROR_TYPES: dict[str, type[OSError]] = {
+    "BlockingIOError": BlockingIOError,
+    "BrokenPipeError": BrokenPipeError,
+    "ChildProcessError": ChildProcessError,
+    "ConnectionAbortedError": ConnectionAbortedError,
+    "ConnectionError": ConnectionError,
+    "ConnectionRefusedError": ConnectionRefusedError,
+    "ConnectionResetError": ConnectionResetError,
+    "FileExistsError": FileExistsError,
+    "FileNotFoundError": FileNotFoundError,
+    "InterruptedError": InterruptedError,
+    "IsADirectoryError": IsADirectoryError,
+    "NotADirectoryError": NotADirectoryError,
+    "OSError": OSError,
+    "PermissionError": PermissionError,
+    "ProcessLookupError": ProcessLookupError,
+    "TimeoutError": TimeoutError,
+}
+
 
 @dataclass(frozen=True, slots=True)
 class ParseFailure:
@@ -148,20 +170,24 @@ def rebuild_parse_failure(record: ParseFailure) -> BaseException:
         return UnicodeError(record.message)
     if record.type_name == "ValueError":
         return ValueError(record.message)
-    if record.type_name == "OSError":
-        return OSError(record.message)
+    error_type = _OSERROR_TYPES.get(record.type_name)
+    if error_type is not None:
+        # Preserve the subclass: the assembler chains this as the cause, and a
+        # PermissionError or FileNotFoundError tells the operator what happened.
+        return error_type(record.message)
     return RuntimeError(record.message)
 
 
 #: One cache handle per worker process. Constructing a handle per task would
-#: re-run the private-directory check and the startup prune for every file.
+#: re-run the private-directory check for every file, and the handle is
+#: read-only so a worker never prunes, touches, or writes an entry.
 _WORKER_CACHES: dict[str, FileASTCache] = {}
 
 
 def _worker_cache(cache_text: str) -> FileASTCache:
     cache = _WORKER_CACHES.get(cache_text)
     if cache is None:
-        cache = FileASTCache(Path(cache_text))
+        cache = FileASTCache(Path(cache_text), read_only=True)
         _WORKER_CACHES[cache_text] = cache
     return cache
 
@@ -175,13 +201,14 @@ def parse_code_file(
     """Parse one code file into an AST.
 
     Runs in a child process when ``workers`` is greater than one, so it must not
-    touch the loader or its registry. It reads the AST cache but never writes
-    it: the parent owns every write, so the per-user cache key is created and
-    the entries are signed by a single process. A failure comes back as text,
-    because the error type and wording depend on the dependency edge and the
-    parent owns both. ``log_failures`` mirrors the parent's choice: a plain load
-    keeps stderr for the structured finding, and ``--debug`` keeps the parser
-    traceback.
+    touch the loader or its registry. It reads the AST cache through a read-only
+    handle and never writes it: the parent owns every write, so the per-user
+    cache key is created and the entries are signed by a single process, and a
+    worker neither prunes an entry nor moves its mtime. A failure comes back as
+    text, because the error type and wording depend on the dependency edge and
+    the parent owns both. ``log_failures`` mirrors the parent's choice: a plain
+    load keeps stderr for the structured finding, and ``--debug`` keeps the
+    parser traceback.
     """
     if parse_bytes is None:
         parse_bytes = parse_source_bytes
@@ -275,7 +302,14 @@ class ParseExecutor:
         except (OSError, RuntimeError, ValueError) as exc:
             # A pool cannot always be created (no worker start method, a
             # restricted sandbox). Parsing is the load, not an optimisation
-            # detail, so fall back to this process rather than failing.
+            # detail, so fall back to this process rather than failing. The
+            # warning is not gated on --debug: a serial load is a real
+            # performance regression the operator should see.
+            _LOGGER.warning(
+                "worker pool unavailable (%s); parsing %d bodies in this process instead",
+                exc,
+                len(plans),
+            )
             self._dbg(f"Parallel parsing unavailable ({exc}); parsing in this process")
             for plan in plans:
                 self.outcomes[plan.key] = self._parse_in_process(plan)

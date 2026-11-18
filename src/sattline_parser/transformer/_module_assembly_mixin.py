@@ -41,7 +41,7 @@ from ._module_shared import (
     tree_children,
     v_args,
 )
-from ._tokens_mixin import DEFAULT_INIT
+from ._tokens_mixin import DEFAULT_INIT, DURATION_VALUE_SENTINEL
 
 
 def _only_one_block[Block: (ModuleDef, ModuleCode)](current: Block | None, new: Block, label: str) -> Block:
@@ -121,6 +121,7 @@ class ModuleAssemblyMixin:
         scan_group_info: GroupConnInfo | None = None
         trailing_comments: list[CodeComment] = []
         datecode: int | None = None
+        is_frame_module = False
 
         for it in flatten_items(items[1:]):
             if isinstance(it, DataType):
@@ -135,6 +136,10 @@ class ModuleAssemblyMixin:
                 trailing_comments.append(it)
             elif isinstance(it, GroupConnInfo):
                 scan_group_info = it
+            elif it is True:
+                # The ``(Frame_Module)`` marker is the only bare ``True`` a
+                # module body produces.
+                is_frame_module = True
             elif isinstance(it, int) and not isinstance(it, bool) and datecode is None:
                 datecode = it
             elif isinstance(it, Tree):
@@ -167,6 +172,7 @@ class ModuleAssemblyMixin:
             modulecode=modulecode,
             trailing_comments=trailing_comments,
             datecode=datecode,
+            is_frame_module=is_frame_module,
         )
 
     def invocation_new_module(self, items: list[TransformerItem]) -> FrameModule | SingleModule:
@@ -223,6 +229,7 @@ class ModuleAssemblyMixin:
                 submodules=submodules,
                 moduledef=moduledef,
                 modulecode=modulecode,
+                parametermappings=param_mappings,
                 trailing_comments=trailing_comments,
             )
         return SingleModule(
@@ -402,7 +409,7 @@ class ModuleAssemblyMixin:
                 idx += 1
 
         is_duration = False
-        if idx < len(items) and items[idx] == const.GRAMMAR_VALUE_DURATION_VALUE:
+        if idx < len(items) and items[idx] is DURATION_VALUE_SENTINEL:
             is_duration = True
             idx += 1
 
@@ -485,9 +492,17 @@ class ModuleAssemblyMixin:
         return cast(tuple[TransformerItem, bool], (init_value, False))
 
     def time_value(self, items: list[TransformerItem]) -> dict[str, str | None]:
-        """Grammar time_value -> dict with time string."""
+        """Grammar time_value -> dict with the written time string.
+
+        The ``Time_Value`` keyword is a ``Token`` and subclasses ``str``, so it
+        must be skipped explicitly: otherwise the keyword itself becomes the
+        payload text and the formatter writes ``Time_Value "Time_Value"``. A
+        bare ``Time_Value`` keeps ``None``.
+        """
         time_string = None
         for it in items:
+            if isinstance(it, Token):
+                continue
             if isinstance(it, str):
                 time_string = it
         return {const.GRAMMAR_VALUE_TIME_VALUE: time_string}
@@ -554,7 +569,11 @@ class ModuleAssemblyMixin:
                     has_explicit_default=has_explicit_default,
                     description=desc,
                     declaration_span=declaration_span,
-                    init_is_duration=(init_is_duration and resolved_init_value is not None),
+                    # A bare ``Duration_Value`` has no payload text, so the
+                    # marker must survive on its own. Dropping it when the value
+                    # is absent silently rewrote ``:= Duration_Value`` as no
+                    # initializer at all.
+                    init_is_duration=init_is_duration,
                     attribute_order=tuple(attribute_order),
                 )
             )

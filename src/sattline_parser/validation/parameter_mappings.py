@@ -83,7 +83,11 @@ def check_parameter_mappings(
             errors.append(
                 Diagnostic(
                     code=DiagnosticCode.PARAMETER_MAPPING_TARGET_UNKNOWN,
-                    message=f"Parameter mapping target {target_name!r} is not a parameter of the target module",
+                    message=(
+                        f"Parameter mapping target {target_name!r} is not a formal parameter in the "
+                        "resolved definition of the target module; a formal removed from that "
+                        "definition leaves this mapping stale"
+                    ),
                     span=mapping.span,
                 )
             )
@@ -106,7 +110,10 @@ def check_parameter_mappings(
                 errors.append(
                     Diagnostic(
                         code=DiagnosticCode.PARAMETER_MAPPING_TARGET_UNKNOWN,
-                        message=f"Parameter mapping target {target_name!r} does not exist",
+                        message=(
+                            f"Parameter mapping target {target_name!r} is not a field in the resolved "
+                            f"definition of parameter {target_variable.name!r}"
+                        ),
                         span=mapping.span,
                     )
                 )

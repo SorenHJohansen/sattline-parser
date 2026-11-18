@@ -36,7 +36,7 @@ def test_defaults_are_exposed() -> None:
     assert isinstance(LOOKUP_CACHE_VERSION, int)
 
 
-def test_set_get_roundtrip_casefolds_name(tmp_path: Path) -> None:
+def test_set_get_roundtrip_is_case_insensitive(tmp_path: Path) -> None:
     cache = FileLookupCache(tmp_path, write_through=True)
     base_dir = Path("/tmp/X")
     cache.set("code", "ControlLib", "draft", base_dir=base_dir, ext=".s")
@@ -45,6 +45,17 @@ def test_set_get_roundtrip_casefolds_name(tmp_path: Path) -> None:
         "ext": ".s",
     }
     assert cache.get("code", "Unknown", "draft") is None
+
+
+def test_set_get_keeps_language_distinct_names_apart(tmp_path: Path) -> None:
+    """``Straße`` and ``STRASSE`` are different units, so they need two entries."""
+    cache = FileLookupCache(tmp_path, write_through=True)
+    cache.set("code", "Straße", "draft", base_dir=Path("/sharp"), ext=".s")
+    cache.set("code", "STRASSE", "draft", base_dir=Path("/upper"), ext=".s")
+
+    assert cache.get("code", "Straße", "draft") == {"base_dir": "/sharp", "ext": ".s"}
+    assert cache.get("code", "STRASSE", "draft") == {"base_dir": "/upper", "ext": ".s"}
+    assert cache.get("code", "Strasse", "draft") == {"base_dir": "/upper", "ext": ".s"}
 
 
 def test_set_get_roundtrips_resolved_base_dir(tmp_path: Path) -> None:
@@ -287,3 +298,26 @@ def test_prune_temporary_files_is_a_noop_without_a_cache_directory(tmp_path: Pat
     shutil.rmtree(cache.cache_dir)
 
     assert cache._prune_temporary_files() == 0
+
+
+def test_set_enforces_the_cap_during_a_run(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """The cap runs on every write, not only at startup."""
+    monkeypatch.setattr(f"{_CACHE_PATH}.MAX_LOOKUP_CACHE_ENTRIES", 2)
+    cache = FileLookupCache(tmp_path, write_through=True)
+
+    for name in ("A", "B", "C", "D"):
+        cache.set("code", name, "draft", base_dir=tmp_path, ext=".s")
+
+    present = [name for name in ("A", "B", "C", "D") if cache.get("code", name, "draft") is not None]
+    assert present == ["C", "D"]
+    payload = json.loads((tmp_path / "file_lookup_cache.json").read_text(encoding="utf-8"))
+    assert len(payload["entries"]) == 2
+
+
+def test_set_honours_a_zero_cap(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(f"{_CACHE_PATH}.MAX_LOOKUP_CACHE_ENTRIES", 0)
+    cache = FileLookupCache(tmp_path, flush_interval=None)
+
+    cache.set("code", "A", "draft", base_dir=tmp_path, ext=".s")
+
+    assert cache.get("code", "A", "draft") is None

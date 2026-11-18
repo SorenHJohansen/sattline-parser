@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 from collections import Counter
+from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import cast
 
@@ -39,6 +40,8 @@ class DiffResult:
     added: tuple[FindingDelta, ...]
     removed: tuple[FindingDelta, ...]
     #: ``(count name, old value, new value)`` for every summary count that moved.
+    #: Empty when either side did not parse: there is no comparable summary, and
+    #: the parse failure is already reported as a finding.
     counts_changed: tuple[tuple[str, object, object], ...]
 
     @property
@@ -103,13 +106,6 @@ def compare(old: Analysis, new: Analysis, *, old_name: str, new_name: str) -> Di
         FindingDelta(rule=rule, message=message, count=count)
         for (rule, message), count in sorted((old_counts - new_counts).items())
     )
-    old_map = _counts(old)
-    new_map = _counts(new)
-    counts_changed = tuple(
-        (key, old_map.get(key), new_map.get(key))
-        for key in sorted({*old_map, *new_map})
-        if old_map.get(key) != new_map.get(key)
-    )
     return DiffResult(
         old_file=old_name,
         new_file=new_name,
@@ -117,14 +113,29 @@ def compare(old: Analysis, new: Analysis, *, old_name: str, new_name: str) -> Di
         new_parsed=new.summary is not None,
         added=added,
         removed=removed,
-        counts_changed=counts_changed,
+        counts_changed=_changed_counts(old, new),
     )
 
 
-def _counts(analysis: Analysis) -> dict[str, object]:
-    if analysis.summary is None:
-        return {}
-    counts = analysis.summary.get("counts")
+def _changed_counts(old: Analysis, new: Analysis) -> tuple[tuple[str, object, object], ...]:
+    """Every structural count that moved, or nothing when a side did not parse.
+
+    A missing summary is not a set of zero counts: reporting ``null -> 0`` for
+    every key would describe the parse failure as seven separate changes.
+    """
+    if old.summary is None or new.summary is None:
+        return ()
+    old_map = _counts(old.summary)
+    new_map = _counts(new.summary)
+    return tuple(
+        (key, old_map.get(key), new_map.get(key))
+        for key in sorted({*old_map, *new_map})
+        if old_map.get(key) != new_map.get(key)
+    )
+
+
+def _counts(summary: Mapping[str, object]) -> dict[str, object]:
+    counts = summary.get("counts")
     return cast("dict[str, object]", counts) if isinstance(counts, dict) else {}
 
 

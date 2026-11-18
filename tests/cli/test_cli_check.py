@@ -120,6 +120,18 @@ def test_max_findings_limits_output_but_not_the_exit_code(tmp_path, capsys) -> N
     assert "Consecutive SFC steps" in capsys.readouterr().out
 
 
+def test_max_findings_note_is_printed_once_in_a_json_document(tmp_path, capsys) -> None:
+    source = write_source(tmp_path, "Steps.s", CONSECUTIVE_STEPS_SOURCE)
+
+    assert main(["check", str(source), "--max-findings", "0", "--json"]) == ExitCode.FINDINGS
+
+    captured = capsys.readouterr()
+    assert captured.err.count("more finding(s) not shown") == 1
+    payload = json.loads(captured.out)
+    assert payload["findings"] == []
+    assert payload["counts"] == {"error": 1}
+
+
 def test_fail_on_policy(tmp_path, capsys) -> None:
     source = write_source(tmp_path, "Steps.s", CONSECUTIVE_STEPS_SOURCE)
 

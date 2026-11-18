@@ -159,6 +159,10 @@ typing that needs a validation scope stays in this layer.
   `OpSave State` and `OpSave Const` are invalid.
 - A declared datatype name must resolve to a file datatype, a builtin record,
   or a loaded external datatype, unless the single-file escape hatch applies.
+- A near miss of a builtin datatype name is reported as a typo only when exactly
+  one builtin is the closest candidate. Two candidates at the same edit distance
+  are a tie, so no suggestion is offered and the name is reported as unknown
+  instead.
 - Record fields must resolve, and every definition of a duplicated datatype
   name is validated on its own.
 
@@ -183,19 +187,25 @@ typing that needs a validation scope stays in this layer.
   writable variable references. Arity, argument-direction, and argument-datatype
   checks need a known signature, so they apply only to names in the catalogue.
   A catalogue name whose documented arity is unknown is carried without a
-  parameter list, so no arity or argument check runs for it; the string-literal
-  argument rule still applies.
-- A string literal argument is rejected in every call, known or unknown,
-  because the parser does not evidence that the callee accepts a value there.
+  parameter list, so no arity or argument check runs for it, and its string
+  literal arguments stay rejected because no documented parameter accepts them.
+- A string literal argument is accepted only where the resolved signature
+  documents an `in` parameter of a string datatype, so `LoggedIn("operator")` is
+  legal. A written position (`in var`, `out`, `inout`) names a buffer that the
+  call fills or advances, so a literal there is rejected. A callee with no known
+  signature stays rejected, because nothing evidences that it takes a value.
 - Numeric operands are required for arithmetic; boolean operands for `AND`,
   `OR`, and `NOT`; a boolean condition for `IF`, `ELSIF`, and `WAIT_FOR`.
 - Assignment types must be compatible.
 - Comparison operands must be compatible. Each offending operand gets its own
   finding, with that operand's span and name.
 - Ternary branches must have compatible types.
-- A string may not be assigned where the language does not allow it.
+- A direct assignment to a `String` variable is rejected (`SL-V045`); the value
+  is copied with `CopyString` or `CopyVar`. The rule covers the plain `String`
+  datatype only, because nothing establishes that the language rejects a direct
+  assignment to the other string families. See Open questions.
 - `AnyType` is exempt from the condition, ternary, assignment, operand, logical,
-  and builtin-argument rules: it proves nothing about the value.
+  builtin-argument, and coordinate rules: it proves nothing about the value.
 
 ### Sequences
 
@@ -247,7 +257,9 @@ reuse the name of an element inside its own body.
 - An absent mapping target is reported when the formal parameter list is known.
   When the target type comes from a definition that is not loaded, the formals
   are unknown: the target check stays silent while the local duplicate-target
-  check still runs.
+  check still runs. The sentence names the resolved definition and states that a
+  formal removed from it leaves the mapping stale, so a deleted formal is not
+  presented as a local typo.
 - A module-type instance whose type is neither declared in the file nor visible
   from a loaded dependency reports `SL-V058`. The single-file escape hatch
   suppresses it; a project load always has the whole closure.
@@ -276,6 +288,11 @@ never produces one.
 `code` is a stable machine identifier (`SL-V###`). `message` is a sentence
 about the source. `span` points into the original source. Every finding is
 final: a project load either has the whole closure or raises.
+
+A span is present when the model records one for the node the finding names.
+Declarations, including equation and sequence names, carry a
+`declaration_span`; the finding points at the declaration rather than at an
+unrelated token.
 
 The full code table lives in the rule registry, not in the enum. Every
 `DiagnosticCode` has exactly one `Rule` in `validation/rules.py` with an id, an
@@ -352,6 +369,7 @@ here. `sattline rules` exposes the same data on the command line.
 | `SL-V056` | `SEQUENCE_AMBIGUOUS_FORK_TARGET` | active | sfc | A SEQFORK target may not be declared more than once in a module. |
 | `SL-V057` | `DATECODE_CONFLICT` | active | project | The same module type or datatype may not be declared with different datecodes in a visible closure. |
 | `SL-V058` | `UNKNOWN_MODULETYPE_NAME` | active | mappings | A module-type instance must name a declared type or one visible from a loaded dependency. |
+| `SL-V059` | `NUMERIC_LITERAL_OUT_OF_RANGE` | active | code | A numeric literal must fit the declared 32-bit integer or real range. |
 <!-- RULE-TABLE:END -->
 
 ### Retired and unimplemented codes
@@ -412,6 +430,19 @@ programs that happen to declare the same name never conflict with each other.
 
 Those are consumer concerns. The package supplies the facts; the consumer
 applies its policy.
+
+## Open questions
+
+These are language questions the repository evidence does not settle. Each rule
+stays on the narrow side: it reports only what it can prove, and stays silent
+where the source is merely unproven.
+
+| Question | Current behaviour |
+| --- | --- |
+| Is direct assignment forbidden for every string family, or only `String`? | `SL-V045` covers the plain `String` datatype. `IdentString`, `TagString`, `MaxString`, and `LineString` are grouped with it for compatibility, but nothing establishes that the language rejects a direct assignment to them, so they stay silent. |
+| Is an `AnyType` coordinate tail legal? | `SL-V032` exempts it, because `AnyType` proves nothing about the value. The tail is unproven rather than accepted. |
+| For an instance inside a file that declares a `PRIVATE_` module type, does the real tool bind the private type or a library-visible type of the same name? | The validator binds the file's own definition. `records` and `moduletypes` are built external-first and then updated from the file, so a file definition wins over a same-named dependency definition, and a builtin name is only a fallback. A private declaration therefore shadows the library type for datatype references, field resolution, and parameter mappings. The language's own precedence, if it has one, is not modelled. |
+| Can `SL-V048` distinguish a formal deleted from the resolved definition from a misspelled target? | No. The finding names both causes, because the mapping and the definition are separate files and the validator sees only the loaded closure. |
 
 ## Adding a rule
 

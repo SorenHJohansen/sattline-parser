@@ -481,8 +481,7 @@ def test_lookup_refuses_an_absolute_dependency_name(tmp_path: Path) -> None:
     [
         ("Main", True),
         ("Main_2", True),
-        ("A" * 20, True),
-        ("A" * 21, False),
+        ("Straße", True),
         ("", False),
         ("../outside/Secret", False),
         ("..\\outside\\Secret", False),
@@ -495,6 +494,12 @@ def test_lookup_refuses_an_absolute_dependency_name(tmp_path: Path) -> None:
 )
 def test_unit_names_are_validated_as_sattline_identifiers(name: str, safe: bool) -> None:
     assert _is_safe_name(name) is safe
+
+
+@pytest.mark.parametrize("name", ["A" * 20, "A" * 21, "A" * 200])
+def test_a_unit_name_is_not_limited_to_twenty_characters(name: str) -> None:
+    """The 20-character rule is ``SL-V038`` at the declaration, not resolution."""
+    assert _is_safe_name(name) is True
 
 
 @pytest.mark.parametrize("name", ["CON", "prn", "COM1", "lpt9"])
@@ -564,6 +569,96 @@ def test_lookup_restats_an_index_hit_for_a_sidecar(tmp_path: Path) -> None:
 
     assert lookup.find_deps_beside(body, "Main") == sidecar
     sidecar.unlink()
+
+    assert lookup.find_deps_beside(body, "Main") is None
+
+
+def test_source_index_resolves_each_language_identity(tmp_path: Path) -> None:
+    """``Straße`` and ``STRASSE`` are two units, whatever ``str.casefold`` says."""
+    root = tmp_path / "p"
+    sharp = write_file(root, "Straße.s")
+    upper = write_file(root, "STRASSE.s")
+    index = SourceIndex([root])
+
+    assert index.find_in_index(base=root, name="Straße", extensions=(".s",)) == sharp
+    assert index.find_in_index(base=root, name="straße", extensions=(".s",)) == sharp
+    assert index.find_in_index(base=root, name="STRASSE", extensions=(".s",)) == upper
+    # ``Strasse`` is the same language identifier as ``STRASSE``; the sharp s is
+    # the only spelling the language keeps apart.
+    assert index.find_in_index(base=root, name="Strasse", extensions=(".s",)) == upper
+    assert index.collisions == ()
+
+
+def test_a_casefold_only_name_does_not_resolve(tmp_path: Path) -> None:
+    """A ``str.casefold`` match the language rejects is a miss, never a body."""
+    root = tmp_path / "p"
+    write_file(root, "Straße.s")
+    index = SourceIndex([root])
+
+    assert index.find_in_index(base=root, name="STRASSE", extensions=(".s",)) is None
+
+    lookup = ProjectLookup([root], LoadMode.DRAFT)
+    assert lookup.find_code("Straße") == root / "Straße.s"
+    assert lookup.find_code("STRASSE") is None
+
+
+def test_source_index_records_a_folded_name_collision(tmp_path: Path) -> None:
+    """Two files the language considers one unit are an ambiguity, not a winner."""
+    root = tmp_path / "p"
+    write_file(root, "Util.s")
+    write_file(root, "UTIL.s")
+    index = SourceIndex([root])
+
+    collisions = index.collisions_for_base(root, "util")
+
+    assert len(collisions) == 1
+    collision = collisions[0]
+    assert collision.folded == "UTIL"
+    assert collision.extension == ".s"
+    # Sorted name order decides, so the winner is stable across runs.
+    assert collision.paths == (root / "UTIL.s", root / "Util.s")
+    assert collision.winner == root / "UTIL.s"
+    assert index.find_in_index(base=root, name="Util", extensions=(".s",)) == root / "UTIL.s"
+
+
+def test_a_clean_root_records_no_collision(tmp_path: Path) -> None:
+    root = tmp_path / "p"
+    write_file(root, "Alpha.s")
+    write_file(root, "Beta.s")
+
+    assert SourceIndex([root]).collisions_for_base(root, "Alpha") == ()
+
+
+def test_the_stat_fallback_ignores_a_directory_named_like_a_body(tmp_path: Path) -> None:
+    """A directory in an earlier root must not shadow a real body in a later one."""
+    shadow = tmp_path / "first"
+    real = tmp_path / "second"
+    (shadow / "Util.s").mkdir(parents=True)
+    body = write_file(real, "Util.s")
+
+    lookup = ProjectLookup([shadow, real], LoadMode.DRAFT)
+
+    assert lookup.find_code("Util") == body
+
+
+def test_the_stat_fallback_ignores_a_fifo_named_like_a_body(tmp_path: Path) -> None:
+    if not hasattr(os, "mkfifo"):
+        pytest.skip("this platform has no FIFOs")
+    root = tmp_path / "p"
+    root.mkdir()
+    os.mkfifo(root / "Blocked.s")
+    lookup = ProjectLookup([root], LoadMode.DRAFT)
+
+    # The index and the fallback both stat the candidate, so this returns
+    # without opening the FIFO.
+    assert lookup.find_code("Blocked") is None
+
+
+def test_a_directory_named_like_a_sidecar_is_not_a_sidecar(tmp_path: Path) -> None:
+    root = tmp_path / "p"
+    body = write_file(root, "Main.s")
+    (root / "Main.l").mkdir()
+    lookup = ProjectLookup([root], LoadMode.DRAFT)
 
     assert lookup.find_deps_beside(body, "Main") is None
 

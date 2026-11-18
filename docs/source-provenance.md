@@ -87,6 +87,11 @@ deleted region includes that region in its original result, because the range
 is the smallest contiguous original range that covers the real characters of
 the normalized range.
 
+The anchors are indexed once per document: the real characters of the map, in
+normalized order, are also in original order, so a bisect finds the nearest one
+for any offset. Remapping a marker-dense compressed source is therefore linear
+in its length rather than quadratic in the length of a generated run.
+
 All spans are half-open `[start, end)` in both coordinate systems. An end
 offset equal to the text length is a valid boundary.
 
@@ -193,9 +198,19 @@ flowchart LR
 - a single-quoted identifier such as `'#84'`, whose body is literal text rather
   than a marker.
 
+The scanner shares the lexer's name boundary rule rather than approximating it.
+It consumes a whole unquoted name run, so an apostrophe inside a name such as
+`Pump'A` is name text, and it recognises a quoted identifier only where the
+`NAME` terminal does: at a name start character, with at least one body
+character, no apostrophe inside, and no line break. Two quoted names written
+back to back are therefore two regions, a quoted name may follow a number
+(`1'A'`), and a multi-line quoted spelling is not a quoted name for either
+component. `grammar/constants.py` holds the pattern and the character classes
+both use.
+
 The scanner never rewrites text inside an opaque region. An unknown marker
-raises `PreprocessError` with its character offset instead of being replaced by
-whitespace.
+raises `PreprocessError` with its character offset in the **original** source,
+not in the placeholder text the decoder substitutes before expanding markers.
 
 `preprocessing/scanner_tokens.json` is the scanner enum: the ordinal `n` is
 encoded as `'#' + chr(48 + n // 16) + chr(48 + n % 16)` and the row `id` is

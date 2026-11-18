@@ -17,20 +17,24 @@ import os
 import re
 import subprocess
 import sys
+import tomllib
 from pathlib import Path
 
 import pytest
 from lark.exceptions import UnexpectedInput
 
+import sattline_parser
 from sattline_parser import (
     SourceTooDeepError,
     __version__,
     create_parser,
     describe_parse_error,
+    parse_source_bytes,
     parse_source_file,
     parse_source_text,
     preprocess_source,
 )
+from sattline_parser.api import parse_source_bytes as api_parse_source_bytes
 from sattline_parser.models.ast_model import BasePicture
 
 _SMALL_PROGRAM = (
@@ -99,10 +103,20 @@ def test_public_api_surface_is_available() -> None:
     assert callable(create_parser)
     assert callable(parse_source_text)
     assert callable(parse_source_file)
+    assert callable(parse_source_bytes)
     assert callable(describe_parse_error)
     assert callable(preprocess_source)
     assert issubclass(SourceTooDeepError, UnexpectedInput)
     assert isinstance(parse_source_text(_SMALL_PROGRAM), BasePicture)
+
+
+def test_parse_source_bytes_is_exported_from_the_package_root() -> None:
+    """The documented top-level door resolves to the façade's own function."""
+    assert "parse_source_bytes" in sattline_parser.__all__
+    assert parse_source_bytes is api_parse_source_bytes
+    picture = parse_source_bytes(_SMALL_PROGRAM.encode("cp1252"))
+    assert isinstance(picture, BasePicture)
+    assert picture.name == "BasePicture"
 
 
 def test_parse_source_file_against_installed_package(tmp_path: Path) -> None:
@@ -112,14 +126,33 @@ def test_parse_source_file_against_installed_package(tmp_path: Path) -> None:
     assert isinstance(bp, BasePicture)
 
 
+_REQUIREMENT_BOUNDS = re.compile(r">=(?P<lower>[\d.]+),<(?P<upper>[\d.]+)")
+
+
+def _version_tuple(value: str) -> tuple[int, ...]:
+    return tuple(int(part) for part in re.findall(r"\d+", value.split("+", 1)[0]))
+
+
+def _declared_lark_requirement() -> str:
+    """The ``lark`` requirement string from ``pyproject.toml``."""
+    data = tomllib.loads((_ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+    dependencies = data["project"]["dependencies"]
+    return next(entry for entry in dependencies if entry.startswith("lark"))
+
+
 def test_installed_lark_version_satisfies_declared_range() -> None:
     import lark  # noqa: PLC0415
 
-    version = tuple(int(part) for part in lark.__version__.split("."))
-    assert version >= (1, 3, 1), f"lark {lark.__version__} is below the declared minimum"
-    # The declared range excludes lark 2.x; if a future lark 2.x is installed
-    # the range must be re-evaluated, not silently accepted.
-    assert version < (2, 0, 0), f"lark {lark.__version__} is outside the declared range <2"
+    requirement = _declared_lark_requirement()
+    match = _REQUIREMENT_BOUNDS.search(requirement)
+    assert match is not None, requirement
+    lower = _version_tuple(match["lower"])
+    upper = _version_tuple(match["upper"])
+    version = _version_tuple(lark.__version__)
+    assert version >= lower, f"lark {lark.__version__} is below the declared {requirement}"
+    # The declaration is the source of truth: a bound change is a packaging
+    # decision and must be re-evaluated, not silently accepted.
+    assert version < upper, f"lark {lark.__version__} is outside the declared {requirement}"
 
 
 def test_pep561_marker_is_packaged() -> None:

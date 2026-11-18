@@ -64,14 +64,16 @@ def summarise(name: str, text: str, picture: BasePicture, *, coded: bool = False
 
     The counts cover the whole module tree: nested submodules and module-type
     bodies contribute their declarations, sequences, equation blocks, and
-    objects, so the summary agrees with a walk over the picture.
+    objects, so the summary agrees with a walk over the picture. ``encoding``
+    names the on-disk flavor: a byte-coded stream is ``coded``, marker-compressed
+    text is ``compressed``, and everything else is ``plain``.
     """
     module_nodes = _module_nodes(picture)
     return {
         "file": name,
         "program": picture.program_name,
         "name": picture.name,
-        "encoding": "coded" if coded or is_compressed(text) else "plain",
+        "encoding": _encoding(text, coded=coded),
         "counts": {
             "module_types": sum(isinstance(node, ModuleTypeDef) for node in module_nodes),
             "submodules": sum(len(node.submodules) for node in module_nodes),
@@ -90,3 +92,10 @@ def summarise(name: str, text: str, picture: BasePicture, *, coded: bool = False
             ),
         },
     }
+
+
+def _encoding(text: str, *, coded: bool) -> str:
+    """The on-disk flavor of one source: ``coded``, ``compressed``, or ``plain``."""
+    if coded:
+        return "coded"
+    return "compressed" if is_compressed(text) else "plain"

@@ -1,0 +1,1 @@
+- **`AnyType` exemptions.** `AnyType` on the actual side of a builtin argument no longer reports `SL-V047`, and an `AnyType` coordinate tail no longer reports `SL-V032`. The type proves nothing about the value, matching the existing exemption for conditions, assignments, operands, and logical operators.

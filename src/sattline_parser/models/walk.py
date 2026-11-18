@@ -172,6 +172,7 @@ _FIELD_SPECS: _FieldSpecs = {
         "origin_lib": "leaf",
         "trailing_comments": "node",
         "datecode": "leaf",
+        "is_frame_module": "leaf",
     },
     m.CodeComment: {"text": "leaf", "span": "leaf"},
     HeaderInfo: {
@@ -197,6 +198,7 @@ _FIELD_SPECS: _FieldSpecs = {
         "size": "leaf",
         "code": "node",
         "layer_info": "leaf",
+        "declaration_span": "leaf",
     },
     m.FrameModule: {
         "header": "node",
@@ -206,6 +208,7 @@ _FIELD_SPECS: _FieldSpecs = {
         "submodules": "node",
         "moduledef": "node",
         "modulecode": "node",
+        "parametermappings": "node",
         "trailing_comments": "node",
     },
     m.GraphObject: {"type": "leaf", "properties": "properties", "span": "leaf"},
@@ -286,6 +289,7 @@ _FIELD_SPECS: _FieldSpecs = {
         "seqtimer": "leaf",
         "code": "node",
         "layer_info": "leaf",
+        "declaration_span": "leaf",
     },
     m.SingleModule: {
         "header": "node",

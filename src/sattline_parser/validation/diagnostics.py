@@ -67,6 +67,7 @@ class DiagnosticCode(StrEnum):
     SEQUENCE_AMBIGUOUS_FORK_TARGET = "SL-V056"
     DATECODE_CONFLICT = "SL-V057"
     UNKNOWN_MODULETYPE_NAME = "SL-V058"
+    NUMERIC_LITERAL_OUT_OF_RANGE = "SL-V059"
 
 
 #: Retired rules and their reasons live in the rule registry, which is the one

@@ -72,7 +72,7 @@ This package owns the Lark grammar, the strict single-file syntax behavior, the 
 - Lexically aware decoding: string literals and comments are protected, so syntax-looking text inside them is never rewritten
 - Parse errors described as sentences about the source, with a location, the
   expected spellings and an actionable hint (`describe_parse_error`)
-- AST models in `sattline_parser.models`
+- AST models in `sattline_parser.ast`
 - `SLTransformer` tree transformer in `sattline_parser.transformer`
 - `sattline` command line over the parser, project and graphics layers
   (`check`, `parse`, `query`, `project`, `graphics`, `decode`, `diff`, `corpus`,
@@ -108,9 +108,9 @@ sattline version --json           # tool and JSON schema versions
 ```
 
 Findings are sentences with a location, an optional `help:` line and a
-machine-only rule id; exit codes are `0` clean, `1` findings, `2` usage/input,
-`3` internal. Run `sattline <command> --help` for the full option list of any
-command.
+machine-only rule id; exit codes are `0` clean, `1` findings, `2` usage, input,
+or output problem, `3` internal, `130` interrupted. Run
+`sattline <command> --help` for the full option list of any command.
 
 ### Parse a source file
 
@@ -154,7 +154,7 @@ if is_compressed(source):
     decoded, mapping = preprocess_sl_text(source)
     # ... or, when you need original-source provenance:
     doc = preprocess_source(source)
-    doc.original_text, doc.normalized_text  # preprocessed vs original
+    doc.original_text, doc.normalized_text  # original vs preprocessed
 ```
 
 `is_compressed` answers whether the text uses the compressed encoding.

@@ -281,6 +281,14 @@ def test_builtin_type_matches() -> None:
     assert builtin_type_matches("real", "AsyncOperation", direction="inout") is False
 
 
+def test_builtin_type_matches_exempts_an_anytype_actual() -> None:
+    """``AnyType`` proves nothing about the value, so every parameter accepts it."""
+    assert builtin_type_matches("AnyType", ScalarDatatype.INTEGER, direction="in") is True
+    assert builtin_type_matches("anytype", "MyRecord", direction="in") is True
+    assert builtin_type_matches("AnyType", "tObject", direction="in") is True
+    assert builtin_type_matches("AnyType", ScalarDatatype.STRING, direction="out") is True
+
+
 def test_assignment_type_matches() -> None:
     assert assignment_type_matches(None, "integer") is True
     assert assignment_type_matches("integer", None) is True
@@ -373,6 +381,27 @@ def test_suggest_datatype_name() -> None:
     assert suggest_datatype_name("intege", []) is None
 
 
+def test_suggest_datatype_name_returns_none_when_two_candidates_tie() -> None:
+    """A tie has no single answer, so no suggestion is offered.
+
+    The winner would otherwise be whichever candidate the caller passed first,
+    which is iteration order rather than evidence.
+    """
+    assert suggest_datatype_name("ab", ["abc", "abd"]) is None
+    assert suggest_datatype_name("magstring", ["maxstring", "tagstring"]) is None
+    assert suggest_datatype_name("integ", ["integer", "real"]) == "integer"
+
+
+def test_suggest_datatype_name_keeps_the_closest_of_three_candidates() -> None:
+    """A later, farther candidate neither replaces the best nor makes a tie."""
+    assert suggest_datatype_name("ab", ["abc", "abcd", "abce"]) == "abc"
+
+
+def test_suggest_datatype_name_counts_one_candidate_spelled_twice() -> None:
+    """Two spellings of the same folded candidate are not a tie."""
+    assert suggest_datatype_name("ab", ["abc", "ABC"]) == "abc"
+
+
 # --- parameter mappings -------------------------------------------------------
 
 
@@ -420,6 +449,7 @@ def test_parameter_mapping_unknown_field_on_record() -> None:
     errors: list[Diagnostic] = []
     check_parameter_mappings([_mapping("Root.Missing")], expected, build_scope(None, []), graph, errors)
     assert _codes(errors) == ["SL-V048"]
+    assert "resolved definition" in errors[0].message
 
 
 def test_parameter_mapping_unknown_field_on_external_record_is_silent() -> None:
@@ -438,6 +468,10 @@ def test_parameter_mapping_unknown_target_is_reported_when_formals_are_known() -
     )
     assert _codes(errors) == ["SL-V048"]
     assert "Missing" in errors[0].message
+    # The sentence names the resolved definition and the stale-mapping cause, so
+    # a deleted formal is distinguishable from an unrelated local problem.
+    assert "resolved definition" in errors[0].message
+    assert "stale" in errors[0].message
 
 
 def test_parameter_mapping_unknown_target_is_silent_when_formals_are_unknown() -> None:

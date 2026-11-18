@@ -14,10 +14,12 @@ import os
 from pathlib import Path
 from typing import cast
 
+from sattline_parser.names import fold_identifier
+
 from ._atomic import TEMP_SUFFIX, temp_file_is_abandoned
 from ._atomic import temp_path_for as _temp_path_for
 
-LOOKUP_CACHE_VERSION = 2
+LOOKUP_CACHE_VERSION = 3
 
 DEFAULT_LOOKUP_CACHE_FLUSH_INTERVAL = 25
 
@@ -205,13 +207,31 @@ class FileLookupCache:
             self.flush()
 
     def _key(self, kind: str, name: str, mode: str) -> str:
-        return f"{kind}:{mode}:{name.casefold()}"
+        # Language identity, not Unicode case folding: ``Straße`` and ``STRASSE``
+        # are different units, so they must not share one resolution.
+        return f"{kind}:{mode}:{fold_identifier(name)}"
 
     def _entries_map(self) -> dict[object, object] | None:
         entries = self._data.get("entries")
         if not isinstance(entries, dict):
             return None
         return cast(dict[object, object], entries)
+
+    def _enforce_entry_cap(self, entries: dict[object, object], keep: str) -> None:
+        """Drop the surplus entries in key order, never the one just written.
+
+        The cap runs on every insert, not only at construction, so a single long
+        run cannot grow the file past ``MAX_LOOKUP_CACHE_ENTRIES``. Eviction is
+        by key order, matching the startup prune, and the newest resolution is
+        always kept so a ``set`` is never immediately undone.
+        """
+        surplus = len(entries) - MAX_LOOKUP_CACHE_ENTRIES
+        if surplus <= 0:
+            return
+        victims = sorted(key for key in entries if isinstance(key, str) and key != keep)
+        victims.append(keep)
+        for key in victims[:surplus]:
+            entries.pop(key, None)
 
     def get(self, kind: str, name: str, mode: str) -> dict[str, str] | None:
         entries = self._entries_map()
@@ -224,9 +244,11 @@ class FileLookupCache:
         if entries is None:
             return
         payload: dict[str, str] = {"base_dir": _normalize_base_dir(base_dir), "ext": ext}
-        if entries.get(self._key(kind, name, mode)) == payload:
+        key = self._key(kind, name, mode)
+        if entries.get(key) == payload:
             return
-        entries[self._key(kind, name, mode)] = payload
+        entries[key] = payload
+        self._enforce_entry_cap(entries, key)
         self._record_mutation()
 
     def forget(self, kind: str, name: str, mode: str) -> None:

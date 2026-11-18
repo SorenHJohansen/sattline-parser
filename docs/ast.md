@@ -26,6 +26,7 @@ classDiagram
         origin_lib: str | None
         trailing_comments: list[CodeComment]
         datecode: int | None
+        is_frame_module: bool
     }
 
     class HeaderInfo {
@@ -67,6 +68,7 @@ classDiagram
         submodules: list
         moduledef: ModuleDef | None
         modulecode: ModuleCode | None
+        parametermappings: list[ParameterMapping]
         trailing_comments: list[CodeComment]
     }
 
@@ -112,6 +114,18 @@ fields: a parsed module body always carries one `ModuleDef` and may carry one
 `ModuleCode`. The grammar rejects a second block before the closing `ENDDEF`, so
 there is nothing to collect in a list. `None` appears only on a synthetic view
 such as an empty picture or a dependency stub.
+
+`BasePicture.is_frame_module` and the `FrameModule` type are the two homes of the
+`(Frame_Module)` marker. The marker belongs to the module definition line, after
+the datecode, so the root picture records it as a flag instead of an invocation
+argument. A `FrameModule` invocation takes the same optional `(Name => value)`
+tail as a `SingleModule`, and `FrameModule.parametermappings` keeps it.
+
+`ModuleHeader.description_comments` holds the header comments in source order.
+The grammar has exactly one position before `Invocation` and one after it, so the
+list has at most two entries: the first was written before `Invocation`, the
+second after it. A single comment is written back before `Invocation`, because
+the model cannot say which of the two positions it came from.
 
 `ModuleHeader.arguments` is the canonical invocation argument list: layer,
 `Enable_`, `Module_In_View`, zoom limits and the `Zoomable` marker, marker
@@ -180,6 +194,13 @@ name. It returns the enum member's value for a builtin and the string itself for
 a user-defined record, so a consumer compares through `datatype_text` rather
 than against the raw union field.
 
+`Variable.init_is_duration` records the written `Duration_Value` marker. A bare
+`:= Duration_Value` has no payload text, so `init_value` is `None` while
+`init_is_duration` stays `True`; a duration initializer with a payload keeps the
+text in `init_value`. A `Time_Value` initializer is a one-key
+`{"Time_Value": <text or None>}` mapping, and a bare `:= Time_Value` keeps
+`None` as its value.
+
 `ScalarDatatype` is a plain `Enum`, while `MappingSource` is a `StrEnum`. The
 asymmetry is deliberate. `ScalarDatatype` members are language datatypes and
 must not compare equal to arbitrary strings. A `MappingSource` member is part of
@@ -212,7 +233,7 @@ classDiagram
         clipping: ClippingClause | None
         zoom_limits: tuple | None
         seq_layers: float | dict | None
-        grid: float
+        grid: float | None
         zoomable: bool
         graph_objects: list[GraphObject]
         interact_objects: list[InteractObject]
@@ -272,6 +293,11 @@ kept distinct; their effect is not modelled, so only the spelling is preserved.
 written after the `OBJSIZE` pair. The drawing effect is not modelled, but the
 written value is preserved and absence stays `None`.
 
+`ModuleDef.grid` is the written `Grid = <real>` spacing, and `None` means the
+source wrote no `Grid` clause. There is no default value in the model: a written
+`Grid = 0.2` and an absent clause are different inputs, and the formatter writes
+the clause back only when the field is set.
+
 `ModuleDef.clipping` holds the whole `ClippingBounds` clause, so the resolved
 corners and the tails attached to them live in one payload. `clipping_bounds`
 and `clipping_tails` are read-only views over it. `ClippingClause.tails` is the
@@ -298,6 +324,15 @@ for `LeftAligned`/`CenterAligned`/`RightAligned`, and the typed clauses (`Enable
 `ScaleSelector`). Preserved comments are `CodeComment` values. No Lark tree
 reaches a caller, so a consumer reads body entries directly instead of
 unwrapping a grammar node.
+
+`InteractObject.type` is the interactor keyword exactly as written, for every
+interactor: `ComBut_`, `OptBut_`, `CheckBox_`, `TextBox_`, `MenuInteract`,
+`SimpleInteract`, `ComButProc_`, `ProcedureInteract`, or a free-form name. The
+two procedure spellings are kept apart because the source wrote different
+keywords and their effect is not modelled. `InteractObject.kind` is that
+spelling folded through the language identifier table (`fold_identifier`, which
+upper-cases ASCII), so a consumer that only needs identity compares `kind`.
+`ComButProc_` and `ProcedureInteract` therefore have different kinds.
 
 A `GraphObject` keeps the geometry its source spells, keyed by spelling rather
 than by drawing effect:
@@ -330,6 +365,13 @@ A text-object clause keeps its value and its tail in one payload, so a literal
 and its `InVar_` binding are read together. Compare a clause by `key` and
 `value`, and read `tail` only when the binding matters.
 
+A `VarName` marker is a postfix of one `text_content`, so each `text_vars` entry
+binds the text written immediately before its marker, even when that text is
+empty. A marker with no text before it (the grammar allows the order) is kept as
+an empty label, `VarRef("")`, rather than reaching back to an earlier caption.
+A marker after a `Width_` clause, a coordinate pair, or another marker therefore
+never steals a caption it was not written after.
+
 ## Interactor property catalogue
 
 An interactor body accepts any `NAME` as a bare flag or as `NAME = value`, so an
@@ -360,7 +402,9 @@ interact objects, and module definitions) carries a `span`
 (`SourceSpan | None`) recording the source range of the rule that produced it.
 Two nested payloads are exceptions: a `PolygonPoint` and a text object's
 `ConnectionNode` are built without a meta span, so their `.span` is `None` for
-parsed sources.
+parsed sources. `ModuleArguments.span` is also `None` when the argument list is
+empty, because an empty grammar match reports no position; the enclosing
+`ModuleHeader.declaration_span` still covers the header.
 A span is layout metadata: it does not participate in equality, so two
 structurally identical payloads from different files compare equal. Read
 `.span` when you need the provenance. A bound tail exposes the written name
@@ -459,6 +503,11 @@ All expression nodes are frozen dataclasses. They are hashable, comparable, and
 safe to share. Every node carries an optional `span`; parsed nodes have it set,
 manually constructed nodes default to `None`.
 
+A tree attached to a `SattLineProject` is frozen as a whole. `load` locks the
+loader-owned tree; `from_programs` deep-copies first. Lists become tuples,
+mappings become read-only, and field assignment on any mutable model node raises
+`FrozenInstanceError`. A standalone parse stays mutable until it is attached.
+
 ```mermaid
 classDiagram
     class VarRef {
@@ -534,7 +583,10 @@ Type aliases:
 
 `IntLiteral` and `FloatLiteral` are `int` and `float` subclasses that carry a
 `span`. They preserve the literal's source position without boxing the value in
-a wrapper.
+a wrapper. Equality is the inherited numeric one, so `IntLiteral(1) == 1` and
+`IntLiteral(1) == FloatLiteral(1.0)` are both true: the written form (`1` versus
+`1.0`) is not part of equality. Read `span` or `type(value)` when the spelling
+matters.
 
 ## Tails
 
@@ -587,6 +639,12 @@ The AST is plain dataclasses, so it pickles and unpickles without retained
 parser state. The file AST cache is versioned. When the model shape changes,
 `FILE_AST_CACHE_VERSION` is bumped and older entries are discarded rather than
 decoded into the current model.
+
+`sattline_parser.serialization.to_jsonable` emits enum members as their plain
+value, including `StrEnum` and `IntEnum` members, and never as a placeholder at
+a `depth` limit. Scalars, source spans, paths, and byte strings are leaves and
+are emitted in full at any depth; only dataclasses and containers count as a
+level.
 
 ## Traversal
 
@@ -725,6 +783,12 @@ marks the few shapes whose written place or spelling is not in the model.
 names and their documented signatures; the exact layout is display output, not a
 serialization contract. Use `sattline_parser.serialization` when you need
 machine-readable data.
+
+An empty equation body is written as the bare `EQUATIONBLOCK :` header: the
+grammar accepts an empty statement list, so no placeholder comment is invented.
+An empty datatype description is written as `""` and is not confused with an
+absent one. A repeated singular clause is rejected while parsing rather than
+overwritten, so the formatter never has to choose between two written values.
 
 `format_expr` renders an expression or statement in source spelling, so the
 output parses back to the same node: a `VarRef` state is written `:Old`/`:New`,
