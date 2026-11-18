@@ -217,7 +217,7 @@ _FIELD_SPECS: _FieldSpecs = {
     m.ModuleDef: {
         "clipping": "node",
         "zoom_limits": "leaf",
-        "seq_layers": "leaf",
+        "layer_limit": "leaf",
         "grid": "leaf",
         "zoomable": "leaf",
         "graph_objects": "node",

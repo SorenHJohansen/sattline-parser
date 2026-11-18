@@ -100,9 +100,11 @@ def test_source_index_rejects_missing_and_file_bases(tmp_path: Path) -> None:
 
 
 def test_ordered_lookup_bases_keeps_the_caller_order(tmp_path: Path) -> None:
-    first = write_file(tmp_path, "first/.keep")
-    second = write_file(tmp_path, "second/.keep")
-    third = write_file(tmp_path, "third/.keep")
+    first = tmp_path / "first"
+    second = tmp_path / "second"
+    third = tmp_path / "third"
+    for root in (first, second, third):
+        root.mkdir()
 
     assert ordered_lookup_bases([first, second, third]) == (
         first.resolve(),
@@ -117,8 +119,10 @@ def test_ordered_lookup_bases_keeps_the_caller_order(tmp_path: Path) -> None:
 
 
 def test_ordered_lookup_bases_drops_duplicates_keeping_the_first_position(tmp_path: Path) -> None:
-    first = write_file(tmp_path, "first/.keep")
-    second = write_file(tmp_path, "second/.keep")
+    first = tmp_path / "first"
+    second = tmp_path / "second"
+    first.mkdir()
+    second.mkdir()
 
     assert ordered_lookup_bases([first, second, first]) == (first.resolve(), second.resolve())
 
@@ -127,7 +131,26 @@ def test_ordered_lookup_bases_empty() -> None:
     assert ordered_lookup_bases([]) == ()
 
 
-def test_ordered_lookup_bases_keeps_case_distinct_roots_on_a_case_sensitive_filesystem(tmp_path: Path) -> None:
+def test_ordered_lookup_bases_compares_an_unnamed_root_by_path() -> None:
+    """A filesystem or drive root has no directory name to fold."""
+    root = Path("/")
+    assert root.name == ""
+
+    assert ordered_lookup_bases([root]) == (root.resolve(),)
+
+
+def test_ordered_lookup_bases_shadows_a_later_root_with_the_same_library_name(tmp_path: Path) -> None:
+    """One library per name: the first root of a name is the only one searched."""
+    first = tmp_path / "one" / "Libs"
+    second = tmp_path / "two" / "Libs"
+    first.mkdir(parents=True)
+    second.mkdir(parents=True)
+
+    assert ordered_lookup_bases([first, second]) == (first.resolve(),)
+    assert ordered_lookup_bases([second, first]) == (second.resolve(),)
+
+
+def test_ordered_lookup_bases_folds_library_names_like_identifiers(tmp_path: Path) -> None:
     upper = tmp_path / "Library"
     lower = tmp_path / "library"
     upper.mkdir()
@@ -135,17 +158,24 @@ def test_ordered_lookup_bases_keeps_case_distinct_roots_on_a_case_sensitive_file
         pytest.skip("filesystem is case-insensitive")
     lower.mkdir()
 
-    ordered = ordered_lookup_bases([upper, lower])
-
-    assert ordered == (upper.resolve(), lower.resolve())
+    assert ordered_lookup_bases([upper, lower]) == (upper.resolve(),)
+    assert ordered_lookup_bases([lower, upper]) == (lower.resolve(),)
 
 
 def test_parse_search_path_accepts_backslashes_and_whitespace(tmp_path: Path) -> None:
     base = tmp_path / "sattline"
 
-    roots = parse_search_path(r" LibA\UnitLib , LibB/UnitLib ,, ", base=base)
+    roots = parse_search_path(r" LibA\UnitLib , LibB\OtherLib ,, ", base=base)
 
-    assert roots == ((base / "LibA/UnitLib").resolve(), (base / "LibB/UnitLib").resolve())
+    assert roots == ((base / "LibA/UnitLib").resolve(), (base / "LibB/OtherLib").resolve())
+
+
+def test_parse_search_path_shadows_a_repeated_library_name(tmp_path: Path) -> None:
+    base = tmp_path / "sattline"
+
+    roots = parse_search_path(r"LibA\UnitLib,LibB\UnitLib", base=base)
+
+    assert roots == ((base / "LibA/UnitLib").resolve(),)
 
 
 def test_parse_search_path_resolves_relative_entries_under_a_base(tmp_path: Path) -> None:
@@ -170,6 +200,19 @@ def test_parse_search_path_drops_duplicates_and_rejects_an_empty_path(tmp_path: 
     assert parse_search_path(r"LibA\UnitLib,LibA/UnitLib", base=base) == ((base / "LibA/UnitLib").resolve(),)
     with pytest.raises(ValueError, match="no entries"):
         parse_search_path(" , ,, ", base=base)
+
+
+def test_a_shadowed_library_contributes_no_units(tmp_path: Path) -> None:
+    """A later root with an earlier root's library name is not searched at all."""
+    first = tmp_path / "one" / "UnitLib"
+    second = tmp_path / "two" / "UnitLib"
+    write_file(first, "Alpha.s")
+    write_file(second, "Beta.s")
+
+    lookup = ProjectLookup([first, second], LoadMode.DRAFT)
+
+    assert lookup.find_code("Alpha") == first / "Alpha.s"
+    assert lookup.find_code("Beta") is None
 
 
 def test_lookup_path_order_wins_over_a_later_root(tmp_path: Path) -> None:

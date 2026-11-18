@@ -357,7 +357,11 @@ class ModuleDef(FrozenNode):
     #: both the resolved corners and the tails attached to them.
     clipping: ClippingClause | None = None
     zoom_limits: tuple[float, float] | None = None
-    seq_layers: float | dict[str, float] | None = None
+    #: ``Two_Layers_ LayerLimit_ = <real>``. Only a module has layers, and the
+    #: value is the zoom level at which it switches from displaying layer 1 to
+    #: layer 2. ``None`` means the module has a single layer. Objects carry
+    #: their own ``Layer_`` number.
+    layer_limit: float | None = None
     #: ``Grid = <real>``. ``None`` means the source wrote no ``Grid`` clause, so
     #: a written ``Grid = 0.2`` is not silently dropped as a default.
     grid: float | None = None
@@ -381,7 +385,7 @@ class ModuleDef(FrozenNode):
         lines = [
             f"ClippingBounds : {self.clipping_bounds}",
             f"ZoomLimits     : {self.zoom_limits}",
-            f"SeqLayers      : {self.seq_layers}",
+            f"LayerLimit     : {self.layer_limit}",
             f"Grid           : {self.grid}",
             f"Zoomable       : {self.zoomable}",
             # f"GraphObjects   : {format_list(self.graph_objects)}",

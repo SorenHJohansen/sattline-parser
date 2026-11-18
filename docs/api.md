@@ -165,13 +165,12 @@ mappings.
 A parsed model always records where a tail was written: `ModuleHeader.coordinate_tails`,
 `ClippingClause.corner_tails`, `GraphObject.properties["coord_tails"]`, and
 `InteractProperties["coord_tails"]` group the tails per value. The formatter
-raises `UnsupportedFormattingError` for four shapes it cannot place or spell:
+raises `UnsupportedFormattingError` for three shapes it cannot place or spell:
 
 | Shape | Why |
 | --- | --- |
 | a hand-assembled model with a tail but no positional grouping | the value the tail followed is unknown |
 | a parameter mapping with no source literal | the written literal is absent from the model |
-| named sequence layers (`ModuleDef.seq_layers` as a mapping) | `Two_Layers_` and named layers share one field |
 | a `time_value` payload with more than one key | the written keyword is not modelled |
 
 The output is display text, not a supported interchange format.
@@ -361,6 +360,11 @@ project = SattLineProject.load(
 program = project.get("MyProgram")
 print(program.name, len(program.dependencies))
 ```
+
+`roots` is the loading path in search order. It holds one library per name: a
+root whose directory name repeats an earlier root is shadowed and contributes
+nothing. A later root with a different name still takes part, and an earlier
+root wins when both hold a unit of the same name.
 
 ```python
 from pathlib import Path

@@ -63,9 +63,8 @@ class SLTransformer(
 
 `_payloads.py` holds the interim payloads a rule builds and a later rule folds
 into an owner: `CommonProperties`, `ModuleOptions`, `TwoLayers`, `Grid`,
-`SeqLayers`, `Zoomable`, `ClipValue`, and `CoordinateClipping`. They are not AST
-nodes and are not part of `sattline_parser.ast`; a parsed tree never contains
-one.
+`Zoomable`, `ClipValue`, and `CoordinateClipping`. They are not AST nodes and
+are not part of `sattline_parser.ast`; a parsed tree never contains one.
 
 `_module_shared.py` holds helpers and types shared by several mixins:
 `flatten_items`, `meta_span`, `tree_children`, `InterimCoords`,
@@ -289,7 +288,6 @@ consumer sees the failure as Lark's `VisitError` around the transformer error.
 
 - `ClippingBounds` coordinates, including tail expressions;
 - `ZoomLimits`, `Two_Layers_`, `LayerLimit_`, `Grid`, `Zoomable`;
-- `SeqLayers`;
 - `ModuleDef` assembly.
 
 `ClippingBounds` becomes one `ClippingClause` on `ModuleDef.clipping`, keeping

@@ -101,11 +101,13 @@ class SattLineProject:
 
         Each target is resolved through ``roots`` in the caller's order, its
         ``.l`` / ``.z`` dependency file (when present) is read, and the whole
-        dependency closure is planned before the target itself is loaded. Earlier
-        roots win: when two roots hold a same-named unit, the body in the earlier
-        root is the one loaded, and the later body is never planned, parsed, or
-        validated. When a code file has a ``.g`` / ``.y`` sibling, the companion
-        is parsed into the program's graphics model. A name resolves to a body
+        dependency closure is planned before the target itself is loaded. The
+        path holds one library per name: a root whose directory name repeats an
+        earlier root is shadowed and never searched, so a unit only it holds is
+        not found. When two effective roots hold a same-named unit, the body in
+        the earlier root is the one loaded, and the later body is never planned,
+        parsed, or validated. When a code file has a ``.g`` / ``.y`` sibling,
+        the companion is parsed into the program's graphics model. A name resolves to a body
         only when it matches under the language name table, so one name reaches
         one body and each body is visited and parsed once; every spelling that
         reached a body stays a name for it. A missing or unparseable artifact

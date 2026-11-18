@@ -32,7 +32,6 @@ from ._payloads import (
     CoordinateClipping,
     Grid,
     ModuleOptions,
-    SeqLayers,
     TwoLayers,
     Zoomable,
 )
@@ -228,15 +227,6 @@ class ModuleLayoutMixin:
                 )
         raise ValueError("clippingbounds expected a payload; got no items")
 
-    def seq_layers(self, items: list[TransformerItem]) -> SeqLayers:
-        """Grammar seq_layers -> the sequence layer mapping."""
-        value = items[-1]
-        if isinstance(value, (int, float)):
-            return SeqLayers(float(value))
-        if isinstance(value, dict):
-            return SeqLayers(cast(dict[str, float], value))
-        raise ValueError(f"seq_layers expected a layer mapping or REAL; got: {value!r}")
-
     @v_args(meta=True)
     def zoomlimits(self, meta: Any, items: list[TransformerItem]) -> ZoomLimits:
         """Grammar zoomlimits -> min/max zoom values."""
@@ -270,10 +260,11 @@ class ModuleLayoutMixin:
         return Grid(nums[-1])
 
     def two_layers(self, items: list[TransformerItem]) -> TwoLayers:
-        """Grammar two_layers -> the layer limit value.
+        """Grammar two_layers -> the zoom level that switches to layer 2.
 
-        The rule is ``TWO_LAYERS LAYERLIMIT "=" REAL``; the numeric value must
-        never be dropped (it feeds ``ModuleDef.seq_layers``).
+        The rule is ``TWO_LAYERS LAYERLIMIT "=" REAL``; the value is the zoom
+        level at which the module switches from displaying layer 1 to layer 2.
+        It must never be dropped (it feeds ``ModuleDef.layer_limit``).
         """
         values = _float_values(items)
         if not values:
@@ -301,7 +292,7 @@ class ModuleLayoutMixin:
     @staticmethod
     def _apply_module_options(module_def: ModuleDef, options: ModuleOptions) -> None:
         if options.layer_limit is not None:
-            module_def.seq_layers = options.layer_limit
+            module_def.layer_limit = options.layer_limit
         if options.zoom_limits is not None:
             module_def.zoom_limits = (options.zoom_limits.minimum, options.zoom_limits.maximum)
         if options.zoomable:
@@ -319,8 +310,6 @@ class ModuleLayoutMixin:
                 self._apply_clipping_bounds(module_def, it)
             elif isinstance(it, ModuleOptions):
                 self._apply_module_options(module_def, it)
-            elif isinstance(it, SeqLayers):
-                module_def.seq_layers = it.value
             elif isinstance(it, list) and it:
                 if isinstance(it[0], GraphObject):
                     module_def.graph_objects = cast(list[GraphObject], it)

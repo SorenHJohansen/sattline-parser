@@ -63,20 +63,29 @@ flowchart LR
     R1["1. first root"] --> R2["2. second root"] --> R3["3. ..."] --> R4["N. last root"]
 ```
 
-`ordered_lookup_bases` is that order: it resolves each entry, keeps the first
-position of a repeated root, and does nothing else. There is no requester
-precedence, no cluster sorting, and no special last root. `SattLineProject.load`
-and the CLI both pass an ordered sequence, so the rule is one rule: earlier
-entries win.
+`ordered_lookup_bases` is that order. It resolves each entry, keeps the first
+position of a repeated root, and drops a root whose directory name an earlier
+root already holds under the language name table. That is the loading path of
+the real session: one library per name, and the first library found is the only
+one opened. A shadowed root contributes nothing, including a unit the earlier
+library does not define. There is no requester precedence, no cluster sorting,
+and no special last root. `SattLineProject.load` and the CLI both pass an
+ordered sequence, so the rule is one rule: earlier entries win.
+
+A root with no directory name, such as a filesystem root or a Windows drive
+root, is compared by path only, so `C:\` and `D:\` stay two roots.
 
 `parse_search_path` turns the path-list notation into that sequence:
-`parse_search_path(r"LibA\UnitLib,LibB\UnitLib", base=Path("/sattline"))` yields the
-two roots in the written order, relative entries resolved under the base,
+`parse_search_path(r"LibA\UnitLib,LibB\OtherLib", base=Path("/sattline"))` yields
+the two roots in the written order, relative entries resolved under the base,
 backslashes accepted, empty entries and duplicates dropped. Duplicate detection
-compares the resolved path with the platform's rule, so a case-only difference
-is two roots on a case-sensitive filesystem and one root on Windows.
+has two rules: a repeated resolved path is the same root, and a repeated
+directory name is the same library. Path comparison uses the platform's rule,
+so a case-only difference is two roots on a case-sensitive filesystem and one
+root on Windows; library names fold with `fold_identifier`, so `Lib` and `LIB`
+are one library everywhere.
 
-Each root is indexed once by `SourceIndex`:
+Each effective root is indexed once by `SourceIndex`:
 
 ```
 fold_identifier(stem) -> {extension -> Path}
@@ -171,9 +180,11 @@ A plan is identified by its **resolved artifact identity**
 (`ArtifactIdentity`), which is the resolved code path compared by the platform's
 own rule. Because every name resolves through the same ordered path, one name
 reaches one body per load. When two roots hold `Util.s`, the body in the earlier
-root is planned, parsed, and validated; the later body is never read. There is
-no ambiguity to report and no second body to expose, so the registry holds one
-unit per name by construction.
+root is planned, parsed, and validated; the later body is never read. When two
+roots carry the same library name, the later root is not in the path at all, so
+a unit that only it holds is not found. There is no ambiguity to report and no
+second body to expose, so the registry holds one unit per name by construction
+and every loaded unit has a distinct `library` label.
 
 Planning is iterative. Each unit is a frame on an explicit stack, so a dependency
 chain of any legal length is planned without growing the Python call stack. A

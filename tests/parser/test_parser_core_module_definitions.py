@@ -31,7 +31,7 @@ from sattline_parser.models.clauses import (
 from sattline_parser.models.expressions import VarRef
 from sattline_parser.models.tails import VarTail
 from sattline_parser.transformer._module_shared import GLOBAL_KEYWORD, CoordTail, GroupConnInfo, InterimCoords
-from sattline_parser.transformer._payloads import Grid, ModuleOptions, SeqLayers, TwoLayers, Zoomable
+from sattline_parser.transformer._payloads import Grid, ModuleOptions, TwoLayers, Zoomable
 from sattline_parser.transformer._tokens_mixin import DURATION_VALUE_SENTINEL
 
 from ._parser_core_test_support import _module_header, _ModulesHarness
@@ -289,15 +289,11 @@ def test_modules_mixin_layout_helpers_cover_moduledef_and_numeric_errors():
     assert mixin.clippingbounds(
         Meta(), [InterimCoords(coords=((0.0, 0.0), (1.0, 1.0)), tails=[tail])]
     ) == ClippingClause(((0.0, 0.0), (1.0, 1.0)), (tail,))
-    assert mixin.seq_layers([{"top": 1.0}]) == SeqLayers({"top": 1.0})
-    assert mixin.seq_layers([2]) == SeqLayers(2.0)
     assert mixin.zoomlimits(Meta(), [0.5, 2.0]) == ZoomLimits(0.5, 2.0)
     with pytest.raises(ValueError, match="zoomlimits expected two REAL values"):
         mixin.zoomlimits(Meta(), [0.5])
     with pytest.raises(ValueError, match="clippingbounds expected a payload"):
         mixin.clippingbounds(Meta(), [])
-    with pytest.raises(ValueError, match="seq_layers expected a layer mapping"):
-        mixin.seq_layers(["bad"])
     assert mixin.ZOOMABLE(None) == Zoomable()
     assert mixin.grid([Token("JUNK", ","), 0.5, 1.5]) == Grid(1.5)
     assert mixin.two_layers([Token("JUNK", ":"), 3.0]) == TwoLayers(3.0)
@@ -312,7 +308,6 @@ def test_modules_mixin_layout_helpers_cover_moduledef_and_numeric_errors():
             [graph],
             [interact],
             ModuleOptions(zoom_limits=ZoomLimits(0.5, 2.0), zoomable=True, grid=0.75, layer_limit=3.0),
-            SeqLayers({"top": 1.0}),
         ],
     )
 
@@ -323,7 +318,7 @@ def test_modules_mixin_layout_helpers_cover_moduledef_and_numeric_errors():
     assert moduledef.zoom_limits == (0.5, 2.0)
     assert moduledef.zoomable is True
     assert moduledef.grid == 0.75
-    assert moduledef.seq_layers == {"top": 1.0}
+    assert moduledef.layer_limit == 3.0
 
     # Module options arriving through the real grammar (moduledef_opts /
     # moduledef_option) must reach the ModuleDef, including Two_Layers_ and
@@ -336,7 +331,7 @@ def test_modules_mixin_layout_helpers_cover_moduledef_and_numeric_errors():
     options_moduledef = mixin.moduledef(Meta(), [opts])
     assert options_moduledef.zoomable is True
     assert options_moduledef.grid == 0.75
-    assert options_moduledef.seq_layers == 3.0
+    assert options_moduledef.layer_limit == 3.0
 
     with pytest.raises(ValueError, match="coord_invar_tail expected"):
         mixin.coord_invar_tail(Meta(), [Token("JUNK", ",")])

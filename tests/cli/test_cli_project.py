@@ -46,6 +46,23 @@ def test_programs_artifacts_and_edges(tmp_path, capsys) -> None:
     assert "edges: 2" in out
 
 
+def test_a_later_library_with_the_same_name_is_not_discovered(tmp_path, capsys) -> None:
+    """The loading path holds one library per name; a shadowed root adds no targets."""
+    first = tmp_path / "one" / "libs"
+    second = tmp_path / "two" / "libs"
+    first.mkdir(parents=True)
+    second.mkdir(parents=True)
+    _program(first, "Alpha")
+    _program(second, "Beta")
+
+    assert main(["project", str(first), str(second)]) == ExitCode.OK
+
+    out = capsys.readouterr().out
+    assert "programs: 1" in out
+    assert "Alpha" in out
+    assert "Beta" not in out
+
+
 def test_graph_only_and_traversal(tmp_path, capsys) -> None:
     _program(tmp_path, "Base")
     _program(tmp_path, "Child", "Base")

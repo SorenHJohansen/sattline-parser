@@ -232,7 +232,7 @@ classDiagram
     class ModuleDef {
         clipping: ClippingClause | None
         zoom_limits: tuple | None
-        seq_layers: float | dict | None
+        layer_limit: float | None
         grid: float | None
         zoomable: bool
         graph_objects: list[GraphObject]
@@ -297,6 +297,12 @@ written value is preserved and absence stays `None`.
 source wrote no `Grid` clause. There is no default value in the model: a written
 `Grid = 0.2` and an absent clause are different inputs, and the formatter writes
 the clause back only when the field is set.
+
+`ModuleDef.layer_limit` is the written `Two_Layers_ LayerLimit_ = <real>` value.
+Only a module has layers, and the value is the zoom level at which the module
+switches from displaying layer 1 to layer 2. `None` means the module has a
+single layer. An object keeps its own `Layer_ = 1` or `Layer_ = 2` in
+`layer_info` or the object property map.
 
 `ModuleDef.clipping` holds the whole `ClippingBounds` clause, so the resolved
 corners and the tails attached to them live in one payload. `clipping_bounds`
@@ -411,9 +417,9 @@ structurally identical payloads from different files compare equal. Read
 through `VarTail.bound_name`. A `PickButton` keeps the written `value` and, when
 the `VarName` marker is present, a `reference` `VarRef`.
 
-The eight interim payloads described below are the exceptions: they never reach
+The seven interim payloads described below are the exceptions: they never reach
 a parsed tree, so they carry no span. They are `CommonProperties`,
-`ModuleOptions`, `TwoLayers`, `Grid`, `SeqLayers`, `Zoomable`, `ClipValue`, and
+`ModuleOptions`, `TwoLayers`, `Grid`, `Zoomable`, `ClipValue`, and
 `CoordinateClipping`.
 
 The same `layout` marker is on the geometry fields: `BasePicture.position`,
@@ -421,15 +427,14 @@ The same `layout` marker is on the geometry fields: `BasePicture.position`,
 `ModuleHeader.invoke_coord`, and `ClippingClause.bounds`. They are excluded from
 equality too, so a consumer diffing two revisions can drop the marked
 presentation fields. Other layout-adjacent values, such as
-`ModuleDef.zoom_limits`, `ModuleDef.grid`, and `ModuleDef.seq_layers`, remain
+`ModuleDef.zoom_limits`, `ModuleDef.grid`, and `ModuleDef.layer_limit`, remain
 part of the model and still participate in equality.
 
 ### Interim transformer payloads
 
-The transformer builds eight typed payloads and folds each one into an owner
+The transformer builds seven typed payloads and folds each one into an owner
 before it returns a `BasePicture`: `CommonProperties`, `ModuleOptions`,
-`TwoLayers`, `Grid`, `SeqLayers`, `Zoomable`, `ClipValue`, and
-`CoordinateClipping`. They live in `sattline_parser.transformer._payloads` and
+`TwoLayers`, `Grid`, `Zoomable`, `ClipValue`, and `CoordinateClipping`. They live in `sattline_parser.transformer._payloads` and
 are not part of the model or the `sattline_parser.ast` surface, because a parsed
 tree never contains one. An `isinstance` check against them on a parsed AST is
 always false, `walk` never yields them, and `iter_child_nodes` never reports

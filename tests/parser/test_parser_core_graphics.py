@@ -649,7 +649,8 @@ def test_moduledef_options_fixture_preserves_grid_zoom_and_layers():
     assert bp.moduledef.zoom_limits == (0.5, 2.0)
     assert bp.moduledef.zoomable is True
     assert bp.moduledef.grid == 10.0
-    assert bp.moduledef.seq_layers == 3.0
+    # 3.0 is the zoom level at which the module switches to layer 2.
+    assert bp.moduledef.layer_limit == 3.0
 
 
 def test_graphics_interact_mixin_cover_interact_helpers_and_validation_errors():

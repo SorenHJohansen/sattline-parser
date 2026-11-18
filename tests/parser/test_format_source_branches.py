@@ -87,9 +87,8 @@ def test_a_multi_key_time_payload_raises() -> None:
         fmt._init_value_text(_variable(init_value={"A": "1", "B": "2"}))
 
 
-def test_named_sequence_layers_raise() -> None:
-    with pytest.raises(UnsupportedFormattingError, match="named sequence layers"):
-        format_module(ModuleDef(seq_layers={"A": 1.0}))
+def test_a_layer_limit_is_written_as_two_layers() -> None:
+    assert "Two_Layers_ LayerLimit_ = 3.0" in format_module(ModuleDef(layer_limit=3.0))
 
 
 def test_an_empty_equation_is_written_as_a_bare_header() -> None:

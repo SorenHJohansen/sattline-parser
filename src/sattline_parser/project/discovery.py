@@ -18,6 +18,7 @@ from pathlib import Path
 import regex
 
 from sattline_parser.grammar import constants as grammar_constants
+from sattline_parser.names import fold_identifier
 
 from .errors import ProjectLoadError
 from .formats import (
@@ -220,18 +221,32 @@ class SourceIndex:
 
 
 def ordered_lookup_bases(roots: Sequence[Path]) -> tuple[Path, ...]:
-    """The lookup path, in the caller's order, with each root resolved once.
+    """The lookup path, in the caller's order, with each library present once.
 
     Earlier entries win. A repeated root is dropped, keeping its first position,
-    so ``[A, B, A]`` searches ``A`` then ``B``.
+    so ``[A, B, A]`` searches ``A`` then ``B``. A root whose directory name
+    matches an earlier root under the language name table is dropped as a
+    whole, because the SattLine loading path holds one library per name: the
+    first library of a given name is the only one the session can open. Its
+    units are not merged with the shadowed root, so a later library contributes
+    nothing, including units the earlier one does not define. A root with no
+    directory name, such as a filesystem or drive root, is compared by path
+    only.
     """
     ordered: list[Path] = []
-    seen: set[str] = set()
+    seen_paths: set[str] = set()
+    seen_names: set[str] = set()
     for resolved in (path for root in roots if (path := _resolved(root)) is not None):
         key = _lookup_path_key(resolved)
-        if key in seen:
+        if key in seen_paths:
             continue
-        seen.add(key)
+        name = resolved.name
+        if name:
+            name_key = fold_identifier(name)
+            if name_key in seen_names:
+                continue
+            seen_names.add(name_key)
+        seen_paths.add(key)
         ordered.append(resolved)
     return tuple(ordered)
 
@@ -267,7 +282,9 @@ class ProjectLookup:
     The mode selects candidate extensions; each artifact falls back per artifact
     (``.s`` → ``.x`` etc. in draft mode) and across roots in the caller's order.
     Path order dominates extension preference: earlier roots are scanned before
-    any later root is considered. An optional parser-owned ``FileLookupCache``
+    any later root is considered. A root whose directory name repeats an earlier
+    root is shadowed and never searched, because the loading path holds one
+    library per name. An optional parser-owned ``FileLookupCache``
     short-circuits the ordered scan: a cached resolution is trusted only when
     its base is still a configured root, is still present in the current ordered
     bases, and the artifact still exists, and after confirming no
@@ -292,10 +309,12 @@ class ProjectLookup:
         cache: FileLookupCache | None = None,
         debug: Callable[[str], None] | None = None,
     ) -> None:
-        self._roots = tuple(Path(root) for root in roots)
+        #: The effective roots. A later root with a name an earlier root already
+        #: holds is shadowed and never searched.
+        self._roots = ordered_lookup_bases(roots)
         #: The lookup path. It does not depend on the requester, so one lookup
         #: resolves every name in the same order.
-        self._ordered = ordered_lookup_bases(self._roots)
+        self._ordered = self._roots
         self._mode = mode
         self._index = index if index is not None else SourceIndex(self._roots)
         self._cache = cache

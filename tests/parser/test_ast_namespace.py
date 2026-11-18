@@ -43,7 +43,6 @@ _INTERIM_PAYLOADS = (
     "ModuleOptions",
     "TwoLayers",
     "Grid",
-    "SeqLayers",
     "Zoomable",
     "ClipValue",
     "CoordinateClipping",

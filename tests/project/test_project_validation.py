@@ -11,6 +11,7 @@ import pytest
 from sattline_parser.api import parse_source_text
 from sattline_parser.project import (
     DependencyCycleError,
+    DependencyNotFoundError,
     LoadMode,
     LoadValidation,
     ModuleTypeCycleError,
@@ -69,6 +70,40 @@ def test_load_populates_library_resolved_base_and_origin(tmp_path: Path) -> None
     assert program.code.origin_file == "Main.s"
     assert program.code.origin_lib == "libs"
     assert project.libraries() == ("libs",)
+
+
+def test_load_shadows_a_later_library_with_the_same_name(tmp_path: Path) -> None:
+    """One library per name: a later root of the same name is not in the path."""
+    first = tmp_path / "one" / "libs"
+    second = tmp_path / "two" / "libs"
+    write_file(first, "Alpha.s", _source("Alpha"))
+    write_file(second, "Beta.s", _source("Beta"))
+
+    project = SattLineProject.load(
+        [first, second],
+        mode=LoadMode.DRAFT,
+        targets=("Alpha",),
+        cache_dir=None,
+    )
+
+    assert project.libraries() == ("libs",)
+    assert project.get("Alpha").library == "libs"
+    assert "Beta" not in project
+
+
+def test_a_target_from_a_shadowed_library_is_not_found(tmp_path: Path) -> None:
+    first = tmp_path / "one" / "libs"
+    second = tmp_path / "two" / "libs"
+    write_file(first, "Alpha.s", _source("Alpha"))
+    write_file(second, "Beta.s", _source("Beta"))
+
+    with pytest.raises(DependencyNotFoundError, match="missing code file for 'Beta'"):
+        SattLineProject.load(
+            [first, second],
+            mode=LoadMode.DRAFT,
+            targets=("Beta",),
+            cache_dir=None,
+        )
 
 
 def test_load_reports_local_validation_findings(tmp_path: Path) -> None:

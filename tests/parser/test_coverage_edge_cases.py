@@ -50,7 +50,7 @@ from sattline_parser.transformer._module_shared import (  # used below
     float_tuple,
     groupconn_value,
 )
-from sattline_parser.transformer._payloads import Grid, ModuleOptions, SeqLayers
+from sattline_parser.transformer._payloads import Grid, ModuleOptions
 from sattline_parser.transformer._sfc_mixin import SFCMixin
 from sattline_parser.transformer._tokens_mixin import TokensMixin
 
@@ -132,12 +132,11 @@ def test_module_layout_grid_and_def_tails() -> None:
             ClippingClause(((0.0, 0.0), (1.0, 1.0)), (tail_a,)),
             ClippingClause(((2.0, 2.0), (3.0, 3.0)), (tail_b,)),
             ModuleOptions(layer_limit=2.0),
-            SeqLayers({"top": 1.0}),
         ],
     )
     assert module_def.clipping_bounds == ((2.0, 2.0), (3.0, 3.0))
     assert module_def.clipping_tails == (tail_b,)
-    assert module_def.seq_layers == {"top": 1.0}
+    assert module_def.layer_limit == 2.0
 
 
 def test_module_shared_float_tuple_and_groupconn() -> None:

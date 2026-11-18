@@ -19,7 +19,6 @@ __all__ = [
     "CoordinateClipping",
     "Grid",
     "ModuleOptions",
-    "SeqLayers",
     "TwoLayers",
     "Zoomable",
 ]
@@ -51,7 +50,7 @@ class Zoomable:
 
 @dataclass(frozen=True)
 class TwoLayers:
-    """``Two_Layers_ LayerLimit_ = <real>``."""
+    """``Two_Layers_ LayerLimit_ = <real>``, the zoom level that switches to layer 2."""
 
     layer_limit: float
 
@@ -61,13 +60,6 @@ class Grid:
     """``Grid = <real>``."""
 
     spacing: float
-
-
-@dataclass(frozen=True)
-class SeqLayers:
-    """A ``seq_layers`` payload: one real or a layer mapping."""
-
-    value: float | dict[str, float]
 
 
 @dataclass(frozen=True)

@@ -18,6 +18,7 @@ from sattline_parser.project import (
     SattLineProgram,
     SattLineProject,
     code_ext_candidates,
+    ordered_lookup_bases,
     parse_search_path,
 )
 
@@ -312,15 +313,16 @@ def _default_workers() -> int:
 
 
 def _discover_targets(roots: Sequence[Path], *, mode: LoadMode) -> tuple[str, ...]:
-    """Every program name declared *in* the roots, in extension precedence.
+    """Every program name declared *in* the effective roots.
 
     A root is a library directory: the loader indexes the artifacts directly
     inside it, so discovery looks at the same level rather than walking nested
-    directories it could never resolve.
+    directories it could never resolve. A root shadowed by an earlier library of
+    the same name contributes no targets, because the load cannot resolve them.
     """
     extensions = {extension.lower() for extension in code_ext_candidates(mode)}
     names: set[str] = set()
-    for root in roots:
+    for root in ordered_lookup_bases(roots):
         names.update(path.stem for path in _root_entries(root) if path.is_file() and path.suffix.lower() in extensions)
     return tuple(sorted(names))
 

@@ -169,9 +169,12 @@ sattline project programs/ libs/ --validate full --fail-on error
 ```
 
 A root is a library directory: the loader indexes artifacts directly inside it.
-Roots are searched in the order written, and an earlier root wins: when two
-roots hold a unit with the same name, only the earlier body is loaded. When
-`--targets` is omitted, every source directly under each root is a target.
+Roots are searched in the order written, and an earlier root wins. The path
+holds one library per name, so a root whose directory name repeats an earlier
+root is shadowed entirely and contributes no units or targets. When two roots
+with different names hold a unit with the same name, only the earlier body is
+loaded. When `--targets` is omitted, every source directly under each effective
+root is a target.
 A missing or unparseable artifact is a load failure: the command reports
 `cannot load project` with the underlying error and exits `1`, whatever
 `--fail-on` says. A recursive `.l`/`.z` dependency

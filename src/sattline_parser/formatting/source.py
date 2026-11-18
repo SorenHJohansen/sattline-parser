@@ -10,12 +10,10 @@ bodies. A tail is written after the value it followed, using the positional
 views ``ModuleHeader.coordinate_tails``, ``ClippingClause.corner_tails``, and
 the graph and interact ``coord_tails`` property key.
 
-Five shapes are refused rather than written somewhere they did not appear:
+Four shapes are refused rather than written somewhere they did not appear:
 
 * a hand-assembled model that carries a tail without its positional grouping;
 * a parameter mapping whose source literal is absent;
-* named sequence layers, because ``ModuleDef.seq_layers`` folds the
-  ``Two_Layers_`` and named-layer forms into one field;
 * a multi-key ``time_value`` payload, whose written keyword is not modelled;
 * more than two module-header description comments, because the grammar has one
   position before ``Invocation`` and one after it.
@@ -403,12 +401,8 @@ def _emit_module_def(printer: _Printer, module: ModuleDef, level: int) -> None:
     clipping = module.clipping
     if clipping is not None:
         _emit_clipping(printer, clipping, level)
-    if module.seq_layers is not None:
-        if not isinstance(module.seq_layers, float):
-            raise UnsupportedFormattingError(
-                "named sequence layers: the model folds Two_Layers_ and named layers into one field"
-            )
-        printer.emit(level, f"Two_Layers_ LayerLimit_ = {_real(module.seq_layers)}")
+    if module.layer_limit is not None:
+        printer.emit(level, f"Two_Layers_ LayerLimit_ = {_real(module.layer_limit)}")
     if module.zoom_limits is not None:
         printer.emit(level, f"ZoomLimits = {_real(module.zoom_limits[0])} {_real(module.zoom_limits[1])}")
     if module.zoomable:
