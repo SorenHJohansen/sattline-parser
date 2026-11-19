@@ -1,0 +1,1 @@
+- **Graphics refusal is part of the project surface.** `GraphicsParseError` and `MAX_GRAPHICS_COMPANION_BYTES` are exported from `sattline_parser.project`, so a caller can catch the error an oversized graphics companion raises without importing an internal module.

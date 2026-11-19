@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import logging
 import os
 from collections.abc import Callable, Generator, Iterator
 from concurrent.futures import ProcessPoolExecutor
@@ -17,6 +18,7 @@ import pytest
 from lark.exceptions import UnexpectedCharacters, UnexpectedEOF, UnexpectedInput, VisitError
 
 from sattline_parser.api import parse_source_bytes, parse_source_file
+from sattline_parser.cli.cmds.project import _discover_targets
 from sattline_parser.errors import SourceTooDeepError
 from sattline_parser.models.ast_model import (
     BasePicture,
@@ -41,8 +43,9 @@ from sattline_parser.project import plan as plan_module
 from sattline_parser.project.assembler import ProjectAssembler
 from sattline_parser.project.ast_cache import FileASTCache, SourceSnapshot, source_snapshot
 from sattline_parser.project.executor import ParseFailure, parse_code_file, rebuild_parse_failure
+from sattline_parser.project.formats import CompanionIndex
 from sattline_parser.project.models import LoadDiagnosticKind, SidecarState
-from sattline_parser.project.parallel import start_method
+from sattline_parser.project.parallel import load_in_progress, loads_in_progress, pool_allowed, start_method
 from sattline_parser.project.planner import ProjectPlanner
 from sattline_parser.transformer.sl_transformer import SLTransformer
 
@@ -1821,8 +1824,8 @@ def test_a_folded_name_collision_is_reported_and_one_unit_wins(tmp_path: Path) -
     assert project.get("Util").source_path == tmp_path / "UTIL.s"
 
 
-def test_two_units_that_casefold_together_keep_the_first_in_the_view(tmp_path: Path) -> None:
-    """A casefolded view has one slot, so the second unit is reported, not lost."""
+def test_two_units_that_casefold_together_both_stay_in_the_view(tmp_path: Path) -> None:
+    """A shared casefold key names no unit; both use their language identity."""
     write_file(tmp_path, "Straße.s", _source("Sharp"))
     write_file(tmp_path, "STRASSE.s", _source("Upper"))
 
@@ -1832,10 +1835,54 @@ def test_two_units_that_casefold_together_keep_the_first_in_the_view(tmp_path: P
     assert len(collisions) == 1
     assert "Straße" in collisions[0].detail
     assert "STRASSE" in collisions[0].detail
-    assert list(project.programs()) == ["strasse"]
+    assert list(project.programs()) == ["STRAßE", "STRASSE"]
     assert project.get("Straße").source_path == tmp_path / "Straße.s"
-    with pytest.raises(KeyError, match="no loaded program"):
-        project.get("STRASSE")
+    assert project.get("STRAßE").source_path == tmp_path / "Straße.s"
+    # ``strasse`` is the language identity of the lowercase spelling, not a view key.
+    assert project.get("strasse").source_path == tmp_path / "STRASSE.s"
+    assert project.get("STRASSE").source_path == tmp_path / "STRASSE.s"
+
+
+def test_a_folded_name_collision_round_trips_and_never_retargets_an_edge(tmp_path: Path) -> None:
+    """A dependency on either unit of a shared casefold key names that unit."""
+    write_file(tmp_path, "Straße.s", _source("Sharp"))
+    write_file(tmp_path, "STRASSE.s", _source("Upper"))
+    write_file(tmp_path, "Main.s", _source("Main"))
+    (tmp_path / "Main.l").write_text("STRASSE\n", encoding="cp1252")
+
+    project = _load(tmp_path, targets=("Straße", "STRASSE", "Main"))
+
+    assert project.get("STRASSE").source_path == tmp_path / "STRASSE.s"
+    # ``dependencies_of`` returns a declared name ``get`` resolves to the same unit.
+    (dependency,) = project.dependencies_of("Main")
+    assert dependency == "STRASSE"
+    assert project.get(dependency).source_path == tmp_path / "STRASSE.s"
+    assert project.dependents_of("STRASSE") == ("Main",)
+    assert project.dependents_of("strasse") == ("Main",)
+    # The graph points at the unit the declaration named, not at the other one.
+    graph = project.graph()
+    assert set(graph.nodes) == {"STRAßE", "STRASSE", "main"}
+    assert graph.edges == (("main", "STRASSE"),)
+    assert graph.dependencies_of("Main") == ("STRASSE",)
+    assert graph.dependents_of("STRASSE") == ("main",)
+    assert graph.dependents_of("Straße") == ()
+
+
+def test_a_lowercase_spelling_of_the_shared_key_round_trips(tmp_path: Path) -> None:
+    """``strasse`` is the language name of ``strasse.s``, not a view-key alias."""
+    write_file(tmp_path, "Straße.s", _source("Sharp"))
+    write_file(tmp_path, "strasse.s", _source("Lower"))
+    write_file(tmp_path, "Main.s", _source("Main"))
+    (tmp_path / "Main.l").write_text("strasse\n", encoding="cp1252")
+
+    project = _load(tmp_path, targets=("Straße", "strasse", "Main"))
+
+    assert project.get("strasse").source_path == tmp_path / "strasse.s"
+    (dependency,) = project.dependencies_of("Main")
+    assert dependency == "strasse"
+    assert project.get(dependency).source_path == tmp_path / "strasse.s"
+    assert project.dependents_of("strasse") == ("Main",)
+    assert project.graph().edges == (("main", "STRASSE"),)
 
 
 def test_an_alias_spelling_does_not_answer_for_a_casefold_only_name(tmp_path: Path) -> None:
@@ -1912,3 +1959,225 @@ def test_a_four_hundred_unit_chain_loads(tmp_path: Path) -> None:
     assert len(project.programs()) == 400
     assert project.dependencies_of("Unit0") == ("Unit1",)
     assert project.dependencies_of("Unit399") == ()
+
+
+# --- companion resolution, skipped files, roots, and nested pools --------------
+
+
+def test_companion_resolution_scans_each_directory_once_per_load(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Graphics, distribution, and the sidecar probe share one directory scan."""
+    targets = tuple(f"Unit{index}" for index in range(24))
+    for name in targets:
+        write_file(tmp_path, f"{name}.s", _source(name))
+    scans: list[Path] = []
+    original = CompanionIndex._scan
+
+    def counting(self: CompanionIndex, base: Path) -> dict[tuple[str, str], tuple[Path, ...]]:
+        if base not in self._entries:
+            scans.append(base)
+        return original(self, base)
+
+    monkeypatch.setattr(CompanionIndex, "_scan", counting)
+
+    first = _load(tmp_path, targets=targets)
+
+    assert len(first.programs()) == 24
+    assert scans == [tmp_path.resolve()]
+
+    scans.clear()
+    _load(tmp_path, targets=targets)
+
+    # A second load owns a fresh index: the cache never crosses a load.
+    assert scans == [tmp_path.resolve()]
+
+
+def test_a_companion_in_the_other_family_is_reported_and_not_paired(tmp_path: Path) -> None:
+    """A ``.y`` beside a ``.s`` body explains why the graphics answer is missing."""
+    write_file(tmp_path, "Main.s", _source("Main"))
+    write_file(tmp_path, "Main.y", "")
+    write_file(tmp_path, "Main.q", "")
+
+    project = _load(tmp_path)
+
+    program = project.get("Main")
+    assert program.graphics is None
+    assert program.distribution is None
+    assert program.has_executing_system is None
+    mismatches = [d for d in project.diagnostics() if d.kind is LoadDiagnosticKind.COMPANION_FAMILY_MISMATCH]
+    assert {diagnostic.path for diagnostic in mismatches} == {tmp_path / "Main.y", tmp_path / "Main.q"}
+    assert {diagnostic.program for diagnostic in mismatches} == {"Main"}
+
+
+def test_a_paired_companion_does_not_report_the_other_family(tmp_path: Path) -> None:
+    write_file(tmp_path, "Main.s", _source("Main"))
+    write_file(tmp_path, "Main.g", _GFX)
+    write_file(tmp_path, "Main.y", "")
+    write_file(tmp_path, "Main.p", _DISTRIBUTION_EMPTY)
+    write_file(tmp_path, "Main.q", "")
+
+    project = _load(tmp_path)
+
+    assert project.get("Main").graphics is not None
+    assert project.get("Main").has_executing_system is False
+    assert not [d for d in project.diagnostics() if d.kind is LoadDiagnosticKind.COMPANION_FAMILY_MISMATCH]
+
+
+def test_a_companion_name_collision_is_reported_with_its_winner(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The alphabetically first case variant pairs, whatever order the directory lists."""
+    write_file(tmp_path, "main.s", _source("Main"))
+    winner = write_file(tmp_path, "MAIN.G", _GFX)
+    loser = write_file(tmp_path, "Main.g", _GFX_UNTERMINATED)
+    original = Path.iterdir
+
+    def reversed_entries(self: Path) -> list[Path]:
+        return sorted(original(self), key=lambda entry: entry.name, reverse=True)
+
+    monkeypatch.setattr(Path, "iterdir", reversed_entries)
+
+    project = _load(tmp_path)
+
+    assert project.get("Main").graphics is not None
+    collisions = [d for d in project.diagnostics() if d.kind is LoadDiagnosticKind.FOLDED_NAME_COLLISION]
+    assert len(collisions) == 1
+    assert collisions[0].path == winner
+    assert "MAIN.G" in collisions[0].detail
+    assert loser.name in collisions[0].detail
+
+
+def test_a_sidecar_that_matches_only_under_casefold_is_not_a_family_mismatch(tmp_path: Path) -> None:
+    """The other-family probe uses language identity, not ``str.casefold``."""
+    write_file(tmp_path, "Straße.s", _source("Sharp"))
+    write_file(tmp_path, "STRASSE.z", "")
+
+    project = _load(tmp_path, targets=("Straße",))
+
+    kinds = {diagnostic.kind for diagnostic in project.diagnostics()}
+    assert LoadDiagnosticKind.SIDECAR_FAMILY_MISMATCH not in kinds
+    assert LoadDiagnosticKind.SIDECAR_MISSING in kinds
+
+
+def test_a_code_file_whose_stem_is_not_a_unit_name_is_reported_and_skipped(tmp_path: Path) -> None:
+    """A dotted stem cannot be a target; the load names it and carries on."""
+    write_file(tmp_path, "Main.s", _source("Main"))
+    write_file(tmp_path, "Pump.v2.s", _source("Pump"))
+
+    project = _load(tmp_path, targets=("Main",))
+
+    assert set(project.programs()) == {"main"}
+    skipped = [d for d in project.diagnostics() if d.kind is LoadDiagnosticKind.SKIPPED_FILE]
+    assert len(skipped) == 1
+    assert skipped[0].program == "Pump.v2"
+    assert skipped[0].path == tmp_path / "Pump.v2.s"
+    assert "Pump.v2.s" in skipped[0].detail
+
+
+def test_a_code_file_with_a_dotted_stem_is_not_a_discovered_target(tmp_path: Path) -> None:
+    """The default discovery rule and the resolver share one name predicate."""
+    write_file(tmp_path, "Main.s", _source("Main"))
+    write_file(tmp_path, "Pump.v2.s", _source("Pump"))
+
+    assert _discover_targets([tmp_path], mode=LoadMode.DRAFT) == ("Main",)
+
+
+def test_a_skipped_candidate_outside_the_requested_mode_is_not_reported(tmp_path: Path) -> None:
+    """Official mode does not consider a draft body, so it is not a skipped target."""
+    write_file(tmp_path, "Main.x", _source("Main"))
+    write_file(tmp_path, "Pump.v2.s", _source("Pump"))
+
+    project = _load(tmp_path, targets=("Main",), mode=LoadMode.OFFICIAL)
+
+    assert not [d for d in project.diagnostics() if d.kind is LoadDiagnosticKind.SKIPPED_FILE]
+
+
+def test_a_root_that_is_a_file_is_a_load_error_naming_it(tmp_path: Path) -> None:
+    """A file root is not an empty root: the load names the root and stops."""
+    root = write_file(tmp_path, "notes.txt", "not a library")
+
+    with pytest.raises(ProjectLoadError, match="not a readable directory") as excinfo:
+        SattLineProject.load([root], LoadMode.DRAFT, ["Main"])
+
+    assert str(root) in str(excinfo.value)
+
+
+def test_a_missing_root_is_a_load_error_naming_it(tmp_path: Path) -> None:
+    missing = tmp_path / "absent"
+
+    with pytest.raises(ProjectLoadError, match="not a readable directory") as excinfo:
+        SattLineProject.load([missing], LoadMode.DRAFT, ["Main"])
+
+    assert str(missing) in str(excinfo.value)
+
+
+@pytest.mark.skipif(
+    os.name != "posix" or os.geteuid() == 0,
+    reason="mode bits deny reads on POSIX, and root bypasses them",
+)
+def test_a_root_under_a_denied_ancestor_is_a_load_error(tmp_path: Path) -> None:
+    closed = tmp_path / "closed"
+    root = closed / "libs"
+    root.mkdir(parents=True)
+    closed.chmod(0o000)
+    try:
+        with pytest.raises(ProjectLoadError, match="not a readable directory") as excinfo:
+            SattLineProject.load([root], LoadMode.DRAFT, ["Main"])
+    finally:
+        closed.chmod(0o755)
+
+    assert str(root) in str(excinfo.value)
+
+
+def test_pool_allowed_rejects_a_process_that_belongs_to_an_outer_pool(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(project_loader_parallel.multiprocessing, "parent_process", lambda: object())
+
+    assert pool_allowed() is False
+
+
+def test_pool_allowed_rejects_a_marked_pool_worker(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv(project_loader_parallel.POOL_WORKER_ENV, "1")
+
+    assert pool_allowed() is False
+
+
+def test_a_pool_worker_marks_itself_before_it_runs_a_task(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv(project_loader_parallel.POOL_WORKER_ENV, raising=False)
+
+    project_loader_parallel._mark_pool_worker()  # pyright: ignore[reportPrivateUsage]
+
+    assert pool_allowed() is False
+
+
+def test_a_nested_load_parses_in_this_process_and_says_so_once(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    for index in range(3):
+        write_file(tmp_path, f"Unit{index}.s", _source(f"Unit{index}"))
+    calls: list[int] = []
+
+    def forbidden(max_workers: int) -> NoReturn:
+        calls.append(max_workers)
+        raise AssertionError("a nested load must not start a worker pool")
+
+    monkeypatch.setattr(project_loader_parallel, "process_pool", forbidden)
+
+    with caplog.at_level(logging.WARNING), load_in_progress():
+        assert loads_in_progress() == 1
+        loader = project_loader.ProjectLoader(
+            roots=[tmp_path],
+            mode=LoadMode.DRAFT,
+            debug=None,
+            cache_dir=None,
+            workers=4,
+        )
+        registry = loader.resolve(("Unit0", "Unit1", "Unit2"))
+
+    assert calls == []
+    assert len(registry) == 3
+    warnings = [record for record in caplog.records if "worker pool not started" in record.getMessage()]
+    assert len(warnings) == 1
+    assert loads_in_progress() == 0

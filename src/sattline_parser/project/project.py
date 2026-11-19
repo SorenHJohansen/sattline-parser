@@ -30,20 +30,29 @@ class SattLineProject:
 
     Program names use canonical (casefolded) identities internally, giving
     case-insensitive lookup while preserving the caller's original spelling in
-    each ``SattLineProgram.name``. A casefolded key is only a view key: a name
-    the language keeps apart from the stored spelling, such as ``STRASSE``
-    beside ``Straße``, is not resolved by it.
+    each ``SattLineProgram.name``. A casefolded key is only a view key, and a
+    name the language keeps apart from the stored spelling, such as ``STRASSE``
+    beside ``Straße``, is not resolved by it: each unit is resolved by its own
+    language identity. When two loaded units share one casefold key, the key
+    names no single unit and both are keyed by their language identities, so both
+    stay addressable and neither answers for the other.
     """
 
     def __init__(self) -> None:
         self._programs: dict[str, SattLineProgram] = {}
-        #: Folded spelling -> (spelling, the view key of the unit it reached), for
-        #: names that reached an already-planned body.
-        self._aliases: dict[str, tuple[str, str]] = {}
+        #: Folded language identity of every spelling that reached a loaded unit
+        #: -> that unit's view key.
+        self._identity_views: dict[str, str] = {}
         self._diagnostics: tuple[LoadDiagnostic, ...] = ()
         self._index: ProjectIndex | None = None
 
-    def _attach(self, programs: Mapping[str, SattLineProgram], *, copy_ast: bool) -> None:
+    def _attach(
+        self,
+        programs: Mapping[str, SattLineProgram],
+        *,
+        copy_ast: bool,
+        identity_views: Mapping[str, str] | None = None,
+    ) -> None:
         """Install the registry as an immutable snapshot.
 
         ``load`` owns the trees the loader produced, so it freezes them in
@@ -56,6 +65,9 @@ class SattLineProject:
             code = deepcopy(program.code) if copy_ast else program.code
             registry[key] = replace(program, code=cast(BasePicture, freeze_ast(code)))
         self._programs = registry
+        self._identity_views = {UnitIdentity.of(program.name).key: key for key, program in registry.items()}
+        for identity, view in (identity_views or {}).items():
+            self._identity_views.setdefault(identity, view)
 
     @classmethod
     def from_programs(cls, programs: Mapping[str, SattLineProgram]) -> SattLineProject:
@@ -139,56 +151,53 @@ class SattLineProject:
         )
         program_registry = loader.resolve(targets)
         project = cls()
-        project._attach(program_registry, copy_ast=False)
-        project._aliases = dict(loader.aliases)
+        project._attach(program_registry, copy_ast=False, identity_views=loader.identity_views)
         project._diagnostics = loader.diagnostics
         return project
 
-    def _resolve(self, name: str) -> SattLineProgram | None:
-        """The loaded unit *name* designates, or ``None``.
+    def _resolve_view(self, name: str) -> str | None:
+        """The view key *name* designates, or ``None``.
 
-        The view key is the caller's spelling casefolded, but a key that only
-        matches under ``str.casefold`` is not a unit the language considers the
-        same. ``Straße`` and ``STRASSE`` share a key and are different units, so
-        a name must either be the view key itself, which is what ``programs()``
-        returns, or match the stored spelling under ``fold_identifier``. A name
-        that reached an already-planned body (an alias or a symlink) resolves
-        through the alias table under the same rule.
-        """
-        key = name.casefold()
-        program = self._programs.get(key)
-        if program is not None and (name == key or UnitIdentity.of(program.name) == UnitIdentity.of(name)):
-            return program
-        alias = self._aliases.get(key)
-        if alias is None:
-            return None
-        spelling, target = alias
-        if name != key and UnitIdentity.of(spelling) != UnitIdentity.of(name):
-            return None
-        return self._programs.get(target)
-
-    def _view_key(self, name: str) -> str:
-        """The view key *name* designates, or its folded spelling when unknown.
-
-        Used for graph edges: a declared dependency that resolved to a loaded
-        unit points at that unit's view key, so every endpoint of a loaded
-        project is also a node.
+        A view key round-trips even when its spelling is not the unit's language
+        name (``strasse`` for ``Straße``), so the caller's spelling is compared
+        as written with the stored view key first. Any other name must match a
+        loaded unit's spelling under :func:`~sattline_parser.names.fold_identifier`.
+        A casefold-only name such as ``STRASSE`` beside ``Straße`` therefore
+        designates neither through the casefold key nor through the identity
+        table unless that unit loaded, and two language-distinct units that share
+        a casefold key stay reachable through their own identities.
         """
         key = name.casefold()
         program = self._programs.get(key)
         if program is not None and (name == key or UnitIdentity.of(program.name) == UnitIdentity.of(name)):
             return key
-        alias = self._aliases.get(key)
-        if alias is not None and (name == key or UnitIdentity.of(alias[0]) == UnitIdentity.of(name)):
-            return alias[1]
-        return key
+        return self._identity_views.get(UnitIdentity.of(name).key)
+
+    def _resolve(self, name: str) -> SattLineProgram | None:
+        """The loaded unit *name* designates, or ``None``."""
+        view = self._resolve_view(name)
+        return None if view is None else self._programs[view]
+
+    def _view_key(self, name: str) -> str:
+        """The view key *name* designates, or its folded spelling when unknown.
+
+        Used for graph edges: a declared dependency that resolved to a loaded
+        unit points at that unit's own view key, so every endpoint of a loaded
+        project is also a node and a unit that lost a casefold collision is not
+        replaced by the unit that won it.
+        """
+        view = self._resolve_view(name)
+        return view if view is not None else name.casefold()
 
     def get(self, name: str) -> SattLineProgram:
         """Return the loaded program by name (case-insensitive).
 
         Case-insensitivity is the language's own rule, so ``util``, ``Util``,
         and ``UTIL`` all designate one unit while ``STRASSE`` does not designate
-        ``Straße``. Raises ``KeyError`` when the project holds no such unit.
+        ``Straße``. A name that matches a loaded unit under ``fold_identifier``
+        designates that unit, including a unit keyed by its language identity
+        because the shared casefold key names no single unit. Raises ``KeyError``
+        when the project holds no such unit.
         """
         program = self._resolve(name)
         if program is None:
@@ -199,7 +208,14 @@ class SattLineProject:
         return self._resolve(name) is not None
 
     def programs(self) -> Mapping[str, SattLineProgram]:
-        """Read-only canonical view over the loaded programs."""
+        """Read-only canonical view over the loaded programs.
+
+        Keys are the casefolded unit name, which is the view key every ordinary
+        ASCII name has always had. When two loaded units share one casefold key,
+        it names no single unit: every unit in that group is keyed by its
+        language identity instead, so the mapping holds every loaded unit once
+        and a dependency on either one still round-trips through :meth:`get`.
+        """
         return MappingProxyType(self._programs)
 
     def diagnostics(self) -> tuple[LoadDiagnostic, ...]:
@@ -231,18 +247,20 @@ class SattLineProject:
         """Declared dependencies (as spelled) of ``name``, in declaration order.
 
         Every returned name designates a loaded unit in a project that came from
-        :meth:`load`, so a caller can pass each one back to :meth:`get`.
+        :meth:`load`, so a caller can pass each one back to :meth:`get`. That
+        includes a unit in a shared casefold group: it is reachable under its own
+        language identity because the shared key names no single unit.
         """
         return self.get(name).dependencies
 
     def _unit_key(self, name: str) -> str:
         """The language identity of the unit *name* designates.
 
-        The argument is resolved through :meth:`_resolve` first, so a
-        ``programs()`` view key or an alias compares as the unit it names rather
-        than as its own spelling. A name that designates no unit keeps its own
-        identity, which is what lets a project built with ``from_programs``
-        compare a declared dependency it does not hold.
+        The argument is resolved through :meth:`_resolve_view` first, so a
+        ``programs()`` view key or a loaded spelling compares as the unit it
+        names rather than as its own spelling. A name that designates no unit
+        keeps its own identity, which is what lets a project built with
+        ``from_programs`` compare a declared dependency it does not hold.
         """
         program = self._resolve(name)
         return UnitIdentity.of(program.name if program is not None else name).key
@@ -265,12 +283,14 @@ class SattLineProject:
     def graph(self) -> DependencyGraph:
         """Derived dependency graph: sorted nodes, all declared edges.
 
-        Edge endpoints are canonical (casefolded) identities. A declared
-        dependency that resolved to a loaded unit points at that unit's view key,
-        including when the dependency used an alias, so every endpoint of a
-        loaded project is also a node. A project assembled directly with
-        ``from_programs`` may declare an edge to a program it does not hold; that
-        edge keeps the declared spelling's view key and names no node.
+        Edge endpoints are view keys. A declared dependency that resolved to a
+        loaded unit points at that unit's own view key, including when the
+        dependency used an alias or when its unit belongs to a shared casefold
+        group keyed by language identity, so every endpoint of a loaded project
+        is also a node and no edge is retargeted at a same-key unit. A project
+        assembled directly with ``from_programs`` may declare an edge to a program
+        it does not hold; that edge keeps the declared spelling's view key and
+        names no node.
         """
         edges = tuple(
             (owner, self._view_key(dependency))

@@ -31,7 +31,7 @@ from sattline_parser.source_io import read_text_cp1252
 from ._cycles import canonical_cycle
 from .discovery import ProjectLookup
 from .errors import DependencyCycleError, DependencyNotFoundError, DependencyParseError
-from .formats import ALL_DEPS_EXTENSIONS, find_companion_beside
+from .formats import ALL_DEPS_EXTENSIONS, CompanionIndex, code_ext_candidates, find_companion_beside
 from .identity import ArtifactIdentity
 from .models import LoadDiagnosticKind, LoadMode, SidecarState
 from .plan import Plan, ResolvedArtifact
@@ -78,12 +78,17 @@ class ProjectPlanner:
         debug: Callable[[str], None] | None,
         diagnose: Callable[..., None],
         artifact_resolver: ArtifactResolver | None = None,
+        companions: CompanionIndex | None = None,
     ) -> None:
         self._lookup = lookup
         self._mode = mode
         self._debug = debug
         self._diagnose = diagnose
         self._artifact_resolver = artifact_resolver or self.resolve_artifact
+        #: The per-load companion directory index, shared with the assembler so
+        #: the sidecar family probe and the two companion roles cost one scan per
+        #: directory.
+        self._companions = companions if companions is not None else CompanionIndex()
         #: Post-order plans: every dependency precedes its consumer.
         self.plans: list[Plan] = []
         #: Plan key -> the plan keys of its resolved dependencies.
@@ -106,8 +111,29 @@ class ProjectPlanner:
 
     def resolve(self, targets: Sequence[str]) -> None:
         """Plan every target and its transitive dependencies, in post-order."""
+        self._report_unusable_names()
         for target in targets:
             self.target_plan_keys.add(self._plan(target, declared_by=None))
+
+    def _report_unusable_names(self) -> None:
+        """Report a code file whose stem can never be a unit name.
+
+        The resolver refuses a name outside the identifier charset, so a file
+        such as ``Pump.v2.s`` cannot load as a unit however the target was
+        chosen. Reporting it as a load diagnostic keeps a whole-tree load alive
+        and names the file once, instead of failing the load on a target the
+        resolver could only refuse.
+        """
+        candidates = code_ext_candidates(self._mode)
+        for path in self._lookup.unusable_code_files():
+            if path.suffix.lower() not in candidates:
+                continue
+            self._diagnose(
+                LoadDiagnosticKind.SKIPPED_FILE,
+                path.stem,
+                f"{path.name!r} is not a unit name; not loaded as a target",
+                path,
+            )
 
     def _plan(self, name: str, *, declared_by: str | None) -> str:
         """Plan one unit and its closure and return its plan key.
@@ -247,7 +273,7 @@ class ProjectPlanner:
             # A sidecar in the other family sits at the body's own prefix. Probe
             # for it directly, because a mode-filtered root-ordered search never
             # sees the other family and official mode would report a plain miss.
-            same_prefix = find_companion_beside(code_path, sorted(ALL_DEPS_EXTENSIONS))
+            same_prefix = find_companion_beside(code_path, sorted(ALL_DEPS_EXTENSIONS), index=self._companions)
             stray = self._lookup.find_deps(name)
             if same_prefix is not None:
                 self._diagnose(

@@ -22,6 +22,7 @@ from sattline_parser.project import (
     ordered_lookup_bases,
     parse_search_path,
 )
+from sattline_parser.project.discovery import is_unit_name
 
 from .._errors import CliError
 from .._exit import ExitCode
@@ -342,11 +343,21 @@ def _discover_targets(roots: Sequence[Path], *, mode: LoadMode) -> tuple[str, ..
     inside it, so discovery looks at the same level rather than walking nested
     directories it could never resolve. A root shadowed by an earlier library of
     the same name contributes no targets, because the load cannot resolve them.
+
+    Only a stem the resolver would accept becomes a target. The resolver refuses
+    a name outside the SattLine identifier charset, so offering one here would
+    turn a whole-tree load into an unresolvable target and a fatal failure. A
+    file that fails the rule is left out and the loader reports it as a skipped
+    file, which keeps the load alive and names it once.
     """
     extensions = {extension.lower() for extension in code_ext_candidates(mode)}
     names: set[str] = set()
     for root in ordered_lookup_bases(roots):
-        names.update(path.stem for path in _root_entries(root) if path.is_file() and path.suffix.lower() in extensions)
+        names.update(
+            path.stem
+            for path in _root_entries(root)
+            if path.is_file() and path.suffix.lower() in extensions and is_unit_name(path.stem)
+        )
     return tuple(sorted(names))
 
 

@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Literal
 
 from sattline_parser.models.ast_model import BasePicture, GraphicsBinding, SourceSpan
+from sattline_parser.names import fold_identifier
 from sattline_parser.validation.diagnostics import Diagnostic
 
 
@@ -170,6 +171,15 @@ class LoadDiagnosticKind(StrEnum):
     #: first resolution, because a casefolded view can hold only one unit there,
     #: and reports the layout as ambiguous instead of dropping a unit silently.
     FOLDED_NAME_COLLISION = "folded-name-collision"
+    #: A code file directly under a root has a stem the resolver refuses as a
+    #: unit name, so it can never load as a unit. The load reports it and carries
+    #: on instead of failing on a target it could only refuse.
+    SKIPPED_FILE = "skipped-file"
+    #: A companion sits beside the body but belongs to the other artifact family,
+    #: for example a ``.y`` beside a ``.s`` body. It is never paired, because a
+    #: unit belongs to one family and a silent ignore would leave the answer to
+    #: ``has_executing_system`` unavailable with no explanation.
+    COMPANION_FAMILY_MISMATCH = "companion-family-mismatch"
 
 
 @dataclass(frozen=True, slots=True)
@@ -295,21 +305,37 @@ class SattLineProgram:
 class DependencyGraph:
     """Resolved dependency edges between loaded programs.
 
-    Both ``nodes`` and the edge endpoints use canonical identities (the program
-    name casefolded) so lookups are case-insensitive and deterministic.
+    ``nodes`` and the edge endpoints are view keys: the program name casefolded,
+    except the units of a shared casefold key, which use their language identity
+    instead. Each method resolves a name by its exact node key first, then by the
+    casefolded spelling, then by the language identity, so ``STRASSE`` reaches
+    the unit keyed by that identity rather than a same-key unit.
     """
 
     nodes: tuple[str, ...] = ()
     edges: tuple[tuple[str, str], ...] = ()
 
+    def _node(self, name: str) -> str:
+        """The node key *name* designates, or its folded spelling when unknown."""
+        if name in self.nodes:
+            return name
+        key = name.casefold()
+        if key in self.nodes:
+            return key
+        identity = fold_identifier(name)
+        for node in self.nodes:
+            if fold_identifier(node) == identity:
+                return node
+        return key
+
     def dependencies_of(self, name: str) -> tuple[str, ...]:
         """Direct dependencies (outgoing edges) of ``name``, in graph order."""
-        key = name.casefold()
+        key = self._node(name)
         return tuple(dependency for dependent, dependency in self.edges if dependent == key)
 
     def dependents_of(self, name: str) -> tuple[str, ...]:
         """Direct dependents (incoming edges) of ``name``, in graph order."""
-        key = name.casefold()
+        key = self._node(name)
         return tuple(dependent for dependent, dependency in self.edges if dependency == key)
 
 

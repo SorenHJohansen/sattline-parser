@@ -9,6 +9,7 @@ import pytest
 
 from sattline_parser.project import (
     ArtifactKind,
+    LoadDiagnosticKind,
     LoadMode,
     body_mode,
     candidate_extensions,
@@ -23,6 +24,7 @@ from sattline_parser.project import (
     graphics_ext_candidates,
     preferred_extension,
 )
+from sattline_parser.project.formats import CompanionIndex
 
 
 def test_artifact_kind_is_enum() -> None:
@@ -176,3 +178,75 @@ def test_find_companion_beside_pairs_a_regular_file_with_a_folded_name(tmp_path:
     companion.write_text("", encoding="utf-8")
 
     assert find_companion_beside(body, (".p",)) == companion
+
+
+def test_find_companion_beside_does_not_pair_across_language_identities(tmp_path: Path) -> None:
+    """``Straße`` and ``STRASSE`` are different units, however ``casefold`` reads."""
+    body = tmp_path / "Straße.s"
+    body.write_text("", encoding="utf-8")
+    (tmp_path / "STRASSE.p").write_text("", encoding="utf-8")
+
+    assert find_companion_beside(body, (".p",)) is None
+
+
+def test_find_companion_beside_prefers_the_exact_stem_before_a_case_variant(tmp_path: Path) -> None:
+    body = tmp_path / "Main.s"
+    body.write_text("", encoding="utf-8")
+    exact = tmp_path / "Main.p"
+    exact.write_text("", encoding="utf-8")
+    (tmp_path / "MAIN.P").write_text("", encoding="utf-8")
+
+    assert find_companion_beside(body, (".p",)) == exact
+
+
+def test_find_companion_beside_chooses_a_case_variant_by_sorted_name(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The winner is the alphabetically first file, not the first listed."""
+    body = tmp_path / "main.s"
+    body.write_text("", encoding="utf-8")
+    first = tmp_path / "MAIN.P"
+    first.write_text("", encoding="utf-8")
+    second = tmp_path / "Main.p"
+    second.write_text("", encoding="utf-8")
+
+    original = Path.iterdir
+
+    def reversed_entries(self: Path) -> list[Path]:
+        return sorted(original(self), key=lambda entry: entry.name, reverse=True)
+
+    monkeypatch.setattr(Path, "iterdir", reversed_entries)
+
+    assert find_companion_beside(body, (".p",)) == first
+    assert second.exists()
+
+
+def test_a_companion_collision_is_reported_once_with_the_winner(tmp_path: Path) -> None:
+    body = tmp_path / "main.s"
+    body.write_text("", encoding="utf-8")
+    winner = tmp_path / "MAIN.P"
+    winner.write_text("", encoding="utf-8")
+    loser = tmp_path / "Main.p"
+    loser.write_text("", encoding="utf-8")
+    reported: list[tuple[LoadDiagnosticKind, str, str, Path | None]] = []
+    index = CompanionIndex(lambda kind, program, detail, path: reported.append((kind, program, detail, path)))
+
+    assert index.find(body, (".p",)) == winner
+    assert index.find(body, (".p",)) == winner
+
+    assert len(reported) == 1
+    kind, program, detail, path = reported[0]
+    assert kind is LoadDiagnosticKind.FOLDED_NAME_COLLISION
+    assert program == "MAIN"
+    assert "MAIN.P" in detail
+    assert "Main.p" in detail
+    assert path == winner
+
+
+def test_a_companion_collision_is_silent_without_a_reporting_callback(tmp_path: Path) -> None:
+    body = tmp_path / "main.s"
+    body.write_text("", encoding="utf-8")
+    (tmp_path / "MAIN.P").write_text("", encoding="utf-8")
+    (tmp_path / "Main.p").write_text("", encoding="utf-8")
+
+    assert find_companion_beside(body, (".p",)) == tmp_path / "MAIN.P"

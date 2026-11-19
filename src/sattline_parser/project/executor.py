@@ -253,6 +253,7 @@ class ParseExecutor:
         ast_cache: FileASTCache | None,
         secure_cache_dir: Path | None,
         pool_factory: Callable[[int], ProcessPoolExecutor],
+        nested: bool = False,
     ) -> None:
         self._mode = mode
         self._workers = max(1, workers)
@@ -261,6 +262,9 @@ class ParseExecutor:
         self._ast_cache = ast_cache
         self._secure_cache_dir = secure_cache_dir
         self._pool_factory = pool_factory
+        #: Whether this load was constructed inside another load's resolve. A
+        #: nested load parses in place: a second pool would multiply processes.
+        self._nested = nested
         #: Plan key -> the parsed body or the failure that stopped it.
         self.outcomes: dict[str, ParseOutcome] = {}
 
@@ -285,10 +289,17 @@ class ParseExecutor:
             for plan in plans:
                 self.outcomes[plan.key] = self._parse_in_process(plan)
             return
-        if not pool_allowed():
-            # A daemonic process cannot start children. Parsing here is slower
-            # but correct, and the caller already owns a pool to run us on.
-            self._dbg("Parsing in this process: a daemonic process cannot start workers")
+        if not pool_allowed(nested=self._nested):
+            # A daemonic process cannot start children, and a process that is
+            # already part of an outer pool must not multiply the process count.
+            # Parsing here is slower but correct, and the caller already owns a
+            # pool to run us on. Say so once, not per body: a silent serial load
+            # looks like a clean parallel one.
+            _LOGGER.warning(
+                "worker pool not started (nested load or outer pool); parsing %d bodies in this process instead",
+                len(plans),
+            )
+            self._dbg("Parsing in this process: this process may not start a worker pool")
             for plan in plans:
                 self.outcomes[plan.key] = self._parse_in_process(plan)
             return

@@ -187,6 +187,17 @@ def test_dependency_graph_standalone() -> None:
     assert graph.dependents_of("other") == ()
 
 
+def test_dependency_graph_resolves_an_exact_node_before_a_casefolded_one() -> None:
+    """Units of a shared casefold key are keyed by language identity."""
+    graph = DependencyGraph(nodes=("STRASSE", "STRAßE", "main"), edges=(("main", "STRASSE"),))
+
+    assert graph.dependencies_of("Main") == ("STRASSE",)
+    assert graph.dependencies_of("MAIN") == ("STRASSE",)
+    assert graph.dependents_of("STRASSE") == ("main",)
+    assert graph.dependents_of("strasse") == ("main",)
+    assert graph.dependents_of("Straße") == ()
+
+
 def test_project_load_wires_discovery_and_dependencies(tmp_path: Path) -> None:
     write_file(tmp_path, "Main.s", _SMALL_PROGRAM)
     write_file(tmp_path, "Main.l", "Lib\n")

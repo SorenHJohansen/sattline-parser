@@ -14,12 +14,55 @@ so the project loader and the CLI share one rule instead of two.
 from __future__ import annotations
 
 import multiprocessing
+import os
 import sys
 import threading
-from collections.abc import Sequence
+from collections.abc import Generator, Sequence
 from concurrent.futures import ProcessPoolExecutor
+from contextlib import contextmanager
 
-__all__ = ["pool_allowed", "process_pool", "start_method"]
+__all__ = [
+    "POOL_WORKER_ENV",
+    "load_in_progress",
+    "loads_in_progress",
+    "pool_allowed",
+    "process_pool",
+    "start_method",
+]
+
+#: Environment marker set in every worker of a pool this module starts. A
+#: ``ProcessPoolExecutor`` worker is not daemonic, so the daemon flag alone does
+#: not say that it already belongs to an outer pool. The marker survives fork
+#: and spawn, and a load that runs in a worker therefore parses in place instead
+#: of multiplying the process count.
+POOL_WORKER_ENV = "SATTLINE_PARSER_POOL_WORKER"
+
+#: Per-thread count of loads that are resolving. A load constructed while one is
+#: already running is nested by definition, even in a process that may otherwise
+#: start children.
+_LOAD_STATE = threading.local()
+
+_POOL_WORKER_VALUE = "1"
+
+
+def _mark_pool_worker() -> None:
+    """Mark this process as one of a parser pool's workers."""
+    os.environ[POOL_WORKER_ENV] = _POOL_WORKER_VALUE
+
+
+def loads_in_progress() -> int:
+    """How many loads are resolving on this thread."""
+    return int(getattr(_LOAD_STATE, "depth", 0))
+
+
+@contextmanager
+def load_in_progress() -> Generator[None]:
+    """Mark that a load is resolving on this thread for the duration."""
+    _LOAD_STATE.depth = loads_in_progress() + 1
+    try:
+        yield
+    finally:
+        _LOAD_STATE.depth -= 1
 
 
 def start_method(
@@ -49,16 +92,34 @@ def start_method(
     return None
 
 
-def pool_allowed() -> bool:
-    """Whether this process may start children.
+def pool_allowed(*, nested: bool = False) -> bool:
+    """Whether this process may start a parser pool.
 
-    A daemonic process may not, so a caller inside an outer pool has to do the
-    work itself rather than raise.
+    A daemonic process may not start children, a process that is itself a child
+    of another process already belongs to a pool, and a process carrying this
+    module's worker marker is one of its own workers. A load constructed while
+    another load is resolving on this thread is nested and must not multiply the
+    process count either. In every one of those cases the caller parses in place
+    instead of raising; *nested* is the loader's answer to the last question,
+    decided when the loader is constructed.
     """
-    return not multiprocessing.current_process().daemon
+    return (
+        not nested
+        and not multiprocessing.current_process().daemon
+        and multiprocessing.parent_process() is None
+        and os.environ.get(POOL_WORKER_ENV) != _POOL_WORKER_VALUE
+    )
 
 
 def process_pool(max_workers: int) -> ProcessPoolExecutor:
-    """A process pool shaped for the current process."""
+    """A process pool shaped for the current process.
+
+    Every worker is marked with :data:`POOL_WORKER_ENV` before it runs a task, so
+    a load that somehow runs inside one does not start a second pool.
+    """
     method = start_method(multiprocessing.get_all_start_methods(), threaded=threading.active_count() > 1)
-    return ProcessPoolExecutor(max_workers=max_workers, mp_context=multiprocessing.get_context(method))
+    return ProcessPoolExecutor(
+        max_workers=max_workers,
+        mp_context=multiprocessing.get_context(method),
+        initializer=_mark_pool_worker,
+    )
