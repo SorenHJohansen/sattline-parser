@@ -184,9 +184,10 @@ serialization format.
 `format_source` renders a parsed file back to canonical SattLine source that
 parses to an equal tree. It is a formatter, not a lossless printer: whitespace
 and numeric spelling are normalised, and the model keeps structure rather than
-layout. Every parsed fixture in the corpus round-trips, including graphics,
-interactor bodies, coordinate tails, clipping tails, and falsy parameter
-mappings.
+layout. Every round-trip corpus fixture (`valid/` and `edge_cases/`) round-trips,
+including graphics, interactor bodies, coordinate tails, clipping tails, and
+falsy parameter mappings. The `invalid/` fixtures fail strict validation by
+design and are not part of that set.
 
 A parsed model always records where a tail was written: `ModuleHeader.coordinate_tails`,
 `ClippingClause.corner_tails`, `GraphObject.properties["coord_tails"]`, and

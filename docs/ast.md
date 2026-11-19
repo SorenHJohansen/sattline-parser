@@ -884,8 +884,10 @@ collect variable references. Rule-specific validation walks stay in
 `formatting/formatter.py` renders AST nodes for `__str__`, message text, and
 debugging. `formatting/source.py` renders a whole file: `format_source` takes a
 `BasePicture` and `format_module` takes one `ModuleDef` block, and their output
-parses back to an equal tree for every corpus fixture. `UnsupportedFormattingError`
-marks the few shapes whose written place or spelling is not in the model.
+parses back to an equal tree for every round-trip corpus fixture (`valid/` and
+`edge_cases/`; the `invalid/` fixtures fail strict validation by design).
+`UnsupportedFormattingError` marks the few shapes whose written place or spelling
+is not in the model.
 `sattline_parser.formatting` is a supported import surface for the function
 names and their documented signatures; the exact layout is display output, not a
 serialization contract. Use `sattline_parser.serialization` when you need
@@ -991,8 +993,8 @@ key or write it from its `KEY_*` grammar constant.
 | `tests/parser/test_parser_core_module_definitions.py` | Layout and graphics fields |
 | `tests/parser/test_models_walk.py` | Field coverage, node order, field and indices, ancestry, pruning, leave events, literal leaves, visitor dispatch |
 | `tests/parser/test_formatter.py` | Expression rendering in source spelling, SFC footers, round-trip parsing |
-| `tests/parser/test_format_source.py` | Whole-file round trip for every corpus fixture, idempotence, graphics properties |
-| `tests/parser/test_formatter_fidelity.py` | Canonical token-stream round trip for every corpus fixture, pinned normalisations, formatter field coverage |
+| `tests/parser/test_format_source.py` | Whole-file round trip for every round-trip corpus fixture, idempotence, graphics properties |
+| `tests/parser/test_formatter_fidelity.py` | Canonical token-stream round trip for every round-trip corpus fixture, pinned normalisations, formatter field coverage |
 | `tests/parser/test_format_nested_clipping.py` | Nested `ClippingBounds` values and tails written back on every coordinate position |
 | `tests/parser/test_serialization.py` | JSON-friendly data for scalars, spans, containers, and a whole picture |
 | `tests/parser/test_models_boundary.py` | The model layer imports no Lark module |
