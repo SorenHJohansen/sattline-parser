@@ -941,12 +941,18 @@ cannot pass the suite.
 
 Every field of every model class is either read by the formatter or listed here.
 `tests/parser/test_formatter_fidelity.py` derives the inventory from the model,
-scans the formatter for the attribute names and property keys it reads, and fails
-when a field is in neither set. A stale entry also fails, so the table cannot rot.
-The quoted `Class.field` names are what the test checks against this table.
+scans the formatter for the fields it reads on a value of each field's own class,
+and fails when a field is in neither set. A read on a value of another class does
+not count: sharing a field name is not evidence that the field is written. The
+receiver's class comes from a parameter or variable annotation, from a model
+field's declared type, from a typed collection's element, or from an `isinstance`
+guard, which is how the expression formatter dispatches on an untyped node. A
+stale entry also fails, so the table cannot rot. The quoted `Class.field` names
+are what the test checks against this table.
 
 | Field | Reason |
 | --- | --- |
+| `BasePicture.name` | a fixed label for the picture type, not written source text |
 | `BasePicture.origin_file` | project provenance of the loaded file, not part of its text |
 | `BasePicture.origin_lib` | project provenance of the loading root, not part of its text |
 | `BasePicture.program_name` | derived from the written program date line, which is written |
@@ -962,7 +968,9 @@ inventory, because it records where a construct was rather than what it said.
 `GraphicsBinding`, `WalkEvent`, `LiteralLeaf`, `InteractorPropertySpec`, and
 `TypedInteractorProperty` are not model nodes of a parsed source: a binding
 belongs to a graphics companion, and the traversal and catalogue types carry no
-written source of their own.
+written source of their own. A typed property key is a dictionary key rather than
+an attribute, so the property-key check is by name: the formatter must read the
+key or write it from its `KEY_*` grammar constant.
 
 ## Tests that pin the model
 

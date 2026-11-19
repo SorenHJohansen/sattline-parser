@@ -38,13 +38,16 @@ normalises them:
   and its free label text is not modelled at all.
 
 The second test in this module checks the other direction: every model field
-that carries written source is either read by the formatter or listed as a
-deliberate omission, so a newly added field fails until it is handled.
+that carries written source is either read by the formatter on a value of its
+own class or listed as a deliberate omission, so a newly added field fails until
+it is handled. A field name the formatter reads on a different class does not
+count.
 """
 
 from __future__ import annotations
 
 import ast as pyast
+import contextlib
 import dataclasses
 from collections import Counter
 from dataclasses import dataclass
@@ -370,6 +373,7 @@ _NOT_SOURCE = {
 #: Fields the formatter deliberately does not write, keyed by ``Class.field``.
 #: Each reason is repeated in the omission table in ``docs/ast.md``.
 _OMITTED: dict[str, str] = {
+    "BasePicture.name": "a fixed label for the picture type, not written source text",
     "BasePicture.origin_file": "project provenance of the loaded file, not part of its text",
     "BasePicture.origin_lib": "project provenance of the loading root, not part of its text",
     "BasePicture.program_name": "derived from the written program date line, which is written",
@@ -395,30 +399,34 @@ def _model_classes() -> list[type[object]]:
     return classes
 
 
-def _source_fields() -> dict[str, str]:
-    """The field inventory, derived from the model rather than the formatter.
+def _source_fields() -> set[tuple[str, str]]:
+    """The field inventory as ``(Class, field)`` pairs, derived from the model.
 
-    The key is ``Class.field`` and the value is the bare field name. A layout
-    field (a span or a geometry value) is skipped: it records where a construct
-    was, not what it said. Every other field carries written source until the
-    omission table says otherwise.
+    A layout field (a span or a geometry value) is skipped: it records where a
+    construct was, not what it said. Every other field carries written source
+    until the omission table says otherwise.
     """
-    fields: dict[str, str] = {}
+    fields: set[tuple[str, str]] = set()
     for cls in _model_classes():
         for field in dataclasses.fields(cast("Any", cls)):
             if field.metadata.get("layout"):
                 continue
-            fields[f"{cls.__name__}.{field.name}"] = field.name
+            fields.add((cls.__name__, field.name))
     return fields
 
 
-def _formatter_names() -> set[str]:
-    """Attribute names and property keys the formatter reads anywhere.
+def _key(pair: tuple[str, str]) -> str:
+    """The ``Class.field`` spelling the omission table and the docs use."""
+    return f"{pair[0]}.{pair[1]}"
 
-    The scan is deliberately name-based: a field name the formatter reads on any
-    class counts as emitted. A field only one class owns therefore still fails
-    until that class's field is read, and the omission table stays the place a
-    deliberate gap is recorded.
+
+def _formatter_mentions() -> set[str]:
+    """Names the formatter mentions anywhere: attributes and ``const.*`` values.
+
+    A typed property key is a dictionary key, not an attribute, and the formatter
+    writes it from a ``KEY_*`` grammar constant, so the property-key inventory is
+    checked by name. Model fields are checked per class by
+    :func:`_formatter_field_reads`.
     """
     names: set[str] = set()
     for path in sorted(_FORMATTING.glob("*.py")):
@@ -433,20 +441,295 @@ def _formatter_names() -> set[str]:
     return names
 
 
+#: Model class names on the supported surface.
+_MODEL_NAMES = frozenset(cls.__name__ for cls in _model_classes())
+
+#: Annotations whose argument is the element type of a collection.
+_COLLECTION_ANNOTATIONS = frozenset({"list", "List", "Sequence", "Iterable", "tuple", "Tuple", "set", "frozenset"})
+
+
+def _names_under(node: pyast.expr) -> frozenset[str]:
+    """Every model class name mentioned inside an annotation expression."""
+    if isinstance(node, (pyast.Name, pyast.Attribute)):
+        name = node.id if isinstance(node, pyast.Name) else node.attr
+        return frozenset({name}) if name in _MODEL_NAMES else frozenset()
+    if isinstance(node, pyast.Constant):
+        text = node.value
+        return frozenset({text}) if isinstance(text, str) and text in _MODEL_NAMES else frozenset()
+    names: frozenset[str] = frozenset()
+    for child in pyast.iter_child_nodes(node):
+        if isinstance(child, pyast.expr):
+            names |= _names_under(child)
+    return names
+
+
+def _annotation_names(node: pyast.expr | None) -> tuple[frozenset[str], frozenset[str]]:
+    """The model classes an annotation names, as ``(scalars, collection elements)``."""
+    if node is None:
+        return frozenset(), frozenset()
+    if isinstance(node, pyast.Subscript):
+        container = node.value.id if isinstance(node.value, pyast.Name) else ""
+        if container in _COLLECTION_ANNOTATIONS:
+            return frozenset(), _names_under(node.slice)
+        return _names_under(node.slice), frozenset()
+    if isinstance(node, pyast.BinOp):
+        left = _annotation_names(node.left)
+        right = _annotation_names(node.right)
+        return left[0] | right[0], left[1] | right[1]
+    return _names_under(node), frozenset()
+
+
+def _field_annotations() -> dict[tuple[str, str], tuple[frozenset[str], frozenset[str]]]:
+    """``(Class, field)`` -> the model classes its declared type names.
+
+    Every model module uses ``from __future__ import annotations``, so a field's
+    ``type`` is its written text and is read as an annotation expression.
+    """
+    annotations: dict[tuple[str, str], tuple[frozenset[str], frozenset[str]]] = {}
+    for cls in _model_classes():
+        for field in dataclasses.fields(cast("Any", cls)):
+            annotation: pyast.expr | None = None
+            if isinstance(field.type, str):
+                with contextlib.suppress(SyntaxError):
+                    annotation = pyast.parse(field.type, mode="eval").body
+            annotations[(cls.__name__, field.name)] = _annotation_names(annotation)
+    return annotations
+
+
+class _FieldReadScanner:
+    """Collects the ``(Class, field)`` pairs the formatter reads on a typed value.
+
+    A receiver's class comes from a parameter or variable annotation, from a
+    model field's declared type, from the element type of a typed collection, or
+    from an ``isinstance`` guard. The guard matters because the expression
+    formatter takes ``object`` and dispatches on the node's type. A name read on
+    an untyped value is never credited: sharing a field name with a class the
+    formatter handles is not evidence that this class's field is written.
+    """
+
+    def __init__(self, annotations: dict[tuple[str, str], tuple[frozenset[str], frozenset[str]]]) -> None:
+        self._annotations = annotations
+        self.reads: set[tuple[str, str]] = set()
+
+    def scan(self, module: pyast.Module) -> None:
+        for node in pyast.walk(module):
+            if isinstance(node, (pyast.FunctionDef, pyast.AsyncFunctionDef)):
+                self._visit_function(node)
+
+    def _visit_function(self, function: pyast.FunctionDef | pyast.AsyncFunctionDef) -> None:
+        scalars: dict[str, frozenset[str]] = {}
+        elements: dict[str, frozenset[str]] = {}
+        arguments = [*function.args.posonlyargs, *function.args.args, *function.args.kwonlyargs]
+        for argument in arguments:
+            scalar, element = _annotation_names(argument.annotation)
+            if scalar:
+                scalars[argument.arg] = scalar
+            if element:
+                elements[argument.arg] = element
+        self._block(function.body, scalars, elements)
+
+    def _block(
+        self,
+        body: list[pyast.stmt],
+        scalars: dict[str, frozenset[str]],
+        elements: dict[str, frozenset[str]],
+    ) -> None:
+        current_scalars = dict(scalars)
+        current_elements = dict(elements)
+        for statement in body:
+            current_scalars, current_elements = self._statement(statement, current_scalars, current_elements)
+            if isinstance(statement, (pyast.Return, pyast.Raise, pyast.Continue, pyast.Break)):
+                return
+
+    def _statement(
+        self,
+        statement: pyast.stmt,
+        scalars: dict[str, frozenset[str]],
+        elements: dict[str, frozenset[str]],
+    ) -> tuple[dict[str, frozenset[str]], dict[str, frozenset[str]]]:
+        if isinstance(statement, pyast.If):
+            self._expression(statement.test, scalars, elements)
+            self._block(statement.body, self._narrowed(statement.test, scalars), elements)
+            # ``elif`` is the ``orelse`` of an ``if``, so excluding the tested
+            # class is what types the next branch's value.
+            self._block(statement.orelse, self._excluded(statement.test, scalars), elements)
+            # A branch may be skipped, so after the statement only the declared
+            # type is known to hold; the wider type never loses a read.
+            return scalars, elements
+        if isinstance(statement, (pyast.For, pyast.AsyncFor)):
+            self._expression(statement.iter, scalars, elements)
+            inner_scalars = dict(scalars)
+            inner_elements = dict(elements)
+            if isinstance(statement.target, pyast.Name):
+                # The loop variable holds one element of the iterated value, so
+                # it is a scalar of the element class; the element map keeps the
+                # same classes for a nested iteration over the variable.
+                element = self._element_classes(statement.iter, scalars, elements)
+                inner_scalars[statement.target.id] = element
+                inner_elements[statement.target.id] = element
+            self._block(statement.body, inner_scalars, inner_elements)
+            return scalars, elements
+        if isinstance(statement, pyast.AnnAssign):
+            self._expression(statement.value, scalars, elements)
+            if isinstance(statement.target, pyast.Name):
+                scalar, element = _annotation_names(statement.annotation)
+                scalars = {**scalars, statement.target.id: scalar}
+                elements = {**elements, statement.target.id: element}
+            return scalars, elements
+        if isinstance(statement, pyast.Assign):
+            self._expression(statement.value, scalars, elements)
+            scalar = self._scalar_classes(statement.value, scalars)
+            element = self._element_classes(statement.value, scalars, elements)
+            for target in statement.targets:
+                if isinstance(target, pyast.Name):
+                    scalars = {**scalars, target.id: scalar}
+                    elements = {**elements, target.id: element}
+            return scalars, elements
+        self._expression(statement, scalars, elements)
+        return scalars, elements
+
+    def _expression(
+        self,
+        node: pyast.AST | None,
+        scalars: dict[str, frozenset[str]],
+        elements: dict[str, frozenset[str]],
+    ) -> None:
+        if node is None:
+            return
+        # A nested definition owns its own parameters, so it is scanned when the
+        # walk reaches the definition itself, never through an outer scope.
+        if isinstance(node, (pyast.FunctionDef, pyast.AsyncFunctionDef, pyast.Lambda, pyast.ClassDef)):
+            return
+        if isinstance(node, pyast.Attribute):
+            for cls in self._scalar_classes(node.value, scalars):
+                self.reads.add((cls, node.attr))
+        if isinstance(node, (pyast.GeneratorExp, pyast.ListComp, pyast.SetComp, pyast.DictComp)):
+            self._comprehension(node, scalars, elements)
+            return
+        for child in pyast.iter_child_nodes(node):
+            self._expression(child, scalars, elements)
+
+    def _comprehension(
+        self,
+        node: pyast.GeneratorExp | pyast.ListComp | pyast.SetComp | pyast.DictComp,
+        scalars: dict[str, frozenset[str]],
+        elements: dict[str, frozenset[str]],
+    ) -> None:
+        current_scalars = dict(scalars)
+        current_elements = dict(elements)
+        for generator in node.generators:
+            self._expression(generator.iter, current_scalars, current_elements)
+            if isinstance(generator.target, pyast.Name):
+                element = self._element_classes(generator.iter, current_scalars, current_elements)
+                current_scalars[generator.target.id] = element
+                current_elements[generator.target.id] = element
+            for condition in generator.ifs:
+                self._expression(condition, current_scalars, current_elements)
+        if isinstance(node, pyast.DictComp):
+            self._expression(node.key, current_scalars, current_elements)
+            self._expression(node.value, current_scalars, current_elements)
+            return
+        self._expression(node.elt, current_scalars, current_elements)
+
+    def _scalar_classes(self, node: pyast.AST, scalars: dict[str, frozenset[str]]) -> frozenset[str]:
+        if isinstance(node, pyast.Name):
+            return scalars.get(node.id, frozenset())
+        if isinstance(node, pyast.Attribute):
+            classes: frozenset[str] = frozenset()
+            for cls in self._scalar_classes(node.value, scalars):
+                classes |= self._field_types(cls, node.attr)[0]
+            return classes
+        if isinstance(node, pyast.Call) and isinstance(node.func, pyast.Name) and node.func.id == "cast" and node.args:
+            return _annotation_names(node.args[0])[0]
+        return frozenset()
+
+    def _element_classes(
+        self,
+        node: pyast.AST,
+        scalars: dict[str, frozenset[str]],
+        elements: dict[str, frozenset[str]],
+    ) -> frozenset[str]:
+        if isinstance(node, pyast.Name):
+            return elements.get(node.id, frozenset())
+        if isinstance(node, pyast.Attribute):
+            classes: frozenset[str] = frozenset()
+            for cls in self._scalar_classes(node.value, scalars):
+                classes |= self._field_types(cls, node.attr)[1]
+            return classes
+        if isinstance(node, pyast.Subscript):
+            return _names_under(node.slice)
+        return frozenset()
+
+    def _field_types(self, cls: str, field: str) -> tuple[frozenset[str], frozenset[str]]:
+        return self._annotations.get((cls, field), (frozenset(), frozenset()))
+
+    def _guarded_checks(self, test: pyast.AST) -> list[tuple[str, frozenset[str]]]:
+        """The ``isinstance`` guards in *test*, as ``(name, classes)`` pairs."""
+        checks: list[pyast.AST] = [test]
+        if isinstance(test, pyast.BoolOp) and isinstance(test.op, pyast.And):
+            checks = list(test.values)
+        guards: list[tuple[str, frozenset[str]]] = []
+        for check in checks:
+            if not (isinstance(check, pyast.Call) and isinstance(check.func, pyast.Name)):
+                continue
+            if check.func.id != "isinstance" or len(check.args) < 2 or not isinstance(check.args[0], pyast.Name):
+                continue
+            classes = _annotation_names(check.args[1])[0]
+            if classes:
+                guards.append((check.args[0].id, classes))
+        return guards
+
+    def _narrowed(self, test: pyast.AST, scalars: dict[str, frozenset[str]]) -> dict[str, frozenset[str]]:
+        narrowed = dict(scalars)
+        for name, classes in self._guarded_checks(test):
+            current = scalars.get(name, frozenset())
+            # An untyped value (an ``object`` parameter, a loop over ``Any``)
+            # takes the guard's classes; a typed one is intersected with them.
+            narrowed[name] = current & classes if current else classes
+        return narrowed
+
+    def _excluded(self, test: pyast.AST, scalars: dict[str, frozenset[str]]) -> dict[str, frozenset[str]]:
+        excluded = dict(scalars)
+        for name, classes in self._guarded_checks(test):
+            current = scalars.get(name, frozenset())
+            if current:
+                excluded[name] = current - classes
+        return excluded
+
+
+def _formatter_field_reads() -> set[tuple[str, str]]:
+    """The ``(Class, field)`` pairs the formatter reads on a value of that class."""
+    scanner = _FieldReadScanner(_field_annotations())
+    for path in sorted(_FORMATTING.glob("*.py")):
+        scanner.scan(pyast.parse(path.read_text(encoding="utf-8")))
+    return scanner.reads
+
+
 def test_every_source_field_is_written_or_exempted() -> None:
-    emitted = _formatter_names()
-    gaps = [key for key, name in _source_fields().items() if name not in emitted and key not in _OMITTED]
+    reads = _formatter_field_reads()
+    gaps = [_key(pair) for pair in sorted(_source_fields()) if pair not in reads and _key(pair) not in _OMITTED]
     assert not gaps, (
-        "the formatter neither writes these model fields nor lists them as a deliberate "
-        "omission; write the field or add a reasoned entry to the omission table in "
-        f"docs/ast.md: {gaps}"
+        "the formatter neither reads these model fields on a value of their own class nor "
+        "lists them as a deliberate omission; write the field or add a reasoned entry to "
+        f"the omission table in docs/ast.md: {gaps}"
     )
+
+
+def test_a_field_name_read_on_one_class_does_not_credit_another() -> None:
+    """The per-class key is what makes the inventory above meaningful."""
+    reads = _formatter_field_reads()
+    assert ("ModuleHeader", "name") in reads
+    # ``BasePicture.name`` is a fixed label, so the formatter never reads it. A
+    # name-based scan passed it because ``name`` is read on other classes.
+    assert ("BasePicture", "name") not in reads
+    assert _OMITTED["BasePicture.name"]
 
 
 def test_the_omission_table_names_only_real_fields_and_is_documented() -> None:
     fields = _source_fields()
+    keys = {_key(pair) for pair in fields}
     docs = _DOCS.read_text(encoding="utf-8")
-    stale = [key for key in _OMITTED if key not in fields]
+    stale = [key for key in _OMITTED if key not in keys]
     undocumented = [key for key in _OMITTED if key not in docs]
     assert not stale, f"the omission table names fields the model no longer has: {stale}"
     assert not undocumented, f"these deliberate omissions are not documented in docs/ast.md: {undocumented}"
@@ -454,7 +737,7 @@ def test_the_omission_table_names_only_real_fields_and_is_documented() -> None:
 
 def test_every_typed_property_key_is_written() -> None:
     """A property key is model state too, so it needs an emitted key or a reason."""
-    emitted = _formatter_names()
+    emitted = _formatter_mentions()
     gaps: list[str] = []
     for name, properties in (("GraphProperties", GraphProperties), ("InteractProperties", InteractProperties)):
         for key in properties.__annotations__:

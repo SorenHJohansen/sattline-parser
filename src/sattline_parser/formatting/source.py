@@ -5,8 +5,10 @@ canonical SattLine text that parses back to an equal tree. It is a formatter,
 not a lossless printer: the model keeps structure and spelling where the
 language cares, not the original whitespace, so the output is normalised.
 
-Every parsed corpus fixture round-trips, including graphics and interactor
-bodies. A tail is written after the value it followed, using the positional
+Every corpus fixture that parses, in ``valid/`` and ``edge_cases/``, round-trips,
+including graphics and interactor bodies. The ``invalid/`` fixtures fail strict
+validation by design, so they are not part of the round-trip set. A tail is
+written after the value it followed, using the positional
 views ``ModuleHeader.coordinate_tails``, ``ClippingClause.corner_tails``, and
 the graph and interact ``coord_tails`` property key. A nested
 ``ClippingBounds`` annotation is written after the value it annotated, from the
