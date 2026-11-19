@@ -232,11 +232,12 @@ grammar's string terminals, the compressed-source scanner, the coded decoder,
 and `render_ide_text`, so a CR is never ordinary text for one of them and a line
 break for another.
 
-Line and column numbers are a separate rule: the position index and the reported
-source line both split on LF. A plain document written with lone CR terminators
-therefore parses with CR as a break while its reported positions all stay on the
-first line. The coded decoder and `render_ide_text` emit CRLF, so a document that
-goes through either of them is unaffected.
+Line and column numbers use the same three terminators. `SourceDocument.line_col`,
+the AST span remap, and the diagnostic excerpt all split at CRLF, LF, or a lone
+CR, so a plain document written with lone CR terminators reports the physical
+line and column of a position. The coded decoder and `render_ide_text` emit
+CRLF, so a document that goes through either of them reports the same positions
+as before.
 
 - `STRING` and `STRING_NOTAIL` contain no line break, so a lone CR ends the
   literal exactly as LF does, and an unclosed literal is a syntax error.
