@@ -229,8 +229,14 @@ with a space on both sides (`1 + 2`).
 
 A line break is CRLF, LF, or a lone CR. The definition is the same in the
 grammar's string terminals, the compressed-source scanner, the coded decoder,
-`SourceDocument.line_col`, and `render_ide_text`, so a CR is never ordinary text
-for one component and a line break for another.
+and `render_ide_text`, so a CR is never ordinary text for one of them and a line
+break for another.
+
+Line and column numbers are a separate rule: the position index and the reported
+source line both split on LF. A plain document written with lone CR terminators
+therefore parses with CR as a break while its reported positions all stay on the
+first line. The coded decoder and `render_ide_text` emit CRLF, so a document that
+goes through either of them is unaffected.
 
 - `STRING` and `STRING_NOTAIL` contain no line break, so a lone CR ends the
   literal exactly as LF does, and an unclosed literal is a syntax error.

@@ -201,8 +201,7 @@ decoded text stays linear in the size of the input.
 - a description that ends at a line break, because the grammar accepts an
   unterminated description (`STRING_CRLF`) and no string spans a line. A line
   break here is CRLF, LF, or a lone CR, the one definition the grammar, the
-  compressed scanner, the coded decoder, `line_col`, and `render_ide_text` all
-  use;
+  compressed scanner, the coded decoder, and `render_ide_text` use;
 - a single-quoted identifier such as `'#84'`, whose body is literal text rather
   than a marker.
 

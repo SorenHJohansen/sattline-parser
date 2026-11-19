@@ -244,8 +244,9 @@ GRAMMAR_VALUE_OLD: Final = "Old"
 #:
 #: A string holds no line break: CRLF, LF, and a lone CR each end it. That is the
 #: same line-terminator definition the compressed-source scanner, the coded
-#: decoder, ``line_col``, and ``render_ide_text`` use, so a CR can never be
-#: string content for one component and a line break for another.
+#: decoder, and ``render_ide_text`` use, so a CR can never be string content for
+#: one component and a line break for another. Line and column numbers are a
+#: separate rule and count LF; see ``docs/grammar.md``.
 GRAMMAR_REGEX_STRING: Final = r"/\"([^\r\n\"]|\"\")*\"/"
 GRAMMAR_REGEX_STRING_NOTAIL: Final = r"/\"([^\r\n\"]|\"\")*\"(?![ \t\r\n]*:)/"
 #: An unterminated description (``STRING_CRLF``) ends at the first line break and

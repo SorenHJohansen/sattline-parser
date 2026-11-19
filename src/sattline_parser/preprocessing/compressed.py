@@ -57,9 +57,9 @@ SCANNER_TOKENS: Mapping[str, str] = MappingProxyType(_TOKEN_DATA)
 #: letter-bearing ``#`` sequence is ordinary text, not a marker.
 _MARKER_RE = re.compile(r"#[0-?]{2}")
 _WHITESPACE_RE = re.compile(r"\s+")
-#: The pipeline's one line-terminator definition. CRLF, LF, and a lone CR each
-#: end a line, in the header scan, the compressed-source scanner, the coded
-#: decoder, ``line_col``, and :func:`render_ide_text` alike.
+#: The pipeline's one line-terminator definition for string and description
+#: boundaries. CRLF, LF, and a lone CR each end a line in the header scan, the
+#: compressed-source scanner, the coded decoder, and :func:`render_ide_text`.
 _LINE_BREAK_RE = re.compile(r"[\r\n]")
 
 
