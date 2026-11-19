@@ -513,6 +513,12 @@ loader-owned tree; `from_programs` deep-copies first. Lists become tuples,
 mappings become read-only, and field assignment on any mutable model node raises
 `FrozenInstanceError`. A standalone parse stays mutable until it is attached.
 
+The read-only mapping is a `FrozenMapping`, not a `types.MappingProxyType`. The
+proxy supports neither pickling nor `copy.deepcopy`, so a frozen graphics-bearing
+tree that carried a `Time_Value` payload could not leave the project boundary. A
+`FrozenMapping` rejects item assignment and item deletion the way the proxy
+does, and both copy protocols return the same immutable object.
+
 ```mermaid
 classDiagram
     class VarRef {
@@ -641,9 +647,10 @@ become `CodeComment` values.
 ## Serialization and pickling
 
 The AST is plain dataclasses, so it pickles and unpickles without retained
-parser state. The file AST cache is versioned. When the model shape changes,
-`FILE_AST_CACHE_VERSION` is bumped and older entries are discarded rather than
-decoded into the current model.
+parser state, and a frozen tree pickles and deep-copies the same way because its
+read-only mappings and tuples support both protocols. The file AST cache is
+versioned. When the model shape changes, `FILE_AST_CACHE_VERSION` is bumped and
+older entries are discarded rather than decoded into the current model.
 
 `sattline_parser.serialization.to_jsonable` emits enum members as their plain
 value, including `StrEnum` and `IntEnum` members, and never as a placeholder at

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import textwrap
+from collections.abc import Mapping
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
@@ -24,8 +25,9 @@ if TYPE_CHECKING:
     )
 
 #: Values a variable init or parameter-mapping source can hold: a literal, a
-#: boolean, or a parsed ``time_value`` dictionary.
-type InitValue = bool | int | float | str | dict[str, str | None]
+#: boolean, or a parsed ``time_value`` mapping. The mapping is read-only once
+#: the tree is frozen, so a reader accepts any ``Mapping`` rather than a dict.
+type InitValue = bool | int | float | str | Mapping[str, str | None]
 
 
 def variable_list() -> list[Variable]:

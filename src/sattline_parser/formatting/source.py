@@ -24,6 +24,7 @@ particular editor's layout, and it is not a supported interchange format.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import TypeGuard, cast
 
@@ -348,12 +349,12 @@ def _init_value_text(variable: Variable) -> str:
             # marker alone is the initializer.
             return const.GRAMMAR_VALUE_DURATION_VALUE
         return str(value)
-    if isinstance(value, dict):
+    if isinstance(value, Mapping):
         return _time_value_text(value)
     return _value_text(value)
 
 
-def _time_value_text(payload: dict[str, str | None]) -> str:
+def _time_value_text(payload: Mapping[str, str | None]) -> str:
     """Render a parsed ``Time_Value`` payload as the source spelling."""
     if len(payload) != 1:
         raise UnsupportedFormattingError("a multi-key time_value payload cannot be rendered from its parsed dict")
@@ -997,8 +998,8 @@ def _mapping_text(mapping: ParameterMapping) -> str:
             f"mapping {mapping.target.name!r}: the model kept no source literal, "
             "so a written falsy literal cannot be reproduced"
         )
-    if isinstance(literal, dict):
-        # A ``Time_Value`` payload is a parsed dict, not a Python literal: it
+    if isinstance(literal, Mapping):
+        # A ``Time_Value`` payload is a parsed mapping, not a Python literal: it
         # has to be written back as the keyword and its optional time string.
         return f"{prefix}{_time_value_text(literal)}"
     return f"{prefix}{_value_text(literal)}"
