@@ -35,34 +35,41 @@ def _directory_info(*, uid: int, mode: int, inode: int = 1) -> os.stat_result:
     return os.stat_result((stat.S_IFDIR | mode, inode, 1, 1, uid, uid, 0, 0, 0, 0))
 
 
+@pytest.mark.skipif(os.name != "posix", reason="POSIX owner and mode bits")
 def test_an_owned_directory_without_group_or_world_write_is_private() -> None:
     assert _ancestor_is_private(_directory_info(uid=_OWN_UID, mode=0o755))
     assert _ancestor_is_private(_directory_info(uid=_OWN_UID, mode=0o700))
 
 
+@pytest.mark.skipif(os.name != "posix", reason="POSIX owner and mode bits")
 def test_a_group_writable_directory_is_not_private_even_when_owned() -> None:
     """Another member of the group can replace a tree below it."""
     assert not _ancestor_is_private(_directory_info(uid=_OWN_UID, mode=0o775))
     assert not _ancestor_is_private(_directory_info(uid=_OWN_UID, mode=0o1777))
 
 
+@pytest.mark.skipif(os.name != "posix", reason="POSIX owner and mode bits")
 def test_a_root_owned_directory_is_private() -> None:
     assert _ancestor_is_private(_directory_info(uid=0, mode=0o755))
 
 
+@pytest.mark.skipif(os.name != "posix", reason="POSIX owner and mode bits")
 def test_a_root_owned_sticky_directory_is_private() -> None:
     """The shared temporary directory is safe: nobody else can rename our entry."""
     assert _ancestor_is_private(_directory_info(uid=0, mode=0o1777))
 
 
+@pytest.mark.skipif(os.name != "posix", reason="POSIX owner and mode bits")
 def test_a_root_owned_directory_open_to_everyone_is_not_private() -> None:
     assert not _ancestor_is_private(_directory_info(uid=0, mode=0o777))
 
 
+@pytest.mark.skipif(os.name != "posix", reason="POSIX owner and mode bits")
 def test_a_foreign_owned_directory_is_not_private() -> None:
     assert not _ancestor_is_private(_directory_info(uid=_OWN_UID + 1, mode=0o755))
 
 
+@pytest.mark.skipif(os.name != "posix", reason="POSIX owner and mode bits")
 def test_no_owner_check_means_no_private_ancestor(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(source_io, "_getuid", None)
 
@@ -76,6 +83,7 @@ def test_a_private_directory_chain_is_accepted(tmp_path: Path) -> None:
     assert _ancestor_chain_is_private(nested)
 
 
+@pytest.mark.skipif(os.name != "posix", reason="POSIX owner and mode bits")
 def test_a_group_writable_parent_refuses_the_chain(tmp_path: Path) -> None:
     shared = tmp_path / "shared"
     shared.mkdir()
@@ -86,6 +94,7 @@ def test_a_group_writable_parent_refuses_the_chain(tmp_path: Path) -> None:
         os.chmod(shared, 0o700)
 
 
+@pytest.mark.skipif(os.name != "posix", reason="POSIX owner and mode bits")
 def test_a_missing_parent_refuses_the_chain(tmp_path: Path) -> None:
     assert not _ancestor_chain_is_private(tmp_path / "missing" / "cache")
 
@@ -97,6 +106,7 @@ def test_windows_proves_the_parent_chain_through_the_descriptor(monkeypatch: pyt
     assert _ancestor_chain_is_private(Path("/does/not/exist"))
 
 
+@pytest.mark.skipif(os.name != "posix", reason="POSIX owner and mode bits")
 def test_private_cache_dir_refuses_a_root_under_a_writable_parent(tmp_path: Path) -> None:
     shared = tmp_path / "shared"
     shared.mkdir()

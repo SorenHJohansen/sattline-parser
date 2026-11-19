@@ -1,3 +1,4 @@
+# pyright: reportPrivateUsage=false
 """Policy tests for the private-cache-directory security checks.
 
 The access decision is pure, so the whole Windows ACL policy is exercised on
@@ -20,6 +21,7 @@ import pytest
 
 from sattline_parser._cache_security import (
     AccessControlEntry,
+    _windows_privacy_report,
     acl_is_private,
     is_reparse_point,
     windows_directory_is_private,
@@ -167,7 +169,7 @@ def test_a_fresh_directory_is_private_on_windows(tmp_path: Path) -> None:
     directory = tmp_path / "cache"
     directory.mkdir()
 
-    assert windows_directory_is_private(directory) is True
+    assert windows_directory_is_private(directory) is True, _windows_privacy_report(directory)
 
 
 @pytest.mark.skipif(os.name != "nt", reason="needs a Windows security descriptor")

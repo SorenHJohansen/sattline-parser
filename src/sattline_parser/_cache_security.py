@@ -145,13 +145,43 @@ def windows_directory_is_private(path: Path) -> bool:
 
 def _windows_security_descriptor_is_private(path: Path) -> bool:  # pragma: no cover - needs Windows
     """Read the directory's owner and DACL and apply :func:`acl_is_private`."""
+    owner_sid, user_sid, entries = _windows_privacy_state(path)
+    return acl_is_private(owner_sid, entries, user_sid)
+
+
+def _windows_privacy_report(path: Path) -> str:  # pragma: no cover - needs Windows  # pyright: ignore[reportUnusedFunction]
+    """A one-line explanation of the Windows verdict, for diagnostics and tests.
+
+    It names the owner SID, the token SID, and every ACE that carries a write
+    bit, so a failing Windows check says which trustee widened the directory
+    instead of only reporting ``False``.
+    """
+    owner_sid, user_sid, entries = _windows_privacy_state(path)
+    verdict = acl_is_private(owner_sid, entries, user_sid)
+    if entries is None:
+        aces = "<no DACL>"
+    else:
+        aces = (
+            ", ".join(
+                f"{entry.sid or '<unmodelled>'}:mask=0x{entry.mask:x}:flags=0x{entry.flags:x}:type={entry.ace_type}"
+                for entry in entries
+                if entry.mask & _WRITE_MASK and not entry.flags & _INHERIT_ONLY_ACE
+            )
+            or "<no effective write ACE>"
+        )
+    return f"private={verdict} owner={owner_sid} user={user_sid} write_aces=[{aces}]"
+
+
+def _windows_privacy_state(  # pragma: no cover - needs Windows
+    path: Path,
+) -> tuple[str | None, str | None, tuple[AccessControlEntry, ...] | None]:
+    """Read the owner SID, token SID, and DACL entries for *path*."""
     if os.name != "nt":
-        return False
+        return None, None, None
     advapi32 = _system_dll("advapi32")
     kernel32 = _system_dll("kernel32")
+    _bind_win32(advapi32, kernel32)
     user_sid = _current_user_sid(advapi32, kernel32)
-    if user_sid is None:
-        return False
     owner = ctypes.c_void_p()
     dacl = ctypes.c_void_p()
     descriptor = ctypes.c_void_p()
@@ -166,15 +196,56 @@ def _windows_security_descriptor_is_private(path: Path) -> bool:  # pragma: no c
         ctypes.byref(descriptor),
     )
     if result != _ERROR_SUCCESS or not descriptor:
-        return False
+        return None, user_sid, None
     try:
         owner_sid = _sid_to_string(advapi32, kernel32, owner)
-        if owner_sid is None:
-            return False
         entries = _access_control_entries(advapi32, kernel32, dacl) if dacl else None
-        return acl_is_private(owner_sid, entries, user_sid)
+        return owner_sid, user_sid, entries
     finally:
         kernel32.LocalFree(descriptor)
+
+
+def _bind_win32(advapi32: Any, kernel32: Any) -> None:  # pragma: no cover - needs Windows
+    """Declare the prototypes every Win32 call in this module relies on.
+
+    Without ``restype``, ctypes truncates a 64-bit ``HANDLE`` or pointer to a C
+    ``int``. ``GetCurrentProcess`` returns the pseudo-handle ``-1``, so the
+    truncated value is no longer that handle and ``OpenProcessToken`` fails,
+    which used to disable the cache on every Windows directory. The argument
+    types matter for the same reason: an undeclared ``PSID`` or ``PACL`` is
+    passed as a 32-bit integer.
+    """
+    advapi32.GetNamedSecurityInfoW.argtypes = [
+        ctypes.c_wchar_p,
+        ctypes.c_int,
+        ctypes.c_uint32,
+        ctypes.POINTER(ctypes.c_void_p),
+        ctypes.POINTER(ctypes.c_void_p),
+        ctypes.POINTER(ctypes.c_void_p),
+        ctypes.POINTER(ctypes.c_void_p),
+        ctypes.POINTER(ctypes.c_void_p),
+    ]
+    advapi32.GetNamedSecurityInfoW.restype = ctypes.c_uint32
+    advapi32.OpenProcessToken.argtypes = [ctypes.c_void_p, ctypes.c_uint32, ctypes.POINTER(ctypes.c_void_p)]
+    advapi32.OpenProcessToken.restype = ctypes.c_int
+    advapi32.GetTokenInformation.argtypes = [
+        ctypes.c_void_p,
+        ctypes.c_int,
+        ctypes.c_void_p,
+        ctypes.c_uint32,
+        ctypes.POINTER(ctypes.c_uint32),
+    ]
+    advapi32.GetTokenInformation.restype = ctypes.c_int
+    advapi32.ConvertSidToStringSidW.argtypes = [ctypes.c_void_p, ctypes.POINTER(ctypes.c_wchar_p)]
+    advapi32.ConvertSidToStringSidW.restype = ctypes.c_int
+    advapi32.GetAce.argtypes = [ctypes.c_void_p, ctypes.c_uint32, ctypes.POINTER(ctypes.c_void_p)]
+    advapi32.GetAce.restype = ctypes.c_int
+    kernel32.GetCurrentProcess.argtypes = []
+    kernel32.GetCurrentProcess.restype = ctypes.c_void_p
+    kernel32.CloseHandle.argtypes = [ctypes.c_void_p]
+    kernel32.CloseHandle.restype = ctypes.c_int
+    kernel32.LocalFree.argtypes = [ctypes.c_void_p]
+    kernel32.LocalFree.restype = ctypes.c_void_p
 
 
 def _system_dll(name: str) -> Any:  # pragma: no cover - needs Windows
@@ -196,7 +267,12 @@ def _current_user_sid(advapi32: Any, kernel32: Any) -> str | None:  # pragma: no
         if not size.value:
             return None
         buffer = ctypes.create_string_buffer(size.value)
-        if advapi32.GetTokenInformation(token, _TOKEN_USER_CLASS, buffer, size, ctypes.byref(size)) == 0:
+        if (
+            advapi32.GetTokenInformation(
+                token, _TOKEN_USER_CLASS, ctypes.cast(buffer, ctypes.c_void_p), size, ctypes.byref(size)
+            )
+            == 0
+        ):
             return None
         token_user = ctypes.cast(buffer, ctypes.POINTER(_TokenUser)).contents
         return _sid_to_string(advapi32, kernel32, ctypes.c_void_p(token_user.user.sid))

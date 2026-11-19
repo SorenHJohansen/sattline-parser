@@ -120,6 +120,7 @@ def test_a_symlink_replacing_the_cache_name_is_refused(tmp_path: Path) -> None:
     assert list(replacement.iterdir()) == []
 
 
+@pytest.mark.skipif(os.name != "posix", reason="POSIX owner and mode bits")
 def test_a_widened_directory_mode_is_refused(tmp_path: Path) -> None:
     code_path = _write_code(tmp_path)
     cache = FileASTCache(tmp_path)

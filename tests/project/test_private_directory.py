@@ -252,6 +252,7 @@ def test_child_refuses_a_file_where_a_directory_belongs(tmp_path: Path) -> None:
     parent.close()
 
 
+@pytest.mark.skipif(os.name != "posix", reason="POSIX owner and mode bits")
 def test_child_refuses_a_foreign_owner(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     parent = _open(tmp_path)
     real_fstat = os.fstat
@@ -268,6 +269,7 @@ def test_child_refuses_a_foreign_owner(tmp_path: Path, monkeypatch: pytest.Monke
     parent.close()
 
 
+@pytest.mark.skipif(os.name != "posix", reason="POSIX owner and mode bits")
 def test_child_tightens_an_existing_wide_level(tmp_path: Path) -> None:
     parent = _open(tmp_path)
     wide = tmp_path / "wide"
@@ -282,6 +284,7 @@ def test_child_tightens_an_existing_wide_level(tmp_path: Path) -> None:
     parent.close()
 
 
+@pytest.mark.skipif(os.name != "posix", reason="POSIX owner and mode bits")
 def test_child_refuses_when_the_wide_level_cannot_be_tightened(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     parent = _open(tmp_path)
     wide = tmp_path / "wide"
@@ -351,6 +354,7 @@ def test_open_refuses_a_level_that_vanishes_after_the_policy_check(
     assert PrivateDirectory.open(tmp_path, create=True) is None
 
 
+@pytest.mark.skipif(os.name != "posix", reason="POSIX owner and mode bits")
 def test_child_refuses_a_level_that_stays_wide_after_chmod(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     parent = _open(tmp_path)
     wide = tmp_path / "wide"
