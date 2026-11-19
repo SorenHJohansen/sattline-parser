@@ -346,15 +346,15 @@ reports one unit has nothing to stream:
 | `rules` | One rule object per line, then a summary object |
 | `query` | One row object per line on success; the finding then a summary object on failure |
 | `parse` | One compact summary document on success; the finding then a summary object on failure |
-
-The finding-reporting commands stream the same shape on failure: one finding
-object per line, then one summary object with `summary: true`.
 | `project` | One compact document |
 | `graphics` | One compact document |
 | `diff` | One compact document |
 | `corpus` | One compact document |
 | `decode` | Not accepted; use `--report` or `--json` |
 | `version` | Not accepted; use `--json` |
+
+The finding-reporting commands stream the same shape on failure: one finding
+object per line, then one summary object with `summary: true`.
 
 ## The finding shape
 
