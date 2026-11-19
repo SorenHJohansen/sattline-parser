@@ -241,9 +241,16 @@ GRAMMAR_VALUE_OLD: Final = "Old"
 #: The string literals. They do not spell a keyword, so they are written
 #: directly. The numeric literals are defined after ``GRAMMAR_CHARSET_NAME``
 #: because their sign guard reuses it.
-GRAMMAR_REGEX_STRING: Final = r"/\"([^\n\"]|\"\")*\"/"
-GRAMMAR_REGEX_STRING_NOTAIL: Final = r"/\"([^\n\"]|\"\")*\"(?![ \t\r\n]*:)/"
-GRAMMAR_REGEX_STRING_CRLF: Final = r"/\"([^\"\n]|\"\")*\n/"
+#:
+#: A string holds no line break: CRLF, LF, and a lone CR each end it. That is the
+#: same line-terminator definition the compressed-source scanner, the coded
+#: decoder, ``line_col``, and ``render_ide_text`` use, so a CR can never be
+#: string content for one component and a line break for another.
+GRAMMAR_REGEX_STRING: Final = r"/\"([^\r\n\"]|\"\")*\"/"
+GRAMMAR_REGEX_STRING_NOTAIL: Final = r"/\"([^\r\n\"]|\"\")*\"(?![ \t\r\n]*:)/"
+#: An unterminated description (``STRING_CRLF``) ends at the first line break and
+#: consumes the terminator, which may be CRLF, LF, or a lone CR.
+GRAMMAR_REGEX_STRING_CRLF: Final = r"/\"([^\"\r\n]|\"\")*(?:\r\n?|\n)/"
 GRAMMAR_REGEX_COMMENT_TEXT: Final = r"/(?:[^(*]|\((?!\*)|\*(?!\)))+/"
 GRAMMAR_REGEX_SL_DATECODE: Final = r"/\d+/"
 
@@ -352,6 +359,7 @@ TOKEN_COMMENT_START: Final = "COMMENT_START"  # nosec B105 - token type name
 TOKEN_COMMENT_END: Final = "COMMENT_END"  # nosec B105 - token type name
 TOKEN_COMMENT_TEXT: Final = "COMMENT_TEXT"  # nosec B105 - token type name
 TOKEN_NAME: Final = "NAME"
+TOKEN_DATECODE_PREFIX: Final = "DATECODE_PREFIX"
 
 COMMENT_TERMINALS: Final = frozenset({TOKEN_COMMENT_START, TOKEN_COMMENT_END, TOKEN_COMMENT_TEXT})
 

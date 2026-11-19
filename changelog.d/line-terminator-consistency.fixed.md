@@ -1,0 +1,1 @@
+- **One line-terminator definition.** CRLF, LF, and a lone CR each end a line in the grammar's string terminals, the compressed-source scanner, the coded decoder, the line index, and `render_ide_text`. A CR inside a quoted string is now a syntax error rather than string content, and an unterminated description ends at a lone CR exactly as it does at LF.

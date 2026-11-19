@@ -746,4 +746,25 @@ def test_retype_raw_keyword_keeps_a_token_without_positions():
 
     token = Token("IF", "IF")
     with compact_provenance(lambda _start, _end: True):
-        assert _retype_raw_keyword(token, "IF") == "IF"
+        assert _retype_raw_keyword(token, "IF", "", 0) == "IF"
+
+
+def test_retype_raw_keyword_keeps_a_datecode_prefix_before_its_digit():
+    # The datecode rule is `DATECODE_PREFIX SL_DATECODE`, so a raw prefix with a
+    # digit after it is the keyword half of the pair, not an identifier. The
+    # lookahead is a match at an offset in the source text, so no token is lexed
+    # ahead and no state is guessed.
+    from sattline_parser.grammar.sattline_lexer import (  # noqa: PLC0415
+        _retype_raw_keyword,  # pyright: ignore[reportPrivateUsage]
+        compact_provenance,
+    )
+
+    with compact_provenance(lambda _start, _end: False):
+        for following in ("1", " 1", "\r\n 42"):
+            token = Token("DATECODE_PREFIX", "DateCode_", 0, 1, 1)
+            token.end_pos = len("DateCode_")
+            assert _retype_raw_keyword(token, "DATECODE_PREFIX", following, 0) == "DATECODE_PREFIX"
+        token = Token("DATECODE_PREFIX", "DateCode_", 0, 1, 1)
+        token.end_pos = len("DateCode_")
+        assert _retype_raw_keyword(token, "DATECODE_PREFIX", " = 1", 0) == "NAME"
+        assert token.type == "NAME"
