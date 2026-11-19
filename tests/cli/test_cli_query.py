@@ -337,6 +337,25 @@ def test_json_and_jsonl_rows(tmp_path, capsys) -> None:
     assert lines and json.loads(lines[0])["kind"] == "symbols"
 
 
+_FOLDED_NAME_SOURCE = VALID_SOURCE.replace(
+    "   Flag: boolean := False;\n",
+    "   Straße: boolean := False;\n   STRASSE: integer := 0;\n",
+)
+
+
+def test_name_filter_uses_the_language_fold_not_unicode_casefold(tmp_path, capsys) -> None:
+    """``Straße`` and ``STRASSE`` are two identifiers, not one casefold key."""
+    source = write_source(tmp_path, "Folded.s", _FOLDED_NAME_SOURCE)
+
+    assert main(["query", str(source), "--what", "symbols", "--name", "Straße", "--json"]) == ExitCode.OK
+    rows = json.loads(capsys.readouterr().out)["rows"]
+    assert [row["name"] for row in rows] == ["Straße"]
+
+    assert main(["query", str(source), "--what", "symbols", "--name", "STRASSE", "--json"]) == ExitCode.OK
+    rows = json.loads(capsys.readouterr().out)["rows"]
+    assert [row["name"] for row in rows] == ["STRASSE"]
+
+
 def test_query_failure_jsonl_streams_the_finding_then_a_summary(tmp_path, capsys) -> None:
     source = write_source(tmp_path, "Broken.s", PARSE_ERROR_SOURCE)
 

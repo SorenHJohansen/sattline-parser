@@ -1,0 +1,1 @@
+- **`query --name` compares language identities.** The name filter folds with `fold_identifier` instead of Unicode case folding, so a unit that declares both `Straße` and `STRASSE` returns one row for either spelling rather than both.

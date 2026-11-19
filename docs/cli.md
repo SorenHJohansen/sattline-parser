@@ -136,9 +136,10 @@ types, submodules, module instances, variables, parameters, datatypes, and
 record fields. Variable, parameter, datatype, and record-field rows carry the
 declaration span in `line`, `column`, `start`, and `end`; a record-field row
 uses its datatype name as the `module` value. Filters are case-insensitive:
-`--name` matches a row name, `--module` matches a slash-separated module path,
-and `--limit N` stops after `N` rows. A query with no rows exits `1`, because
-"nothing found" is a finding for a caller that expected a hit.
+`--name` folds with the language name table, so `Straße` and `STRASSE` stay two
+names, `--module` matches a slash-separated module path, and `--limit N` stops
+after `N` rows. A query with no rows exits `1`, because "nothing found" is a
+finding for a caller that expected a hit.
 
 `--json` emits one document with `file`, `ok`, `counts`, `findings`, and `rows`,
 so a success and a parse failure are read the same way. A successful query has
