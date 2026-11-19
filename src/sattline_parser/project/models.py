@@ -171,6 +171,11 @@ class LoadDiagnosticKind(StrEnum):
     #: first resolution, because a casefolded view can hold only one unit there,
     #: and reports the layout as ambiguous instead of dropping a unit silently.
     FOLDED_NAME_COLLISION = "folded-name-collision"
+    #: A spelling reached a body the load had already planned, and a dependency
+    #: sidecar sits beside that spelling. The body is planned once, so the
+    #: declarations in the alias prefix's sidecar are not read; reporting it
+    #: explains why a name the sidecar lists is not in the registry.
+    ALIAS_DECLARATIONS_UNUSED = "alias-declarations-unused"
     #: A code file directly under a root has a stem the resolver refuses as a
     #: unit name, so it can never load as a unit. The load reports it and carries
     #: on instead of failing on a target it could only refuse.

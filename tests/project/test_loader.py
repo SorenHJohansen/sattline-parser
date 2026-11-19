@@ -1929,6 +1929,46 @@ def test_an_alias_dependency_name_resolves_to_the_unit_it_reached(tmp_path: Path
     assert graph.dependents_of("AliasBase") == ()
 
 
+def test_an_alias_sidecar_declaration_is_reported_and_not_loaded(tmp_path: Path) -> None:
+    """A spelling that reaches a planned body never contributes dependencies."""
+    write_file(tmp_path, "Util.s", _source("Util"))
+    write_file(tmp_path, "Extra.s", _source("Extra"))
+    try:
+        (tmp_path / "Helper.s").symlink_to(tmp_path / "Util.s")
+    except (OSError, NotImplementedError):
+        pytest.skip("this filesystem cannot create a symlink")
+    write_file(tmp_path, "Helper.l", "Extra\n")
+
+    project = _load(tmp_path, targets=("Util", "Helper"))
+
+    assert "Extra" not in project
+    assert [program.name for program in project.programs().values()] == ["Util"]
+    unused = [d for d in project.diagnostics() if d.kind is LoadDiagnosticKind.ALIAS_DECLARATIONS_UNUSED]
+    assert len(unused) == 1
+    assert unused[0].program == "Helper"
+    assert unused[0].path == tmp_path / "Helper.l"
+
+
+@pytest.mark.skipif(os.name == "nt" or os.geteuid() == 0, reason="needs POSIX permissions as a non-root user")
+def test_an_unreadable_alias_sidecar_does_not_fail_the_load(tmp_path: Path) -> None:
+    """The alias prefix's sidecar is resolved but never read."""
+    write_file(tmp_path, "Util.s", _source("Util"))
+    try:
+        (tmp_path / "Helper.s").symlink_to(tmp_path / "Util.s")
+    except (OSError, NotImplementedError):
+        pytest.skip("this filesystem cannot create a symlink")
+    sidecar = write_file(tmp_path, "Helper.l", "Extra\n")
+    sidecar.chmod(0)
+    try:
+        project = _load(tmp_path, targets=("Util", "Helper"))
+    finally:
+        sidecar.chmod(0o644)
+
+    assert [program.name for program in project.programs().values()] == ["Util"]
+    kinds = {d.kind for d in project.diagnostics()}
+    assert LoadDiagnosticKind.ALIAS_DECLARATIONS_UNUSED in kinds
+
+
 def _write_chain(root: Path, length: int, *, close: bool) -> None:
     """Write ``Unit0`` .. ``Unit{length-1}``, each depending on the next."""
     for index in range(length):

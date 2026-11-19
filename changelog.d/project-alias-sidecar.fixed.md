@@ -1,0 +1,1 @@
+- **An alias prefix no longer reads or discards a sidecar.** The planner resolves a body before its sidecar, so a spelling that reaches an already planned body contributes no dependencies and an unreadable file at that prefix cannot fail the load. A sidecar beside the alias spelling is reported as `ALIAS_DECLARATIONS_UNUSED`, naming the file whose declarations were not used.
