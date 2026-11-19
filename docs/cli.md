@@ -111,7 +111,9 @@ whole module tree, so a nested submodule's declarations and code blocks are
 included, and the summary agrees with a `walk` over the picture. `diff` compares
 the same counts. `encoding` names the on-disk flavor and is `plain`,
 `compressed` (marker-compressed text), or `coded` (a byte-coded stream). A coded
-stream stays `coded` even when its decoded text is still marker-compressed.
+stream stays `coded` even when its decoded text is still marker-compressed. A
+leading UTF-8 byte-order mark is removed before the flavor is decided, so a
+marked coded file reports `coded`, exactly as the decoder reads it.
 `--tree` emits the AST as JSON, bounded by `--depth` (default 5). At the limit a
 composite value is replaced by a placeholder such as `<ModuleDef>` or
 `<12 items>`, so nothing silently disappears. `--compact` prints JSON on one

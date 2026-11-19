@@ -1,0 +1,1 @@
+- **A coded source behind a byte-order mark is reported as `coded`.** The CLI strips a leading UTF-8 byte-order mark before classifying the input, the same slice the decoder reads, so `decode --report` and `parse --json` no longer call a marked coded file `plain`.
