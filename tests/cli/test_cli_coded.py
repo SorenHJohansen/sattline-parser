@@ -50,7 +50,7 @@ def test_decode_prints_and_reports_coded_input(tmp_path, capsys) -> None:
 
     assert main(["decode", str(source), "--report"]) == ExitCode.OK
     report = json.loads(capsys.readouterr().out)
-    assert report["coded"] is True
+    assert report["encoding"] == "coded"
     assert report["original_length"] == len(source.read_bytes())
     assert report["decoded_length"] == len(VALID_SOURCE)
 

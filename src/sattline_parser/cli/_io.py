@@ -7,11 +7,11 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from sattline_parser.api import decode_source_bytes
-from sattline_parser.preprocessing import PreprocessError, is_coded
+from sattline_parser.preprocessing import PreprocessError, is_coded, is_compressed
 
 from ._errors import CliError
 
-__all__ = ["Source", "display_path", "read_source", "read_source_path"]
+__all__ = ["Source", "display_path", "encoding_name", "read_source", "read_source_path"]
 
 _STDIN = "-"
 
@@ -26,6 +26,17 @@ class Source:
     coded: bool
     #: Length of the input as stored: bytes on disk, characters on stdin.
     original_length: int
+
+
+def encoding_name(text: str, *, coded: bool) -> str:
+    """The on-disk flavor of one source: ``coded``, ``compressed``, or ``plain``.
+
+    A byte-coded stream stays ``coded`` even when the text it decodes to is
+    still marker-compressed, because the on-disk format is what a caller reads.
+    """
+    if coded:
+        return "coded"
+    return "compressed" if is_compressed(text) else "plain"
 
 
 def read_source(target: str, *, name: str | None) -> Source:

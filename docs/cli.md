@@ -235,6 +235,10 @@ input is `-`, so `sattline check --stdin-name x.g -` is refused exactly like a
 `.g` path, and `sattline graphics --stdin-name x.s -` is refused exactly like a
 `.s` path. Stdin requires `--stdin-name`, as for every source command.
 
+A companion larger than the library's 4 MiB limit is refused as an input
+problem (exit `2`) from its size, before its bytes are read. Stdin cannot be
+stat'ed, so its length is checked after it has been read.
+
 A scan message is a finding, whether its severity is `warning` (an expression the
 grammar could not parse) or `error` (a malformed record), so any scan message
 exits `1`: the companion was only partly understood. The message is reduced to
@@ -252,6 +256,11 @@ sattline decode coded.x --json
 
 Prints the decoded text by default, a JSON report with `--report`, or the text
 inside a JSON document with `--json`.
+
+The report carries `file`, `encoding`, `original_length`, and `decoded_length`.
+`encoding` is the same three-way value as `parse`: `plain`, `compressed`
+(marker-compressed text), or `coded` (a byte-coded stream). A coded stream stays
+`coded` even when the text it decodes to is still marker-compressed.
 
 ### `diff`
 

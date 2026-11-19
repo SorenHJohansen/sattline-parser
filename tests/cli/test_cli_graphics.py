@@ -9,6 +9,7 @@ import sys
 
 from sattline_parser.cli import main
 from sattline_parser.cli._exit import ExitCode
+from sattline_parser.project.graphics_parsing import MAX_GRAPHICS_COMPANION_BYTES
 
 from ._cli_support import VALID_SOURCE, write_source
 
@@ -75,6 +76,19 @@ def test_non_companion_and_missing_files_are_refused(tmp_path, capsys) -> None:
 
     assert main(["graphics", str(tmp_path / "Absent.y")]) == ExitCode.USAGE
     assert "cannot read" in capsys.readouterr().err
+
+
+def test_an_oversized_companion_is_refused_before_it_is_read(tmp_path, capsys) -> None:
+    """The CLI enforces the library's 4 MiB limit, not only the loader."""
+    companion = tmp_path / "Huge.y"
+    with companion.open("wb") as handle:
+        handle.truncate(MAX_GRAPHICS_COMPANION_BYTES + 1)
+
+    assert main(["graphics", str(companion)]) == ExitCode.USAGE
+
+    err = capsys.readouterr().err
+    assert "companion is" in err
+    assert f"over the {MAX_GRAPHICS_COMPANION_BYTES} byte limit" in err
 
 
 def test_stdin_is_accepted_as_a_companion() -> None:
