@@ -1,9 +1,12 @@
 """Helpers for decoding compressed SattLine text before parsing.
 
-The decoder is *lexically aware*: string literals and structural
-``(* ... *)`` comments are protected (replaced by opaque placeholders) before
-any syntax-level transformation runs, so syntax-looking text inside strings or
-comments can never be rewritten accidentally.
+The decoder is *lexically aware*: string literals, quoted identifiers, and
+structural ``(* ... *)`` comments are copied through untouched, and marker
+substitution runs only on the text between them, so syntax-looking text inside
+a string or comment can never be rewritten accidentally. The region boundaries
+are carried out of band, so no placeholder is spliced into the text: a source
+that happens to contain a sequence resembling an internal marker is ordinary
+text and cannot change the result.
 
 The decoder also builds a per-character map from the decoded (normalized) text
 back to the original source, so the parser can report AST spans and diagnostics
@@ -54,6 +57,10 @@ SCANNER_TOKENS: Mapping[str, str] = MappingProxyType(_TOKEN_DATA)
 #: letter-bearing ``#`` sequence is ordinary text, not a marker.
 _MARKER_RE = re.compile(r"#[0-?]{2}")
 _WHITESPACE_RE = re.compile(r"\s+")
+#: The pipeline's one line-terminator definition for string and description
+#: boundaries. CRLF, LF, and a lone CR each end a line in the header scan, the
+#: compressed-source scanner, the coded decoder, and :func:`render_ide_text`.
+_LINE_BREAK_RE = re.compile(r"[\r\n]")
 
 
 def _header_compression_flag(text: str) -> str | None:
@@ -64,18 +71,16 @@ def _header_compression_flag(text: str) -> str | None:
         "Syntax version 2.23, date: 2026-08-26-11:48:22.200 C"
 
     where the final character before the closing quote is ``C`` (compressed)
-    or ``N`` (normal).
+    or ``N`` (normal). The first line ends at CRLF, LF, or a lone CR, the same
+    line breaks the rest of the pipeline uses.
     """
-    nl = text.find("\n")
-    first_line = text[:nl].strip() if nl >= 0 else text.strip()
+    line_break = _LINE_BREAK_RE.search(text)
+    first_line = text[: line_break.start()].strip() if line_break is not None else text.strip()
     if first_line.startswith('"') and first_line.endswith('"'):
         body = first_line[1:-1].rstrip()
         if body and body[-1] in ("C", "N"):
             return body[-1]
     return None
-
-
-_PLACEHOLDER_RE = re.compile(r"\x00[SC]\d+\x00")
 
 
 class PreprocessError(ValueError):
@@ -91,11 +96,11 @@ def _markers_outside_opaque_regions(text: str) -> list[str]:
     """Return ``#marker`` matches that lie entirely outside strings/comments.
 
     Detection must agree with the decoder (:func:`_decode_with_map`), which
-    protects string literals and ``(* ... *)`` comments before any rewrite. A
-    marker that overlaps an opaque region (for example a ``#``-sequence inside
-    a string literal) is never decoded and must therefore not count toward the
-    compressed heuristic -- otherwise plain source containing such text would
-    be misclassified as compressed and preprocessed.
+    skips string literals, quoted identifiers, and ``(* ... *)`` comments
+    before any rewrite. A marker that overlaps an opaque region (for example a
+    ``#``-sequence inside a string literal) is never decoded and must therefore
+    not count toward the compressed heuristic -- otherwise plain source
+    containing such text would be misclassified as compressed and preprocessed.
     """
     regions = scan_opaque_regions(text)
     markers: list[str] = []
@@ -263,71 +268,6 @@ def closed_comment_spans(text: str) -> list[tuple[int, int]]:
     return [(start, end) for kind, start, end, closed in _scan_opaque_regions(text) if kind == "C" and closed]
 
 
-class _OpaqueRegistry:
-    """Holds protected string/comment regions so they can be restored later."""
-
-    def __init__(self, text: str) -> None:
-        self._strings: list[tuple[int, str]] = []
-        self._comments: list[tuple[int, str]] = []
-        self._regions: list[tuple[str, int, int, int]] = []
-        for kind, start, end in scan_opaque_regions(text):
-            entry = (start, text[start:end])
-            if kind == "S":
-                index = len(self._strings)
-                self._strings.append(entry)
-            else:
-                index = len(self._comments)
-                self._comments.append(entry)
-            self._regions.append((kind, index, start, end))
-
-    def protect(self, text: str) -> tuple[str, list[int]]:
-        parts: list[str] = []
-        char_map: list[int] = []
-        last = 0
-        for kind, index, start, end in self._regions:
-            if start > last:
-                parts.append(text[last:start])
-                char_map.extend(range(last, start))
-            placeholder = f"\x00{kind}{index}\x00"
-            parts.append(placeholder)
-            char_map.extend([GENERATED] * len(placeholder))
-            last = end
-        if last < len(text):
-            parts.append(text[last:])
-            char_map.extend(range(last, len(text)))
-        decoded = "".join(parts)
-        if len(char_map) != len(decoded):  # pragma: no cover - invariant by construction
-            raise PreprocessError("internal error: opaque protection map mismatch")  # pragma: no cover
-        return decoded, char_map
-
-    def restore(self, decoded: str, char_map: list[int]) -> tuple[str, list[int]]:
-        parts: list[str] = []
-        restored_map: list[int] = []
-        last = 0
-        for match in _PLACEHOLDER_RE.finditer(decoded):
-            placeholder = match.group(0)
-            kind = placeholder[1]
-            index = int(placeholder[2:-1])
-            entries = self._strings if kind == "S" else self._comments
-            if not (0 <= index < len(entries)):
-                raise PreprocessError(f"internal error: unknown placeholder {placeholder!r}")
-            orig_start, orig_text = entries[index]
-            start, end = match.start(), match.end()
-            if start > last:
-                parts.append(decoded[last:start])
-                restored_map.extend(char_map[last:start])
-            parts.append(orig_text)
-            restored_map.extend(range(orig_start, orig_start + len(orig_text)))
-            last = end
-        if last < len(decoded):
-            parts.append(decoded[last:])
-            restored_map.extend(char_map[last:])
-        restored = "".join(parts)
-        if len(restored_map) != len(restored):  # pragma: no cover - invariant by construction
-            raise PreprocessError("internal error: placeholder restore map mismatch")  # pragma: no cover
-        return restored, restored_map
-
-
 # ---------------------------------------------------------------------------
 # Edit-aware regex substitution
 # ---------------------------------------------------------------------------
@@ -412,39 +352,61 @@ def _regex_sub(
     return new_decoded, new_map
 
 
-def _decode_markers(text: str, mapping: Mapping[str, str]) -> tuple[_OpaqueRegistry, str, list[int]]:
-    """Replace ``#markers`` with their mapped text, keeping strings/comments protected.
+def _decode_markers_in_run(
+    text: str,
+    start: int,
+    end: int,
+    mapping: Mapping[str, str],
+    parts: list[str],
+    char_map: list[int],
+) -> None:
+    """Decode the markers of one non-opaque ``[start, end)`` run into *parts*.
 
-    Returns ``(registry, decoded, char_map)``: the decoded text still holds
-    opaque placeholders for strings and comments, which are restored by
-    :func:`_OpaqueRegistry.restore` at the end of the pipeline.
+    The run's own source offsets are its initial map, so an unknown marker is
+    reported at its character offset in the **original** source even when
+    earlier text has already been rewritten.
     """
-    registry = _OpaqueRegistry(text)
-    decoded, char_map = registry.protect(text)
+    if start >= end:
+        return
+    run_map = list(range(start, end))
 
-    def _subst(m: re.Match[str]) -> str:
-        tok = m.group(0)
+    def _subst(match: re.Match[str]) -> str:
+        tok = match.group(0)
         value = mapping.get(tok)
         if value is None:
-            # ``char_map`` maps the protected text back to the original source,
-            # so the reported offset stays correct when an opaque placeholder
-            # shortened the text before the marker. A marker never overlaps a
-            # placeholder, so its entry is always a real source offset.
-            raise PreprocessError(f"Unknown compressed marker {tok!r} at character offset {char_map[m.start()]}")
+            raise PreprocessError(f"Unknown compressed marker {tok!r} at character offset {run_map[match.start()]}")
         return value
 
-    decoded, char_map = _regex_sub(decoded, char_map, _MARKER_RE, _subst)
-    return registry, decoded, char_map
+    decoded, decoded_map = _regex_sub(text[start:end], run_map, _MARKER_RE, _subst)
+    parts.append(decoded)
+    char_map.extend(decoded_map)
 
 
 def _decode_with_map(text: str, mapping: Mapping[str, str]) -> tuple[str, list[int]]:
-    """Decode *text* with *mapping*, returning (decoded, char_map).
+    """Decode *text* with *mapping*, returning ``(decoded, char_map)``.
 
-    String literals and ``(* ... *)`` comments stay protected through
-    decoding and are restored last so provenance mapping is preserved.
+    The opaque regions (string literals, quoted identifiers, ``(* ... *)``
+    comments) are copied through byte for byte and keep their exact source
+    offsets. Marker substitution runs only on the runs between them, and the
+    region boundaries are carried out of band: no placeholder is ever spliced
+    into the text, so a source that spells something resembling an internal
+    marker is ordinary text and neither grows nor injects anything. A
+    replacement that does not survive from its matched region is
+    :data:`GENERATED` rather than given a fake original offset.
     """
-    registry, decoded, char_map = _decode_markers(text, mapping)
-    return registry.restore(decoded, char_map)
+    parts: list[str] = []
+    char_map: list[int] = []
+    cursor = 0
+    for _kind, start, end in scan_opaque_regions(text):
+        _decode_markers_in_run(text, cursor, start, mapping, parts, char_map)
+        parts.append(text[start:end])
+        char_map.extend(range(start, end))
+        cursor = end
+    _decode_markers_in_run(text, cursor, len(text), mapping, parts, char_map)
+    decoded = "".join(parts)
+    if len(char_map) != len(decoded):  # pragma: no cover - invariant by construction
+        raise PreprocessError("internal error: decoded text / map length mismatch")  # pragma: no cover
+    return decoded, char_map
 
 
 def decode_compressed(text: str, mapping: Mapping[str, str]) -> str:

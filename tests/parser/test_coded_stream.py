@@ -12,7 +12,7 @@ import pytest
 from lark.exceptions import UnexpectedToken
 
 from sattline_parser import source_io as parser_api
-from sattline_parser.api import load_source_text
+from sattline_parser.api import load_source_text, parse_source_file
 from sattline_parser.preprocessing.coded import decode_coded_stream, is_coded
 from sattline_parser.preprocessing.compressed import PreprocessError
 
@@ -109,6 +109,34 @@ def test_api_load_source_text_expands_markers_inside_a_coded_stream(tmp_path) ->
     path.write_bytes(_encode(compressed))
 
     assert load_source_text(path) == '"Syntax version 2.23 C"\nMODULEDEFINITION Demo\nModuleCode\n'
+
+
+def test_api_load_source_text_strips_a_utf8_bom_before_classifying_a_coded_stream(tmp_path) -> None:
+    # Every other entry point strips the byte-order mark first. Without that,
+    # the coded header is hidden behind three cp1252 characters and the stream
+    # decodes as garbage instead of text.
+    path = tmp_path / "bom-coded.x"
+    path.write_bytes(b"\xef\xbb\xbf" + _encode("Coded := 1;"))
+
+    assert load_source_text(path) == "Coded := 1;"
+    assert load_source_text(path) == parser_api.decode_source_bytes(path.read_bytes())
+
+
+def test_parse_source_file_and_load_source_text_agree_on_a_bom_coded_file(tmp_path) -> None:
+    program = (
+        '"SyntaxVersion"\n"OriginalFileDate"\n"ProgramDate"\n'
+        "BasePicture Invocation (0.0,0.0,0.0,1.0,1.0) : MODULEDEFINITION DateCode_ 1\n"
+        "ModuleDef\n"
+        "ClippingBounds = ( -1.0 , -1.0 ) ( 1.0 , 1.0 )\n"
+        "ENDDEF (*BasePicture*);\n"
+    )
+    path = tmp_path / "bom-program.x"
+    path.write_bytes(b"\xef\xbb\xbf" + _encode(program))
+
+    picture = parse_source_file(path, log_failures=False)
+
+    assert picture.name == "BasePicture"
+    assert load_source_text(path) == program
 
 
 def test_decode_coded_file_bytes_direct() -> None:

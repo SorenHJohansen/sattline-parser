@@ -225,6 +225,24 @@ with a space on both sides (`1 + 2`).
 
 ## Tokenization
 
+### Line terminators
+
+A line break is CRLF, LF, or a lone CR. The definition is the same in the
+grammar's string terminals, the compressed-source scanner, the coded decoder,
+and `render_ide_text`, so a CR is never ordinary text for one of them and a line
+break for another.
+
+Line and column numbers are a separate rule: the position index and the reported
+source line both split on LF. A plain document written with lone CR terminators
+therefore parses with CR as a break while its reported positions all stay on the
+first line. The coded decoder and `render_ide_text` emit CRLF, so a document that
+goes through either of them is unaffected.
+
+- `STRING` and `STRING_NOTAIL` contain no line break, so a lone CR ends the
+  literal exactly as LF does, and an unclosed literal is a syntax error.
+- `STRING_CRLF` is the unterminated description: it ends at the first line break
+  and consumes that terminator, whichever of the three it is.
+
 ### Lexer selection
 
 The parser is built with `lexer="contextual"`, but the `ContextualLexer` plugin
@@ -351,8 +369,19 @@ A coded source stores keywords as fixed-width `#NN` codes but may contain raw
 words that spell a keyword. In coded mode, the lexer retypes a raw keyword-like
 word to `NAME` unless the decoder produced its characters. The raw literal
 spellings `True`, `False`, `On`, `Off`, and `Default` are exempt because the
-compressor always writes them unencoded. This is a lexical decision, not a
-grammar one.
+compressor always writes them unencoded.
+
+A raw `DateCode_` is the other exception: the rule that follows it is a number,
+so a raw prefix with a digit after it stays the keyword half of the
+`DATECODE_PREFIX SL_DATECODE` pair instead of becoming an identifier. The
+decision reads the text after the token rather than lexing ahead, so the parser
+stays in charge of the lexer state.
+
+Three keywords have no scanner code: `EQUATIONS`, `IntObjPickButton`, and
+`NewWindow`. A compact document cannot spell them, and the failure is clean; see
+[source-provenance.md](source-provenance.md).
+
+This is a lexical decision, not a grammar one.
 
 ## Tests that pin the grammar
 

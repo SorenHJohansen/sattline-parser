@@ -658,22 +658,30 @@ def test_parse_source_text_log_failures_disabled_paths() -> None:
         )
 
 
-def test_opaque_registry_restore_rejects_unknown_placeholder() -> None:
-    from sattline_parser.preprocessing.compressed import PreprocessError, _OpaqueRegistry  # noqa: PLC0415
+def test_decode_reports_an_unknown_marker_at_its_original_offset() -> None:
+    # The reported offset is the character offset in the decoded caller text,
+    # even when an opaque region earlier in the source was skipped.
+    from sattline_parser.preprocessing.compressed import (  # noqa: PLC0415
+        PreprocessError,
+        _decode_with_map,
+    )
 
-    registry = _OpaqueRegistry('"a string"')
-    with pytest.raises(PreprocessError, match="unknown placeholder"):
-        registry.restore("\x00S9\x00", [-1, -1, -1, -1, -1, -1])
+    text = '"a string" #00'
+
+    with pytest.raises(PreprocessError, match="Unknown compressed marker '#00' at character offset 11"):
+        _decode_with_map(text, {})
 
 
-def test_opaque_registry_restore_keeps_a_literal_nul() -> None:
-    # A NUL is valid cp1252 source text; only a *placeholder* is an internal
-    # marker, so restore must not treat a stray NUL as an unrestored one.
-    from sattline_parser.preprocessing.compressed import _OpaqueRegistry  # noqa: PLC0415
+def test_decode_keeps_a_literal_nul_sequence_as_text() -> None:
+    # A NUL is valid cp1252 source text. The decoder carries opaque positions
+    # out of band, so a sequence that resembles an internal marker is ordinary
+    # text and is neither restored nor rejected.
+    from sattline_parser.preprocessing.compressed import _decode_with_map  # noqa: PLC0415
 
-    registry = _OpaqueRegistry('"a string"')
-    restored, _map = registry.restore("\x00leftover", [0, -1, -1, -1, -1, -1, -1, -1, -1])
-    assert restored == "\x00leftover"
+    decoded, char_map = _decode_with_map("\x00S9\x00 leftover", {})
+
+    assert decoded == "\x00S9\x00 leftover"
+    assert tuple(char_map) == tuple(range(len(decoded)))
 
 
 # ---- Golden file parse tests ----

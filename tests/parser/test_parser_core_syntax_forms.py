@@ -730,3 +730,41 @@ def test_signed_coordinates_and_layout_values_still_parse() -> None:
     assert picture.header.invoke_coord == (-0.5, -0.5, 0.0, 1.0, 1.0)
     assert picture.moduledef is not None
     assert picture.moduledef.clipping_bounds == ((-1.5, -2.0), (1.0, 2.0))
+
+
+# ---------------------------------------------------------------------------
+# One line-terminator definition: CRLF, LF, and a lone CR
+# ---------------------------------------------------------------------------
+
+
+def _declaration_program(declarations: str) -> str:
+    return (
+        _HEADER
+        + "BasePicture Invocation ( 0.0 , 0.0 , 0.0 , 1.0 , 1.0 ) : MODULEDEFINITION DateCode_ 1\n"
+        + "LOCALVARIABLES\n"
+        + declarations
+        + "ModuleDef\n"
+        + "ClippingBounds = ( -1.0 , -1.0 ) ( 1.0 , 1.0 )\n"
+        + "ENDDEF (*BasePicture*);\n"
+    )
+
+
+@pytest.mark.parametrize("terminator", ["\n", "\r\n", "\r"])
+def test_an_unterminated_description_ends_at_any_line_terminator(terminator: str) -> None:
+    # A lone CR is a line break, so it ends the description exactly like LF and
+    # CRLF do. The declaration that follows is read as its own group.
+    source = _declaration_program(f'    A "description{terminator}: integer;{terminator}')
+
+    picture = parse_source_text(source)
+
+    assert [variable.name for variable in picture.localvariables] == ["A"]
+
+
+@pytest.mark.parametrize("terminator", ["\n", "\r"])
+def test_a_line_break_inside_a_quoted_string_is_a_syntax_error(terminator: str) -> None:
+    # A string holds no line break of any kind, so the CR form fails exactly
+    # where the LF form fails instead of reading the CR as string content.
+    source = _declaration_program(f'    A "x{terminator}B" : integer;{terminator}')
+
+    with pytest.raises(UnexpectedInput):
+        parse_source_text(source)

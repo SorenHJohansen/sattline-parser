@@ -181,11 +181,16 @@ Compressed source is text with `#NN` codes. Decoding is lexically aware:
 flowchart LR
     A["source text"] --> B["scan_opaque_regions"]
     B --> C["strings S and comments C"]
-    C --> D["replace regions with placeholders"]
-    D --> E["substitute #NN markers"]
-    E --> F["restore strings and comments"]
-    F --> G["decoded text and char_map"]
+    C --> D["marker substitution on<br/>the text between regions"]
+    D --> E["decoded text and char_map"]
 ```
+
+The region boundaries never leave the decoder. Marker substitution runs only on
+the runs of text between them, and the pieces are joined with their original
+offsets already attached, so no placeholder character is ever spliced into the
+text being decoded. A source that contains a sequence resembling an internal
+marker is therefore ordinary text: it is neither restored nor rejected, and the
+decoded text stays linear in the size of the input.
 
 `scan_opaque_regions` understands:
 
@@ -194,7 +199,9 @@ flowchart LR
 - `(*` or `*)` inside a string as text, not a delimiter;
 - a `"` inside a comment as text, not a string start;
 - a description that ends at a line break, because the grammar accepts an
-  unterminated description (`STRING_CRLF`) and no string spans lines;
+  unterminated description (`STRING_CRLF`) and no string spans a line. A line
+  break here is CRLF, LF, or a lone CR, the one definition the grammar, the
+  compressed scanner, the coded decoder, and `render_ide_text` use;
 - a single-quoted identifier such as `'#84'`, whose body is literal text rather
   than a marker.
 
@@ -210,13 +217,21 @@ both use.
 
 The scanner never rewrites text inside an opaque region. An unknown marker
 raises `PreprocessError` with its character offset in the **original** source,
-not in the placeholder text the decoder substitutes before expanding markers.
+not in any rewritten intermediate text.
 
 `preprocessing/scanner_tokens.json` is the scanner enum: the ordinal `n` is
 encoded as `'#' + chr(48 + n // 16) + chr(48 + n % 16)` and the row `id` is
 `n + 8`. The table covers keywords and operators; literal source text is
 emitted unencoded. A code is added only with a fixture that decodes it, because
 the ordinal alone does not prove which word an export used.
+
+Three grammar keywords have no row: `EQUATIONS`, `IntObjPickButton`, and
+`NewWindow`. No encoded form of them has been observed, and the ordinal alone
+would not prove the word, so none is invented. A compressed document therefore
+cannot spell them, and both failure paths are clean: a raw spelling is an
+identifier in coded mode and the parse rejects it, while an unknown code raises
+`PreprocessError`. The set is pinned by a test, so adding a row or a keyword
+terminal keeps this paragraph and the table in step.
 
 Replacement text is aligned to the matched source region by longest common
 subsequence. A replacement character gets a real source mapping only when it
@@ -236,16 +251,18 @@ when it re-reads a saved file:
 - no line longer than `MAX_IDE_LINE_LENGTH` (135 characters).
 
 Long lines break at the last space within the limit. The scan never splits a
-double-quoted string literal, and a line without a usable break space is
-emitted unchanged rather than cut mid-token. The function is safe on text that
-is already formatted, and it is not part of the parse path.
+string literal or a quoted identifier, so a break point inside `'a name'` is
+not used, and it reuses the scanner's own region rule rather than a second
+approximation. A line without a usable break space is emitted unchanged rather
+than cut mid-token. The function is safe on text that is already formatted, and
+it is not part of the parse path.
 
 ## Tests that pin provenance
 
 | Test | What it protects |
 | --- | --- |
 | `tests/parser/test_parser_core_provenance.py` | Position mapping, generated characters, deleted regions |
-| `tests/parser/test_parser_core_preprocessing.py` | Marker decoding, opaque regions, unknown markers |
+| `tests/parser/test_parser_core_preprocessing.py` | Marker decoding, opaque regions, unknown markers, forged placeholder-shaped text |
 | `tests/parser/test_coded_stream.py` | Coded framing, XOR key, sync bytes, CRLF repair |
 | `tests/parser/test_ide_text.py` | CRLF and line-length layout |
 | `tests/parser/test_parser_decode.py` | CLI and library decode agreement |
