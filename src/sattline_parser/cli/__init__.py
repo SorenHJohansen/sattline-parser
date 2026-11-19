@@ -31,6 +31,8 @@ source tree: there is no ``--fix``, no network access and no watch mode. The
 from __future__ import annotations
 
 import argparse
+import contextlib
+import logging
 import os
 import sys
 import traceback
@@ -45,6 +47,8 @@ __all__ = ["build_parser", "main"]
 
 _PROGRAM = "sattline"
 _DESCRIPTION = "Parse, validate and inspect SattLine sources (JSON-first)."
+_LIBRARY_LOGGER = "sattline_parser"
+_DEBUG_LOG_FORMAT = "debug: %(message)s"
 
 
 class _UsageError(Exception):
@@ -72,6 +76,7 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv: Sequence[str] | None = None) -> int:
     """Run the CLI and return the process exit code."""
+    _make_output_encoding_safe()
     try:
         return _dispatch(argv)
     except BrokenPipeError:
@@ -80,6 +85,37 @@ def main(argv: Sequence[str] | None = None) -> int:
         # report into exit 120.
         _discard_stdout()
         return int(ExitCode.USAGE)
+
+
+def _make_output_encoding_safe() -> None:
+    """Stop a character the stream cannot encode from becoming an internal error.
+
+    The library represents an undefined byte inside a comment as U+FFFD, which
+    a cp1252 stream cannot encode. ``backslashreplace`` keeps the report intact:
+    for JSON a replaced character is written as ``\\ufffd``, which parses back to
+    the same character, and for text it stays readable instead of raising.
+    """
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if reconfigure is None:
+            # A caller that embeds the CLI may pass a stream without a codec.
+            continue
+        with contextlib.suppress(OSError, ValueError):
+            reconfigure(errors="backslashreplace")
+
+
+def _install_parser_log_handler() -> logging.Handler:
+    """Send the library's parser-failure log to stderr, for ``--debug`` only.
+
+    Without a handler the package logger falls back to ``logging.lastResort``,
+    which writes the same record (and its traceback) whether or not the caller
+    asked for it. The CLI owns logging, so it installs a handler under
+    ``--debug`` and removes it afterwards.
+    """
+    handler = logging.StreamHandler(sys.stderr)
+    handler.setFormatter(logging.Formatter(_DEBUG_LOG_FORMAT))
+    logging.getLogger(_LIBRARY_LOGGER).addHandler(handler)
+    return handler
 
 
 def _dispatch(argv: Sequence[str] | None) -> int:
@@ -91,6 +127,7 @@ def _dispatch(argv: Sequence[str] | None) -> int:
         print(f"{_PROGRAM}: {exc}", file=sys.stderr)
         print(f"try '{_PROGRAM} --help'", file=sys.stderr)
         return int(ExitCode.USAGE)
+    handler = _install_parser_log_handler() if args.debug else None
     try:
         return int(args.handler(args))
     except CliError as exc:
@@ -107,6 +144,9 @@ def _dispatch(argv: Sequence[str] | None) -> int:
             traceback.print_exc()
         print(f"{_PROGRAM}: internal error: {type(exc).__name__}: {exc}", file=sys.stderr)
         return int(ExitCode.INTERNAL)
+    finally:
+        if handler is not None:
+            logging.getLogger(_LIBRARY_LOGGER).removeHandler(handler)
 
 
 def _discard_stdout() -> None:

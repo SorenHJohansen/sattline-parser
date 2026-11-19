@@ -304,6 +304,12 @@ compatibility before parsing output.
 `--json` and `--jsonl` are mutually exclusive. Findings are never printed as a
 second document alongside a JSON payload: they ride inside the same object.
 
+Output never fails on a character the stream cannot encode. A source character
+that is outside the stream's encoding (the library maps an undefined
+Windows-1252 byte inside a comment to U+FFFD) is escaped with a backslash, so a
+cp1252 terminal still prints the report and a JSON escape parses back to the
+same character.
+
 `--jsonl` does not mean the same thing in every command, because a command that
 reports one unit has nothing to stream:
 

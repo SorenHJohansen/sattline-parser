@@ -298,13 +298,15 @@ def test_a_load_failure_logs_no_parser_trace_without_debug(tmp_path, capsys, cap
     assert caplog.records == []
 
 
-def test_debug_keeps_the_parser_trace_for_a_load_failure(tmp_path, caplog) -> None:
+def test_debug_keeps_the_parser_trace_for_a_load_failure(tmp_path, caplog, capsys) -> None:
     write_source(tmp_path, "Broken.s", PARSE_ERROR_SOURCE)
 
     with caplog.at_level(logging.ERROR, logger="sattline_parser"):
         assert main(["--debug", "project", str(tmp_path), "--json"]) == ExitCode.FINDINGS
     records = [record for record in caplog.records if record.name == "sattline_parser"]
     assert records and any(record.exc_info is not None for record in records)
+    # The log reaches stderr through the CLI's own handler, exactly once.
+    assert capsys.readouterr().err.count("Parser parse failure") == 1
 
 
 def test_cli_an_unreadable_root_is_an_input_error(tmp_path, capsys) -> None:

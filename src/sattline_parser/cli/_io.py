@@ -55,7 +55,9 @@ def read_source_path(path: Path) -> Source:
 
 def _source(raw: bytes, name: str) -> Source:
     try:
-        text = decode_source_bytes(raw)
+        # The CLI reports a decode failure as its own sentence, so the library
+        # must not log the same failure (and its traceback) a second time.
+        text = decode_source_bytes(raw, log_failures=False)
     except UnicodeDecodeError as exc:
         raise CliError(f"{name}: not valid Windows-1252 (byte {exc.start}: {exc.reason})") from exc
     except PreprocessError as exc:
