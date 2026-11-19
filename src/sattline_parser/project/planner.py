@@ -101,6 +101,11 @@ class ProjectPlanner:
         #: be resolved back to the unit it named.
         self.resolved_names: dict[str, tuple[str, str]] = {}
         self._planned: set[ArtifactIdentity] = set()
+        #: Plan key -> the dependency sidecar the plan actually read. A later
+        #: visit to the same body is an alias only when its prefix resolves a
+        #: different sidecar; a second visit under the same prefix read the same
+        #: file and has nothing unused to report.
+        self._read_sidecars: dict[str, Path | None] = {}
         #: The active plan stack: artifact identity -> the name that entered it.
         #: Insertion order is the dependency chain.
         self._loading: dict[ArtifactIdentity, str] = {}
@@ -174,8 +179,10 @@ class ProjectPlanner:
         The body is resolved before the sidecar, so a spelling that reaches a
         body this load already planned is an alias: its declarations are never
         read, and an unreadable alias sidecar cannot fail a load that the body
-        alone survives. The cycle check follows physical files, because a name
-        that resolves to a file already on the active stack is a cycle.
+        alone survives. A spelling that reaches the same prefix the plan read is
+        the same library seen twice, not an alias. The cycle check follows
+        physical files, because a name that resolves to a file already on the
+        active stack is a cycle.
         """
         program_name = declared_by if declared_by is not None else name
         dependency = None if declared_by is None else name
@@ -198,7 +205,7 @@ class ProjectPlanner:
             raise DependencyCycleError(canonical_cycle(cycle))
         if identity in self._planned:
             self._record_name(name, identity.key, code_path)
-            self._report_unused_alias(name, code_path)
+            self._report_unused_alias(name, identity.key, code_path)
             return identity.key
         artifact = self._artifact_resolver(
             name,
@@ -208,6 +215,7 @@ class ProjectPlanner:
             resolved_base=resolved_base,
         )
         self._planned.add(identity)
+        self._read_sidecars[identity.key] = artifact.deps_path
         self._loading[identity] = name.casefold()
         return _Pending(
             name=name,
@@ -218,17 +226,25 @@ class ProjectPlanner:
             resolved=[],
         )
 
-    def _report_unused_alias(self, name: str, code_path: Path) -> None:
+    def _report_unused_alias(self, name: str, plan_key: str, code_path: Path) -> None:
         """Report a sidecar at an alias prefix whose declarations are not read.
 
-        The body is planned once, under the spelling that reached it first, so
-        the alias prefix's declarations have no plan to attach to. The sidecar
+        The body is planned once, under the spelling that reached it first, so a
+        sidecar at a *different* prefix has no plan to attach to. The sidecar
         path is resolved but never read: a broken file at the alias prefix must
         not fail a load that the body alone survives, and the operator should
         still learn why a declared name is absent from the registry.
+
+        A second visit under the prefix the plan already read is not an alias:
+        it is the same library reached twice, which a diamond or two targets
+        sharing a dependency both produce. Its declarations were read on the
+        first visit, so nothing is reported.
         """
         sidecar = self._lookup.find_deps_beside(code_path, name)
         if sidecar is None:
+            return
+        read = self._read_sidecars.get(plan_key)
+        if read is not None and ArtifactIdentity.of(read) == ArtifactIdentity.of(sidecar):
             return
         self._diagnose(
             LoadDiagnosticKind.ALIAS_DECLARATIONS_UNUSED,

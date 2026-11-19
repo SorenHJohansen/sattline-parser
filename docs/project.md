@@ -228,9 +228,10 @@ observable orders:
   load conditions: a missing or empty sidecar, a sidecar elsewhere, a sidecar
   from the other artifact family, a companion from the other artifact family, a
   code file whose stem cannot be a unit name, a folded-name collision, and an
-  alias prefix whose sidecar declarations were not used. A failure to resolve
-  or parse raises instead. Discovery rows come first, in discovery order, then
-  assembly rows in plan order.
+  alias prefix whose sidecar declarations were not used. The alias report is
+  about a prefix, not a second visit: a library reached twice under its own
+  prefix is silent. A failure to resolve or parse raises instead. Discovery rows
+  come first, in discovery order, then assembly rows in plan order.
 
 `validate=INVOKED` runs **after** the graph is complete, because it needs the
 whole invocation graph. The loader first builds the registry, then walks
@@ -293,11 +294,18 @@ is keyed by language identity, so `AliasBase` resolves to the body that
 they name.
 
 The body is resolved before its sidecar, so a spelling that reaches a body this
-load already planned reads no sidecar for that spelling. A sidecar at the alias
-prefix is resolved but never read: it is reported as
-`LoadDiagnosticKind.ALIAS_DECLARATIONS_UNUSED`, and its declarations do not
-reach the registry. An unreadable file at that prefix is therefore not a load
-failure, because the body alone still supplies the unit and its real sidecar.
+load already planned reads no sidecar for that spelling. A sidecar at a
+*different* prefix, which is what an alias prefix is, is resolved but never read:
+it is reported as `LoadDiagnosticKind.ALIAS_DECLARATIONS_UNUSED`, and its
+declarations do not reach the registry. An unreadable file at that prefix is
+therefore not a load failure, because the body alone still supplies the unit and
+its real sidecar.
+
+A second visit under the prefix the plan already read is not an alias. A diamond
+(`Top -> Left/Right -> Base`) and two targets that share a dependency both reach
+one library twice, and its sidecar was read on the first visit, so the load
+reports nothing. The report compares the sidecar each plan actually read with the
+sidecar at the visiting spelling's prefix, not the visit count.
 
 ### Folded-name collisions
 
