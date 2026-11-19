@@ -135,46 +135,69 @@ type SFCBodyItem = (
 
 
 class IntLiteral(int):
-    """An integer literal that keeps its source position.
+    """An integer literal that keeps its source position and written spelling.
 
     Equality is the inherited numeric one, so ``IntLiteral(1) == 1`` and
     ``IntLiteral(1) == FloatLiteral(1.0)`` are both true. The written form is
-    not part of equality: read ``span`` or ``type(value)`` when the spelling
-    (``1`` versus ``1.0``) matters.
+    not part of equality: read ``span``, ``written``, or ``type(value)`` when the
+    spelling (``1`` versus ``1.0``) matters.
+
+    ``value`` is the value the model keeps. A literal outside the language range
+    is clamped, so ``2147483648`` is stored as ``2147483647`` with
+    ``clamped=True``; ``written`` still holds the text the source wrote, which is
+    what a diagnostic quotes.
     """
 
     span: SourceSpan | None
     clamped: bool
+    written: str | None
 
-    def __new__(cls, value: int, span: SourceSpan | None = None, clamped: bool = False):
+    def __new__(
+        cls,
+        value: int,
+        span: SourceSpan | None = None,
+        clamped: bool = False,
+        written: str | None = None,
+    ):
         obj = int.__new__(cls, value)
         obj.span = span
         obj.clamped = clamped
+        obj.written = written
         return obj
 
     def __reduce__(self):
-        return (type(self), (int(self), self.span, self.clamped))
+        return (type(self), (int(self), self.span, self.clamped, self.written))
 
 
 class FloatLiteral(float):
-    """A real literal that keeps its source position.
+    """A real literal that keeps its source position and written spelling.
 
     Equality is the inherited numeric one, so ``FloatLiteral(1.0) == 1``. The
-    written form is not part of equality; read ``span`` or ``type(value)`` when
-    it matters.
+    written form is not part of equality; read ``span``, ``written``, or
+    ``type(value)`` when it matters. ``written`` keeps the source text of a
+    literal that was clamped to the language range, so a diagnostic can quote
+    what was written rather than the clamped value.
     """
 
     span: SourceSpan | None
     clamped: bool
+    written: str | None
 
-    def __new__(cls, value: float, span: SourceSpan | None = None, clamped: bool = False):
+    def __new__(
+        cls,
+        value: float,
+        span: SourceSpan | None = None,
+        clamped: bool = False,
+        written: str | None = None,
+    ):
         obj = float.__new__(cls, value)
         obj.span = span
         obj.clamped = clamped
+        obj.written = written
         return obj
 
     def __reduce__(self):
-        return (type(self), (float(self), self.span, self.clamped))
+        return (type(self), (float(self), self.span, self.clamped, self.written))
 
 
 class ScalarDatatype(Enum):

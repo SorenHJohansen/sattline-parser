@@ -71,6 +71,17 @@ passes them through `parse_and_validate`, which forwards the same three
 arguments to the validator; it does not have to call `validate_basepicture`
 itself.
 
+### Depth bound
+
+The expression and statement rules are recursive. `validate_basepicture` first
+measures the tree with the iterative walker and rejects a tree whose node nesting
+exceeds `MAX_VALIDATED_DEPTH` (256, the same bound as the parser's
+`MAX_SOURCE_DEPTH`) with `SourceTooDeepError`. Parsed input never reaches the
+bound, because the parser rejects an over-deep source before validation runs.
+The guard exists for a hand-built or mutated tree, such as a test fixture that
+builds a deep expression directly: the caller gets the documented nesting error
+instead of a bare `RecursionError` from inside a rule.
+
 ## Walk
 
 ```mermaid
@@ -400,6 +411,15 @@ here. `sattline rules` exposes the same data on the command line.
 | `SL-V059` | `NUMERIC_LITERAL_OUT_OF_RANGE` | active | code | A numeric literal must fit the declared 32-bit integer or real range. |
 | `SL-V060` | `PROCEDURE_IN_VALUE_POSITION` | active | code | A procedure call returns no value and cannot be used where a value is required. |
 <!-- RULE-TABLE:END -->
+
+### Numeric range findings quote the written literal
+
+`SL-V059` fires for a literal the transformer had to clamp. The model keeps the
+clamped value, so the sentence must not quote it: a written `2147483648` is
+reported as `2147483648`, not as the stored `2147483647`. `IntLiteral.written`
+and `FloatLiteral.written` hold the token text for exactly this purpose, and a
+hand-built literal without it falls back to the stored value. The diagnostic
+span still covers the written literal.
 
 ### Retired and unimplemented codes
 

@@ -1,0 +1,1 @@
+- **Out-of-range literal messages.** `SL-V059` now quotes the numeric literal as the source wrote it, so a clamped `2147483648` is reported as `2147483648` rather than as the stored `2147483647`. `IntLiteral` and `FloatLiteral` expose the written text as `written`.

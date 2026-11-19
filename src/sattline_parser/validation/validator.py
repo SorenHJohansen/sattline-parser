@@ -17,7 +17,9 @@ from dataclasses import dataclass
 from functools import lru_cache
 from typing import cast
 
+from sattline_parser.ast import walk
 from sattline_parser.builtins.records import BUILTIN_RECORD_SPECS
+from sattline_parser.errors import SourceTooDeepError
 from sattline_parser.models.ast_model import (
     BasePicture,
     DataType,
@@ -52,6 +54,17 @@ from sattline_parser.validation.transfers import check_parameter_transfers
 from sattline_parser.validation.type_graph import TypeGraph
 
 Submodule = SingleModule | FrameModule | ModuleTypeInstance
+
+#: Deepest AST node nesting :func:`validate_basepicture` accepts.
+#:
+#: The expression and statement rules of this pass are recursive, and a
+#: hand-built tree can be deeper than the Python call stack allows. Parsed input
+#: is already capped by ``source_io.MAX_SOURCE_DEPTH`` (256), so the same bound
+#: is used here: anything the parser accepts validates, and a manual tree past
+#: the bound is rejected with the documented nesting error instead of raising a
+#: bare ``RecursionError``. ``tests/parser/test_validation_depth.py`` pins the
+#: equality with the parser bound.
+MAX_VALIDATED_DEPTH = 256
 
 
 @lru_cache(maxsize=1)
@@ -129,10 +142,17 @@ def _check_numeric_literal_ranges(root: object, errors: list[Diagnostic]) -> Non
     while stack:
         value = stack.pop()
         if isinstance(value, (IntLiteral, FloatLiteral)) and value.clamped:
+            # ``value`` holds the clamped number, so the sentence quotes the text
+            # the source wrote instead. A hand-built literal may carry no written
+            # text; then the stored value is the only spelling there is.
+            written = value.written if value.written is not None else str(value)
             errors.append(
                 Diagnostic(
                     code=DiagnosticCode.NUMERIC_LITERAL_OUT_OF_RANGE,
-                    message=("A numeric literal is outside the supported 32-bit integer or real range and was clamped"),
+                    message=(
+                        f"The numeric literal {written} is outside the supported "
+                        "32-bit integer or real range and was clamped"
+                    ),
                     span=value.span,
                 )
             )
@@ -149,6 +169,17 @@ def _check_numeric_literal_ranges(root: object, errors: list[Diagnostic]) -> Non
         elif isinstance(value, (list, tuple)):
             sequence = cast("Sequence[object]", value)
             stack.extend(sequence)
+
+
+def _reject_over_deep_tree(bp: BasePicture) -> None:
+    """Refuse a tree the recursive expression rules cannot visit.
+
+    ``walk`` is iterative and exposes the ancestor chain length, so the check
+    itself cannot exhaust the call stack and costs one linear pass.
+    """
+    depth = max((len(event.parents) + 1 for event in walk(bp)), default=0)
+    if depth > MAX_VALIDATED_DEPTH:
+        raise SourceTooDeepError(MAX_VALIDATED_DEPTH)
 
 
 def validate_basepicture(
@@ -170,7 +201,13 @@ def validate_basepicture(
     The tables are built external-first, so a definition in this file wins over a
     same-named definition from a dependency, and a builtin name is only a
     fallback. Resolution order is therefore file, dependency, builtin.
+
+    Raises :class:`~sattline_parser.errors.SourceTooDeepError` when the node
+    nesting is deeper than :data:`MAX_VALIDATED_DEPTH`. Parsed input never
+    reaches that bound, because the parser rejects it first; a hand-built tree
+    does, and the recursive expression rules cannot visit it safely.
     """
+    _reject_over_deep_tree(bp)
     errors: list[Diagnostic] = []
     available_datatypes = [*external_datatypes, *bp.datatype_defs]
     available_moduletypes = [*external_moduletype_defs, *bp.moduletype_defs]
