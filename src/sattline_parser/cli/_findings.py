@@ -12,7 +12,7 @@ from typing import Literal
 
 from lark.exceptions import UnexpectedInput
 
-from sattline_parser.api import describe_parse_error
+from sattline_parser.api import describe_parse_error, source_line_at
 from sattline_parser.validation import Diagnostic
 
 from ._io import display_path
@@ -110,15 +110,8 @@ def finding_from_diagnostic(diagnostic: Diagnostic, *, file: str, source_text: s
         column=span.column if span is not None else None,
         start=span.start if span is not None else None,
         end=span.end if span is not None else None,
-        source_line=_source_line(source_text, line),
+        source_line=source_line_at(source_text, line),
     )
-
-
-def _source_line(source_text: str, line: int | None) -> str | None:
-    if line is None or line < 1:
-        return None
-    lines = source_text.splitlines()
-    return lines[line - 1] if line <= len(lines) else None
 
 
 def finding_from_parse_error(exc: Exception, source_text: str, *, file: str, absolute_paths: bool) -> Finding:
@@ -133,7 +126,7 @@ def finding_from_parse_error(exc: Exception, source_text: str, *, file: str, abs
             line=details.line,
             column=details.column,
             hint=details.hint,
-            source_line=details.source_line or _source_line(source_text, details.line),
+            source_line=details.source_line or source_line_at(source_text, details.line),
         )
     return Finding(
         severity="error",

@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import io
+import json
 import os
 import runpy
 import subprocess
@@ -116,6 +117,69 @@ def test_a_broken_pipe_is_a_usage_exit_not_an_internal_error(
 
     assert main(["check", "nowhere.s"]) == ExitCode.USAGE
     assert capsys.readouterr().err == ""
+
+
+def test_a_stream_without_a_codec_is_supported(monkeypatch: pytest.MonkeyPatch) -> None:
+    """An embedded caller may hand the CLI a plain ``StringIO``."""
+    embedded = io.StringIO()
+    monkeypatch.setattr(sys, "stdout", embedded)
+
+    assert main(["version"]) == ExitCode.OK
+    assert embedded.getvalue().startswith("sattline ")
+
+
+def test_a_malformed_coded_stream_prints_no_traceback(tmp_path: Path) -> None:
+    """A decode failure is one clean sentence, not the library's logged trace."""
+    broken = tmp_path / "bad.x"
+    broken.write_bytes(b"\x80 3.1\r\n\x99garbage\x99garbage\r\n")
+
+    result = subprocess.run(
+        [sys.executable, "-m", "sattline_parser", "check", str(broken)],
+        capture_output=True,
+        text=True,
+        check=False,
+        env={**os.environ, "PYTHONPATH": str(_SRC)},
+    )
+
+    assert result.returncode == ExitCode.USAGE, result.stderr
+    assert "cannot decode" in result.stderr
+    assert "Traceback" not in result.stderr
+    assert "PreprocessError" not in result.stderr
+
+
+def test_a_narrow_stdout_keeps_the_finding_and_the_content_exit(tmp_path: Path) -> None:
+    """A cp1252 stdout must not turn a finding into an internal error."""
+    source = tmp_path / "Undefined.s"
+    head = (
+        '"Syntax version 2.23, date: 2026-10-28-00:00:00.000 N"\n'
+        '"Original file date: ---"\n'
+        '"Program date: 2026-10-28-00:00:00.000, name: Sample"\n'
+        "BasePicture Invocation ( 0.0 , 0.0 , 0.0 , 1.0 , 1.0 ) : MODULEDEFINITION DateCode_ 1\n"
+        "LOCALVARIABLES\n"
+        "   Flag: boolean := False;\n"
+        "ModuleDef\n"
+        "ClippingBounds = ( -1.0 , -1.0 ) ( 1.0 , 1.0 )\n"
+        "ModuleCode\n"
+        "SEQUENCE Demo COORD 0.0, 0.0 OBJSIZE 1.0, 1.0\n"
+        "   SEQINITSTEP Init\n"
+        "   SEQSTEP Second (* byte "
+    )
+    tail = " here *)\n   SEQTRANSITION Tr WAIT_FOR Flag\nENDSEQUENCE\nENDDEF (*BasePicture*);\n"
+    source.write_bytes(head.encode("cp1252") + b"\x81" + tail.encode("cp1252"))
+
+    result = subprocess.run(
+        [sys.executable, "-m", "sattline_parser", "check", str(source), "--json"],
+        capture_output=True,
+        check=False,
+        env={**os.environ, "PYTHONPATH": str(_SRC), "PYTHONIOENCODING": "cp1252"},
+    )
+
+    assert result.returncode == ExitCode.FINDINGS, result.stderr
+    payload = json.loads(result.stdout.decode("cp1252"))
+    [finding] = payload["findings"]
+    assert finding["rule"] == "CONSECUTIVE_SEQUENCE_STEPS"
+    # The escaped replacement character round-trips through JSON.
+    assert "\ufffd" in finding["source_line"]
 
 
 def test_a_closed_stdout_stops_the_report_in_a_subprocess(tmp_path) -> None:

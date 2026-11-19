@@ -298,13 +298,28 @@ def test_a_load_failure_logs_no_parser_trace_without_debug(tmp_path, capsys, cap
     assert caplog.records == []
 
 
-def test_debug_keeps_the_parser_trace_for_a_load_failure(tmp_path, caplog) -> None:
+def test_a_parse_failure_in_the_tree_carries_its_position(tmp_path, capsys) -> None:
+    """A load finding keeps the cause's parser sentence and location."""
+    write_source(tmp_path, "Broken.s", PARSE_ERROR_SOURCE)
+
+    assert main(["project", str(tmp_path), "--json", "--workers", "1"]) == ExitCode.FINDINGS
+
+    [finding] = json.loads(capsys.readouterr().out)["findings"]
+    assert finding["rule"] == "PROJECT_LOAD_ERROR"
+    assert (finding["line"], finding["column"]) == (7, 21)
+    assert "unexpected end of file; expected ';'" in finding["message"]
+    assert finding["hint"].startswith("the unit ends before a required ';'")
+
+
+def test_debug_keeps_the_parser_trace_for_a_load_failure(tmp_path, caplog, capsys) -> None:
     write_source(tmp_path, "Broken.s", PARSE_ERROR_SOURCE)
 
     with caplog.at_level(logging.ERROR, logger="sattline_parser"):
         assert main(["--debug", "project", str(tmp_path), "--json"]) == ExitCode.FINDINGS
     records = [record for record in caplog.records if record.name == "sattline_parser"]
     assert records and any(record.exc_info is not None for record in records)
+    # The log reaches stderr through the CLI's own handler, exactly once.
+    assert capsys.readouterr().err.count("Parser parse failure") == 1
 
 
 def test_cli_an_unreadable_root_is_an_input_error(tmp_path, capsys) -> None:

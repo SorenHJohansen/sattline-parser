@@ -1,0 +1,1 @@
+- **A decode failure and a narrow stdout no longer become internal errors.** A malformed coded stream is reported as one sentence without the library logger's traceback, and a character the output stream cannot encode is escaped instead of raising, so a cp1252 stdout still prints the finding and keeps the content exit code.

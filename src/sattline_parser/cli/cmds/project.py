@@ -9,6 +9,7 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 
 from sattline_parser.__version__ import __version__
+from sattline_parser.api import PARSE_FAILURES, describe_parse_error
 from sattline_parser.project import (
     DistributionTarget,
     LoadDiagnostic,
@@ -152,7 +153,7 @@ def run(args: argparse.Namespace) -> int:
     except ProjectLoadError as exc:
         # A tree that cannot be loaded is a finding about the tree. Anything
         # else is a bug in this tool and must reach main()'s internal-error path.
-        finding = Finding(severity="error", message=f"cannot load project: {exc}", rule=PROJECT_LOAD_RULE)
+        finding = _load_failure_finding(exc)
         _report_findings(
             [finding],
             args=args,
@@ -191,6 +192,28 @@ def _report_findings(findings: Sequence[Finding], *, args: argparse.Namespace, e
         emit_sarif(findings, version=__version__)
         return
     emit_findings(findings, args=args, schema="project", extra=extra)
+
+
+def _load_failure_finding(exc: ProjectLoadError) -> Finding:
+    """Describe a load failure, keeping the cause's parse position when it has one.
+
+    A body that does not parse is wrapped in a load error that names the program
+    and the artifact but not the position. The cause is the parse failure, so
+    its sentence, line, column, and hint describe what is wrong in the source.
+    """
+    message = f"cannot load project: {exc}"
+    cause = exc.__cause__
+    if not isinstance(cause, PARSE_FAILURES):
+        return Finding(severity="error", message=message, rule=PROJECT_LOAD_RULE)
+    details = describe_parse_error(cause)
+    return Finding(
+        severity="error",
+        message=f"{message}: {details.sentence}" if details.sentence else message,
+        rule=PROJECT_LOAD_RULE,
+        line=details.line,
+        column=details.column,
+        hint=details.hint,
+    )
 
 
 def _sarif_findings(programs: Mapping[str, SattLineProgram]) -> list[Finding]:

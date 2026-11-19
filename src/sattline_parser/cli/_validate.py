@@ -8,9 +8,9 @@ from typing import Any
 from sattline_parser.api import parse_and_validate
 from sattline_parser.ast import BasePicture, FrameModule, ModuleTypeDef, SingleModule
 from sattline_parser.errors import PARSE_FAILURES
-from sattline_parser.preprocessing import is_compressed
 
 from ._findings import Finding, finding_from_diagnostic, finding_from_parse_error
+from ._io import encoding_name
 
 __all__ = ["Analysis", "analyse", "summarise"]
 
@@ -73,7 +73,7 @@ def summarise(name: str, text: str, picture: BasePicture, *, coded: bool = False
         "file": name,
         "program": picture.program_name,
         "name": picture.name,
-        "encoding": _encoding(text, coded=coded),
+        "encoding": encoding_name(text, coded=coded),
         "counts": {
             "module_types": sum(isinstance(node, ModuleTypeDef) for node in module_nodes),
             "submodules": sum(len(node.submodules) for node in module_nodes),
@@ -92,10 +92,3 @@ def summarise(name: str, text: str, picture: BasePicture, *, coded: bool = False
             ),
         },
     }
-
-
-def _encoding(text: str, *, coded: bool) -> str:
-    """The on-disk flavor of one source: ``coded``, ``compressed``, or ``plain``."""
-    if coded:
-        return "coded"
-    return "compressed" if is_compressed(text) else "plain"

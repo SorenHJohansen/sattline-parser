@@ -60,7 +60,7 @@ def run(args: argparse.Namespace) -> int:
         return int(ExitCode.FINDINGS)
     if args.tree:
         emit_payload(
-            {"file": display, "tree": to_jsonable(picture, depth=args.depth)},
+            {"file": display, "tree": to_jsonable(picture, depth=args.depth), "ok": True, "findings": []},
             args=args,
             schema="parse",
             compact=args.compact,
@@ -68,7 +68,7 @@ def run(args: argparse.Namespace) -> int:
         return int(ExitCode.OK)
     summary = summarise(display, text, picture, coded=source.coded)
     if args.json or args.jsonl:
-        emit_payload(summary, args=args, schema="parse", compact=args.compact)
+        emit_payload({**summary, "ok": True, "findings": []}, args=args, schema="parse", compact=args.compact)
         return int(ExitCode.OK)
     for label, value in summary.items():
         if isinstance(value, dict):

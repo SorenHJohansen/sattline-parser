@@ -28,6 +28,7 @@ __all__ = [
     "fail_on_value",
     "fails_on",
     "finding_fields",
+    "non_negative_int",
     "positive_int",
     "reject_companion",
     "require_companion",
@@ -107,6 +108,21 @@ def bounded_positive_int(maximum: int) -> Callable[[str], int]:
         return number
 
     return parse
+
+
+def non_negative_int(value: str) -> int:
+    """argparse type for a count that may be zero but not negative.
+
+    ``--max-findings 0`` is the useful "report none, keep the exit code" case,
+    while a negative value used to switch the cap off silently.
+    """
+    try:
+        number = int(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(f"expected an integer, got {value!r}") from exc
+    if number < 0:
+        raise argparse.ArgumentTypeError("must be 0 or greater")
+    return number
 
 
 #: Canonical values for ``--fail-on``, shared by every command that reports
@@ -196,7 +212,7 @@ def add_finding_filters(parser: argparse.ArgumentParser) -> None:
     )
     parser.add_argument(
         "--max-findings",
-        type=int,
+        type=non_negative_int,
         metavar="N",
         help="stop after printing N findings (the exit code still reflects them all)",
     )
@@ -305,7 +321,7 @@ def finding_fields(
 
 def _limited(findings: Sequence[Finding], args: argparse.Namespace) -> list[Finding]:
     limit = getattr(args, "max_findings", None)
-    if limit is None or limit < 0 or limit >= len(findings):
+    if limit is None or limit >= len(findings):
         return list(findings)
     withheld = len(findings) - limit
     print(f"note: {withheld} more finding(s) not shown", file=sys.stderr)

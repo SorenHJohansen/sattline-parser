@@ -137,15 +137,15 @@ def _artifact_uri(file: str) -> str:
 
     A path under the working directory becomes a repository-relative,
     percent-encoded reference, which is what a code-scanning service maps to a
-    tracked file. Anything else keeps its absolute file URI.
+    tracked file. The path is resolved first, so a relative path that points
+    outside the working directory becomes an absolute file URI rather than a
+    ``../`` reference the service cannot map.
     """
-    path = Path(file)
-    if not path.is_absolute():
-        return quote(path.as_posix(), safe="/")
+    path = Path(file).resolve()
     try:
-        relative = path.resolve().relative_to(Path.cwd().resolve())
+        relative = path.relative_to(Path.cwd().resolve())
     except ValueError:
-        return path.resolve().as_uri()
+        return path.as_uri()
     return quote(relative.as_posix(), safe="/")
 
 

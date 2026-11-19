@@ -45,7 +45,9 @@ JSON-friendly data.
 | `parse_and_validate` | both | same options as `parse_source_text`, plus `external_datatypes=()`, `external_moduletype_defs=()`, `allow_unresolved_external_datatypes=False` | `(BasePicture, tuple[Diagnostic, ...])` |
 | `create_parser` | both | `()` | `Lark` |
 | `build_lark_parser` | `api` | `(*, start="start", propagate_positions=True)` | `Lark` |
-| `describe_parse_error` | both | `(exc, source_text, *, source_document=None)` | `ParseErrorDetails` |
+| `describe_parse_error` | both | `(exc, source_text=None, *, source_document=None)` | `ParseErrorDetails`; with `source_text=None` the position is kept and no excerpt is produced |
+| `PARSE_FAILURES` | `api` | tuple of exception types | the invalid-input contract: `UnexpectedInput`, `ValueError`, `UnicodeError`, `OSError` |
+| `source_line_at` | `api` | `(source_text, line)` | the original source line, split on `"\n"` only |
 | `SourceTooDeepError` | both | `(limit, *, line=None, column=None, pos_in_stream=None)` | `UnexpectedInput` subclass for an over-deep structure |
 | `MAX_SOURCE_DEPTH` | both | `256` | Maximum structural depth accepted by `parse_source_text` |
 | `is_compressed` | top-level | `(text)` | `bool` |
@@ -66,6 +68,27 @@ validation. `preprocess_source`
 returns a `SourceDocument`, and the class itself is importable from
 `sattline_parser.preprocessing`. The rest are power-user helpers for tooling
 that needs an intermediate stage.
+
+### Exception contract
+
+`PARSE_FAILURES` separates invalid source from a defect. Catch it when a failure
+should become a finding or a diagnostic:
+
+| Group | Covers |
+| --- | --- |
+| `UnexpectedInput` | grammar, matcher, transform rejection, and `SourceTooDeepError` |
+| `ValueError` | preprocessing, coded-stream, and transformer value errors (`PreprocessError` is one) |
+| `UnicodeError` | an undecodable byte outside a comment body |
+| `OSError` | an unreadable file |
+
+Anything else is a defect in the parser or the caller's transformer, and
+propagates instead of being reported as a broken source. In particular,
+`RuntimeError` (a transformer returning the wrong type) is not part of the
+contract. Catch `PARSE_FAILURES` rather than testing exception types by name.
+
+`source_line_at` is the excerpt lookup every diagnostic uses. It splits on
+`"\n"` only, so a lone `\r`, `\v`, or `\f` inside a string literal does not
+shift the line the parser reported.
 
 ## Grammar vocabulary
 

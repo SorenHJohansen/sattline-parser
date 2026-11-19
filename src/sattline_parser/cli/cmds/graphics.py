@@ -4,9 +4,12 @@ from __future__ import annotations
 
 import argparse
 from collections.abc import Sequence
+from pathlib import Path
 
 from sattline_parser.project import GraphicsModel, parse_graphics_text
+from sattline_parser.project.graphics_parsing import MAX_GRAPHICS_COMPANION_BYTES
 
+from .._errors import CliError
 from .._exit import ExitCode
 from .._findings import GRAPHICS_SCAN_RULE, Finding
 from .._io import display_path, read_source
@@ -58,8 +61,31 @@ def run(args: argparse.Namespace) -> int:
 
 def _load_model(args: argparse.Namespace) -> tuple[GraphicsModel, str]:
     require_companion(args.path, stdin_name=args.stdin_name)
+    _refuse_oversized_path(args.path)
     source = read_source(args.path, name=args.stdin_name)
+    _refuse_oversized(source.original_length, name=source.name)
     return parse_graphics_text(source.text), source.name
+
+
+def _refuse_oversized_path(target: str) -> None:
+    """Refuse an oversized companion from its size, before its bytes are read.
+
+    The parser enforces the same limit after reading; this check is what keeps
+    a pathological file from becoming a memory request in the first place. A
+    path that cannot be stat'ed is left to ``read_source``, which reports it.
+    """
+    if target == "-":
+        return
+    try:
+        size = Path(target).stat().st_size
+    except OSError:
+        return
+    _refuse_oversized(size, name=target)
+
+
+def _refuse_oversized(size: int, *, name: str) -> None:
+    if size > MAX_GRAPHICS_COMPANION_BYTES:
+        raise CliError(f"{name}: companion is {size} bytes, over the {MAX_GRAPHICS_COMPANION_BYTES} byte limit")
 
 
 def _findings(model: GraphicsModel, *, name: str) -> list[Finding]:
