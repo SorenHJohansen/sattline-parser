@@ -157,3 +157,17 @@ def test_sarif_uri_makes_an_absolute_path_repository_relative(tmp_path: Path, ca
 
     uri = log["runs"][0]["results"][0]["locations"][0]["physicalLocation"]["artifactLocation"]["uri"]
     assert uri == "Steps.s"
+
+
+def test_sarif_uri_resolves_a_relative_path_outside_the_working_directory(tmp_path: Path, capsys, monkeypatch) -> None:
+    """A ``../`` path is not a repository reference; it becomes a file URI."""
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    source = write_source(tmp_path, "Outside.s", CONSECUTIVE_STEPS_SOURCE)
+    monkeypatch.chdir(workspace)
+
+    assert main(["check", "../Outside.s", "--sarif"]) == ExitCode.FINDINGS
+    log = _run_json(capsys)
+
+    uri = log["runs"][0]["results"][0]["locations"][0]["physicalLocation"]["artifactLocation"]["uri"]
+    assert uri == source.resolve().as_uri()

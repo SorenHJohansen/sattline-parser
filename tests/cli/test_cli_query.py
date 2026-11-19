@@ -327,11 +327,31 @@ def test_json_and_jsonl_rows(tmp_path, capsys) -> None:
     payload = json.loads(capsys.readouterr().out)
     assert payload["schema"] == "sattline.v1.query"
     assert payload["file"] == str(source)
+    assert payload["ok"] is True
+    assert payload["counts"] == {"error": 0}
+    assert payload["findings"] == []
     assert any(row["name"] == "Init" and row["kind"] == "symbols" for row in payload["rows"])
 
     assert main(["query", str(source), "--what", "symbols", "--jsonl"]) == ExitCode.OK
     lines = capsys.readouterr().out.splitlines()
     assert lines and json.loads(lines[0])["kind"] == "symbols"
+
+
+def test_query_failure_jsonl_streams_the_finding_then_a_summary(tmp_path, capsys) -> None:
+    source = write_source(tmp_path, "Broken.s", PARSE_ERROR_SOURCE)
+
+    assert main(["query", str(source), "--jsonl"]) == ExitCode.FINDINGS
+
+    lines = capsys.readouterr().out.splitlines()
+    assert len(lines) == 2
+    [finding, summary] = (json.loads(line) for line in lines)
+    assert finding["rule"] == "PARSE_ERROR"
+    assert "line" in finding and "source_line" in finding
+    assert summary == {
+        "schema": "sattline.v1.query",
+        "summary": True,
+        "counts": {"error": 1},
+    }
 
 
 def test_no_match_is_a_finding_exit(tmp_path, capsys) -> None:

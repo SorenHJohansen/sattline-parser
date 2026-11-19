@@ -91,6 +91,10 @@ another command's synthetic id (such as `READ_ERROR`, which only `corpus`
 reports) is a usage error (exit `2`), never a silently empty report. See
 [`rules`](#rules) for the registry.
 
+`--json` carries `files`: the display name of every input, in the order read,
+rendered by the same `--paths` rule as the `file` field of a finding. Stdin
+appears under its `--stdin-name`, so `files` always agrees with the findings.
+
 ### `parse`
 
 ```bash
@@ -113,6 +117,11 @@ composite value is replaced by a placeholder such as `<ModuleDef>` or
 `<12 items>`, so nothing silently disappears. `--compact` prints JSON on one
 line instead of indented.
 
+Every `--json` parse document carries `ok` and `findings`. A successful unit has
+`ok: true` and an empty `findings`; a parse failure has `ok: false` and the
+parse finding. A summary document also carries the structural `counts`; a
+`--tree` document carries `tree` instead.
+
 ### `query`
 
 ```bash
@@ -130,6 +139,12 @@ uses its datatype name as the `module` value. Filters are case-insensitive:
 `--name` matches a row name, `--module` matches a slash-separated module path,
 and `--limit N` stops after `N` rows. A query with no rows exits `1`, because
 "nothing found" is a finding for a caller that expected a hit.
+
+`--json` emits one document with `file`, `ok`, `counts`, `findings`, and `rows`,
+so a success and a parse failure are read the same way. A successful query has
+`ok: true`, `counts: {"error": 0}`, and an empty `findings`. `--jsonl` streams
+the rows only on success; on a parse failure it streams the finding and then the
+summary object, like `parse`.
 
 `references` includes variable uses in header, graphics, interact, and
 module-layout annotation tails. A bare bound `InVar_`/`OutVar_` name is reported
@@ -329,8 +344,11 @@ reports one unit has nothing to stream:
 | --- | --- |
 | `check` | One finding object per line, then a summary object |
 | `rules` | One rule object per line, then a summary object |
-| `query` | One row object per line, with no summary object |
-| `parse` | One compact summary document |
+| `query` | One row object per line on success; the finding then a summary object on failure |
+| `parse` | One compact summary document on success; the finding then a summary object on failure |
+
+The finding-reporting commands stream the same shape on failure: one finding
+object per line, then one summary object with `summary: true`.
 | `project` | One compact document |
 | `graphics` | One compact document |
 | `diff` | One compact document |
@@ -371,8 +389,9 @@ reports one unit has nothing to stream:
 A rule id is never printed as prose. It exists for baselines, filters, and
 diffs.
 
-The document-level `ok` field is `true` only when the document carries no finding
-of any severity. A `graphics` warning therefore makes `ok` `false` and the exit
+The document-level `ok` field is present in every `check`, `parse`, and `query`
+JSON document, and is `true` only when the document carries no finding of any
+severity. A `graphics` warning therefore makes `ok` `false` and the exit
 code `1`, exactly like an error.
 
 `sattline project --json` does not use `Finding`. Its payload carries:
@@ -409,7 +428,7 @@ for a code-scanning service. The mapping is fixed:
 | `results[].ruleId` | the `SL-V###` id for a validation finding, or the synthetic finding id |
 | `results[].level` | the finding severity, `error` or `warning` |
 | `results[].message` | the finding message, with `hint` folded into a `markdown` variant when present |
-| `results[].locations[]` | the finding file as a repository-relative, percent-encoded artifact URI when it is under the working directory, otherwise an absolute file URI; `startLine` and `startColumn` when known |
+| `results[].locations[]` | the finding file as a repository-relative, percent-encoded artifact URI when its resolved path is under the working directory, otherwise an absolute file URI; `startLine` and `startColumn` when known |
 
 A result without a location still appears, so a project-load failure is not
 dropped. `--sarif` is exclusive with `--json` and `--jsonl`, and on `project` it
@@ -425,7 +444,7 @@ apply to it, and the exit code is the same as for text output.
 | `--stdin-name PATH` | source commands | Required when reading `-`, so findings are attributable; a companion suffix here is refused like a companion path |
 | `--paths given\|absolute` | source commands | How to render paths, in findings and in the document-level `file` key. Default `given` |
 | `--rule RULE` | `check` | Filter by rule id or enum name, repeatable; only this command's own synthetic ids (`PARSE_ERROR`, `DECODE_ERROR`) are accepted |
-| `--max-findings N` | `check` | Limit printed findings; the exit code still reflects all of them, and the withheld count is noted once on stderr |
+| `--max-findings N` | `check` | Limit printed findings; `0` prints none, a negative value is a usage error, the exit code still reflects all of them, and the withheld count is noted once on stderr |
 | `--limit N` | `query` | Stop after `N` rows |
 | `--fail-on none\|error` | `check`, `project`, `corpus` | Which findings make the exit code `1` |
 | `--compact` | `parse` | Emit JSON on one line |

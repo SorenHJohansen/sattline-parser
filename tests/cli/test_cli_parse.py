@@ -36,6 +36,8 @@ def test_summary_json_and_jsonl(tmp_path, capsys) -> None:
     payload = json.loads(capsys.readouterr().out)
     assert payload["schema"] == "sattline.v1.parse"
     assert payload["counts"]["sequences"] == 1
+    assert payload["ok"] is True
+    assert payload["findings"] == []
 
     assert main(["parse", str(source), "--jsonl"]) == ExitCode.OK
     one_line = capsys.readouterr().out.strip()
@@ -81,6 +83,8 @@ def test_tree_serialises_the_ast_with_a_depth_limit(tmp_path, capsys) -> None:
     payload = json.loads(capsys.readouterr().out)
     assert payload["schema"] == "sattline.v1.parse"
     assert payload["tree"]["name"] == "BasePicture"
+    assert payload["ok"] is True
+    assert payload["findings"] == []
     # The layout blocks are plain optional fields, so the singular keys are the
     # only representation and the removed lists never appear.
     assert "moduledefs" not in payload["tree"]
@@ -113,6 +117,23 @@ def test_parse_failure_is_a_finding_not_a_crash(tmp_path, capsys) -> None:
     assert main(["parse", str(source), "--json"]) == ExitCode.FINDINGS
     [finding] = json.loads(capsys.readouterr().out)["findings"]
     assert finding["rule"] == "PARSE_ERROR"
+
+
+def test_parse_failure_jsonl_streams_the_finding_then_a_summary(tmp_path, capsys) -> None:
+    source = write_source(tmp_path, "Broken.s", PARSE_ERROR_SOURCE)
+
+    assert main(["parse", str(source), "--jsonl"]) == ExitCode.FINDINGS
+
+    lines = capsys.readouterr().out.splitlines()
+    assert len(lines) == 2
+    [finding, summary] = (json.loads(line) for line in lines)
+    assert finding["rule"] == "PARSE_ERROR"
+    assert "line" in finding and "source_line" in finding
+    assert summary == {
+        "schema": "sattline.v1.parse",
+        "summary": True,
+        "counts": {"error": 1},
+    }
 
 
 def test_parse_reads_stdin_with_a_name(capsys, monkeypatch) -> None:
