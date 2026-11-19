@@ -9,14 +9,18 @@ them. These tests assert the emitted text, not only tree equality.
 
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
-from sattline_parser.api import parse_source_text
+from sattline_parser.api import parse_source_file, parse_source_text
 from sattline_parser.ast import BasePicture, NestedClipping, NestedClippingValue, VarTail
 from sattline_parser.formatting import UnsupportedFormattingError, format_source
 from sattline_parser.grammar import constants as const
 from sattline_parser.transformer._graphics_interact_mixin import _coordinate_clipping_groups
 from sattline_parser.transformer._module_shared import InterimCoords
+
+_CORPUS = Path(__file__).resolve().parents[1] / "fixtures" / "corpus"
 
 _HEADER = """"Syntax version 2.23"
 "Original file date: ---"
@@ -160,3 +164,15 @@ def test_a_tail_written_after_the_annotation_is_refused() -> None:
 
 def test_an_unrecorded_clipping_split_yields_no_groups() -> None:
     assert _coordinate_clipping_groups([InterimCoords(coords=(1.0, 2.0))]) == ()
+
+
+def test_a_corpus_file_keeps_every_nested_clipping_annotation() -> None:
+    """The text keeps one annotation for every annotation the source wrote."""
+    path = _CORPUS / "valid" / "UnCompressedFullGrammar.s"
+    picture = parse_source_file(path, log_failures=False)
+    source = path.read_bytes().decode("cp1252")
+
+    formatted = format_source(picture)
+
+    assert source.count("ClippingBounds =") > 1
+    assert formatted.count("ClippingBounds =") == source.count("ClippingBounds =")
