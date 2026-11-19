@@ -66,13 +66,33 @@ _OSERROR_TYPES: dict[str, type[OSError]] = {
 }
 
 
+#: Bytes of a failing decode buffer a worker returns to the parent. The error
+#: keeps its encoding, reason, and position; only the buffer itself is bounded,
+#: because a decode failure can hold the whole file and the parent never reads
+#: it.
+MAX_UNICODE_ERROR_BYTES = 64
+
+#: Debug messages a worker returns for one file. A parser emits a few lines per
+#: body, so the cap keeps a pathological callback from turning the failure
+#: channel into a log transport while preserving the order of what it did say.
+MAX_WORKER_DEBUG_MESSAGES = 16
+
+
+def _append_bounded_debug(messages: list[str], message: str) -> None:
+    """Append *message* while the per-file debug budget lasts."""
+    if len(messages) < MAX_WORKER_DEBUG_MESSAGES:
+        messages.append(message)
+
+
 @dataclass(frozen=True, slots=True)
 class ParseFailure:
     """A picklable description of a parse failure raised in a worker.
 
     The exception object itself is not sent across the process boundary: Lark
     exceptions carry parser state and tokens. The record keeps the facts the
-    parent needs to rebuild the same exception type and source position.
+    parent needs to rebuild the same exception type and source position. A
+    decode failure keeps only the first :data:`MAX_UNICODE_ERROR_BYTES` of its
+    buffer, because that buffer can be the whole source file.
     """
 
     type_name: str
@@ -108,6 +128,11 @@ class ParseOutcome:
     #: The parent renders it as the load finding's excerpt without re-reading
     #: the file, and a worker sends one line instead of the source buffer.
     source_line: str | None = None
+    #: Parser progress messages a worker collected, in the order it emitted
+    #: them. The parent replays them through its own callback after the pool
+    #: finishes, so ``--debug`` keeps one message per file without sending the
+    #: callback across the process boundary.
+    debug: tuple[str, ...] = ()
 
 
 #: Longest source line a failure carries back to the parent. A pathological
@@ -140,7 +165,9 @@ def parse_failure_record(exc: BaseException) -> ParseFailure:
     token = getattr(exc, "token", None)
     expected = getattr(exc, "expected", None) or getattr(exc, "allowed", ())
     unicode_error = (
-        (exc.encoding, exc.object, exc.start, exc.end, exc.reason) if isinstance(exc, UnicodeDecodeError) else None
+        (exc.encoding, exc.object[:MAX_UNICODE_ERROR_BYTES], exc.start, exc.end, exc.reason)
+        if isinstance(exc, UnicodeDecodeError)
+        else None
     )
     return ParseFailure(
         type_name=type(exc).__name__,
@@ -221,8 +248,13 @@ def _worker_cache(cache_text: str) -> FileASTCache:
     return cache
 
 
+#: One worker task: code path, mode, cache directory (or ``None``), the parser
+#: log choice, and whether the parent wants the worker's debug messages.
+ParseTask = tuple[str, str, str | None, bool, bool]
+
+
 def parse_code_file(
-    task: tuple[str, str, str | None, bool],
+    task: ParseTask,
     *,
     parse_bytes: Callable[..., BasePicture] | None = None,
     snapshot: Callable[..., SourceSnapshot | None] | None = None,
@@ -237,33 +269,50 @@ def parse_code_file(
     text, because the error type and wording depend on the dependency edge and
     the parent owns both. ``log_failures`` mirrors the parent's choice: a plain
     load keeps stderr for the structured finding, and ``--debug`` keeps the
-    parser traceback.
+    parser traceback. ``collect_debug`` asks for the parser's progress messages,
+    which the parent replays in plan order; the callback itself is not picklable
+    and is never sent.
     """
     if parse_bytes is None:
         parse_bytes = parse_source_bytes
     if snapshot is None:
         snapshot = source_snapshot
-    code_text, mode, cache_text, log_failures = task
+    code_text, mode, cache_text, log_failures, collect_debug = task
     code_path = Path(code_text)
+    messages: list[str] = []
     if cache_text is not None:
         cached = _worker_cache(cache_text).load(code_path, mode)
         if cached is not None:
-            return ParseOutcome(ast=cached, cached=True)
+            if collect_debug:
+                _append_bounded_debug(messages, f"Using cached AST for: {code_path}")
+            return ParseOutcome(ast=cached, cached=True, debug=tuple(messages))
     try:
         raw_bytes = code_path.read_bytes()
     except OSError as exc:
-        return ParseOutcome(failure=str(exc), failure_record=parse_failure_record(exc))
+        return ParseOutcome(failure=str(exc), failure_record=parse_failure_record(exc), debug=tuple(messages))
     source_revision = snapshot(code_path, raw_bytes)
+    if collect_debug:
+        _append_bounded_debug(messages, f"Parsing: {code_path}")
+
+    def collect(message: str) -> None:
+        _append_bounded_debug(messages, message)
+
     try:
-        picture = parse_bytes(raw_bytes, source_path=code_path, log_failures=log_failures)
+        picture = parse_bytes(
+            raw_bytes,
+            source_path=code_path,
+            debug=collect if collect_debug else None,
+            log_failures=log_failures,
+        )
     except PARSE_FAILURES as exc:
         record = parse_failure_record(exc)
         return ParseOutcome(
             failure=str(exc) or type(exc).__name__,
             failure_record=record,
             source_line=failure_source_line(raw_bytes, record.line),
+            debug=tuple(messages),
         )
-    return ParseOutcome(ast=picture, snapshot=source_revision)
+    return ParseOutcome(ast=picture, snapshot=source_revision, debug=tuple(messages))
 
 
 class ParseExecutor:
@@ -336,7 +385,11 @@ class ParseExecutor:
             return
 
         cache_text = None if self._secure_cache_dir is None else str(self._secure_cache_dir)
-        tasks = [(str(plan.artifact.code_path), self._mode.value, cache_text, self._log_failures) for plan in plans]
+        collect_debug = self._debug is not None
+        tasks = [
+            (str(plan.artifact.code_path), self._mode.value, cache_text, self._log_failures, collect_debug)
+            for plan in plans
+        ]
         workers = min(self._workers, len(tasks))
         self._dbg(f"Parsing {len(tasks)} bodies in {workers} processes")
         try:
@@ -382,6 +435,8 @@ class ParseExecutor:
         else:
             pool.shutdown(wait=True)
         for plan, outcome in zip(plans, outcomes, strict=True):
+            for message in outcome.debug:
+                self._dbg(message)
             self.outcomes[plan.key] = outcome
             self._save_cached(plan, outcome)
 

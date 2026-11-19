@@ -1,0 +1,1 @@
+- **A parallel `--debug` load keeps a message for every file.** A worker collects a bounded number of parser progress messages and returns them with the outcome, and the parent replays them in plan order. A load with `workers` greater than 1 therefore reports the same per-file progress as a serial one without sending the callback across the process boundary.
