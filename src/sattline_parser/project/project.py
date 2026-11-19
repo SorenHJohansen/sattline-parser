@@ -9,14 +9,13 @@ parsed programs.
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping, Sequence
-from copy import deepcopy
 from dataclasses import replace
 from pathlib import Path
 from types import MappingProxyType
 from typing import cast
 
 from sattline_parser.models.ast_model import BasePicture
-from sattline_parser.models.freeze import freeze_ast
+from sattline_parser.models.freeze import copy_frozen_ast, freeze_ast
 
 from ._cycles import dependency_cycles
 from .identity import UnitIdentity
@@ -57,13 +56,14 @@ class SattLineProject:
 
         ``load`` owns the trees the loader produced, so it freezes them in
         place. ``from_programs`` receives trees the caller still owns, so it
-        copies first. Freezing replaces every mutable list and mapping reachable
-        from the picture and locks each model node.
+        copies first. The copy is built and frozen in one iterative pass, so a
+        tree at the depth the parser accepts is copied without growing the
+        Python call stack.
         """
         registry: dict[str, SattLineProgram] = {}
         for key, program in programs.items():
-            code = deepcopy(program.code) if copy_ast else program.code
-            registry[key] = replace(program, code=cast(BasePicture, freeze_ast(code)))
+            code = copy_frozen_ast(program.code) if copy_ast else freeze_ast(program.code)
+            registry[key] = replace(program, code=cast(BasePicture, code))
         self._programs = registry
         self._identity_views = {UnitIdentity.of(program.name).key: key for key, program in registry.items()}
         for identity, view in (identity_views or {}).items():

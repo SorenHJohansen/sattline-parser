@@ -12,7 +12,7 @@ import pytest
 from sattline_parser.api import parse_source_text
 from sattline_parser.ast import BasePicture
 from sattline_parser.formatting import format_source
-from sattline_parser.models.freeze import FrozenMapping, freeze_ast
+from sattline_parser.models.freeze import FrozenMapping, copy_frozen_ast, freeze_ast
 
 _SOURCE = """"Syntax version 2.23"
 "Original file date: ---"
@@ -73,7 +73,7 @@ def test_a_frozen_tree_deep_copies_and_stays_immutable() -> None:
 
 
 def test_a_frozen_mapping_is_read_only() -> None:
-    frozen = cast("FrozenMapping", freeze_ast({"items": [1, 2]}))
+    frozen = cast("FrozenMapping[object, object]", freeze_ast({"items": [1, 2]}))
 
     assert isinstance(frozen, FrozenMapping)
     assert frozen["items"] == (1, 2)
@@ -91,3 +91,43 @@ def test_a_frozen_mapping_copies_without_breaking_the_read_only_view() -> None:
     assert copy.deepcopy(frozen) is frozen
     assert pickle.loads(pickle.dumps(frozen)) == frozen
     assert FrozenMapping() == {}
+
+
+def test_copy_frozen_ast_copies_sharing_without_touching_the_source() -> None:
+    """A tail held by two fields is one object before and after the copy."""
+    picture = parse_source_text(
+        """"Syntax version 2.23"
+"Original file date: ---"
+"Program date: ---, name: Shared"
+Frozen Invocation ( 0.0 , 0.0 , 0.0 , 1.0 , 1.0 ) : MODULEDEFINITION
+ModuleDef
+ClippingBounds = ( -1.0 , -1.0 ) ( 1.0 , 1.0 )
+GraphObjects :
+   RectangleObject ( 0.0 , 0.0 ) ( 1.0 , 1.0 ) Enable_ = True : InVar_ "Flag"
+ENDDEF (*Shared*);
+""",
+        log_failures=False,
+    )
+    assert picture.moduledef is not None
+    rectangle = picture.moduledef.graph_objects[0]
+    original_tail = rectangle.properties.get("enable_tail")
+    original_tails = rectangle.properties.get("tails")
+    assert original_tail is not None
+    assert original_tails is not None
+    assert original_tail is original_tails[0]
+
+    copied = cast(BasePicture, copy_frozen_ast(picture))
+
+    assert copied.moduledef is not None
+    copied_rectangle = copied.moduledef.graph_objects[0]
+    copied_tail = copied_rectangle.properties.get("enable_tail")
+    copied_tails = copied_rectangle.properties.get("tails")
+    assert copied_tail is not None
+    assert copied_tails is not None
+    assert copied_tail is copied_tails[0]
+    assert copied_tail is not original_tail
+    # The caller keeps its own mutable tree.
+    assert isinstance(picture.moduledef.graph_objects, list)
+    assert isinstance(copied.moduledef.graph_objects, tuple)
+    with pytest.raises(dataclasses.FrozenInstanceError):
+        copied.moduledef.grid = 0.5
