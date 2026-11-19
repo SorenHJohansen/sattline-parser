@@ -167,7 +167,8 @@ with their ASCII counterparts. Only `0x93` and `0x94` (curly quotes) can be
 repaired unambiguously, because they surface as the control characters `DC3`
 and `DC4`, which never occur in legitimate source. Every other non-ASCII
 character decodes lossily by construction of the format. This is a property of
-the on-disk format, not a parser gap.
+the on-disk format, not a parser gap: a coded stream is an ASCII format, and the
+decoder never guesses which character the lost bit belonged to.
 
 `decode_coded_stream` raises `PreprocessError` for a missing header, a header
 without its CRLF terminator, a payload that is not a whole number of
