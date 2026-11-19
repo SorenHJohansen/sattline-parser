@@ -51,7 +51,11 @@ _USES_DIRECTORY_DESCRIPTOR = os.name == "posix"
 _DIRECTORY_FLAGS = (
     os.O_RDONLY | getattr(os, "O_DIRECTORY", 0) | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_CLOEXEC", 0)
 )
-_ENTRY_FLAGS = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_CLOEXEC", 0)
+#: The descriptor flags every entry open uses. ``O_NONBLOCK`` makes the open
+#: return instead of waiting: a FIFO entry with no writer would otherwise block
+#: before the regular-file check could refuse it. ``O_NOFOLLOW`` is absent on
+#: Windows, where the privacy check rejects a reparse point instead.
+_ENTRY_FLAGS = os.O_RDONLY | getattr(os, "O_NOFOLLOW", 0) | getattr(os, "O_CLOEXEC", 0) | getattr(os, "O_NONBLOCK", 0)
 
 #: A single cache entry larger than this is refused instead of read into
 #: memory. An AST pickle for a very large unit is far below it.

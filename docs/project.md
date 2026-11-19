@@ -693,9 +693,11 @@ real boundary is a directory proven private to this user:
 - On POSIX the cache root is opened once with `O_DIRECTORY | O_NOFOLLOW` and
   its `(st_dev, st_ino)` is recorded; the `file_ast` subdirectory is opened
   relative to that descriptor, and every entry and key operation is relative to
-  it with `O_NOFOLLOW`, so a link is never followed. Windows has no portable
-  directory descriptor: each entry is opened by path after the revalidation, and
-  the privacy check refuses a reparse point.
+  it with `O_NOFOLLOW`, so a link is never followed. An entry open is also
+  non-blocking, and an entry that is not a regular file is refused after the
+  open, so a FIFO named like an entry answers a miss instead of waiting for a
+  writer. Windows has no portable directory descriptor: each entry is opened by
+  path after the revalidation, and the privacy check refuses a reparse point.
 - Every load and every save revalidates the directory against the recorded
   identity, the name that still resolves to it, and the owner and mode (through
   the held descriptor on POSIX, and through the security descriptor on
