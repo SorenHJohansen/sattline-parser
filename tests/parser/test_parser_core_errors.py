@@ -238,6 +238,49 @@ def test_describe_parse_error_source_line_uses_the_same_splitting():
     assert details.source_line == "second"
 
 
+def test_a_remapped_context_window_splits_lines_on_a_lone_cr():
+    """The excerpt and the caret follow the reported line, not an LF count.
+
+    A CR-only document is three physical lines here. Lark's ``get_context``
+    ends a line at LF only, so it would return the whole document as one window
+    and put the caret at the wrong place.
+    """
+    from sattline_parser.source_document import SourceDocument, remap_parse_error  # noqa: PLC0415
+
+    source = "first\rsecond\rbad line\rfourth\r"
+    position = source.index("line")
+    failure = UnexpectedCharacters(source, position, 3, 5, allowed=cast(Any, {"NAME"}))
+    remap_parse_error(failure, SourceDocument.identity(source))
+
+    details = describe_parse_error(failure, source)
+
+    assert details.line == 3
+    assert details.column == 5
+    assert details.source_line == "bad line"
+    context = details.message.splitlines()[-2]
+    assert context == "bad line"
+    assert details.message.splitlines()[-1] == "    ^"
+
+
+def test_a_mapped_context_window_splits_lines_on_a_lone_cr():
+    """Mapping an offset back keeps the window on the original physical line."""
+    from sattline_parser.source_document import SourceDocument  # noqa: PLC0415
+
+    # One deleted character; the surviving text still has lone CR terminators.
+    original = "a\rXb\rc"
+    normalized = "a\rb\rc"
+    document = SourceDocument(original, normalized, (0, 1, 3, 4, 5))
+    failure = UnexpectedCharacters(normalized, 2, 2, 1, allowed=cast(Any, {"NAME"}))
+
+    details = describe_parse_error(failure, original, source_document=document)
+
+    assert details.line == 2
+    assert details.column == 2
+    assert details.source_line == "Xb"
+    assert details.message.splitlines()[-2] == "Xb"
+    assert details.message.splitlines()[-1] == " ^"
+
+
 def test_sampled_pattern_terminals_have_friendly_display_names():
     spellings = parser_errors._terminal_spellings()
     for name in (

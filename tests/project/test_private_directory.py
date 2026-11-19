@@ -412,6 +412,33 @@ def test_read_prefix_refuses_a_directory_entry(tmp_path: Path) -> None:
     handle.close()
 
 
+def test_a_fifo_entry_is_refused_without_blocking(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A cache entry named like an artifact may be a FIFO, which never answers.
+
+    Opening a FIFO read-only waits for a writer, so a blocking open would stop a
+    load before the regular-file check ran. Both forms must answer ``None``
+    immediately.
+    """
+    if not hasattr(os, "mkfifo"):
+        pytest.skip("this platform has no FIFOs")
+    os.mkfifo(tmp_path / "entry.pickle")
+
+    handle = _open(tmp_path)
+    try:
+        assert handle.read("entry.pickle") is None
+        assert handle.read_prefix("entry.pickle", 4) is None
+    finally:
+        handle.close()
+
+    monkeypatch.setattr(_atomic, "_USES_DIRECTORY_DESCRIPTOR", False)
+    path_handle = _open(tmp_path)
+    try:
+        assert path_handle.read("entry.pickle") is None
+        assert path_handle.read_prefix("entry.pickle", 4) is None
+    finally:
+        path_handle.close()
+
+
 def test_write_atomic_cleans_up_when_the_flush_fails(tmp_path: Path) -> None:
     handle = _open(tmp_path)
 

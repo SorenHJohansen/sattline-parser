@@ -15,6 +15,11 @@ __all__ = ["Source", "display_path", "encoding_name", "read_source", "read_sourc
 
 _STDIN = "-"
 
+#: The UTF-8 byte-order mark. ``decode_source_bytes`` removes it before it
+#: classifies the stream, so the CLI classifies the same slice: a marked coded
+#: file is still ``coded`` even though its first bytes are the mark.
+_UTF8_BOM = b"\xef\xbb\xbf"
+
 
 @dataclass(frozen=True, slots=True)
 class Source:
@@ -73,7 +78,9 @@ def _source(raw: bytes, name: str) -> Source:
         raise CliError(f"{name}: not valid Windows-1252 (byte {exc.start}: {exc.reason})") from exc
     except PreprocessError as exc:
         raise CliError(f"{name}: cannot decode: {exc}") from exc
-    return Source(name=name, text=text, coded=is_coded(raw), original_length=len(raw))
+    # A leading mark is not part of the stream the decoder classifies.
+    coded = is_coded(raw.removeprefix(_UTF8_BOM))
+    return Source(name=name, text=text, coded=coded, original_length=len(raw))
 
 
 def display_path(name: str, *, absolute: bool) -> str:

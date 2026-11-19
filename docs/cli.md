@@ -111,7 +111,9 @@ whole module tree, so a nested submodule's declarations and code blocks are
 included, and the summary agrees with a `walk` over the picture. `diff` compares
 the same counts. `encoding` names the on-disk flavor and is `plain`,
 `compressed` (marker-compressed text), or `coded` (a byte-coded stream). A coded
-stream stays `coded` even when its decoded text is still marker-compressed.
+stream stays `coded` even when its decoded text is still marker-compressed. A
+leading UTF-8 byte-order mark is removed before the flavor is decided, so a
+marked coded file reports `coded`, exactly as the decoder reads it.
 `--tree` emits the AST as JSON, bounded by `--depth` (default 5). At the limit a
 composite value is replaced by a placeholder such as `<ModuleDef>` or
 `<12 items>`, so nothing silently disappears. `--compact` prints JSON on one
@@ -401,7 +403,7 @@ code `1`, exactly like an error.
 | --- | --- |
 | `programs` | One row per loaded artifact: `name`, `code`, `graphics`, `deps`, `distribution`, `sidecar`, `dependencies`, `source`, `library`, `resolved_base`, `has_executing_system`, `executing_systems` |
 | `edges` | `{"from": dependent, "to": dependency}` over casefolded names |
-| `diagnostics` | One row per non-fatal load condition: `kind` (`sidecar-missing`, `sidecar-elsewhere`, `sidecar-empty`, `sidecar-family-mismatch`, or `folded-name-collision`), `program`, `detail`, `path` |
+| `diagnostics` | One row per non-fatal load condition: `kind` (`sidecar-missing`, `sidecar-elsewhere`, `sidecar-empty`, `sidecar-family-mismatch`, `folded-name-collision`, `alias-declarations-unused`, `skipped-file`, or `companion-family-mismatch`), `program`, `detail`, `path` |
 | `validation` | One row per diagnostic: `program`, `code` (`SL-V###`), `message`, `line`, `column` |
 | `findings` | Present only when the tree could not be loaded at all: one `Finding` with rule `PROJECT_LOAD_ERROR`, or when `--of` names a program outside the graph: one `Finding` with rule `PROJECT_QUERY_ERROR` |
 

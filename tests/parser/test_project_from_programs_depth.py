@@ -10,13 +10,14 @@ accepted depth range attaches, and the parser still rejects the term after it.
 from __future__ import annotations
 
 import dataclasses
+from pathlib import Path
 
 import pytest
 
 from sattline_parser import SourceTooDeepError, to_jsonable
 from sattline_parser.api import parse_source_text
 from sattline_parser.models.ast_model import BasePicture
-from sattline_parser.project import SattLineProject
+from sattline_parser.project import LoadMode, SattLineProject
 from sattline_parser.project.models import SattLineProgram
 
 
@@ -106,3 +107,20 @@ def test_the_attached_tree_is_frozen_and_the_callers_tree_is_not() -> None:
     assert isinstance(picture.localvariables, list)
     picture.name = "Renamed"
     assert picture.name == "Renamed"
+
+
+def test_a_project_load_freezes_the_largest_accepted_tree(tmp_path: Path) -> None:
+    """A load freezes in place, so it costs one Python frame per level.
+
+    ``from_programs`` copies iteratively and ``load`` freezes the parsed tree in
+    place; both must hold at the depth the parser accepts.
+    """
+    accepted = _largest_accepted_terms()
+    (tmp_path / "Deep.s").write_text(_program(accepted), encoding="cp1252")
+
+    project = SattLineProject.load(roots=[tmp_path], mode=LoadMode.DRAFT, targets=["Deep"])
+
+    attached = project.get("Deep").code
+    assert isinstance(attached.localvariables, tuple)
+    with pytest.raises(dataclasses.FrozenInstanceError):
+        attached.name = "Renamed"

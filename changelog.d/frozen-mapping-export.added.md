@@ -1,0 +1,1 @@
+- **`FrozenMapping` is importable from `sattline_parser.ast`.** A read-only mapping a frozen tree carries is a public type, so a consumer can name it and check it without importing a `models` submodule. It is a `collections.abc.Mapping`, so reading through the abstract class stays valid.

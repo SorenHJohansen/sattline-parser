@@ -2033,6 +2033,28 @@ def test_an_alias_dependency_name_resolves_to_the_unit_it_reached(tmp_path: Path
     assert graph.dependents_of("AliasBase") == ()
 
 
+def test_a_second_visit_to_the_same_body_does_not_report_an_unused_sidecar(tmp_path: Path) -> None:
+    """A diamond and two targets sharing a dependency are not aliases.
+
+    The shared body's sidecar is read on the first visit. Every later visit
+    resolves the same prefix, so nothing was left unread and the load must not
+    claim otherwise.
+    """
+    write_file(tmp_path, "Leaf.s", _source("Leaf"))
+    write_file(tmp_path, "Base.s", _source("Base"))
+    write_file(tmp_path, "Base.l", "Leaf\n")
+    for name, dependencies in (("Left", "Base\n"), ("Right", "Base\n"), ("Top", "Left\nRight\n")):
+        write_file(tmp_path, f"{name}.s", _source(name))
+        write_file(tmp_path, f"{name}.l", dependencies)
+
+    project = _load(tmp_path, targets=("Top", "Left", "Right"))
+
+    assert project.dependencies_of("Base") == ("Leaf",)
+    assert project.dependents_of("Base") == ("Left", "Right")
+    kinds = [diagnostic.kind for diagnostic in project.diagnostics()]
+    assert LoadDiagnosticKind.ALIAS_DECLARATIONS_UNUSED not in kinds
+
+
 def test_an_alias_sidecar_declaration_is_reported_and_not_loaded(tmp_path: Path) -> None:
     """A spelling that reaches a planned body never contributes dependencies."""
     write_file(tmp_path, "Util.s", _source("Util"))

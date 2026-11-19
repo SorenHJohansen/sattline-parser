@@ -573,13 +573,21 @@ The practical budget is `MAX_SOURCE_DEPTH` (256) levels of node nesting. In the
 deep-structure test template that is a 249-term left-associative expression
 chain: 240 and 244 terms parse and now also attach, and the term after the
 accepted maximum is still rejected by the parser with `SourceTooDeepError` before
-a project sees it.
+a project sees it. A load freezes the parsed tree in place, which costs one
+Python frame per level, and
+`tests/parser/test_project_from_programs_depth.py` loads the largest accepted
+tree as well, so both freeze paths are pinned at the boundary.
 
 The read-only mapping is a `FrozenMapping`, not a `types.MappingProxyType`. The
 proxy supports neither pickling nor `copy.deepcopy`, so a frozen graphics-bearing
 tree that carried a `Time_Value` payload could not leave the project boundary. A
 `FrozenMapping` rejects item assignment and item deletion the way the proxy
 does, and both copy protocols return the same immutable object.
+
+`FrozenMapping` is exported from `sattline_parser.ast`, so a consumer that holds
+a mapping-valued field can name its type and check it without importing a models
+submodule. It is a `collections.abc.Mapping`, so reading through the abstract
+class is equally valid and does not depend on the concrete type.
 
 ```mermaid
 classDiagram
@@ -876,8 +884,10 @@ collect variable references. Rule-specific validation walks stay in
 `formatting/formatter.py` renders AST nodes for `__str__`, message text, and
 debugging. `formatting/source.py` renders a whole file: `format_source` takes a
 `BasePicture` and `format_module` takes one `ModuleDef` block, and their output
-parses back to an equal tree for every corpus fixture. `UnsupportedFormattingError`
-marks the few shapes whose written place or spelling is not in the model.
+parses back to an equal tree for every round-trip corpus fixture (`valid/` and
+`edge_cases/`; the `invalid/` fixtures fail strict validation by design).
+`UnsupportedFormattingError` marks the few shapes whose written place or spelling
+is not in the model.
 `sattline_parser.formatting` is a supported import surface for the function
 names and their documented signatures; the exact layout is display output, not a
 serialization contract. Use `sattline_parser.serialization` when you need
@@ -941,12 +951,18 @@ cannot pass the suite.
 
 Every field of every model class is either read by the formatter or listed here.
 `tests/parser/test_formatter_fidelity.py` derives the inventory from the model,
-scans the formatter for the attribute names and property keys it reads, and fails
-when a field is in neither set. A stale entry also fails, so the table cannot rot.
-The quoted `Class.field` names are what the test checks against this table.
+scans the formatter for the fields it reads on a value of each field's own class,
+and fails when a field is in neither set. A read on a value of another class does
+not count: sharing a field name is not evidence that the field is written. The
+receiver's class comes from a parameter or variable annotation, from a model
+field's declared type, from a typed collection's element, or from an `isinstance`
+guard, which is how the expression formatter dispatches on an untyped node. A
+stale entry also fails, so the table cannot rot. The quoted `Class.field` names
+are what the test checks against this table.
 
 | Field | Reason |
 | --- | --- |
+| `BasePicture.name` | a fixed label for the picture type, not written source text |
 | `BasePicture.origin_file` | project provenance of the loaded file, not part of its text |
 | `BasePicture.origin_lib` | project provenance of the loading root, not part of its text |
 | `BasePicture.program_name` | derived from the written program date line, which is written |
@@ -962,7 +978,9 @@ inventory, because it records where a construct was rather than what it said.
 `GraphicsBinding`, `WalkEvent`, `LiteralLeaf`, `InteractorPropertySpec`, and
 `TypedInteractorProperty` are not model nodes of a parsed source: a binding
 belongs to a graphics companion, and the traversal and catalogue types carry no
-written source of their own.
+written source of their own. A typed property key is a dictionary key rather than
+an attribute, so the property-key check is by name: the formatter must read the
+key or write it from its `KEY_*` grammar constant.
 
 ## Tests that pin the model
 
@@ -975,8 +993,8 @@ written source of their own.
 | `tests/parser/test_parser_core_module_definitions.py` | Layout and graphics fields |
 | `tests/parser/test_models_walk.py` | Field coverage, node order, field and indices, ancestry, pruning, leave events, literal leaves, visitor dispatch |
 | `tests/parser/test_formatter.py` | Expression rendering in source spelling, SFC footers, round-trip parsing |
-| `tests/parser/test_format_source.py` | Whole-file round trip for every corpus fixture, idempotence, graphics properties |
-| `tests/parser/test_formatter_fidelity.py` | Canonical token-stream round trip for every corpus fixture, pinned normalisations, formatter field coverage |
+| `tests/parser/test_format_source.py` | Whole-file round trip for every round-trip corpus fixture, idempotence, graphics properties |
+| `tests/parser/test_formatter_fidelity.py` | Canonical token-stream round trip for every round-trip corpus fixture, pinned normalisations, formatter field coverage |
 | `tests/parser/test_format_nested_clipping.py` | Nested `ClippingBounds` values and tails written back on every coordinate position |
 | `tests/parser/test_serialization.py` | JSON-friendly data for scalars, spans, containers, and a whole picture |
 | `tests/parser/test_models_boundary.py` | The model layer imports no Lark module |

@@ -1,0 +1,1 @@
+- **A parse-error excerpt follows the reported line on a CR-only document.** The context window now splits at CRLF, LF, or a lone CR, the rule the reported line and column already use, so the quoted line and the caret no longer span several physical lines.

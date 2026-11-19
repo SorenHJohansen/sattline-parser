@@ -53,8 +53,9 @@ flowchart TB
   first, before the coded/compressed classification, so a mark in front of a
   coded stream cannot hide the header.
 - A line break is CRLF, LF, or a lone CR for every string boundary. The grammar's
-  string terminals, the compressed-source scanner, and the coded decoder use that
-  one definition, and line and column numbers count LF. See
+  string terminals, the compressed-source scanner, the coded decoder, and
+  `SourceDocument.line_col` use that one definition, so line and column numbers
+  count all three and a CR-only document reports its physical line. See
   [grammar.md](grammar.md).
 - Files are read in binary mode on purpose. `Path.read_text()` performs
   universal newline translation and would silently turn CRLF into LF, changing

@@ -505,13 +505,17 @@ def test_remap_parse_error_updates_unexpected_characters_context() -> None:
 
     from sattline_parser.source_document import remap_parse_error  # noqa: PLC0415
 
-    # A real map is strictly increasing, so every entry is an original offset.
-    doc = SourceDocument("abXY", "abXY", (0, 1, 2, 3))
-    exc = UnexpectedCharacters("abXY", 2, 1, 3, allowed=cast(Any, {"NAME"}))
+    # Normalized "ab", original "aXYb": X and Y were deleted, so the surviving
+    # character at normalized offset 1 is original offset 3. A no-op remap
+    # would leave the offset and the character unchanged.
+    doc = SourceDocument("aXYb", "ab", (0, 3))
+    exc = UnexpectedCharacters("ab", 1, 1, 2, allowed=cast(Any, {"NAME"}))
     remap_parse_error(exc, doc)
-    assert exc.pos_in_stream == 2
-    assert exc.char == "X"
+    assert exc.pos_in_stream == 3
+    assert (exc.line, exc.column) == (1, 4)
+    assert exc.char == "b"
     assert exc._context is not None
+    assert exc._context.startswith("aXYb\n   ^")
 
 
 def test_remap_parse_error_does_not_shift_an_already_remapped_error() -> None:
@@ -519,10 +523,11 @@ def test_remap_parse_error_does_not_shift_an_already_remapped_error() -> None:
 
     from sattline_parser.source_document import remap_parse_error  # noqa: PLC0415
 
-    doc = SourceDocument("abXY", "abXY", (0, 1, 2, 3))
-    exc = UnexpectedCharacters("abXY", 2, 1, 3, allowed=cast(Any, {"NAME"}))
+    doc = SourceDocument("aXYb", "ab", (0, 3))
+    exc = UnexpectedCharacters("ab", 1, 1, 2, allowed=cast(Any, {"NAME"}))
     remap_parse_error(exc, doc)
     first = exc.pos_in_stream
+    assert first == 3
     remap_parse_error(exc, doc)
     assert exc.pos_in_stream == first
 

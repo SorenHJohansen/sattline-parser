@@ -297,8 +297,19 @@ def _mapped_error_position(exc: UnexpectedInput, source_document: SourceDocument
 
 
 def _context_at(source_text: str, pos: int, span: int = 40) -> str:
-    before = source_text[max(pos - span, 0) : pos].rsplit("\n", 1)[-1]
-    after = source_text[pos : pos + span].split("\n", 1)[0]
+    """The source line around *pos*, with a caret under the reported character.
+
+    A line ends at CRLF, LF, or a lone CR, the rule
+    :meth:`~sattline_parser.source_document.SourceDocument.line_col` applies, so
+    the window and the caret agree with the reported line and excerpt. Lark's
+    own ``get_context`` ends a line at LF only, which would widen a lone-CR
+    document's window across several physical lines.
+    """
+    before = source_text[max(pos - span, 0) : pos]
+    before = before[max(before.rfind("\n"), before.rfind("\r")) + 1 :]
+    tail = source_text[pos : pos + span]
+    breaks = [index for index in (tail.find("\n"), tail.find("\r")) if index != -1]
+    after = tail[: min(breaks)] if breaks else tail
     return before + after + "\n" + " " * len(before.expandtabs()) + "^\n"
 
 
@@ -321,6 +332,7 @@ def describe_parse_error(
     line = getattr(exc, "line", None)
     column = getattr(exc, "column", None)
     if isinstance(exc, UnexpectedInput):
+        position = getattr(exc, "pos_in_stream", None)
         mapped: int | None = None
         if source_document is not None:
             mapped = _mapped_error_position(exc, source_document)
@@ -329,6 +341,11 @@ def describe_parse_error(
         elif mapped is not None and source_document is not None:
             line, column = source_document.line_col(mapped)
             context = _context_at(source_text, mapped).rstrip()
+        elif isinstance(position, int):
+            # The position is already in ``source_text``'s coordinates: the
+            # error was remapped into the original source, or no document was
+            # supplied and the text is the parsed text.
+            context = _context_at(source_text, position).rstrip()
         else:
             context = exc.get_context(source_text, span=40).rstrip()
         if isinstance(exc, SourceTooDeepError):

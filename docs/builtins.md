@@ -93,12 +93,19 @@ rest of the language. `BUILTIN_FUNCTIONS` is keyed by canonical name;
 that spelling; the catalogue carries `equalstrings` as the canonical key and
 `EqualString` as an alias.
 
+`BUILTIN_FUNCTIONS`, `BUILTIN_ALIASES`, and `CATALOGUE_META` are read-only
+`FrozenMapping` views built at import, not dicts. A caller cannot mutate the
+table validation is reading, and an item assignment or deletion raises
+`TypeError`. `FrozenMapping` is exported from `sattline_parser.ast`, and it is a
+`collections.abc.Mapping`, so a consumer can read the table through the abstract
+class and does not have to depend on the concrete type.
+
 ## Record field specifications
 
 `builtins/records.py` holds:
 
-- `BUILTIN_RECORD_SPECS`: an ordered `name -> tuple[(field, datatype), ...]`
-  for every builtin record datatype;
+- `BUILTIN_RECORD_SPECS`: an ordered, read-only `name -> tuple[(field, datatype), ...]`
+  mapping for every builtin record datatype;
 - `OPAQUE_BUILTIN_RECORD_NAMES`: native handles whose fields are not
   addressable;
 - `FIELDLESS_BUILTIN_RECORD_NAMES`: names with no fields at all;
@@ -158,14 +165,14 @@ for an exact match, which is already normalized to `ScalarDatatype` by
 
 | Name | Meaning |
 | --- | --- |
-| `BUILTIN_FUNCTIONS` | Canonical name to signature |
-| `BUILTIN_ALIASES` | Alias to canonical name |
-| `CATALOGUE_META` | Generated header metadata |
+| `BUILTIN_FUNCTIONS` | Read-only mapping from canonical name to signature |
+| `BUILTIN_ALIASES` | Read-only mapping from alias to canonical name |
+| `CATALOGUE_META` | Read-only generated header metadata |
 | `BuiltinFunction` | Signature value object |
 | `BuiltinParameter` | Parameter value object |
 | `get_function_signature(name)` | Resolve a name or alias |
 | `is_builtin_function(name)` | Membership test |
-| `BUILTIN_RECORD_SPECS` | Record field tables |
+| `BUILTIN_RECORD_SPECS` | Read-only record field tables |
 | `BUILTIN_DECLARED_DATATYPE_NAMES` | Declared builtin datatype names |
 | `OPAQUE_BUILTIN_RECORD_NAMES` | Opaque handle names |
 | `FIELDLESS_BUILTIN_RECORD_NAMES` | Fieldless names |

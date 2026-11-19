@@ -17,9 +17,9 @@ from dataclasses import dataclass
 from functools import lru_cache
 from typing import cast
 
-from sattline_parser.ast import walk
 from sattline_parser.builtins.records import BUILTIN_RECORD_SPECS
 from sattline_parser.errors import SourceTooDeepError
+from sattline_parser.models import walk
 from sattline_parser.models.ast_model import (
     BasePicture,
     DataType,

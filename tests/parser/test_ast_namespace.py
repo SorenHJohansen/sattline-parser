@@ -6,7 +6,7 @@ from __future__ import annotations
 import dataclasses
 
 import sattline_parser.ast as sl_ast
-from sattline_parser.models import ast_model, clauses, expressions, properties, tails
+from sattline_parser.models import ast_model, clauses, expressions, freeze, properties, tails
 from sattline_parser.models.walk import _NODE_TYPES
 
 #: Type aliases are not classes, so the dataclass sweep cannot see them.
@@ -79,6 +79,12 @@ def test_property_map_types_are_exported() -> None:
     assert sl_ast.InteractProperties is properties.InteractProperties
     for name in ("GraphProperties", "InteractProperties", "InteractBodyEntry"):
         assert name in sl_ast.__all__, name
+
+
+def test_the_read_only_mapping_is_exported() -> None:
+    """A mapping-valued field's type crosses the one public import door."""
+    assert sl_ast.FrozenMapping is freeze.FrozenMapping
+    assert "FrozenMapping" in sl_ast.__all__
 
 
 def test_code_comment_has_one_canonical_class() -> None:

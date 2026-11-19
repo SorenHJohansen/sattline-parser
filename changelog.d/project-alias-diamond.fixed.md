@@ -1,0 +1,1 @@
+- **A shared dependency is not reported as an unused alias.** A library reached twice, through a diamond or through two targets that share a dependency, read its sidecar on the first visit. `ALIAS_DECLARATIONS_UNUSED` now names only a sidecar at a different prefix, whose declarations really were not read.
