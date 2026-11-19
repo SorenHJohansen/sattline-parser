@@ -10,7 +10,6 @@ from sattline_parser.preprocessing.compressed import (
     SCANNER_TOKENS,
     PreprocessError,
     _align_replacement,
-    _decode_markers,
     _decode_with_map,
     _header_compression_flag,
     _regex_sub,
@@ -70,28 +69,102 @@ def test_plain_source_with_marker_like_strings_is_not_preprocessed():
     assert "ENDIF;" not in doc.normalized_text
 
 
-def test_decode_stages_compose_identically_to_decode_with_map():
+def test_decode_keeps_opaque_regions_and_their_source_offsets():
     text = (
         "#71 Demo #84 #01Tail ENDIF; #8? 5; "
         "TrueVar integer ENDDEF "
-        '"string with #71 and #8? inside" (* comment with #84 *)'
+        '"string with #71 and #8? inside" (* comment with #84 *) '
+        "'#84' 7"
     )
 
-    registry, decoded, char_map = _decode_markers(text, dict(SCANNER_TOKENS))
-    restored, restored_map = registry.restore(decoded, char_map)
-    full_decoded, full_map = _decode_with_map(text, dict(SCANNER_TOKENS))
+    decoded, char_map = _decode_with_map(text, dict(SCANNER_TOKENS))
 
-    assert restored == full_decoded
-    assert tuple(restored_map) == tuple(full_map)
+    # Every opaque character survives at its own original offset, so a span
+    # inside a string or comment still points at the source that spelled it.
+    for needle in ('"string with #71 and #8? inside"', "(* comment with #84 *)", "'#84'"):
+        offset = decoded.index(needle)
+        assert tuple(char_map[offset : offset + len(needle)]) == tuple(
+            range(text.index(needle), text.index(needle) + len(needle))
+        )
+    assert "MODULEDEFINITION Demo ModuleCode" in decoded
+    assert len(char_map) == len(decoded)
 
 
-def test_decode_markers_stage_protects_strings_from_unknown_markers():
+def test_decode_does_not_rewrite_an_unknown_marker_inside_an_opaque_region():
     text = '#71 Demo ENDDEF "text #99 unknown"'
 
-    registry, decoded, char_map = _decode_markers(text, dict(SCANNER_TOKENS))
-    restored, _restored_map = registry.restore(decoded, char_map)
+    decoded, _char_map = _decode_with_map(text, dict(SCANNER_TOKENS))
 
-    assert '"text #99 unknown"' in restored
+    assert decoded == 'MODULEDEFINITION Demo ENDDEF "text #99 unknown"'
+
+
+# ---------------------------------------------------------------------------
+# Forged internal-marker sequences (the decoder carries positions out of band)
+# ---------------------------------------------------------------------------
+
+
+def _forged_marker_source(repetitions: int, region_size: int) -> str:
+    """A compact source whose own text spells placeholder-shaped sequences.
+
+    ``\\x00S0\\x00`` is the sequence the decoder used to splice into its own
+    working text, and it names the first protected string. A decoder that still
+    looked for that shape in untrusted text would copy the string in once per
+    occurrence and report the rest as an unknown placeholder.
+    """
+    forged = "\x00S0\x00" * repetitions
+    region = '"' + ("R" * region_size) + '"'
+    return f'"Syntax version 2.23, date: 2026-08-26-11:48:22.200 C"\n{region} (* note *)\n{forged} #71 Demo ENDDEF\n'
+
+
+@pytest.mark.parametrize("repetitions", [1, 2, 17, 256])
+@pytest.mark.parametrize("region_size", [0, 5, 64])
+def test_forged_placeholder_sequences_do_not_grow_or_inject_text(repetitions: int, region_size: int):
+    src = _forged_marker_source(repetitions, region_size)
+
+    doc = preprocess_source(src)
+
+    # The decoded text is at most the original plus the longest keyword
+    # expansion per marker: no protected region is copied in more than once, so
+    # the growth is linear instead of quadratic.
+    assert len(doc.normalized_text) <= len(src) + 32
+    assert doc.normalized_text.count("\x00S0\x00") == repetitions
+    if region_size:
+        assert doc.normalized_text.count("R" * region_size) == 1
+    assert doc.char_map is not None
+    assert len(doc.char_map) == len(doc.normalized_text)
+
+
+def test_forged_placeholder_sequence_is_plain_text_and_not_an_error():
+    # A benign file may contain these bytes: U+0000 is valid cp1252 and nothing
+    # reserves it. An out-of-range index must survive as text, not raise.
+    src = '"Syntax version 2.23, date: 2026-08-26-11:48:22.200 C"\r\nX := \x00S7\x00;\r\nENDDEF\r\n'
+
+    doc = preprocess_source(src)
+
+    assert "X := \x00S7\x00;" in doc.normalized_text
+
+
+def test_span_after_a_protected_region_maps_to_the_original_source():
+    # A marker expansion before a string, and a marker after it: the span of the
+    # keyword that follows the string must still point at the original compact
+    # code, with the string's own characters mapped exactly.
+    src = (
+        '"Syntax version 2.23, date: 2026-08-26-11:48:22.200 C"\n'
+        "(* header note *)\n"
+        '"literal #84 text" #71 Demo ENDDEF\n'
+    )
+
+    doc = preprocess_source(src)
+
+    start = doc.normalized_text.index("MODULEDEFINITION")
+    keyword_span = doc.map_range(start, start + len("MODULEDEFINITION"))
+    # The expansion is generated text, so the covering range includes the
+    # spaces around the compact code it replaced.
+    assert doc.original_text[keyword_span[0] : keyword_span[1]].strip() == "#71"
+    literal = '"literal #84 text"'
+    literal_start = doc.normalized_text.index(literal)
+    assert doc.map_position(literal_start) == src.index(literal)
+    assert doc.map_position(literal_start + len(literal) - 1) == src.index(literal) + len(literal) - 1
 
 
 def test_scanner_tokens_expands_marker_70_to_composite_object():
@@ -449,3 +522,40 @@ def test_an_unknown_marker_reports_its_original_source_offset(prefix: str) -> No
 
     with pytest.raises(PreprocessError, match=rf"at character offset {source.index('#00')}$"):
         preprocess_source(source)
+
+
+def test_scan_opaque_regions_ends_a_string_at_a_lone_cr():
+    # A lone CR is a line break for the grammar too, so a marker after it is
+    # outside the string for the scanner and for the lexer alike.
+    text = '"a\r#84 b"'
+    marker = text.index("#")
+
+    regions = scan_opaque_regions(text)
+
+    assert ("S", 0, 2) in regions
+    assert all(not (start <= marker < end) for _kind, start, end in regions)
+
+
+def test_header_compression_flag_reads_a_lone_cr_header():
+    assert _header_compression_flag('"Syntax version 2.23, date: 2026-08-26-11:48:22.200 C"\rDemo\r') == "C"
+
+
+def test_grammar_keywords_without_a_scanner_row_are_the_documented_three():
+    # A keyword with no row cannot be spelled in a compressed document: a raw
+    # word is an identifier in coded mode, and the marker that would encode it
+    # is unknown. No encoded form of these three has been observed, so none is
+    # invented; docs/source-provenance.md records them. Adding a row or a
+    # keyword terminal must update both this set and that document.
+    import re  # noqa: PLC0415
+
+    from sattline_parser.grammar import constants  # noqa: PLC0415
+
+    template = (
+        Path(__file__).resolve().parents[2] / "src" / "sattline_parser" / "grammar" / "sattline.lark"
+    ).read_text(encoding="utf-8")
+    spelled = {getattr(constants, name) for name in set(re.findall(r"\{(GRAMMAR_VALUE_[A-Z0-9_]+)\}", template))}
+    keywords = {spelling for spelling in spelled if re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", spelling)}
+
+    missing = sorted(keywords - set(SCANNER_TOKENS.values()))
+
+    assert missing == ["EQUATIONS", "IntObjPickButton", "NewWindow"]

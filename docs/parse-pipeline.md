@@ -13,7 +13,7 @@ flowchart TB
     C --> E["source text"]
     D --> E
     E --> F{"is_compressed?"}
-    F -->|header flag C or marker heuristic| G["decode #NN markers<br/>protect strings and comments"]
+    F -->|header flag C or marker heuristic| G["decode #NN markers<br/>skip strings and comments"]
     F -->|no| H["SourceDocument.identity"]
     G --> I["SourceDocument<br/>original, normalized, char_map"]
     H --> I
@@ -49,7 +49,13 @@ flowchart TB
 - A leading UTF-8 byte-order mark (`EF BB BF`) is removed before the cp1252
   decode. Some editors write one in front of an otherwise cp1252 file, and
   decoding it as cp1252 would produce three characters the grammar rejects. The
-  decoded text therefore never starts with `U+FEFF`.
+  decoded text therefore never starts with `U+FEFF`. Every entry point strips it
+  first, before the coded/compressed classification, so a mark in front of a
+  coded stream cannot hide the header.
+- A line break is CRLF, LF, or a lone CR throughout the pipeline. The grammar's
+  string terminals, the compressed-source scanner, the coded decoder, and the
+  line and column index all use that one definition. See
+  [grammar.md](grammar.md).
 - Files are read in binary mode on purpose. `Path.read_text()` performs
   universal newline translation and would silently turn CRLF into LF, changing
   offsets.
@@ -94,11 +100,13 @@ The decoder is lexically aware. `scan_opaque_regions` finds every string
 literal, quoted identifier, and `(* ... *)` comment, including nested comments
 and doubled `""` quotes. It applies the lexer's own name boundary rule, so a
 quoted identifier is protected exactly where the `NAME` terminal would read one.
-Those regions are replaced by placeholders, the `#NN` markers in the remaining
-text are substituted from `scanner_tokens.json`, and the placeholders are
-restored. Unknown markers raise `PreprocessError` with the marker's offset in
-the original source. A replacement that does not survive from the source is
-marked `GENERATED` rather than being given a fake original offset.
+Markers are substituted only in the runs of text between those regions, and the
+region boundaries stay in the decoder's own data structures: no placeholder is
+written into the text, so a source that happens to contain a placeholder-shaped
+sequence is ordinary text and cannot change the result or its length growth.
+Unknown markers raise `PreprocessError` with the marker's offset in the original
+source. A replacement that does not survive from the source is marked
+`GENERATED` rather than being given a fake original offset.
 
 ## Parsing: normalized text to Lark tree
 
