@@ -17,26 +17,12 @@ import pytest
 
 from sattline_parser.__version__ import __version__
 from sattline_parser.api import parse_source_file
-from sattline_parser.grammar import constants as const
 from sattline_parser.grammar.resolved import grammar_fingerprint
 from sattline_parser.models.ast_model import (
     BasePicture,
-    GraphObject,
-    InteractObject,
-    ModuleDef,
-    ModuleHeader,
-    SourceSpan,
 )
-from sattline_parser.models.clauses import (
-    AssignClause,
-    ClippingClause,
-    ColourSpec,
-    EnableClause,
-    ModuleArguments,
-    TailedClause,
-)
-from sattline_parser.models.tails import LitStringTail, VarTail
 from sattline_parser.project import FILE_AST_CACHE_VERSION, FileASTCache
+from sattline_parser.project._atomic import PrivateDirectory, temp_path_for
 from sattline_parser.project.ast_cache import (
     _PICKLE_CACHE_MAGIC,
     _PICKLE_HMAC_KEY_NAME,
@@ -44,22 +30,107 @@ from sattline_parser.project.ast_cache import (
     _as_data_dict,
     _code_fingerprint,
     _code_path_key,
-    _create_pickle_hmac_key_exclusively,
+    _create_key_exclusively,
+    _decode_entry,
+    _decode_header,
+    _encode_entry,
     _identity_digest,
-    _load_or_create_pickle_hmac_key,
-    _load_pickle_payload,
+    _install_key,
+    _load_or_create_key,
     _matches_source_identity,
-    _read_pickle_hmac_key,
-    _read_signed_pickle_envelope,
-    _remove_file,
+    _read_entry,
+    _runtime_identity,
     _safe_stat,
-    _save_pickle_payload,
+    _split_entry,
+    _split_head,
     _temp_file_is_abandoned,
-    _temp_path_for,
+    _write_entry,
     source_snapshot,
 )
 
 _AC_PATH = "sattline_parser.project.ast_cache"
+
+
+def _handle(directory: Path) -> PrivateDirectory | None:
+    """A private-directory handle the path-based helpers below operate through."""
+    return PrivateDirectory.open(directory, create=True)
+
+
+def _read_signed_pickle_envelope(raw: bytes) -> tuple[str | None, bytes]:
+    head = _split_head(raw)
+    if head is None:
+        return None, b""
+    header_signature, _, header = head
+    try:
+        return header_signature.decode("ascii"), header
+    except UnicodeDecodeError:
+        return None, b""
+
+
+def _read_pickle_hmac_key(key_path: Path) -> bytes | None:
+    handle = _handle(key_path.parent)
+    if handle is None:
+        return None
+    try:
+        key = handle.read(key_path.name)
+    finally:
+        handle.close()
+    if key is None or len(key) != 32:
+        return None
+    return key
+
+
+def _load_or_create_pickle_hmac_key(directory: Path) -> bytes | None:
+    handle = _handle(directory)
+    if handle is None:
+        return None
+    try:
+        return _load_or_create_key(handle)
+    finally:
+        handle.close()
+
+
+def _create_pickle_hmac_key_exclusively(key_path: Path, key: bytes) -> bytes | None:
+    handle = _handle(key_path.parent)
+    if handle is None:
+        return None
+    try:
+        return _create_key_exclusively(handle, key)
+    finally:
+        handle.close()
+
+
+def _load_pickle_payload(path: Path) -> object | None:
+    handle = _handle(path.parent)
+    if handle is None:
+        return None
+    try:
+        return _read_entry(handle, path.name)
+    finally:
+        handle.close()
+
+
+def _save_pickle_payload(path: Path, payload: object) -> None:
+    handle = _handle(path.parent)
+    if handle is None:
+        raise OSError(f"Could not open a private cache directory for {path.parent}")
+    try:
+        _write_entry(handle, path.name, payload)
+    finally:
+        handle.close()
+
+
+def _remove_file(path: Path) -> bool:
+    try:
+        path.unlink()
+    except OSError:
+        return False
+    return True
+
+
+def _temp_path_for(path: Path) -> Path:
+    return temp_path_for(path)
+
 
 _MINIMAL_SOURCE = """"Syntax version 2.23, date: 2026-04-23-12:00:00.000 N"
 "Original file date: ---"
@@ -92,109 +163,95 @@ def _key_path(cache: FileASTCache) -> Path:
     return cache.cache_dir / _PICKLE_HMAC_KEY_NAME
 
 
+def _envelope(
+    *,
+    header_signature: bytes = b"0" * 64,
+    payload_signature: bytes = b"0" * 64,
+    length: bytes = b"00000000",
+    header: bytes = b"",
+    payload: bytes = b"",
+) -> bytes:
+    return _PICKLE_CACHE_MAGIC + header_signature + b"\n" + payload_signature + b"\n" + length + header + payload
+
+
 def test_envelope_rejects_wrong_magic() -> None:
     assert _read_signed_pickle_envelope(b"nope") == (None, b"")
 
 
-def test_envelope_rejects_missing_separator() -> None:
-    assert _read_signed_pickle_envelope(_PICKLE_CACHE_MAGIC + b"not-here") == (None, b"")
+def test_envelope_rejects_a_missing_header_separator() -> None:
+    assert _read_signed_pickle_envelope(_PICKLE_CACHE_MAGIC + b"a" * 64 + b"X") == (None, b"")
 
 
-def test_envelope_rejects_wrong_signature_length() -> None:
-    for lengths in (1, 63, 65):
-        signature = b"a" * lengths
-        envelope = _PICKLE_CACHE_MAGIC + signature + b"\npayload"
-        assert _read_signed_pickle_envelope(envelope) == (None, b"")
+def test_envelope_rejects_a_missing_payload_signature_separator() -> None:
+    envelope = _PICKLE_CACHE_MAGIC + b"a" * 64 + b"\n" + b"b" * 64 + b"X"
+    assert _read_signed_pickle_envelope(envelope) == (None, b"")
 
 
-def test_typed_tail_nodes_survive_a_pickle_round_trip() -> None:
-    """The AST cache pickles the model; the new frozen tail/clause nodes must round-trip.
-
-    ``FILE_AST_CACHE_VERSION`` is bumped whenever the model shape changes, so an
-    old envelope is never read as if it held the current nodes.
-    """
-    corner = VarTail("in", "Corner")
-    coordinate = VarTail("in", "Coordinate")
-    span = SourceSpan(start=3, end=9, line=1, column=4)
-    module_def = ModuleDef(
-        clipping=ClippingClause(
-            ((-1.0, -1.0), (1.0, 1.0)),
-            (corner,),
-            corner_tails=((corner,), (), (), ()),
-        ),
-        graph_objects=[
-            GraphObject(
-                type=const.GRAMMAR_VALUE_TEXTOBJECT,
-                properties={
-                    const.KEY_COLOURS: [
-                        ColourSpec(
-                            "outline",
-                            width=TailedClause(const.GRAMMAR_VALUE_WIDTH_KEY, 2, VarTail("in", "WidthTail")),
-                        )
-                    ],
-                    const.KEY_COORDS: ((-1.0, 1.0), (1.0, -1.0)),
-                    const.KEY_COORD_TAILS: ((), (), (coordinate,), ()),
-                    const.KEY_TAILS: [coordinate],
-                },
-                span=span,
-            )
-        ],
-        interact_objects=[
-            InteractObject(
-                type=const.GRAMMAR_VALUE_COMBUT,
-                properties={const.KEY_ASSIGNS: [AssignClause("Variable", 0, VarTail("out", "AssignTail"))]},
-                span=span,
-            )
-        ],
-        span=span,
-    )
-    picture = BasePicture(
-        header=ModuleHeader(
-            name="BasePicture",
-            invoke_coord=(0.0, 0.0, 0.0, 1.0, 1.0),
-            arguments=ModuleArguments(enable=EnableClause(True, VarTail("in", "EnableVar"))),
-            invoke_coord_tails=[VarTail("out", LitStringTail("LitString", "Symbol"))],
-            coordinate_tails=((), (), (), (), (VarTail("out", LitStringTail("LitString", "Symbol")),)),
-        ),
-        position=(1.0, 2.0, 3.0, 4.0, 5.0),
-        moduledef=module_def,
-    )
-
-    restored = pickle.loads(pickle.dumps(picture))
-
-    assert restored == picture
-    assert restored.header.invoke_coord_tails == [VarTail("out", LitStringTail("LitString", "Symbol"))]
-    assert restored.header.coordinate_tails == (
-        (),
-        (),
-        (),
-        (),
-        (VarTail("out", LitStringTail("LitString", "Symbol")),),
-    )
-    assert restored.header.invoke_coord == (0.0, 0.0, 0.0, 1.0, 1.0)
-    assert restored.position == (1.0, 2.0, 3.0, 4.0, 5.0)
-    assert restored.moduledef is not None
-    assert restored.moduledef.clipping_bounds == ((-1.0, -1.0), (1.0, 1.0))
-    assert restored.moduledef.clipping_tails == (corner,)
-    assert restored.moduledef.clipping is not None
-    assert restored.moduledef.clipping.corner_tails == ((corner,), (), (), ())
-    assert restored.moduledef.span == span
-    assert restored.moduledef.graph_objects[0].span == span
-    assert restored.moduledef.graph_objects[0].properties[const.KEY_COORD_TAILS] == ((), (), (coordinate,), ())
-    assert restored.moduledef.interact_objects[0].span == span
-    assert FILE_AST_CACHE_VERSION == 13
+def test_envelope_rejects_wrong_signature_lengths() -> None:
+    assert _read_signed_pickle_envelope(_envelope(header_signature=b"a" * 63)) == (None, b"")
+    assert _read_signed_pickle_envelope(_envelope(payload_signature=b"a" * 65)) == (None, b"")
 
 
-def test_envelope_round_trip() -> None:
-    payload = b"hello"
-    signature = hashlib.sha256(payload).hexdigest().encode("ascii")
-    envelope = _PICKLE_CACHE_MAGIC + signature + b"\n" + payload
-    assert _read_signed_pickle_envelope(envelope) == (signature.decode("ascii"), payload)
+def test_envelope_rejects_a_non_numeric_header_length() -> None:
+    assert _read_signed_pickle_envelope(_envelope(length=b"abcdefgh")) == (None, b"")
+
+
+def test_envelope_rejects_too_long_a_header_length() -> None:
+    assert _read_signed_pickle_envelope(_envelope(length=b"99999999")) == (None, b"")
+
+
+def test_envelope_rejects_a_truncated_header() -> None:
+    assert _read_signed_pickle_envelope(_envelope(length=b"00000010", header=b"{}")) == (None, b"")
 
 
 def test_envelope_rejects_non_ascii_signature() -> None:
-    envelope = _PICKLE_CACHE_MAGIC + b"\xff" * 64 + b"\npayload"
-    assert _read_signed_pickle_envelope(envelope) == (None, b"")
+    assert _read_signed_pickle_envelope(_envelope(header_signature=b"\xff" * 64)) == (None, b"")
+
+
+def test_envelope_round_trip() -> None:
+    """The header split reports the signature and header of a complete envelope."""
+    data = _encode_entry({"version": 1, "meta": {"path": "/x"}}, b"k" * 32)
+
+    signature, header = _read_signed_pickle_envelope(data)
+
+    assert signature is not None
+    assert header == b'{"path":"/x"}'
+
+
+def test_split_entry_rejects_a_malformed_envelope() -> None:
+    assert _split_entry(b"junk") is None
+
+
+def test_decode_entry_rejects_a_malformed_envelope() -> None:
+    assert _decode_entry(b"junk", b"k" * 32) is None
+
+
+def test_decode_header_rejects_a_malformed_envelope() -> None:
+    assert _decode_header(b"junk", b"k" * 32) is None
+
+
+def test_decode_header_rejects_a_foreign_signature() -> None:
+    assert _decode_header(_envelope(), b"k" * 32) is None
+
+
+def _signed_header(header: bytes, key: bytes) -> bytes:
+    signature = hmac.new(key, header, hashlib.sha256).hexdigest().encode("ascii")
+    return _envelope(header_signature=signature, length=f"{len(header):08d}".encode("ascii"), header=header)
+
+
+def test_decode_header_rejects_invalid_json() -> None:
+    key = b"k" * 32
+    assert _decode_header(_signed_header(b"notjson", key), key) is None
+
+
+def test_decode_header_rejects_json_that_is_not_a_mapping() -> None:
+    key = b"k" * 32
+    assert _decode_header(_signed_header(b"[]", key), key) is None
+
+
+def test_decode_header_accepts_a_signed_mapping() -> None:
+    key = b"k" * 32
+    assert _decode_header(_signed_header(b'{"path":"/x"}', key), key) == {"path": "/x"}
 
 
 def test_as_data_dict() -> None:
@@ -290,8 +347,8 @@ def test_load_or_create_hmac_key_leaves_an_invalid_existing_key_alone(tmp_path: 
 def test_load_or_create_hmac_key_race_returns_concurrent_key(tmp_path: Path) -> None:
     """The loser of the link race reads the winner's key instead of deleting it."""
 
-    def _race(source: object, target: object) -> None:
-        Path(str(target)).write_bytes(b"y" * 32)
+    def _race(source: object, target: object, **_: object) -> None:
+        (tmp_path / str(target)).write_bytes(b"y" * 32)
         raise FileExistsError
 
     with patch(f"{_AC_PATH}.os.link", side_effect=_race):
@@ -305,9 +362,9 @@ def test_load_or_create_hmac_key_publishes_complete_bytes(tmp_path: Path) -> Non
     seen: list[bytes] = []
     real_link = os.link
 
-    def _link(source: object, target: object) -> None:
-        seen.append(Path(str(source)).read_bytes())
-        real_link(source, target)  # type: ignore[arg-type]
+    def _link(source: object, target: object, **kwargs: object) -> None:
+        seen.append((tmp_path / str(source)).read_bytes())
+        real_link(source, target, **kwargs)  # type: ignore[arg-type]
 
     with patch(f"{_AC_PATH}.os.link", side_effect=_link):
         key = _load_or_create_pickle_hmac_key(tmp_path)
@@ -364,8 +421,12 @@ def test_load_pickle_payload_missing_file(tmp_path: Path) -> None:
 
 
 def test_load_pickle_payload_rejects_wrong_signature(tmp_path: Path) -> None:
+    key = _load_or_create_pickle_hmac_key(tmp_path)
+    assert key is not None
+    envelope = bytearray(_encode_entry({"version": 1}, key))
+    envelope[len(_PICKLE_CACHE_MAGIC)] ^= 0x01
     target = tmp_path / "e.pickle"
-    target.write_bytes(_PICKLE_CACHE_MAGIC + b"a" * 64 + b"\n" + b"payload")
+    target.write_bytes(bytes(envelope))
     assert _load_pickle_payload(target) is None
 
 
@@ -379,21 +440,29 @@ def test_load_pickle_payload_no_key(tmp_path: Path) -> None:
     with patch(f"{_AC_PATH}.os.open", side_effect=OSError("boom")):
         _load_or_create_pickle_hmac_key(tmp_path)
         target = tmp_path / "e.pickle"
-        target.write_bytes(_PICKLE_CACHE_MAGIC + b"a" * 64 + b"\npayload")
+        target.write_bytes(_PICKLE_CACHE_MAGIC + b"a" * 64 + b"\n" + b"00000002" + b"{}")
         assert _load_pickle_payload(target) is None
 
 
-def test_load_pickle_payload_hmac_mismatch_and_unpickle_error(tmp_path: Path) -> None:
+def test_load_pickle_payload_rejects_a_payload_not_covered_by_its_signature(tmp_path: Path) -> None:
+    """The payload signature covers the header too, so a swapped body is a miss."""
     key = _load_or_create_pickle_hmac_key(tmp_path)
     assert key is not None
-    for index, payload_body in enumerate((b"payload", b"garbage")):
-        if index == 0:
-            signature = hmac.new(key, payload_body, hashlib.sha256).hexdigest()
-            signature = ("0" + signature[1:]).encode("ascii")
-        else:
-            signature = hmac.new(key, payload_body, hashlib.sha256).hexdigest().encode("ascii")
-        target = tmp_path / f"e{index}.pickle"
-        target.write_bytes(_PICKLE_CACHE_MAGIC + signature + b"\n" + payload_body)
+    good = _encode_entry({"version": 1}, key)
+    entry = _decode_entry(good, key)
+    assert entry is not None
+    other = pickle.dumps({"version": 2}, protocol=pickle.HIGHEST_PROTOCOL)
+    target = tmp_path / "e.pickle"
+    target.write_bytes(good[: len(good) - len(entry.payload)] + other)
+    assert _load_pickle_payload(target) is None
+
+
+def test_load_pickle_payload_rejects_an_unpickle_error(tmp_path: Path) -> None:
+    key = _load_or_create_pickle_hmac_key(tmp_path)
+    assert key is not None
+    target = tmp_path / "e.pickle"
+    target.write_bytes(_encode_entry({"version": 1}, key))
+    with patch(f"{_AC_PATH}.pickle.loads", side_effect=KeyError("boom")):
         assert _load_pickle_payload(target) is None
 
 
@@ -412,7 +481,12 @@ def test_save_pickle_payload_creates_a_private_entry_file(tmp_path: Path) -> Non
     assert stat.S_IMODE(target.stat().st_mode) == 0o600
 
 
-def test_save_after_directory_deletion_recreates_it_private(tmp_path: Path) -> None:
+def test_save_after_directory_deletion_refuses_to_recreate_it(tmp_path: Path) -> None:
+    """A removed cache root is refused, never recreated for the rest of the run.
+
+    Recreating the tree would write into whatever now owns the path, which is
+    exactly the swap this cache refuses. The next process opens a fresh cache.
+    """
     code_path = _write_code(tmp_path)
     cache = FileASTCache(tmp_path)
     ast = _picture(code_path)
@@ -421,11 +495,9 @@ def test_save_after_directory_deletion_recreates_it_private(tmp_path: Path) -> N
 
     cache.save(code_path, "draft", ast)
 
-    assert cache.cache_dir.is_dir()
-    assert cache._path(code_path, "draft").is_file()
-    if os.name == "posix":
-        assert stat.S_IMODE(cache.cache_dir.stat().st_mode) == 0o700
-        assert stat.S_IMODE(cache._path(code_path, "draft").stat().st_mode) == 0o600
+    assert not cache.enabled
+    assert not cache.cache_dir.exists()
+    assert cache.load(code_path, "draft") is None
 
 
 def test_save_pickle_payload_replace_failure(tmp_path: Path) -> None:
@@ -451,7 +523,7 @@ def test_constructor_disables_the_cache_when_the_startup_prune_fails(tmp_path: P
 
 
 def test_load_or_create_hmac_key_rejects_a_non_private_directory(tmp_path: Path) -> None:
-    with patch(f"{_AC_PATH}.private_cache_dir", return_value=None):
+    with patch("sattline_parser.project._atomic.private_cache_dir", return_value=None):
         assert _load_or_create_pickle_hmac_key(tmp_path) is None
 
 
@@ -482,8 +554,16 @@ def test_temp_paths_are_unique_per_write(tmp_path: Path) -> None:
 
 
 def test_save_pickle_payload_key_failure(tmp_path: Path) -> None:
-    with patch(f"{_AC_PATH}.os.open", side_effect=OSError("boom")), pytest.raises(OSError, match="pickle HMAC key"):
-        _save_pickle_payload(tmp_path / "e.pickle", {"version": 1})
+    handle = PrivateDirectory.open(tmp_path, create=True)
+    assert handle is not None
+    try:
+        with (
+            patch(f"{_AC_PATH}._load_or_create_key", return_value=None),
+            pytest.raises(OSError, match="pickle HMAC key"),
+        ):
+            _write_entry(handle, "e.pickle", {"version": 1})
+    finally:
+        handle.close()
 
 
 def test_load_missing_entry_returns_none(tmp_path: Path) -> None:
@@ -594,7 +674,7 @@ def test_startup_prune_is_skipped_when_identity_marker_matches(tmp_path: Path) -
     cache = FileASTCache(tmp_path)
     cache.save(code_path, "draft", _picture(code_path))
 
-    with patch(f"{_AC_PATH}._load_pickle_payload", side_effect=AssertionError("must not unpickle at startup")):
+    with patch(f"{_AC_PATH}._read_entry", side_effect=AssertionError("must not unpickle at startup")):
         restarted = FileASTCache(tmp_path)
 
     assert restarted.drain_startup_pruned_entries() == 0
@@ -632,6 +712,7 @@ def test_load_rejects_version_mismatch(tmp_path: Path) -> None:
                 "mode": "draft",
                 "parser_version": __version__,
                 "grammar": grammar_fingerprint(),
+                "runtime": _runtime_identity(),
                 "code": cache._fingerprint,
                 "mtime_ns": stat_result.st_mtime_ns,
                 "size": stat_result.st_size,
@@ -657,8 +738,36 @@ def test_cache_key_includes_package_version_grammar_and_code(tmp_path: Path) -> 
 
 
 @pytest.mark.parametrize(
+    ("target", "value"),
+    [
+        (f"{_AC_PATH}.lark_version", "0.0.1"),
+        (f"{_AC_PATH}._REGEX_VERSION", "0.0.1"),
+        (f"{_AC_PATH}._interpreter_version", lambda: "0.0.1"),
+    ],
+)
+def test_a_parser_stack_change_changes_the_identity_and_the_key(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, target: str, value: object
+) -> None:
+    """A dependency or interpreter upgrade must reach both the identity and the key."""
+    cache = FileASTCache(tmp_path)
+    code_path = _write_code(tmp_path)
+    identity = cache._identity_text()
+    key = cache._key(code_path, "draft")
+
+    monkeypatch.setattr(target, value)
+
+    assert cache._identity_text() != identity
+    assert cache._key(code_path, "draft") != key
+
+
+@pytest.mark.parametrize(
     ("field", "value"),
-    [("parser_version", "0.0.0"), ("grammar", "0" * 64), ("code", "0" * 64)],
+    [
+        ("parser_version", "0.0.0"),
+        ("grammar", "0" * 64),
+        ("runtime", "lark=0"),
+        ("code", "0" * 64),
+    ],
 )
 def test_load_rejects_identity_mismatch(tmp_path: Path, field: str, value: str) -> None:
     code_path = _write_code(tmp_path)
@@ -669,6 +778,7 @@ def test_load_rejects_identity_mismatch(tmp_path: Path, field: str, value: str) 
         "mode": "draft",
         "parser_version": __version__,
         "grammar": grammar_fingerprint(),
+        "runtime": _runtime_identity(),
         "code": cache._fingerprint,
         "mtime_ns": stat_result.st_mtime_ns,
         "size": stat_result.st_size,
@@ -700,6 +810,7 @@ def test_load_rejects_meta_and_payload_shape(tmp_path: Path) -> None:
                 "mode": mode,
                 "parser_version": __version__,
                 "grammar": grammar_fingerprint(),
+                "runtime": _runtime_identity(),
                 "code": cache._fingerprint,
                 "mtime_ns": stat_result.st_mtime_ns,
                 "size": stat_result.st_size,
@@ -1037,10 +1148,11 @@ def test_load_does_not_create_the_hmac_key(tmp_path: Path) -> None:
 
 
 def test_a_gone_source_is_a_miss(tmp_path: Path) -> None:
-    """A renamed or deleted tree leaves an unreachable entry behind.
+    """A renamed or deleted tree leaves an entry that load rejects.
 
-    The entry is kept: pruning is filename-only and bounded by the entry cap, so
-    the source revision is checked when the entry is loaded instead.
+    ``load`` checks the recorded source revision, so a gone source is a miss.
+    The entry itself is dropped by the next prune, which reads its signed header
+    without unpickling the payload.
     """
     code_path = _write_code(tmp_path)
     cache = FileASTCache(tmp_path)
@@ -1051,6 +1163,8 @@ def test_a_gone_source_is_a_miss(tmp_path: Path) -> None:
 
     assert cache.load(code_path, "draft") is None
     assert len(list(cache.cache_dir.glob("*.pickle"))) == 1
+    assert cache.prune_stale_entries() == 1
+    assert list(cache.cache_dir.glob("*.pickle")) == []
 
 
 def test_prune_caps_the_entry_count(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -1128,10 +1242,10 @@ def test_entry_cap_skips_a_pickle_whose_stat_disappears(tmp_path: Path, monkeypa
     cache = FileASTCache(tmp_path)
     (cache.cache_dir / "gone.pickle").write_bytes(b"x")
 
-    def _no_stat(_path: Path) -> object:
+    def _no_stat(_self: PrivateDirectory, _name: str) -> None:
         return None
 
-    monkeypatch.setattr(f"{_AC_PATH}._safe_stat", _no_stat)
+    monkeypatch.setattr(f"{_AC_PATH}.PrivateDirectory.stat", _no_stat)
 
     assert cache._enforce_entry_cap() == 0
 
@@ -1230,3 +1344,52 @@ def test_a_read_only_handle_still_requires_a_private_directory(monkeypatch: pyte
     monkeypatch.setattr("sattline_parser.source_io._getuid", lambda: -1)
 
     assert not FileASTCache(cache_dir, read_only=True).enabled
+
+
+def test_a_key_is_not_created_for_a_refused_handle(tmp_path: Path) -> None:
+    handle = PrivateDirectory.open(tmp_path, create=True)
+    assert handle is not None
+    handle.close()
+
+    assert _load_or_create_key(handle) is None
+
+
+def test_the_key_install_gives_up_when_the_temporary_name_exists(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    handle = PrivateDirectory.open(tmp_path, create=True)
+    assert handle is not None
+    try:
+
+        def _taken(_name: str, _data: bytes) -> bool:
+            raise FileExistsError
+
+        monkeypatch.setattr(handle, "create_exclusive", _taken)
+        assert _install_key(handle, b"k" * 32) is None
+    finally:
+        handle.close()
+
+
+def test_prune_skips_a_temporary_name_that_is_not_a_file(tmp_path: Path) -> None:
+    cache = FileASTCache(tmp_path)
+    (cache.cache_dir / "leftover.pickle.tmp").mkdir()
+
+    assert cache._prune_temporary_files() == 0
+    assert (cache.cache_dir / "leftover.pickle.tmp").is_dir()
+
+
+def test_prune_vanished_sources_is_a_noop_for_a_read_only_handle(tmp_path: Path) -> None:
+    FileASTCache(tmp_path)
+    reader = FileASTCache(tmp_path, read_only=True)
+
+    assert reader._prune_vanished_sources() == 0
+
+
+def test_prune_vanished_sources_is_a_noop_for_a_disabled_handle(tmp_path: Path) -> None:
+    cache_root = tmp_path / "cache"
+    cache_root.mkdir()
+    (cache_root / "file_ast").write_bytes(b"not a directory")
+    cache = FileASTCache(cache_root)
+
+    assert not cache.enabled
+    assert cache._prune_vanished_sources() == 0
