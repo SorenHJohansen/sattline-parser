@@ -23,8 +23,8 @@ from sattline_parser.project import (
 from sattline_parser.project.discovery import (
     _is_allowed_base,
     _is_relative_to,
-    _is_safe_name,
     _resolved,
+    is_unit_name,
 )
 
 from ._support import write_file
@@ -536,27 +536,27 @@ def test_lookup_refuses_an_absolute_dependency_name(tmp_path: Path) -> None:
     ],
 )
 def test_unit_names_are_validated_as_sattline_identifiers(name: str, safe: bool) -> None:
-    assert _is_safe_name(name) is safe
+    assert is_unit_name(name) is safe
 
 
 @pytest.mark.parametrize("name", ["A" * 20, "A" * 21, "A" * 200])
 def test_a_unit_name_is_not_limited_to_twenty_characters(name: str) -> None:
     """The 20-character rule is ``SL-V038`` at the declaration, not resolution."""
-    assert _is_safe_name(name) is True
+    assert is_unit_name(name) is True
 
 
 @pytest.mark.parametrize("name", ["CON", "prn", "COM1", "lpt9"])
 def test_windows_reserved_device_names_are_safe_on_posix(name: str, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("sattline_parser.project.discovery._IS_WINDOWS", False)
 
-    assert _is_safe_name(name) is True
+    assert is_unit_name(name) is True
 
 
 @pytest.mark.parametrize("name", ["CON", "prn", "COM1", "lpt9"])
 def test_windows_reserved_device_names_are_refused_only_on_windows(name: str, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("sattline_parser.project.discovery._IS_WINDOWS", True)
 
-    assert _is_safe_name(name) is False
+    assert is_unit_name(name) is False
 
 
 def test_find_deps_beside_refuses_a_name_with_a_path(tmp_path: Path) -> None:
@@ -584,7 +584,7 @@ def test_find_in_base_requires_containment_for_the_stat_fallback(
         del name
         return True
 
-    monkeypatch.setattr(f"{_DISCOVERY_PATH}._is_safe_name", always_safe)
+    monkeypatch.setattr(f"{_DISCOVERY_PATH}.is_unit_name", always_safe)
 
     lookup = ProjectLookup([root], LoadMode.DRAFT)
 

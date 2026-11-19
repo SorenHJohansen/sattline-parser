@@ -98,8 +98,15 @@ _WINDOWS_RESERVED_NAMES = frozenset(
 )
 
 
-def _is_safe_name(name: str) -> bool:
-    """Whether *name* is a bare unit name that cannot escape a lookup base."""
+def is_unit_name(name: str) -> bool:
+    """Whether *name* is a bare unit name that can resolve inside a lookup base.
+
+    The resolver and default target discovery share this one rule, so a file
+    whose stem cannot be a unit name is never offered as a target. The same
+    predicate refuses separators, drive or alternate-stream colons, UNC
+    prefixes, parent references, control characters, and the Windows-invalid
+    filename characters on every platform.
+    """
     if _UNIT_NAME_RE.fullmatch(name) is None:
         return False
     # Windows reserves device names even when the identifier itself is legal.
@@ -148,6 +155,7 @@ class SourceIndex:
         self._roots = tuple(Path(root) for root in roots)
         self._indexes: dict[Path, dict[str, dict[str, Path]]] = {}
         self._collisions: dict[Path, dict[tuple[str, str], NameCollision]] = {}
+        self._unusable: dict[Path, tuple[Path, ...]] = {}
 
     @property
     def roots(self) -> tuple[Path, ...]:
@@ -165,6 +173,7 @@ class SourceIndex:
             return self._indexes[base]
         index: dict[str, dict[str, Path]] = {}
         collisions: dict[tuple[str, str], NameCollision] = {}
+        unusable: list[Path] = []
         try:
             present = base.exists() and base.is_dir()
             # Sorted so the collision winner does not depend on directory order.
@@ -182,6 +191,11 @@ class SourceIndex:
             ext = entry.suffix.lower()
             if ext not in self.INDEXED_EXTENSIONS:
                 continue
+            if ext in ALL_CODE_EXTENSIONS and not is_unit_name(entry.stem):
+                # The resolver refuses this name, so the file can never be a
+                # target. Keep the path so the planner can report it as a
+                # skipped file instead of failing the load on it.
+                unusable.append(entry)
             folded = UnitIdentity.of(entry.stem).key
             bucket = index.setdefault(folded, {})
             existing = bucket.get(ext)
@@ -193,6 +207,7 @@ class SourceIndex:
             collisions[(folded, ext)] = NameCollision(base=base, folded=folded, extension=ext, paths=paths)
         self._indexes[base] = index
         self._collisions[base] = collisions
+        self._unusable[base] = tuple(unusable)
         return index
 
     def find_in_index(self, *, base: Path, name: str, extensions: Sequence[str]) -> Path | None:
@@ -214,6 +229,16 @@ class SourceIndex:
             for (folded_name, _ext), collision in sorted(self._collisions.get(base, {}).items())
             if folded_name == folded
         )
+
+    def unusable_code_files(self, base: Path) -> tuple[Path, ...]:
+        """Code files in *base* whose stems are not unit names, in name order.
+
+        The resolver refuses such a name on every platform, so the file can
+        never resolve as a unit. It is recorded here rather than raised, because
+        the load reports it as a skipped file and carries on.
+        """
+        self._get_base_index(base)
+        return self._unusable.get(base, ())
 
     def add(self, *, base: Path, name: str, path: Path) -> None:
         index = self._get_base_index(base)
@@ -326,7 +351,7 @@ class ProjectLookup:
 
     def _find_in_base(self, name: str, extensions: Sequence[str], base: Path, *, kind: str) -> Path | None:
         """Resolve ``name`` against a single base via its index, then a stat fallback."""
-        if not _is_safe_name(name):
+        if not is_unit_name(name):
             self._dbg(f"Refusing {kind} name {name!r}: a unit name may not carry a path")
             return None
         indexed = self._index.find_in_index(base=base, name=name, extensions=extensions)
@@ -353,6 +378,18 @@ class ProjectLookup:
     def collisions_for(self, name: str, base: Path) -> tuple[NameCollision, ...]:
         """Files in *base* whose stems fold to *name*'s unit identity."""
         return self._index.collisions_for_base(base, name)
+
+    def unusable_code_files(self) -> tuple[Path, ...]:
+        """Code files in every effective root whose stems are not unit names.
+
+        Each root is indexed once here, so the answer is complete regardless of
+        which targets the caller asked for. A shadowed root contributes
+        nothing, because it is not on the loading path.
+        """
+        files: list[Path] = []
+        for base in self._roots:
+            files.extend(self._index.unusable_code_files(base))
+        return tuple(files)
 
     def _find_in_cached_base(
         self,
@@ -464,7 +501,7 @@ class ProjectLookup:
         the other family is never paired. A name that carries a path separator
         or a parent reference is refused rather than resolved beside the body.
         """
-        if not _is_safe_name(name):
+        if not is_unit_name(name):
             self._dbg(f"Refusing deps name {name!r}: a unit name may not carry a path")
             return None
         extensions = deps_extensions_for_code(code_path.suffix, self._mode)
@@ -478,6 +515,7 @@ __all__ = [
     "NameCollision",
     "ProjectLookup",
     "SourceIndex",
+    "is_unit_name",
     "ordered_lookup_bases",
     "parse_search_path",
 ]

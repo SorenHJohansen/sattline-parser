@@ -28,6 +28,7 @@ from sattline_parser.source_io import read_text_cp1252
 
 from .formats import (
     ALL_DISTRIBUTION_EXTENSIONS,
+    CompanionIndex,
     distribution_extensions_for_code,
     find_companion_beside,
 )
@@ -365,15 +366,22 @@ def parse_distribution_file(path: Path) -> DistributionData:
     return parse_distribution_text(read_text_cp1252(path))
 
 
-def resolve_distribution_companion_path(code_path: Path, *, mode: LoadMode) -> Path | None:
+def resolve_distribution_companion_path(
+    code_path: Path,
+    *,
+    mode: LoadMode,
+    index: CompanionIndex | None = None,
+) -> Path | None:
     """Resolve the distribution companion for ``code_path``.
 
     The companion always sits in the same directory as the code file (a
     ``with_suffix`` substitution, never a root-ordered lookup). ``.x`` code
     resolves only to ``.q`` and ``.s`` code only to ``.p``; a ``.p`` / ``.q``
-    input resolves to itself. The stem matches ignoring case, so a companion
-    copied from a case-insensitive filesystem still pairs.
+    input resolves to itself. The stem is compared with the language name
+    table, so a companion copied from a case-insensitive filesystem still pairs
+    while ``Straße`` never pairs with ``STRASSE``. *index* is the per-load
+    directory index that keeps companion resolution to one scan per directory.
     """
     if code_path.suffix.lower() in ALL_DISTRIBUTION_EXTENSIONS:
         return code_path
-    return find_companion_beside(code_path, distribution_extensions_for_code(code_path.suffix, mode))
+    return find_companion_beside(code_path, distribution_extensions_for_code(code_path.suffix, mode), index=index)

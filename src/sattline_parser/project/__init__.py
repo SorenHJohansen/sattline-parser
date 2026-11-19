@@ -52,7 +52,13 @@ from .formats import (
     graphics_ext_candidates,
     preferred_extension,
 )
-from .graphics_parsing import parse_graphics_file, parse_graphics_text, resolve_graphics_companion_path
+from .graphics_parsing import (
+    MAX_GRAPHICS_COMPANION_BYTES,
+    GraphicsParseError,
+    parse_graphics_file,
+    parse_graphics_text,
+    resolve_graphics_companion_path,
+)
 from .identity import ArtifactIdentity, UnitIdentity
 from .index import DefinitionSite, ProjectIndex, SymbolKind, UsageSite
 from .loader import ProjectLoader, read_dependency_names
@@ -82,6 +88,7 @@ __all__ = [
     "DEFAULT_LOOKUP_CACHE_FLUSH_INTERVAL",
     "FILE_AST_CACHE_VERSION",
     "LOOKUP_CACHE_VERSION",
+    "MAX_GRAPHICS_COMPANION_BYTES",
     "ArtifactIdentity",
     "ArtifactKind",
     "ArtifactLoadError",
@@ -99,6 +106,7 @@ __all__ = [
     "GraphicsCompositeRecord",
     "GraphicsMessage",
     "GraphicsModel",
+    "GraphicsParseError",
     "GraphicsPathRow",
     "GraphicsPictureDisplayRecord",
     "LoadDiagnostic",

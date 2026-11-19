@@ -10,17 +10,26 @@ from lark import Tree
 
 from sattline_parser.models.ast_model import GraphicsBinding, IntLiteral, SourceSpan
 from sattline_parser.project import (
-    GraphicsBinding as ProjectGraphicsBinding,
-)
-from sattline_parser.project import (
+    MAX_GRAPHICS_COMPANION_BYTES,
+    GraphicsParseError,
     LoadMode,
     parse_graphics_file,
     parse_graphics_text,
     resolve_graphics_companion_path,
 )
+from sattline_parser.project import (
+    GraphicsBinding as ProjectGraphicsBinding,
+)
 from sattline_parser.project import graphics_bindings as bindings
 from sattline_parser.project.graphics_bindings import _rebase_expression_spans
-from sattline_parser.project.graphics_parsing import GraphicsParseError
+from sattline_parser.project.graphics_parsing import GraphicsParseError as ModuleGraphicsParseError
+
+
+def test_the_graphics_size_limit_and_error_are_on_the_project_surface() -> None:
+    """A companion over the limit raises a class the public package exports."""
+    assert GraphicsParseError is ModuleGraphicsParseError
+    assert issubclass(GraphicsParseError, ValueError)
+    assert MAX_GRAPHICS_COMPANION_BYTES == 4 << 20
 
 
 def test_graphics_binding_is_on_the_project_surface() -> None:
