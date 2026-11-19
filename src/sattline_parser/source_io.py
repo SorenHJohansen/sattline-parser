@@ -525,7 +525,10 @@ def load_source_text(
     if debug is not None:
         debug(f"Parsing file: {source_path}")
 
-    raw_bytes = source_path.read_bytes()
+    # The byte-order mark is removed before classification, exactly as
+    # ``decode_source_bytes`` does. Otherwise three cp1252 characters would hide
+    # the coded-stream header and the stream would decode as garbage.
+    raw_bytes = _strip_utf8_bom(source_path.read_bytes())
     if is_coded(raw_bytes):
         src = _decode_coded_file_bytes(raw_bytes, debug=debug, source_path=source_path)
     else:
