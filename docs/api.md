@@ -219,6 +219,12 @@ becomes a placeholder such as `"<ModuleDef>"` or `"<12 items>"` instead of
 disappearing. `None`, the default, means no limit. A `WalkEvent` serialises with
 its `parents` expanded, so serialise `event.node` when only the node matters.
 
+A literal is emitted as its plain number, because `IntLiteral` and `FloatLiteral`
+are `int` and `float` subclasses. `span`, `clamped`, and `written` are model
+attributes for source text and provenance and are deliberately absent from the
+data view; read them on the model when the spelling matters. See
+[ast.md](ast.md#serialization-and-pickling).
+
 ## AST types
 
 `sattline_parser.ast` is the supported model surface. It re-exports every node,

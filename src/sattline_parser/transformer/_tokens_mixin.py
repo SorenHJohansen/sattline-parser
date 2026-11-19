@@ -74,11 +74,13 @@ class TokensMixin:
     def SIGNED_INT(self, tok: Token) -> IntLiteral:
         """Grammar SIGNED_INT terminal -> IntLiteral with source span.
 
-        Clamps to the documented 32-bit signed range [INT_MIN, INT_MAX].
+        Clamps to the documented 32-bit signed range [INT_MIN, INT_MAX] and keeps
+        the token text in ``written``, so a diagnostic can quote the source
+        spelling of a literal whose stored value is clamped.
         """
         raw = int(str(tok))
         clamped = max(const.INT_MIN, min(const.INT_MAX, raw))
-        return IntLiteral(clamped, self._token_span(tok), clamped=clamped != raw)
+        return IntLiteral(clamped, self._token_span(tok), clamped=clamped != raw, written=str(tok))
 
     def SIGNED_INT_NOTAIL(self, tok: Token) -> IntLiteral:
         """Grammar SIGNED_INT_NOTAIL terminal -> IntLiteral (no trailing coordinates)."""
@@ -87,11 +89,12 @@ class TokensMixin:
     def REAL(self, tok: Token) -> FloatLiteral:
         """Grammar REAL terminal -> FloatLiteral with source span.
 
-        Clamps magnitude to the documented REAL_MAX.
+        Clamps magnitude to the documented REAL_MAX and keeps the token text in
+        ``written`` for the same reason as ``SIGNED_INT``.
         """
         raw = float(str(tok))
         clamped = max(-const.REAL_MAX, min(const.REAL_MAX, raw)) if raw != 0.0 else raw
-        return FloatLiteral(clamped, self._token_span(tok), clamped=clamped != raw)
+        return FloatLiteral(clamped, self._token_span(tok), clamped=clamped != raw, written=str(tok))
 
     def REAL_NOTAIL(self, tok: Token) -> FloatLiteral:
         """Grammar REAL_NOTAIL terminal -> FloatLiteral (no trailing coordinates)."""

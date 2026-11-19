@@ -47,7 +47,7 @@ stack.
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterator, Sequence
+from collections.abc import Callable, Iterator, Mapping, Sequence
 from dataclasses import dataclass, is_dataclass
 from dataclasses import fields as dataclass_fields
 from enum import Enum
@@ -606,11 +606,21 @@ def _literal_scalar(value: object) -> bool | int | float | str | None:
 
 
 def _literal_leaves(field: str, value: object, relation: str, indices: tuple[int, ...]) -> Iterator[LiteralLeaf]:
-    """Yield the literal values reachable through one ``value`` field."""
+    """Yield the literal values reachable through one ``value`` field.
+
+    A mapping payload is read through its values, because the key is the
+    written keyword (``Time_Value``) and the value is the literal text. The key
+    appears in the relation instead of in ``indices``, which are numeric.
+    """
     if isinstance(value, _NODE_TYPES):
         return
     if isinstance(value, (bool, int, float, str)):
         yield LiteralLeaf(relation, field, indices, value)
+        return
+    if isinstance(value, Mapping):
+        payload = cast("Mapping[object, object]", value)
+        for key, item in payload.items():
+            yield from _literal_leaves(field, item, f"{relation}[{key}]", indices)
         return
     if isinstance(value, (list, tuple)):
         for index, item in enumerate(cast("Sequence[object]", value)):
@@ -700,11 +710,13 @@ def iter_child_nodes(node: object) -> Iterator[tuple[str, object]]:
 def iter_literal_leaves(node: object) -> Iterator[LiteralLeaf]:
     """Yield the literal values a node holds directly.
 
-    ``value`` fields may hold a node or a literal, so nested sequences are
-    traversed and node values are skipped. ``leaf`` fields hold literal scalars,
-    and a typed property map contributes its scalar entries. Containers,
-    ``None``, spans, and enum members are not literal leaves. Use :func:`walk`
-    to reach the nodes.
+    ``value`` fields may hold a node or a literal, so nested sequences and
+    mapping payloads are traversed and node values are skipped. A mapping
+    contributes its values, so a ``Time_Value`` payload's text is a leaf; the
+    key is the written keyword and appears in the relation. ``leaf`` fields hold
+    literal scalars, and a typed property map contributes its scalar entries.
+    Containers, ``None``, spans, and enum members are not literal leaves. Use
+    :func:`walk` to reach the nodes.
     """
     if isinstance(node, (list, tuple)):
         for item in cast("Sequence[object]", node):

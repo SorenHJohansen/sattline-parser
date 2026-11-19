@@ -291,6 +291,12 @@ same name is the JSON count key. `Equation.kind` is `"equationblock"` or
 kept distinct; their effect is not modelled, so only the spelling is preserved.
 `"equations"` here is a keyword value, not a second field.
 
+`ModuleCode` keeps sequences and equations in two separate lists, so the written
+interleaving of the two sections is not modelled. A source may write a sequence
+after an equation; the tree records both lists and loses which came first. The
+formatter therefore writes every sequence before every equation, and that
+reordering is a documented normalisation rather than a fidelity bug.
+
 `Sequence.layer_info` and `Equation.layer_info` keep the `Layer_ = <int>` value
 written after the `OBJSIZE` pair. The drawing effect is not modelled, but the
 written value is preserved and absence stays `None`.
@@ -363,7 +369,7 @@ than by drawing effect:
 | `text_vars` | `list[VarRef]` | a text object's `VarName` labels |
 | `width`, `value_fraction`, `format_string` | `TailedClause` | the text object's `Width_`, `ValueFraction`, `Format_String_` clauses |
 | `alignments` | `list[Alignment]` | `LeftAligned`, `CenterAligned`, `RightAligned` |
-| `connection_node` | `GraphObject` | a text object's `ConnectionNode (x, y)` anchor |
+| `connection_node` | `GraphObject` | a text object's `ConnectionNode (x, y)` anchor, or a bare `ConnectionNode` marker |
 | `enable`, `enable_tail` | `bool`, `Tail` | `Enable_ = ...` and its binding |
 | `colours` | `list[ColourSpec]` | the outline and fill blocks |
 | `layer` | `int` | `Layer_ = <int>` |
@@ -395,6 +401,20 @@ and its `InVar_` binding are read together. Compare a clause by `key` and
 `colours` holds the outline and fill blocks in written order, so a tailed
 `OutlineColour` written before an untailed `FillColour` keeps that order when
 the formatter writes the object back.
+
+`connection_node` holds both `ConnectionNode` shapes the grammar allows. A text
+object's own clause is the positioned form and carries `coords`. The bare marker
+the shared `common_properties` run allows has no coordinates and is stored as a
+`GraphObject` with an empty property map, so its presence is modelled rather
+than dropped. A text object that writes both forms is ambiguous: the property key
+is singular, so the transformer rejects the pair instead of keeping one.
+
+A text object's *free label text* is not modelled. The text a source writes as a
+bare `text_content` item, with no `VarName` marker after it, has no field: only
+the marked labels reach `text_vars`. A text object that carries another modelled
+item is written back without that text, and one that carries nothing else is
+written with an empty label, so the formatter never invents a caption. This is a
+deliberate omission of the model, listed in the formatter omission table below.
 
 A `VarName` marker is a postfix of one `text_content`, so each `text_vars` entry
 binds the text written immediately before its marker, even when that text is
@@ -537,9 +557,23 @@ safe to share. Every node carries an optional `span`; parsed nodes have it set,
 manually constructed nodes default to `None`.
 
 A tree attached to a `SattLineProject` is frozen as a whole. `load` locks the
-loader-owned tree; `from_programs` deep-copies first. Lists become tuples,
-mappings become read-only, and field assignment on any mutable model node raises
-`FrozenInstanceError`. A standalone parse stays mutable until it is attached.
+loader-owned tree; `from_programs` copies and freezes in one pass, so the caller
+keeps the tree it passed in. Lists become tuples, mappings become read-only, and
+field assignment on any mutable model node raises `FrozenInstanceError`. A
+standalone parse stays mutable until it is attached.
+
+The copy is built with an explicit stack, not `copy.deepcopy`. Both freeze paths
+must handle the whole depth range the parser accepts, because a tree the parser
+accepts must also survive the project boundary: `deepcopy` grows the Python call
+stack several frames per level and overflows on a tree near `MAX_SOURCE_DEPTH`,
+while the iterative copy does not. The copied tree keeps object sharing, so a
+tail held by two fields is still one object after the copy.
+
+The practical budget is `MAX_SOURCE_DEPTH` (256) levels of node nesting. In the
+deep-structure test template that is a 249-term left-associative expression
+chain: 240 and 244 terms parse and now also attach, and the term after the
+accepted maximum is still rejected by the parser with `SourceTooDeepError` before
+a project sees it.
 
 The read-only mapping is a `FrozenMapping`, not a `types.MappingProxyType`. The
 proxy supports neither pickling nor `copy.deepcopy`, so a frozen graphics-bearing
@@ -621,11 +655,18 @@ Type aliases:
   CodeComment`
 
 `IntLiteral` and `FloatLiteral` are `int` and `float` subclasses that carry a
-`span`. They preserve the literal's source position without boxing the value in
-a wrapper. Equality is the inherited numeric one, so `IntLiteral(1) == 1` and
-`IntLiteral(1) == FloatLiteral(1.0)` are both true: the written form (`1` versus
-`1.0`) is not part of equality. Read `span` or `type(value)` when the spelling
-matters.
+`span` and the written text. They preserve the literal's source position and
+spelling without boxing the value in a wrapper. Equality is the inherited numeric
+one, so `IntLiteral(1) == 1` and `IntLiteral(1) == FloatLiteral(1.0)` are both
+true: the written form (`1` versus `1.0`) is not part of equality. Read `span`,
+`written`, or `type(value)` when the spelling matters.
+
+`written` is the token text exactly as the source wrote it. `value` is the value
+the model keeps, and a literal outside the language range is clamped: a written
+`2147483648` is stored as `2147483647` with `clamped=True`, while `written` stays
+`"2147483648"`. A diagnostic quotes `written`, because the stored value is not
+what the source said; the formatter writes `value`, because that is what the
+model holds. A hand-built literal may leave `written` as `None`.
 
 ## Tails
 
@@ -686,6 +727,16 @@ a `depth` limit. Scalars, source spans, paths, and byte strings are leaves and
 are emitted in full at any depth; only dataclasses and containers count as a
 level.
 
+A literal's spelling metadata is not part of the data view. `IntLiteral` and
+`FloatLiteral` are `int` and `float` subclasses, so `to_jsonable` emits the plain
+number and drops `span`, `clamped`, and `written`; a mapping payload such as
+`{"Time_Value": "1h"}` becomes a JSON object and keeps its value. That omission
+is deliberate: the JSON view is a structural projection for machine consumers,
+and a spelled literal would be indistinguishable from a string value. Read
+`span`, `clamped`, and `written` on the model when the source text matters. The
+same contract applies to the CLI JSON schemas, which are documented in
+[cli.md](cli.md).
+
 ## Traversal
 
 Import the model and its traversal through `sattline_parser.ast`. The public
@@ -735,10 +786,13 @@ values are leaves and are not emitted as `WalkEvent`s; `iter_literal_leaves(node
 reads the literal values a node holds directly, and `LiteralLeaf` carries the
 relation, field, indices, and value. It covers all three literal homes: a
 `value` field (including literals nested in its sequences), a scalar on a
-`leaf` field, and a scalar entry of a property map. For example,
-`iter_literal_leaves(ModuleDef(grid=0.04))` reports `grid`, and
-`iter_literal_leaves(GraphObject)` reports `properties.layer`. Containers,
-`None`, spans, and enum members are not literal leaves.
+`leaf` field, and a scalar entry of a property map. A `value` field that holds a
+mapping payload contributes that payload's values, so the text of a
+`Time_Value` initializer is a leaf and its relation names the key. For example,
+`iter_literal_leaves(ModuleDef(grid=0.04))` reports `grid`,
+`iter_literal_leaves(GraphObject)` reports `properties.layer`, and a
+`Time_Value` initializer of `"1h"` reports relation `init_value[Time_Value]`.
+Containers, `None`, spans, and enum members are not literal leaves.
 
 `NodeVisitor` dispatches to `visit_<ClassName>` and falls back to
 `generic_visit`, which visits every child that `iter_child_nodes` reports. An
@@ -805,8 +859,12 @@ walked in linear time and does not grow the Python call stack. Reading
 like a tuple for indexing, iteration, equality, and `len`. `NodeVisitor` dispatch
 stays recursive by design, because an override controls its own descent.
 Parsed structures are capped at `MAX_SOURCE_DEPTH` (256) levels, including
-property payloads such as interactor tails, which keeps that dispatch and the
-recursive formatter and cache inside the default recursion limit.
+property payloads such as interactor tails, which keeps `NodeVisitor` dispatch,
+validation, the recursive formatter, and the cache inside the default recursion
+limit. A hand-built tree is not capped by the parser: `validate_basepicture`
+rejects one whose node nesting exceeds the same 256 levels with
+`SourceTooDeepError` instead of letting a recursive rule raise a bare
+`RecursionError`. See [validation.md](validation.md).
 
 `walk` replaces the recursive helpers that consumers would otherwise copy. The
 CLI query command is built on `NodeVisitor`; the validator uses `walk` to
@@ -850,6 +908,62 @@ A nested `ClippingBounds` annotation is written after the value it annotated,
 with every number and every value tail, so a coordinate keeps its annotation
 across a format pass.
 
+A unary sign is written separated from a numeric operand: `UnaryOp("-", 5)`
+renders `- 5`, not `-5`. A sign written directly against a literal lexes as one
+signed literal, so `-5` would reparse as a literal and the `UnaryOp` node would
+disappear. The grammar accepts the separated form, and a source that wrote the
+literal keeps it: a parsed `-5` is an `IntLiteral` and is still written `-5`.
+
+### Pinned normalisations
+
+The output is canonical rather than byte-identical. These changes are deliberate
+and pinned by `tests/parser/test_formatter_fidelity.py`, which compares the
+canonical token stream of the source and of the formatted text, not the trees:
+
+| Written input | Formatted output | Why |
+| --- | --- | --- |
+| keyword, modifier, or datatype in any case | canonical spelling | the model stores the canonical keyword and datatype name |
+| `1.00`, `+1` | `1.0`, `1` | a numeric token is written from its value |
+| two adjacent declarations sharing a type | one `A, B: type` group | the model holds one `Variable` per name |
+| any boolean keyword | `True` / `False` | the model holds a plain `bool` |
+| redundant grouping parentheses | removed | grouping is carried by the tree |
+| statement separator | written only where the grammar needs one | the separator is not modelled |
+| empty `ENTERCODE`/`ACTIVECODE`/`EXITCODE` block | omitted | an absent block is an empty list |
+| text object clause order | fixed clause order | each clause owns its value and tail; the free label text is not modelled |
+| sequences interleaved with equations | sequences first | `ModuleCode` holds two sections |
+
+A construct the model does not keep cannot be preserved by the formatter, and a
+construct the model keeps must appear in the output. The fidelity test fails with
+the fixture name and the missing or extra token, so a new silently dropped value
+cannot pass the suite.
+
+### Formatter omission table
+
+Every field of every model class is either read by the formatter or listed here.
+`tests/parser/test_formatter_fidelity.py` derives the inventory from the model,
+scans the formatter for the attribute names and property keys it reads, and fails
+when a field is in neither set. A stale entry also fails, so the table cannot rot.
+The quoted `Class.field` names are what the test checks against this table.
+
+| Field | Reason |
+| --- | --- |
+| `BasePicture.origin_file` | project provenance of the loaded file, not part of its text |
+| `BasePicture.origin_lib` | project provenance of the loading root, not part of its text |
+| `BasePicture.program_name` | derived from the written program date line, which is written |
+| `DataType.origin_file` | project provenance of the loaded file, not part of its text |
+| `DataType.origin_lib` | project provenance of the loading root, not part of its text |
+| `ModuleTypeDef.origin_file` | project provenance of the loaded file, not part of its text |
+| `ModuleTypeDef.origin_lib` | project provenance of the loading root, not part of its text |
+| `ParameterMapping.source_type` | derived: the formatter writes the source or the literal that is set |
+| `LitStringTail.keyword` | one grammar spelling, written from the grammar constant |
+
+A `SourceSpan` or a geometry field is layout metadata and is excluded from the
+inventory, because it records where a construct was rather than what it said.
+`GraphicsBinding`, `WalkEvent`, `LiteralLeaf`, `InteractorPropertySpec`, and
+`TypedInteractorProperty` are not model nodes of a parsed source: a binding
+belongs to a graphics companion, and the traversal and catalogue types carry no
+written source of their own.
+
 ## Tests that pin the model
 
 | Test | What it protects |
@@ -862,6 +976,7 @@ across a format pass.
 | `tests/parser/test_models_walk.py` | Field coverage, node order, field and indices, ancestry, pruning, leave events, literal leaves, visitor dispatch |
 | `tests/parser/test_formatter.py` | Expression rendering in source spelling, SFC footers, round-trip parsing |
 | `tests/parser/test_format_source.py` | Whole-file round trip for every corpus fixture, idempotence, graphics properties |
+| `tests/parser/test_formatter_fidelity.py` | Canonical token-stream round trip for every corpus fixture, pinned normalisations, formatter field coverage |
 | `tests/parser/test_format_nested_clipping.py` | Nested `ClippingBounds` values and tails written back on every coordinate position |
 | `tests/parser/test_serialization.py` | JSON-friendly data for scalars, spans, containers, and a whole picture |
 | `tests/parser/test_models_boundary.py` | The model layer imports no Lark module |

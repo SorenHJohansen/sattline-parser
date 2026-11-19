@@ -77,6 +77,20 @@ def test_decode_coded_stream_repairs_bit7_damaged_curly_quote() -> None:
     # cp1252 curly quotes lose bit 7 through the decode mask and surface as
     # DC3/DC4; the decoder must restore them.
     assert decode_coded_stream(_encode("A\x14")) == "A”"
+    assert decode_coded_stream(_encode("B\x13")) == "B“"
+
+
+def test_decode_coded_stream_pins_the_ascii_only_property() -> None:
+    """A coded stream keeps 7 bits per byte, so a non-ASCII code point collides.
+
+    The repair set is exactly the two curly quotes; every other character above
+    ``0x7F`` decodes to the ASCII character that shares its low seven bits. The
+    decoder must not guess which character the lost bit belonged to.
+    """
+    # ``å`` is 0xE5, and 0xE5 & 0x7F is 0x65, the ASCII ``e``.
+    assert decode_coded_stream(_encode("å")) == "e"
+    # ``ö`` is 0xF6, which collides with ASCII ``v`` (0x76).
+    assert decode_coded_stream(_encode("ö")) == "v"
 
 
 def test_decode_coded_stream_rejects_missing_header() -> None:

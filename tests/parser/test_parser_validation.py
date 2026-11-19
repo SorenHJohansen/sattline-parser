@@ -2557,9 +2557,12 @@ def test_out_of_range_numeric_literals_are_reported() -> None:
 
     assert len(diagnostics) == 2
     assert all(d.span is not None for d in diagnostics)
-    # The node holds the clamped value, so the sentence must not quote it: a
-    # written 2147483648 is not 2147483647.
-    assert all("2147483647" not in d.message for d in diagnostics)
+    # The node holds the clamped value, so the sentence quotes the text the
+    # source wrote: a written 2147483648 is not 2147483647.
+    messages = " ".join(d.message for d in diagnostics)
+    assert "2147483648" in messages
+    assert "1.0E39" in messages
+    assert "2147483647" not in messages
     assert all("outside the supported" in d.message for d in diagnostics)
 
 

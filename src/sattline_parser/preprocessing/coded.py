@@ -14,6 +14,14 @@ stored lone ``\r`` terminators are normalized to ``\r\n``, and genuine
 terminator, as SattLine sources do.
 A coded stream may carry a short non-text trailer after its final ``\r``
 (file-format residue); decoding drops the trailer but keeps that ``\r``.
+
+The payload is ASCII by construction. The decode mask keeps seven bits per
+byte, so a cp1252 character above ``0x7F`` decodes to the ASCII character that
+shares its low seven bits (``å`` ``0xE5`` decodes as ``e`` ``0x65``), and
+nothing in the stream restores the lost bit. Only the two cp1252 curly quotes
+are repaired, because they land on control characters that no legitimate source
+contains. This is a property of the on-disk format, not a decoding choice, so
+the decoder does not guess. See ``docs/source-provenance.md``.
 """
 
 from __future__ import annotations

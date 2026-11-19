@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from sattline_parser.models.ast_model import GraphObject
 from sattline_parser.models.clauses import ColourSpec, EnableClause, ZoomLimits
 from sattline_parser.models.tails import Tail
 
@@ -26,11 +27,17 @@ __all__ = [
 
 @dataclass(frozen=True)
 class CommonProperties:
-    """The ``common_properties`` run shared by graphics objects."""
+    """The ``common_properties`` run shared by graphics objects.
+
+    ``connection_node`` holds the bare ``ConnectionNode`` marker the run allows.
+    It has no coordinates, unlike a text object's ``ConnectionNode (x, y)``
+    clause, so the formatter writes it back as the bare keyword.
+    """
 
     layer: int | None = None
     enable: EnableClause | None = None
     colours: tuple[ColourSpec, ...] = ()
+    connection_node: GraphObject | None = None
 
     @property
     def tails(self) -> tuple[Tail, ...]:

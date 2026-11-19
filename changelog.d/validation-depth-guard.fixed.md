@@ -1,0 +1,1 @@
+- **Manual trees past the validation bound.** `validate_basepicture` rejects a tree whose node nesting exceeds `MAX_VALIDATED_DEPTH` (256, the parser's own bound) with `SourceTooDeepError`, instead of letting a recursive expression rule raise a bare `RecursionError`. Parsed input never reaches the bound.

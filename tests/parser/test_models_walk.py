@@ -512,6 +512,31 @@ def test_iter_literal_leaves_reads_branch_conditions_and_values() -> None:
     ]
 
 
+def test_iter_literal_leaves_reads_mapping_payload_values() -> None:
+    """A ``Time_Value`` payload keeps its text in a mapping, so the value is a leaf."""
+    variable = m.Variable(name="T", datatype="time", init_value={"Time_Value": "1h"})
+    bare = m.Variable(name="U", datatype="time", init_value={"Time_Value": None})
+    mapping = m.ParameterMapping(
+        target=VarRef("P"),
+        source_type="value",
+        is_duration=False,
+        is_source_global=False,
+        source_literal={"Time_Value": "2h"},
+    )
+
+    assert [
+        (leaf.relation, leaf.field, leaf.indices, leaf.value)
+        for leaf in iter_literal_leaves(variable)
+        if leaf.field == "init_value"
+    ] == [("init_value[Time_Value]", "init_value", (), "1h")]
+    assert [leaf for leaf in iter_literal_leaves(bare) if leaf.field == "init_value"] == []
+    assert [
+        (leaf.relation, leaf.field, leaf.value)
+        for leaf in iter_literal_leaves(mapping)
+        if leaf.field == "source_literal"
+    ] == [("source_literal[Time_Value]", "source_literal", "2h")]
+
+
 def test_models_package_reexports_the_literal_leaf_helpers() -> None:
     assert models_package.iter_literal_leaves is iter_literal_leaves
     assert models_package.LiteralLeaf is LiteralLeaf

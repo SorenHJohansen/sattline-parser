@@ -276,13 +276,19 @@ source omitted is `None` or an empty list, never a synthesized default object.
 The grammar repeats several rules whose properties are singular: the invocation
 `arguments`, a graph object's `common_properties`, a colour block, and a text
 object's clause run. A second `Layer_`, `Enable_`, `Module_In_View`,
-`ZoomLimits`, `Width_`, `ColourStyle`, `ValueFraction`, `Format_String_`, or
-`ConnectionNode` in one of those positions is ambiguous, so the transformer
-raises `ValueError` naming the clause instead of keeping the last one. That
-matches `_only_one_block` for a second `ModuleDef`. Clause keys are compared
-through `fold_identifier`, so `Width_` and `WIDTH_` are one clause. Only the
-interactor body keeps repeats, because its entries are an ordered list. A
-consumer sees the failure as Lark's `VisitError` around the transformer error.
+`ZoomLimits`, `Width_`, `ColourStyle`, `ValueFraction`, `Format_String_`,
+`ConnectionNode`, or bare `ConnectionNode` marker in one of those positions is
+ambiguous, so the transformer raises `ValueError` naming the clause instead of
+keeping the last one. That matches `_only_one_block` for a second `ModuleDef`.
+Clause keys are compared through `fold_identifier`, so `Width_` and `WIDTH_` are
+one clause. Only the interactor body keeps repeats, because its entries are an
+ordered list. A consumer sees the failure as Lark's `VisitError` around the
+transformer error.
+
+A text object can write `ConnectionNode` twice in two roles: as a positioned
+`ConnectionNode (x, y)` clause of its own run, and as the bare marker the shared
+`common_properties` run allows. Both reach one property key, so the pair is
+rejected instead of one being dropped.
 
 ## Layout and graphics
 
@@ -333,6 +339,13 @@ the resolved boolean in `properties["enable"]`. Interact objects keep their
 `properties["tails"]` list is a derived view over the same tail objects; the
 walker emits a clause-owned tail through its clause and only the remaining
 coordinate tails from the flat list.
+
+A bare `ConnectionNode` written in `common_properties` is kept as a `GraphObject`
+with an empty property map under `properties["connection_node"]`, the same key a
+text object's positioned `ConnectionNode (x, y)` clause uses. The marker is
+therefore modelled rather than dropped, its presence is visible to the walker and
+the serializer, and the formatter writes it back in the common-properties
+position.
 
 A polygon keeps every coordinate pair in `properties["points"]` as a
 `PolygonPoint`, with `x_tails` and `y_tails` holding the tails written after
