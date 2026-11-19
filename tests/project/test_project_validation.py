@@ -547,7 +547,16 @@ def test_mutually_recursive_moduletypes_are_rejected(tmp_path: Path) -> None:
     assert excinfo.value.cycle == ("AType", "BType", "AType")
 
 
-def test_moduletype_cycle_across_programs_is_rejected(tmp_path: Path) -> None:
+def test_a_reference_outside_the_referencing_unit_closure_is_not_a_cycle(tmp_path: Path) -> None:
+    """Each definition binds inside its own closure, so B cannot reach A's type.
+
+    ``A`` declares ``AType`` instantiating ``BType`` and depends on ``B``, which
+    declares ``BType`` instantiating ``AType``. ``B`` cannot see ``A``, so its
+    reference resolves to nothing and is a missing name to validation, not a
+    recursion: only the checked unit's closure is searched, and B is the only
+    unit in B's closure. A genuine cycle needs both definitions to see each
+    other, which the dependency planner would already reject as a cycle.
+    """
     root = tmp_path / "libs"
     root.mkdir()
     write_file(
@@ -561,10 +570,42 @@ def test_moduletype_cycle_across_programs_is_rejected(tmp_path: Path) -> None:
         _source("B", typedefs=_typedefinitions(_moduletype("BType", instantiates="AType"))),
     )
     write_file(root, "A.l", "B\n")
-    with pytest.raises(ModuleTypeCycleError) as excinfo:
-        _load(root, "A")
-    assert excinfo.value.cycle == ("AType", "BType", "AType")
-    assert str(excinfo.value).startswith("A: ")
+
+    project = _load(root, "A")
+
+    assert set(project.programs()) == {"a", "b"}
+
+
+def test_a_wrapper_may_reuse_a_dependency_type_name_from_another_library(tmp_path: Path) -> None:
+    """Base's ``Motor`` reference binds in Base's closure, never the wrapper's.
+
+    ``Wrapper`` defines its own ``Motor`` around ``Base.Valve``. ``Base``
+    instantiates ``Motor`` from ``MotorLib``. Resolving Base's reference against
+    the checked unit's closure would bind it to Wrapper's ``Motor`` and report a
+    cycle that no file declares; resolving it against Base's own closure binds it
+    to ``MotorLib.Motor`` and the wrapper loads.
+    """
+    root = tmp_path / "libs"
+    root.mkdir()
+    write_file(
+        root,
+        "Wrapper.s",
+        _source("Wrapper", typedefs=_typedefinitions(_moduletype("Motor", instantiates="Valve"))),
+    )
+    write_file(root, "Wrapper.l", "Base\n")
+    write_file(
+        root,
+        "Base.s",
+        _source("Base", typedefs=_typedefinitions(_moduletype("Valve", instantiates="Motor"))),
+    )
+    write_file(root, "Base.l", "MotorLib\n")
+    write_file(root, "MotorLib.s", _source("MotorLib", typedefs=_typedefinitions(_moduletype("Motor"))))
+
+    project = _load(root, "Wrapper")
+
+    assert set(project.programs()) == {"wrapper", "base", "motorlib"}
+    assert project.dependencies_of("Wrapper") == ("Base",)
+    assert project.dependencies_of("Base") == ("MotorLib",)
 
 
 def test_moduletype_cycle_is_structural(tmp_path: Path) -> None:
