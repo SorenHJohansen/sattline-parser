@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 from collections.abc import Sequence
 from pathlib import Path
@@ -10,6 +11,7 @@ from unittest.mock import patch
 
 import pytest
 
+from sattline_parser.names import fold_identifier
 from sattline_parser.project import (
     ArtifactKind,
     FileLookupCache,
@@ -23,9 +25,12 @@ from sattline_parser.project import (
 from sattline_parser.project.discovery import (
     _is_allowed_base,
     _is_relative_to,
+    _lexical_path_key,
     _resolved,
     is_unit_name,
 )
+from sattline_parser.project.identity import ArtifactIdentity
+from sattline_parser.project.lookup_cache import LOOKUP_CACHE_VERSION
 
 from ._support import write_file
 
@@ -54,6 +59,31 @@ def test_is_allowed_base(tmp_path: Path) -> None:
     root_b = write_file(tmp_path, "b/.keep")
     assert _is_allowed_base([root_a, root_b], root_a)
     assert not _is_allowed_base([root_a], tmp_path / "elsewhere")
+
+
+def test_lexical_path_key_normalizes_without_resolving(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The recorded side of a membership check is text, never a filesystem lookup."""
+
+    def _raise(_path: Path) -> Path:
+        raise AssertionError("a lexical key must not resolve its path")
+
+    monkeypatch.setattr(Path, "resolve", _raise)
+
+    raw = str(Path("/lib") / ".." / "lib")
+    assert _lexical_path_key(Path(raw)) == os.path.normcase(os.path.normpath(raw))
+
+
+def test_is_allowed_base_applies_the_platform_case_rule(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Two roots that differ only by case name one root on a case-insensitive platform."""
+    root = tmp_path / "Lib"
+    root.mkdir()
+
+    def fold_case(text: str) -> str:
+        return text.lower()
+
+    monkeypatch.setattr(os.path, "normcase", fold_case)
+
+    assert _is_allowed_base([root], Path(str(root).upper()))
 
 
 def test_source_index_builds_and_finds(tmp_path: Path) -> None:
@@ -444,6 +474,135 @@ def test_find_returns_cached_result_without_scanning(tmp_path: Path, monkeypatch
     fresh = ProjectLookup([root], LoadMode.DRAFT, cache=cache)
     monkeypatch.setattr(ProjectLookup, "_find_in_base", _raise_if_called)
     assert fresh.find_code("Cached") == root / "Cached.s"
+
+
+def _plant_lookup_entry(
+    cache_dir: Path,
+    *,
+    name: str,
+    base_dir: str,
+    ext: str,
+    mode: LoadMode = LoadMode.DRAFT,
+) -> FileLookupCache:
+    """Write one entry exactly as a cache file could hold it, bypassing ``set``."""
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    key = f"code:{mode.value}:{fold_identifier(name)}"
+    payload = {"version": LOOKUP_CACHE_VERSION, "entries": {key: {"base_dir": base_dir, "ext": ext}}}
+    (cache_dir / "file_lookup_cache.json").write_text(json.dumps(payload), encoding="utf-8")
+    return FileLookupCache(cache_dir)
+
+
+def _forbid_filesystem_access(monkeypatch: pytest.MonkeyPatch, forbidden: Path) -> None:
+    """Fail loudly if *forbidden* is resolved, stat-ed, identity-checked, or opened."""
+    forbidden_text = str(forbidden)
+
+    def _check(value: object) -> None:
+        if str(value) == forbidden_text:
+            raise AssertionError(f"a recorded base must not be touched: {forbidden_text}")
+
+    real_resolve = Path.resolve
+    real_path_stat = Path.stat
+    real_path_open = Path.open
+    real_os_stat = os.stat
+    real_identity = ArtifactIdentity.of
+
+    def resolve(path: Path, strict: bool = False) -> Path:
+        _check(path)
+        return real_resolve(path, strict)
+
+    def stat(path: Path, *, follow_symlinks: bool = True) -> os.stat_result:
+        _check(path)
+        return real_path_stat(path, follow_symlinks=follow_symlinks)
+
+    def open_path(
+        path: Path,
+        mode: str = "r",
+        buffering: int = -1,
+        encoding: str | None = None,
+        errors: str | None = None,
+        newline: str | None = None,
+    ) -> object:
+        _check(path)
+        return real_path_open(path, mode, buffering, encoding, errors, newline)
+
+    def os_stat(path: object, *args: object, **kwargs: object) -> os.stat_result:
+        _check(path)
+        return real_os_stat(path, *args, **kwargs)  # pyright: ignore[reportArgumentType]
+
+    def identity(path: Path) -> ArtifactIdentity:
+        _check(path)
+        return real_identity(path)
+
+    monkeypatch.setattr(Path, "resolve", resolve)
+    monkeypatch.setattr(Path, "stat", stat)
+    monkeypatch.setattr(Path, "open", open_path)
+    monkeypatch.setattr(os, "stat", os_stat)
+    monkeypatch.setattr(ArtifactIdentity, "of", identity)
+
+
+def test_a_planted_cached_base_is_rejected_without_being_touched(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A recorded base outside every root is text until it is discarded, not a path."""
+    root = tmp_path / "lib"
+    write_file(root, "A.s")
+    planted = Path(r"\\attacker\share\Lib")
+    cache = _plant_lookup_entry(tmp_path / "cache", name="A", base_dir=str(planted), ext=".s")
+    lookup = ProjectLookup([root], LoadMode.DRAFT, cache=cache)
+
+    _forbid_filesystem_access(monkeypatch, planted)
+
+    assert lookup.find_code("A") == root / "A.s"
+    assert cache.get("code", "A", LoadMode.DRAFT.value) == {
+        "base_dir": str(root.resolve()),
+        "ext": ".s",
+    }
+
+
+@pytest.mark.parametrize("suffix", ["", os.sep, f"{os.sep}.{os.sep}"])
+def test_a_cached_base_naming_a_configured_root_is_not_rescanned(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, suffix: str
+) -> None:
+    root = tmp_path / "lib"
+    write_file(root, "A.s")
+    cache = _plant_lookup_entry(tmp_path / "cache", name="A", base_dir=str(root.resolve()) + suffix, ext=".s")
+    lookup = ProjectLookup([root], LoadMode.DRAFT, cache=cache)
+
+    monkeypatch.setattr(ProjectLookup, "_find_in_base", _raise_if_called)
+
+    assert lookup.find_code("A") == root / "A.s"
+
+
+@pytest.mark.skipif(os.name == "nt", reason="a directory symlink needs a privilege on Windows")
+def test_a_symlinked_configured_root_still_hits_the_cache(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    real = tmp_path / "real"
+    write_file(real, "A.s")
+    link = tmp_path / "link"
+    link.symlink_to(real, target_is_directory=True)
+    cache = FileLookupCache(tmp_path / "cache", write_through=True)
+
+    first = ProjectLookup([link], LoadMode.DRAFT, cache=cache)
+    assert first.find_code("A") == real / "A.s"
+    assert cache.get("code", "A", LoadMode.DRAFT.value) == {"base_dir": str(real.resolve()), "ext": ".s"}
+
+    monkeypatch.setattr(ProjectLookup, "_find_in_base", _raise_if_called)
+    fresh = ProjectLookup([link], LoadMode.DRAFT, cache=cache)
+    assert fresh.find_code("A") == real / "A.s"
+
+
+def test_a_relative_configured_root_still_hits_the_cache(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    root = tmp_path / "lib"
+    write_file(root, "A.s")
+    monkeypatch.chdir(tmp_path)
+    cache = FileLookupCache(tmp_path / "cache", write_through=True)
+    resolved_root = root.resolve()
+
+    first = ProjectLookup([Path("lib")], LoadMode.DRAFT, cache=cache)
+    assert first.find_code("A") == resolved_root / "A.s"
+
+    monkeypatch.setattr(ProjectLookup, "_find_in_base", _raise_if_called)
+    fresh = ProjectLookup([Path("lib")], LoadMode.DRAFT, cache=cache)
+    assert fresh.find_code("A") == resolved_root / "A.s"
 
 
 def test_find_full_scan_fallbacks(tmp_path: Path) -> None:

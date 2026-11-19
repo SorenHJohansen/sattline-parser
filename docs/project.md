@@ -625,12 +625,21 @@ when:
 - the artifact still exists;
 - no higher-precedence base holds the artifact.
 
-On any failure the entry is forgotten and the full ordered scan runs. Extension
-preference wins over the extension recorded in the cache, so an artifact that
-appeared after the cache was written is not shadowed. The cached base is
-resolved through the same case-insensitive index a cold scan uses, so a
-dependency spelling whose case differs from the file name resolves identically
-warm and cold. A warm lookup and a cold lookup always agree.
+On any failure the entry is forgotten and the full ordered scan runs. Cache
+membership is decided lexically: the recorded `base_dir` is expanded and
+normalised as text and compared with each configured root's lexical and
+resolved spelling, so a recorded base outside every configured root is
+discarded without being resolved, stat-ed, or opened. On Windows that keeps a
+planted UNC path from turning a lookup into an outbound SMB connection; the
+lookup then proceeds from the trusted roots. A root that is relative, contains
+a symlink, or is written with a trailing separator still hits, because the
+writer stores the resolved path and the recorded side is compared with the
+root's resolved key as well as its written spelling. Extension preference wins
+over the extension recorded in the cache, so an artifact that appeared after
+the cache was written is not shadowed. The cached base is resolved through the
+same case-insensitive index a cold scan uses, so a dependency spelling whose
+case differs from the file name resolves identically warm and cold. A warm
+lookup and a cold lookup always agree.
 
 Startup pruning drops a file it cannot use (wrong version, or an entry whose
 shape is not `(base_dir, ext)` strings), removes abandoned `*.tmp` siblings older

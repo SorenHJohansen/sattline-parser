@@ -55,6 +55,30 @@ def _lookup_path_key(path: Path) -> str:
     return ArtifactIdentity.of(path).key
 
 
+def _lexical_path_key(path: Path) -> str:
+    """The spelling of *path* for a lexical comparison, with no filesystem access.
+
+    Expands a leading ``~``, folds ``.`` and ``..`` textually, and applies the
+    platform's case rule. This is the only comparison allowed on an untrusted
+    path: :func:`_lookup_path_key` resolves its argument, and on Windows a
+    planted UNC spelling would turn that into an outbound SMB connection. A
+    lexical key keeps such a spelling a string.
+    """
+    return os.path.normcase(os.path.normpath(os.path.expanduser(str(path))))
+
+
+def _names_configured_root(path_key: str, root: Path) -> bool:
+    """Whether the lexical *path_key* names *root*.
+
+    *root* is caller-supplied and therefore trusted, so its resolved lookup key
+    may be computed. The recorded side is only ever compared as text. A hit on
+    either spelling keeps a relative, symlinked, or trailing-separator root
+    working: the cache stores the resolved path at write time, which matches
+    the resolved key, while an exact spelling matches the lexical text.
+    """
+    return path_key == _lexical_path_key(root) or path_key == _lookup_path_key(root)
+
+
 def _is_relative_to(path: Path | None, root: Path | None) -> bool:
     resolved_path = _resolved(path)
     resolved_root = _resolved(root)
@@ -68,8 +92,15 @@ def _is_relative_to(path: Path | None, root: Path | None) -> bool:
 
 
 def _is_allowed_base(roots: Sequence[Path], base: Path) -> bool:
-    allowed = {_lookup_path_key(root) for root in roots}
-    return _lookup_path_key(base) in allowed
+    """Whether *base* names a configured root, decided lexically.
+
+    *base* is recorded data from the cache and is untrusted, so it is compared
+    as text against each trusted root's lexical and resolved spelling. It is
+    never resolved, stat-ed, or opened here. Anything that does not match a
+    configured root is rejected, and the caller falls back to the trusted roots.
+    """
+    recorded = _lexical_path_key(base)
+    return any(_names_configured_root(recorded, root) for root in roots)
 
 
 #: A dependency name is a bare unit name, never a path. The stat fallback and
@@ -416,9 +447,11 @@ class ProjectLookup:
         if not cached["base_dir"] or not _is_allowed_base(self._roots, base):
             self._cache.forget(kind, name, self._mode.value)
             return None
-        base_key = _lookup_path_key(base)
+        # The position is matched lexically too, so a rejected or accepted
+        # recorded base is never resolved: only the trusted ordered roots are.
+        recorded = _lexical_path_key(base)
         position = next(
-            (index for index, resolved in enumerate(ordered) if _lookup_path_key(resolved) == base_key),
+            (index for index, root in enumerate(ordered) if _names_configured_root(recorded, root)),
             None,
         )
         if position is None:
