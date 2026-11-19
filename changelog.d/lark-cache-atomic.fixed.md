@@ -1,0 +1,1 @@
+- **Lark parser cache writes are atomic.** The compiled-grammar cache is serialized to a staging file, flushed, and published with `os.replace`, so a worker never reads a partially written pickle. The file carries a header naming the grammar, start rule, position mode, Lark version, and interpreter version; a truncated, partial, or older-format file is discarded and rebuilt.
