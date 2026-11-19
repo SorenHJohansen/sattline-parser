@@ -21,6 +21,7 @@ ships. Names are matched case-insensitively by consumers.
 from __future__ import annotations
 
 from sattline_parser.models.ast_model import ScalarDatatype
+from sattline_parser.models.freeze import FrozenMapping
 
 BuiltinFieldSpec = tuple[str, ScalarDatatype | str]
 
@@ -267,7 +268,7 @@ STATIC_FUNCTION_USED_FIELDS = _STATIC_FUNCTION_USED_FIELDS
 MANUAL_AUTO_REAL_FIELDS = _MANUAL_AUTO_REAL_FIELDS
 FIELDLESS_BUILTIN_RECORD_NAMES = _FIELDLESS_BUILTIN_RECORD_NAMES
 OPAQUE_BUILTIN_RECORD_NAMES = _OPAQUE_BUILTIN_RECORD_NAMES
-BUILTIN_RECORD_SPECS: dict[str, tuple[BuiltinFieldSpec, ...]] = {
+_record_specs: dict[str, tuple[BuiltinFieldSpec, ...]] = {
     "AcofType": (
         ("TimeOut", _BOOL),
         ("OO_old", _BOOL),
@@ -974,16 +975,20 @@ BUILTIN_RECORD_SPECS: dict[str, tuple[BuiltinFieldSpec, ...]] = {
 }
 
 for _opaque_name in _OPAQUE_BUILTIN_RECORD_NAMES:
-    BUILTIN_RECORD_SPECS[_opaque_name] = ()
+    _record_specs[_opaque_name] = ()
 
 for _fieldless_name in _FIELDLESS_BUILTIN_RECORD_NAMES:
-    BUILTIN_RECORD_SPECS[_fieldless_name] = ()
+    _record_specs[_fieldless_name] = ()
 
 for _untranscribed_name in _UNTRANSCRIBED_BUILTIN_RECORD_NAMES:
-    BUILTIN_RECORD_SPECS[_untranscribed_name] = ()
+    _record_specs[_untranscribed_name] = ()
+
+#: Datatype name -> ordered field list. Read-only: validation reads the same
+#: snapshot, so a caller cannot change the public table behind it.
+BUILTIN_RECORD_SPECS: FrozenMapping[str, tuple[BuiltinFieldSpec, ...]] = FrozenMapping(_record_specs)
 
 BUILTIN_DECLARED_DATATYPE_NAMES: tuple[str, ...] = tuple(
-    dict.fromkeys([datatype.value for datatype in ScalarDatatype] + list(BUILTIN_RECORD_SPECS))
+    dict.fromkeys([datatype.value for datatype in ScalarDatatype] + list(_record_specs))
 )
 
 __all__ = [
