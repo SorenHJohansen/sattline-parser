@@ -298,7 +298,7 @@ wheel, and the top-level package does not re-export them. Import
 | Errors | `ProjectLoadError`, `StructuralProjectError`, `DependencyCycleError`, `ModuleTypeCycleError`, `ArtifactLoadError`, `DependencyNotFoundError`, `DependencyParseError` |
 | Discovery | `ProjectLookup`, `SourceIndex`, `ordered_lookup_bases`, `parse_search_path`, `read_dependency_names` |
 | Formats | `ArtifactKind`, `body_mode`, `candidate_extensions`, `code_ext`, `code_ext_candidates`, `deps_ext`, `deps_ext_candidates`, `deps_extensions_for_code`, `distribution_ext`, `distribution_ext_candidates`, `distribution_extensions_for_code`, `find_companion_beside`, `graphics_ext`, `graphics_ext_candidates`, `preferred_extension` |
-| Graphics | `GraphicsModel`, `GraphicsBinding`, `GraphicsMessage`, `GraphicsCompositeRecord`, `GraphicsPictureDisplayRecord`, `GraphicsPathRow`, `parse_graphics_file`, `parse_graphics_text`, `resolve_graphics_companion_path` |
+| Graphics | `GraphicsModel`, `GraphicsBinding`, `GraphicsMessage`, `GraphicsCompositeRecord`, `GraphicsPictureDisplayRecord`, `GraphicsPathRow`, `GraphicsParseError`, `MAX_GRAPHICS_COMPANION_BYTES`, `parse_graphics_file`, `parse_graphics_text`, `resolve_graphics_companion_path` |
 | Distribution | `DistributionData`, `DistributionTarget`, `DistributionParseError`, `parse_distribution_file`, `parse_distribution_text`, `resolve_distribution_companion_path` |
 | Caches | `FileLookupCache`, `FileASTCache`, `LOOKUP_CACHE_VERSION`, `FILE_AST_CACHE_VERSION`, `DEFAULT_LOOKUP_CACHE_FLUSH_INTERVAL` |
 
@@ -308,6 +308,19 @@ the missing case: `None` when no companion was found. `DistributionParseError`
 is a `ValueError` raised by the parser, not a `ProjectLoadError`; the loader
 wraps it in `ArtifactLoadError` or `DependencyParseError`. See
 [project.md](project.md#distribution-companion).
+
+`ProjectLoadError` and its subclasses expose `program`, `dependency`, `path`,
+and `source_line`. `path` is the artifact the failure is about, and
+`source_line` is the failing line's text, bounded, when the raise site could
+produce it. A body parse failure keeps the parser exception as `__cause__`, so
+the `PARSE_FAILURES` contract and `describe_parse_error` apply to it. See
+[project.md](project.md#load-failures).
+
+`parse_graphics_file` raises `GraphicsParseError` (a `ValueError`) when a
+companion exceeds `MAX_GRAPHICS_COMPANION_BYTES` (4 MiB). Both names are exported
+from `sattline_parser.project`, so a caller can catch the refusal and check the
+limit without importing an internal module; a companion at or under the limit
+still reports its structural problems as `GraphicsMessage` values.
 
 `SattLineProject.index` is a `ProjectIndex` answering "who defines X" through
 `definitions_of(name)` and "who uses Y" through `usages_of(name)`, case

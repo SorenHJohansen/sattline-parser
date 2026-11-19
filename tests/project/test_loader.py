@@ -802,6 +802,7 @@ def test_load_distribution_decode_failure_raises(tmp_path: Path) -> None:
         _load(tmp_path)
 
     assert exc_info.value.program == "Main"
+    assert exc_info.value.path == tmp_path / "Main.p"
 
 
 def test_load_malformed_distribution_raises(tmp_path: Path) -> None:
@@ -998,14 +999,17 @@ def test_load_dependency_sidecar_decode_failure_raises(tmp_path: Path) -> None:
 
     assert exc_info.value.program == "Main"
     assert exc_info.value.dependency is None
+    assert exc_info.value.path == tmp_path / "Main.l"
 
 
 def test_load_graphics_decode_failure_raises(tmp_path: Path) -> None:
     write_file(tmp_path, "Main.s", _CODE)
     (tmp_path / "Main.g").write_bytes(b"\x81 graphics\n")
 
-    with pytest.raises(ArtifactLoadError):
+    with pytest.raises(ArtifactLoadError) as exc_info:
         _load(tmp_path)
+
+    assert exc_info.value.path == tmp_path / "Main.g"
 
 
 def test_load_dependency_graphics_decode_failure_raises_dependency_parse_error(tmp_path: Path) -> None:

@@ -22,10 +22,10 @@ from typing import Any, cast
 from lark import Token
 from lark.exceptions import UnexpectedCharacters, UnexpectedEOF, UnexpectedInput, UnexpectedToken
 
-from sattline_parser.errors import PARSE_FAILURES, SourceTooDeepError
+from sattline_parser.errors import PARSE_FAILURES, SourceTooDeepError, source_line_at
 from sattline_parser.models.ast_model import BasePicture
 from sattline_parser.preprocessing.compressed import PreprocessError
-from sattline_parser.source_io import parse_source_bytes
+from sattline_parser.source_io import decode_source_bytes, parse_source_bytes
 
 from .ast_cache import FileASTCache, SourceSnapshot, source_snapshot
 from .errors import ArtifactLoadError, DependencyParseError, ProjectLoadError
@@ -104,6 +104,35 @@ class ParseOutcome:
     snapshot: SourceSnapshot | None = None
     #: The AST came from the cache, so it has nothing to store.
     cached: bool = False
+    #: The failing source line, bounded by :data:`MAX_FAILURE_SOURCE_LINE`.
+    #: The parent renders it as the load finding's excerpt without re-reading
+    #: the file, and a worker sends one line instead of the source buffer.
+    source_line: str | None = None
+
+
+#: Longest source line a failure carries back to the parent. A pathological
+#: single-line source must not turn a failure record into a copy of the file.
+MAX_FAILURE_SOURCE_LINE = 200
+
+
+def failure_source_line(raw_bytes: bytes, line: int | None) -> str | None:
+    """The original source line at *line*, or ``None`` when it is unavailable.
+
+    The bytes are decoded with the parse path's own decoder, so a coded stream
+    or a compressed source yields the text the parser saw. A decode that fails
+    has no excerpt. The result is bounded, because it travels in a failure
+    record and is display text rather than a re-parse input.
+    """
+    if line is None:
+        return None
+    try:
+        text = decode_source_bytes(raw_bytes, log_failures=False)
+    except PARSE_FAILURES:
+        return None
+    excerpt = source_line_at(text, line)
+    if excerpt is None or len(excerpt) <= MAX_FAILURE_SOURCE_LINE:
+        return excerpt
+    return f"{excerpt[:MAX_FAILURE_SOURCE_LINE]}..."
 
 
 def parse_failure_record(exc: BaseException) -> ParseFailure:
@@ -228,9 +257,11 @@ def parse_code_file(
     try:
         picture = parse_bytes(raw_bytes, source_path=code_path, log_failures=log_failures)
     except PARSE_FAILURES as exc:
+        record = parse_failure_record(exc)
         return ParseOutcome(
             failure=str(exc) or type(exc).__name__,
-            failure_record=parse_failure_record(exc),
+            failure_record=record,
+            source_line=failure_source_line(raw_bytes, record.line),
         )
     return ParseOutcome(ast=picture, snapshot=source_revision)
 
@@ -364,8 +395,9 @@ class ParseExecutor:
         except ProjectLoadError as exc:
             # ``_load_ast`` wraps the parser exception in a load error for its
             # other callers. Keep the parser exception itself as the cause, so
-            # the in-process and worker paths expose the same chain.
-            return ParseOutcome(failure=str(exc), error=exc.__cause__ or exc)
+            # the in-process and worker paths expose the same chain, and hand the
+            # artifact's failing line to the assembler.
+            return ParseOutcome(failure=str(exc), error=exc.__cause__ or exc, source_line=exc.source_line)
         return ParseOutcome(ast=ast)
 
     def _save_cached(self, plan: Plan, outcome: ParseOutcome) -> None:
@@ -398,11 +430,12 @@ class ParseExecutor:
             raw_bytes = code_path.read_bytes()
         except OSError as exc:
             if dependency is None:
-                raise ArtifactLoadError(program_name, f"unable to read {code_path.name}") from exc
+                raise ArtifactLoadError(program_name, f"unable to read {code_path.name}", path=code_path) from exc
             raise DependencyParseError(
                 program_name,
                 f"unable to read dependency {dependency!r}",
                 dependency=dependency,
+                path=code_path,
             ) from exc
         snapshot = source_snapshot(code_path, raw_bytes)
         self._dbg(f"Parsing: {code_path}")
@@ -414,12 +447,20 @@ class ParseExecutor:
                 log_failures=self._log_failures,
             )
         except PARSE_FAILURES as exc:
+            source_line = failure_source_line(raw_bytes, getattr(exc, "line", None))
             if dependency is None:
-                raise ArtifactLoadError(program_name, f"failed to parse {code_path.name}") from exc
+                raise ArtifactLoadError(
+                    program_name,
+                    f"failed to parse {code_path.name}",
+                    path=code_path,
+                    source_line=source_line,
+                ) from exc
             raise DependencyParseError(
                 program_name,
                 f"failed to parse dependency {dependency!r}",
                 dependency=dependency,
+                path=code_path,
+                source_line=source_line,
             ) from exc
         if self._ast_cache is not None:
             try:

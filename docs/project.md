@@ -421,6 +421,13 @@ directory, a missing body, an unreadable dependency sidecar, a malformed
 companion, and a parse failure in any body the closure reaches. Validation
 findings never raise, because they are findings and not load failures.
 
+The error carries the artifact it is about (`path`) and, when the raise site has
+the source at hand, the text of the failing line (`source_line`, bounded). A
+body parse failure also keeps the parser exception as its cause, so the program,
+the dependency edge, the artifact, the line and column, and the parser sentence
+all describe the same failure. The CLI renders `path` as the finding's `file`
+and `source_line` as its excerpt; it does not re-read the tree to fill them in.
+
 The two structural errors are fatal in the same way: a recursive sidecar chain
 and a module type that instantiates itself.
 

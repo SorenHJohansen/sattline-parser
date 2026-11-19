@@ -374,6 +374,7 @@ class ProjectPlanner:
                 program_name,
                 f"unable to read dependency file {deps_path.name} for {name!r}",
                 dependency=dependency,
+                path=deps_path,
             ) from exc
 
 

@@ -95,7 +95,13 @@ class ProjectAssembler:
         artifact = plan.artifact
         basepicture = outcome.ast
         if basepicture is None:
-            error = _parse_failure(program_of(plan), artifact.code_path.name, dependency_of(plan))
+            error = _parse_failure(
+                program_of(plan),
+                artifact.code_path.name,
+                dependency_of(plan),
+                path=artifact.code_path,
+                source_line=outcome.source_line,
+            )
             cause = outcome.error
             if cause is None and outcome.failure_record is not None:
                 cause = rebuild_parse_failure(outcome.failure_record)
@@ -241,11 +247,13 @@ class ProjectAssembler:
                 raise ArtifactLoadError(
                     program_name,
                     f"failed to parse distribution companion {distribution_path.name} for {name!r}: {exc}",
+                    path=distribution_path,
                 ) from exc
             raise DependencyParseError(
                 program_name,
                 f"failed to parse distribution companion for dependency {dependency!r}: {exc}",
                 dependency=dependency,
+                path=distribution_path,
             ) from exc
         return distribution_path, distribution
 
@@ -254,14 +262,23 @@ class ProjectAssembler:
 CompanionLoader = Callable[..., tuple[Path | None, "GraphicsModel | None"]]
 
 
-def _parse_failure(program_name: str, code_name: str, dependency: str | None) -> ProjectLoadError:
+def _parse_failure(
+    program_name: str,
+    code_name: str,
+    dependency: str | None,
+    *,
+    path: Path,
+    source_line: str | None,
+) -> ProjectLoadError:
     """The load error for a body that did not parse."""
     if dependency is None:
-        return ArtifactLoadError(program_name, f"failed to parse {code_name}")
+        return ArtifactLoadError(program_name, f"failed to parse {code_name}", path=path, source_line=source_line)
     return DependencyParseError(
         program_name,
         f"failed to parse dependency {dependency!r}",
         dependency=dependency,
+        path=path,
+        source_line=source_line,
     )
 
 
@@ -292,9 +309,11 @@ def _load_graphics(
             raise ArtifactLoadError(
                 program_name,
                 f"failed to read graphics companion {graphics_path.name} for {name!r}: {exc}",
+                path=graphics_path,
             ) from exc
         raise DependencyParseError(
             program_name,
             f"failed to read graphics companion for dependency {dependency!r}",
             dependency=dependency,
+            path=graphics_path,
         ) from exc
