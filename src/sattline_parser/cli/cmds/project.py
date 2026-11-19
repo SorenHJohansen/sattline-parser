@@ -196,24 +196,28 @@ def _report_findings(findings: Sequence[Finding], *, args: argparse.Namespace, e
 
 
 def _load_failure_finding(exc: ProjectLoadError) -> Finding:
-    """Describe a load failure, keeping the cause's parse position when it has one.
+    """Describe a load failure, keeping the artifact and the cause's position.
 
     A body that does not parse is wrapped in a load error that names the program
-    and the artifact but not the position. The cause is the parse failure, so
-    its sentence, line, column, and hint describe what is wrong in the source.
+    and the artifact. The wrapper carries the artifact path and the failing
+    source line; the cause is the parse failure, so its sentence, line, column,
+    and hint describe what is wrong in the source.
     """
     message = f"cannot load project: {exc}"
+    file = str(exc.path) if exc.path is not None else None
     cause = exc.__cause__
     if not isinstance(cause, PARSE_FAILURES):
-        return Finding(severity="error", message=message, rule=PROJECT_LOAD_RULE)
+        return Finding(severity="error", message=message, rule=PROJECT_LOAD_RULE, file=file)
     details = describe_parse_error(cause)
     return Finding(
         severity="error",
         message=f"{message}: {details.sentence}" if details.sentence else message,
         rule=PROJECT_LOAD_RULE,
+        file=file,
         line=details.line,
         column=details.column,
         hint=details.hint,
+        source_line=exc.source_line,
     )
 
 

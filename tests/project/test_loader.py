@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import logging
 import os
+import pickle
 from collections.abc import Callable, Generator, Iterator
 from concurrent.futures import ProcessPoolExecutor
 from concurrent.futures.process import BrokenProcessPool
@@ -42,7 +43,14 @@ from sattline_parser.project import parallel as project_loader_parallel
 from sattline_parser.project import plan as plan_module
 from sattline_parser.project.assembler import ProjectAssembler
 from sattline_parser.project.ast_cache import FileASTCache, SourceSnapshot, source_snapshot
-from sattline_parser.project.executor import ParseFailure, parse_code_file, rebuild_parse_failure
+from sattline_parser.project.executor import (
+    MAX_FAILURE_SOURCE_LINE,
+    MAX_UNICODE_ERROR_BYTES,
+    MAX_WORKER_DEBUG_MESSAGES,
+    ParseFailure,
+    parse_code_file,
+    rebuild_parse_failure,
+)
 from sattline_parser.project.formats import CompanionIndex
 from sattline_parser.project.models import LoadDiagnosticKind, SidecarState
 from sattline_parser.project.parallel import load_in_progress, loads_in_progress, pool_allowed, start_method
@@ -330,12 +338,17 @@ def test_worker_and_in_process_failures_have_the_same_cause(tmp_path: Path) -> N
     write_file(tmp_path, "Broken.s", _BROKEN)
 
     causes: dict[int, BaseException] = {}
+    artifacts: dict[int, tuple[Path | None, str | None]] = {}
     for workers in (1, 2):
         with pytest.raises(DependencyParseError) as exc_info:
             _load(tmp_path, workers=workers)
         cause = exc_info.value.__cause__
         assert cause is not None
         causes[workers] = cause
+        artifacts[workers] = (exc_info.value.path, exc_info.value.source_line)
+
+    assert artifacts[1] == (tmp_path / "Broken.s", _BROKEN.rstrip("\n"))
+    assert artifacts[2] == (tmp_path / "Broken.s", _BROKEN.rstrip("\n"))
 
     in_process = causes[1]
     worker = causes[2]
@@ -470,7 +483,7 @@ def test_parse_code_file_reports_an_unreadable_body(tmp_path: Path) -> None:
     code_path = tmp_path / "Main.s"
     code_path.chmod(0)
 
-    outcome = parse_code_file((str(code_path), "draft", None, False))
+    outcome = parse_code_file((str(code_path), "draft", None, False, False))
 
     assert outcome.ast is None
     assert outcome.failure_record is not None
@@ -802,6 +815,7 @@ def test_load_distribution_decode_failure_raises(tmp_path: Path) -> None:
         _load(tmp_path)
 
     assert exc_info.value.program == "Main"
+    assert exc_info.value.path == tmp_path / "Main.p"
 
 
 def test_load_malformed_distribution_raises(tmp_path: Path) -> None:
@@ -998,14 +1012,17 @@ def test_load_dependency_sidecar_decode_failure_raises(tmp_path: Path) -> None:
 
     assert exc_info.value.program == "Main"
     assert exc_info.value.dependency is None
+    assert exc_info.value.path == tmp_path / "Main.l"
 
 
 def test_load_graphics_decode_failure_raises(tmp_path: Path) -> None:
     write_file(tmp_path, "Main.s", _CODE)
     (tmp_path / "Main.g").write_bytes(b"\x81 graphics\n")
 
-    with pytest.raises(ArtifactLoadError):
+    with pytest.raises(ArtifactLoadError) as exc_info:
         _load(tmp_path)
+
+    assert exc_info.value.path == tmp_path / "Main.g"
 
 
 def test_load_dependency_graphics_decode_failure_raises_dependency_parse_error(tmp_path: Path) -> None:
@@ -1170,6 +1187,23 @@ def test_load_parses_bodies_in_parallel_with_identical_results(tmp_path: Path, m
     assert serial.diagnostics() == parallel.diagnostics()
 
 
+def test_a_parallel_debug_load_replays_each_files_parser_messages(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A worker sends its bounded messages and the parent replays them in order."""
+    write_file(tmp_path, "Main.s", _CODE)
+    write_file(tmp_path, "Broken.s", _BROKEN)
+    events: list[str] = []
+    dispatched = _record_dispatched(monkeypatch)
+
+    with pytest.raises(ArtifactLoadError):
+        _load(tmp_path, targets=("Main", "Broken"), workers=2, debug=events)
+
+    assert sorted(Path(path).name for path in dispatched) == ["Broken.s", "Main.s"]
+    parsing = [event for event in events if event.startswith("Parsing:")]
+    assert parsing == [f"Parsing: {tmp_path / 'Main.s'}", f"Parsing: {tmp_path / 'Broken.s'}"]
+
+
 @pytest.mark.parametrize(
     ("broken_is_target", "expected"),
     [(True, ArtifactLoadError), (False, DependencyParseError)],
@@ -1212,7 +1246,7 @@ def test_parse_code_file_reads_but_never_writes_the_ast_cache(tmp_path: Path) ->
     """A worker reads the cache and leaves every write to the parent."""
     code = write_file(tmp_path, "Cached.s", _CODE)
     cache_dir = tmp_path / "cache"
-    task = (str(code), LoadMode.DRAFT.value, str(cache_dir), True)
+    task = (str(code), LoadMode.DRAFT.value, str(cache_dir), True, False)
 
     first = parse_code_file(task)
     second = parse_code_file(task)
@@ -1274,10 +1308,80 @@ def test_a_warm_parallel_load_leaves_the_ast_cache_untouched(tmp_path: Path, mon
 def test_parse_code_file_reports_a_parse_failure_as_text(tmp_path: Path) -> None:
     code = write_file(tmp_path, "Broken.s", _BROKEN)
 
-    outcome = parse_code_file((str(code), LoadMode.DRAFT.value, None, True))
+    outcome = parse_code_file((str(code), LoadMode.DRAFT.value, None, True, False))
 
     assert outcome.ast is None
     assert outcome.failure
+
+
+def test_a_worker_returns_one_parser_message_per_file_under_debug(tmp_path: Path) -> None:
+    code = write_file(tmp_path, "Main.s", _CODE)
+
+    outcome = parse_code_file((str(code), LoadMode.DRAFT.value, None, True, True))
+
+    assert outcome.debug[0] == f"Parsing: {code}"
+    assert "Parse OK, transforming with SLTransformer" in outcome.debug
+    assert len(outcome.debug) <= MAX_WORKER_DEBUG_MESSAGES
+
+
+def test_worker_debug_messages_are_bounded_per_file() -> None:
+    messages: list[str] = []
+    for index in range(MAX_WORKER_DEBUG_MESSAGES + 5):
+        executor_module._append_bounded_debug(messages, f"message {index}")
+
+    assert len(messages) == MAX_WORKER_DEBUG_MESSAGES
+    assert messages[-1] == f"message {MAX_WORKER_DEBUG_MESSAGES - 1}"
+
+
+def test_a_decode_failure_record_keeps_a_bounded_buffer(tmp_path: Path) -> None:
+    """A worker must not send the whole source buffer through the pipe."""
+    code = tmp_path / "Huge.s"
+    raw = b"a" * (256 * 1024) + b"\x81"
+    code.write_bytes(raw)
+
+    outcome = parse_code_file((str(code), LoadMode.DRAFT.value, None, False, False))
+
+    record = outcome.failure_record
+    assert record is not None
+    assert record.unicode_error is not None
+    encoding, excerpt, start, end, _reason = record.unicode_error
+    assert encoding == "cp1252"
+    assert len(excerpt) <= MAX_UNICODE_ERROR_BYTES
+    assert (start, end) == (len(raw) - 1, len(raw))
+    rebuilt = rebuild_parse_failure(record)
+    assert isinstance(rebuilt, UnicodeDecodeError)
+    assert (rebuilt.start, rebuilt.end) == (start, end)
+    assert len(pickle.dumps(record)) < 4096
+
+
+def test_a_failure_source_line_is_bounded(tmp_path: Path) -> None:
+    code = write_file(tmp_path, "Long.s", "x" * (MAX_FAILURE_SOURCE_LINE * 4))
+
+    outcome = parse_code_file((str(code), LoadMode.DRAFT.value, None, False, False))
+
+    assert outcome.failure_record is not None
+    assert outcome.failure_record.line == 1
+    assert outcome.source_line is not None
+    assert len(outcome.source_line) == MAX_FAILURE_SOURCE_LINE + len("...")
+    assert outcome.source_line.endswith("...")
+
+
+def test_a_failure_excerpt_is_absent_when_the_source_cannot_be_decoded() -> None:
+    assert executor_module.failure_source_line(b"\x81", 1) is None
+    # A line past the end of the text has no excerpt either.
+    assert executor_module.failure_source_line(b"one line", 9) is None
+    assert executor_module.failure_source_line(b"one line", None) is None
+
+
+def test_a_worker_cache_hit_reports_its_debug_message(tmp_path: Path) -> None:
+    code = write_file(tmp_path, "Cached.s", _CODE)
+    cache_dir = tmp_path / "cache"
+    project_loader.FileASTCache(cache_dir).save(code, LoadMode.DRAFT.value, parse_source_file(code))
+
+    outcome = parse_code_file((str(code), LoadMode.DRAFT.value, str(cache_dir), True, True))
+
+    assert outcome.cached
+    assert outcome.debug == (f"Using cached AST for: {code}",)
 
 
 def test_parse_code_file_serves_a_warm_entry_without_reparsing(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -1289,7 +1393,7 @@ def test_parse_code_file_serves_a_warm_entry_without_reparsing(tmp_path: Path, m
         raise AssertionError("a warm entry must not be reparsed")
 
     monkeypatch.setattr(executor_module, "parse_source_bytes", refuse)
-    outcome = parse_code_file((str(code), LoadMode.DRAFT.value, str(cache_dir), True))
+    outcome = parse_code_file((str(code), LoadMode.DRAFT.value, str(cache_dir), True, False))
 
     assert outcome.ast is not None
     assert outcome.cached
@@ -1372,7 +1476,7 @@ def test_parse_code_file_returns_a_cached_body_without_parsing(tmp_path: Path, m
         raise AssertionError("a cached body must not be parsed again")
 
     monkeypatch.setattr(executor_module, "parse_source_bytes", no_parse)
-    outcome = parse_code_file((str(code), LoadMode.DRAFT.value, str(cache_dir), True))
+    outcome = parse_code_file((str(code), LoadMode.DRAFT.value, str(cache_dir), True, False))
 
     assert outcome.ast is not None and outcome.failure is None
 
@@ -1746,7 +1850,7 @@ def test_a_debug_load_reports_companion_parsing(tmp_path: Path) -> None:
 def test_the_worker_entry_point_defaults_to_the_package_parser(tmp_path: Path) -> None:
     code = write_file(tmp_path, "Main.s", _CODE)
 
-    outcome = executor_module.parse_code_file((str(code), LoadMode.DRAFT.value, None, False))
+    outcome = executor_module.parse_code_file((str(code), LoadMode.DRAFT.value, None, False, False))
 
     assert outcome.ast is not None
     assert outcome.failure is None
@@ -1927,6 +2031,46 @@ def test_an_alias_dependency_name_resolves_to_the_unit_it_reached(tmp_path: Path
     assert set(graph.nodes) == {"base", "main"}
     assert set(graph.edges) == {("main", "base")}
     assert graph.dependents_of("AliasBase") == ()
+
+
+def test_an_alias_sidecar_declaration_is_reported_and_not_loaded(tmp_path: Path) -> None:
+    """A spelling that reaches a planned body never contributes dependencies."""
+    write_file(tmp_path, "Util.s", _source("Util"))
+    write_file(tmp_path, "Extra.s", _source("Extra"))
+    try:
+        (tmp_path / "Helper.s").symlink_to(tmp_path / "Util.s")
+    except (OSError, NotImplementedError):
+        pytest.skip("this filesystem cannot create a symlink")
+    write_file(tmp_path, "Helper.l", "Extra\n")
+
+    project = _load(tmp_path, targets=("Util", "Helper"))
+
+    assert "Extra" not in project
+    assert [program.name for program in project.programs().values()] == ["Util"]
+    unused = [d for d in project.diagnostics() if d.kind is LoadDiagnosticKind.ALIAS_DECLARATIONS_UNUSED]
+    assert len(unused) == 1
+    assert unused[0].program == "Helper"
+    assert unused[0].path == tmp_path / "Helper.l"
+
+
+@pytest.mark.skipif(os.name == "nt" or os.geteuid() == 0, reason="needs POSIX permissions as a non-root user")
+def test_an_unreadable_alias_sidecar_does_not_fail_the_load(tmp_path: Path) -> None:
+    """The alias prefix's sidecar is resolved but never read."""
+    write_file(tmp_path, "Util.s", _source("Util"))
+    try:
+        (tmp_path / "Helper.s").symlink_to(tmp_path / "Util.s")
+    except (OSError, NotImplementedError):
+        pytest.skip("this filesystem cannot create a symlink")
+    sidecar = write_file(tmp_path, "Helper.l", "Extra\n")
+    sidecar.chmod(0)
+    try:
+        project = _load(tmp_path, targets=("Util", "Helper"))
+    finally:
+        sidecar.chmod(0o644)
+
+    assert [program.name for program in project.programs().values()] == ["Util"]
+    kinds = {d.kind for d in project.diagnostics()}
+    assert LoadDiagnosticKind.ALIAS_DECLARATIONS_UNUSED in kinds
 
 
 def _write_chain(root: Path, length: int, *, close: bool) -> None:
@@ -2149,7 +2293,12 @@ def test_a_pool_worker_marks_itself_before_it_runs_a_task(monkeypatch: pytest.Mo
 
     project_loader_parallel._mark_pool_worker()  # pyright: ignore[reportPrivateUsage]
 
-    assert pool_allowed() is False
+    try:
+        assert pool_allowed() is False
+    finally:
+        # ``_mark_pool_worker`` writes the environment directly, so the marker
+        # would otherwise leak into every later test in this process.
+        os.environ.pop(project_loader_parallel.POOL_WORKER_ENV, None)
 
 
 def test_a_nested_load_parses_in_this_process_and_says_so_once(

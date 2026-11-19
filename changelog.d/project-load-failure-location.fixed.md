@@ -1,0 +1,1 @@
+- **A project load failure names its artifact.** `ProjectLoadError` and its subclasses now carry the failing artifact path and, when the raise site has the source at hand, the text of the failing line. A CLI load finding fills `file` and `source_line` from those fields, so a broken body is reported at its own path instead of a location with no file.

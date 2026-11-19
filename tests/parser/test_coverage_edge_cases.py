@@ -505,11 +505,11 @@ def test_remap_parse_error_updates_unexpected_characters_context() -> None:
 
     from sattline_parser.source_document import remap_parse_error  # noqa: PLC0415
 
-    # normalized "abXY", original "aXYb" (Y and b swapped).
-    doc = SourceDocument("aXYb", "abXY", (0, 3, 1, 2))
+    # A real map is strictly increasing, so every entry is an original offset.
+    doc = SourceDocument("abXY", "abXY", (0, 1, 2, 3))
     exc = UnexpectedCharacters("abXY", 2, 1, 3, allowed=cast(Any, {"NAME"}))
     remap_parse_error(exc, doc)
-    assert exc.pos_in_stream == 1
+    assert exc.pos_in_stream == 2
     assert exc.char == "X"
     assert exc._context is not None
 
@@ -519,7 +519,7 @@ def test_remap_parse_error_does_not_shift_an_already_remapped_error() -> None:
 
     from sattline_parser.source_document import remap_parse_error  # noqa: PLC0415
 
-    doc = SourceDocument("aXYb", "abXY", (0, 3, 1, 2))
+    doc = SourceDocument("abXY", "abXY", (0, 1, 2, 3))
     exc = UnexpectedCharacters("abXY", 2, 1, 3, allowed=cast(Any, {"NAME"}))
     remap_parse_error(exc, doc)
     first = exc.pos_in_stream
@@ -568,7 +568,7 @@ def test_remap_tree_handles_negative_token_positions() -> None:
     from sattline_parser.source_document import remap_tree_to_original  # noqa: PLC0415
 
     # A token with a negative start_pos cannot be mapped; the walk must not crash.
-    doc = SourceDocument("abcdef", "Xbcdef!", (0, 0, 2, 3, 4, 5, -1))
+    doc = SourceDocument("abcdef", "Xbcdef!", (0, 1, 2, 3, 4, 5, -1))
     tree = cast(Any, Tree("wrapper", [Token("NAME", "x", start_pos=-5, end_pos=-4)]))
     remap_tree_to_original(tree, doc)
     assert tree.children[0].start_pos == -5
@@ -577,7 +577,7 @@ def test_remap_tree_handles_negative_token_positions() -> None:
 def test_remap_tree_skips_tokens_without_positions() -> None:
     from sattline_parser.source_document import remap_tree_to_original  # noqa: PLC0415
 
-    doc = SourceDocument("abcdef", "Xbcdef!", (0, 0, 2, 3, 4, 5, -1))
+    doc = SourceDocument("abcdef", "Xbcdef!", (0, 1, 2, 3, 4, 5, -1))
     tree = cast(Any, Tree("wrapper", [Token("NAME", "x")]))
     remap_tree_to_original(tree, doc)
     assert tree.children[0].line is None
@@ -586,7 +586,7 @@ def test_remap_tree_skips_tokens_without_positions() -> None:
 def test_remap_tree_handles_negative_meta_positions() -> None:
     from sattline_parser.source_document import remap_tree_to_original  # noqa: PLC0415
 
-    doc = SourceDocument("abcdef", "Xbcdef!", (0, 0, 2, 3, 4, 5, -1))
+    doc = SourceDocument("abcdef", "Xbcdef!", (0, 1, 2, 3, 4, 5, -1))
     tree = cast(Any, Tree("wrapper", [Token("NAME", "x", start_pos=0, end_pos=1)]))
     tree.meta.start_pos = -3
     tree.meta.end_pos = -2

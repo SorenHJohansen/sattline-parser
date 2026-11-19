@@ -11,6 +11,7 @@ from dataclasses import dataclass
 
 from sattline_parser import ast as m
 from sattline_parser.ast import Assignment, FuncCall, FuncCallStmt, IfStmt, LitStringTail, NodeVisitor, VarRef, VarTail
+from sattline_parser.names import fold_identifier
 
 __all__ = ["QUERY_KINDS", "QueryRow", "iter_rows"]
 
@@ -81,12 +82,14 @@ def iter_rows(
     visitor = _QueryVisitor()
     visitor.visit(picture)
     wanted = {kind.casefold() for kind in kinds}
-    wanted_name = name.casefold() if name is not None else None
+    # A query name is a language identifier, so it folds with the name table,
+    # not with Unicode case folding: ``Straße`` and ``STRASSE`` are two names.
+    wanted_name = fold_identifier(name) if name is not None else None
     wanted_module = module.casefold() if module is not None else None
     for row in visitor.rows:
         if row.kind.casefold() not in wanted:
             continue
-        if wanted_name is not None and row.name.casefold() != wanted_name:
+        if wanted_name is not None and fold_identifier(row.name) != wanted_name:
             continue
         if wanted_module is not None and (row.module or "").casefold() != wanted_module:
             continue

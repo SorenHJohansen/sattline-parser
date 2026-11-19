@@ -214,22 +214,23 @@ def test_source_line_needs_a_usable_line_number():
     assert parser_errors._source_line("a", 9) is None
 
 
-def test_source_line_splits_on_newline_only_and_drops_one_trailing_cr():
-    # A lone CR is legal inside a string literal, so it must not start a new
-    # line here: the parser's line numbers come from "\n" only.
-    source = '"a\rb"\nsecond\nthird\n'
-    assert parser_errors._source_line(source, 1) == '"a\rb"'
-    assert parser_errors._source_line(source, 2) == "second"
-    assert parser_errors._source_line(source, 3) == "third"
-    # A CRLF file keeps its content and loses the line terminator.
-    assert parser_errors._source_line("first\r\nsecond\r\n", 1) == "first"
-    assert parser_errors._source_line("first\r\nsecond\r\n", 2) == "second"
+def test_source_line_splits_on_every_line_terminator():
+    # CRLF, LF, and a lone CR each end a line, the same rule the grammar's
+    # string terminals and SourceDocument.line_col use.
+    source = "a\rb\nsecond\r\nthird\n"
+    assert parser_errors._source_line(source, 1) == "a"
+    assert parser_errors._source_line(source, 2) == "b"
+    assert parser_errors._source_line(source, 3) == "second"
+    assert parser_errors._source_line(source, 4) == "third"
+    # A trailing terminator leaves the boundary line empty, exactly like a
+    # trailing "\n" split.
+    assert parser_errors._source_line(source, 5) == ""
     # Form feed and vertical tab are content, not line separators.
     assert parser_errors._source_line("a\vb\fc", 1) == "a\vb\fc"
 
 
-def test_describe_parse_error_source_line_agrees_with_a_lone_cr_in_a_string():
-    source = '"a\rb"\nsecond\nthird\n'
+def test_describe_parse_error_source_line_uses_the_same_splitting():
+    source = '"a"\rsecond\rthird\r'
     failure = _parse_failure({"SEMICOLON"}, token=Token("$END", ""), line=2)
 
     details = describe_parse_error(failure, source)

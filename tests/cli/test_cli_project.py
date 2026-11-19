@@ -311,6 +311,19 @@ def test_a_parse_failure_in_the_tree_carries_its_position(tmp_path, capsys) -> N
     assert finding["hint"].startswith("the unit ends before a required ';'")
 
 
+@pytest.mark.parametrize("workers", ["1", "2"])
+def test_a_load_failure_names_the_broken_file_and_its_failing_line(tmp_path, capsys, workers) -> None:
+    """The finding carries the artifact path and the excerpt, not just a number."""
+    write_source(tmp_path, "Broken.s", PARSE_ERROR_SOURCE)
+
+    assert main(["project", str(tmp_path), "--json", "--no-cache", "--workers", workers]) == ExitCode.FINDINGS
+
+    [finding] = json.loads(capsys.readouterr().out)["findings"]
+    assert finding["file"] == str(tmp_path / "Broken.s")
+    assert finding["line"] == 7
+    assert finding["source_line"] == "ENDDEF (*BasePicture*)"
+
+
 def test_debug_keeps_the_parser_trace_for_a_load_failure(tmp_path, caplog, capsys) -> None:
     write_source(tmp_path, "Broken.s", PARSE_ERROR_SOURCE)
 

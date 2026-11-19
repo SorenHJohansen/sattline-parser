@@ -45,6 +45,12 @@ there is nothing to map. Each entry is either:
 - a real original offset (`>= 0`), or
 - `GENERATED`, the first-class sentinel `Generated(-1)`.
 
+The constructor validates the map: every real entry must be an offset inside
+`original_text`, and the real entries must strictly increase, because that is
+the order a forward decoding walk produces. A map that breaks either rule would
+make a span inverted or zero-width, so it raises `ValueError` rather than
+letting a diagnostic point at the wrong text.
+
 `GENERATED` is a subclass of `int` with value `-1`. The type is distinct on
 purpose: code that builds or rewrites a map can tell "this character was
 inserted by the preprocessor" apart from a real offset, and a generated
@@ -61,7 +67,10 @@ skipped. For an identity document:
 - `map_position(i)` returns `min(i, len(original_text))`;
 - `map_range(start, end)` returns the range clamped to the original text, and a
   zero-width range at the mapped boundary when `start >= end`;
-- `remap_tree_to_original` is a no-op;
+- `remap_tree_to_original` is a no-op unless the text contains a lone CR. A
+  CR-only text rewrites each span's line and column through `line_col`, because
+  the language treats a lone CR as a line break while the Lark position index
+  counts LF, so its token lines would otherwise all stay on line 1;
 - `is_decoded_range` is always `False`.
 
 Most sources are identity documents. The expensive path only runs for coded or
@@ -94,6 +103,12 @@ in its length rather than quadratic in the length of a generated run.
 
 All spans are half-open `[start, end)` in both coordinate systems. An end
 offset equal to the text length is a valid boundary.
+
+A line ends at CRLF, LF, or a lone CR, the same definition the grammar's string
+terminals and the compressed scanner use. `line_col` and the source excerpt a
+diagnostic renders therefore agree on a CR-only document: a position on its
+third physical line reports line 3 and quotes that line. A form feed, a
+vertical tab, and the other `str.splitlines` separators are ordinary content.
 
 ### `is_decoded_range`
 

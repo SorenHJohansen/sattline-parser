@@ -171,20 +171,24 @@ class ProjectPlanner:
     def _open(self, name: str, *, declared_by: str | None) -> _Pending | str:
         """Resolve *name* and start its frame, or return an existing plan key.
 
-        The artifact is resolved before the frame exists, so the cycle check
-        follows physical files: a name that resolves to a file already on the
-        active stack is a cycle, and a name that resolves to a file this load
-        already planned is an alias for that plan.
+        The body is resolved before the sidecar, so a spelling that reaches a
+        body this load already planned is an alias: its declarations are never
+        read, and an unreadable alias sidecar cannot fail a load that the body
+        alone survives. The cycle check follows physical files, because a name
+        that resolves to a file already on the active stack is a cycle.
         """
         program_name = declared_by if declared_by is not None else name
         dependency = None if declared_by is None else name
         self._dbg(f"Visiting: {name}")
-        artifact = self._artifact_resolver(
-            name,
-            program_name=program_name,
-            dependency=dependency,
-        )
-        identity = ArtifactIdentity.of(artifact.code_path)
+        resolved = self._lookup.find_code_with_base(name)
+        if resolved is None:
+            raise DependencyNotFoundError(
+                program_name,
+                f"missing code file for {name!r}",
+                dependency=dependency,
+            )
+        code_path, resolved_base = resolved
+        identity = ArtifactIdentity.of(code_path)
         if identity in self._loading:
             # The dependency loop returns to a file already being planned, so it
             # has no finite load order. Report the logical names that formed it.
@@ -193,8 +197,16 @@ class ProjectPlanner:
             cycle = (*tuple(spelling for _, spelling in chain[start:]), name.casefold())
             raise DependencyCycleError(canonical_cycle(cycle))
         if identity in self._planned:
-            self._record_name(name, identity.key, artifact.code_path)
+            self._record_name(name, identity.key, code_path)
+            self._report_unused_alias(name, code_path)
             return identity.key
+        artifact = self._artifact_resolver(
+            name,
+            program_name=program_name,
+            dependency=dependency,
+            code_path=code_path,
+            resolved_base=resolved_base,
+        )
         self._planned.add(identity)
         self._loading[identity] = name.casefold()
         return _Pending(
@@ -204,6 +216,26 @@ class ProjectPlanner:
             identity=identity,
             pending=list(artifact.dependencies),
             resolved=[],
+        )
+
+    def _report_unused_alias(self, name: str, code_path: Path) -> None:
+        """Report a sidecar at an alias prefix whose declarations are not read.
+
+        The body is planned once, under the spelling that reached it first, so
+        the alias prefix's declarations have no plan to attach to. The sidecar
+        path is resolved but never read: a broken file at the alias prefix must
+        not fail a load that the body alone survives, and the operator should
+        still learn why a declared name is absent from the registry.
+        """
+        sidecar = self._lookup.find_deps_beside(code_path, name)
+        if sidecar is None:
+            return
+        self._diagnose(
+            LoadDiagnosticKind.ALIAS_DECLARATIONS_UNUSED,
+            name,
+            f"{name!r} resolves to already planned body {code_path.name!r}; "
+            f"declarations in {sidecar.name!r} are not used",
+            sidecar,
         )
 
     def _close(self, frame: _Pending) -> str:
@@ -253,16 +285,15 @@ class ProjectPlanner:
         *,
         program_name: str,
         dependency: str | None,
+        code_path: Path,
+        resolved_base: Path,
     ) -> ResolvedArtifact:
-        """Find the body, its sidecar, and the declared dependencies."""
-        resolved = self._lookup.find_code_with_base(name)
-        if resolved is None:
-            raise DependencyNotFoundError(
-                program_name,
-                f"missing code file for {name!r}",
-                dependency=dependency,
-            )
-        code_path, resolved_base = resolved
+        """Find the sidecar and declared dependencies of an already resolved body.
+
+        The planner resolves the code body first, so it can recognise a spelling
+        that reaches an already planned artifact before any sidecar is read.
+        Everything else about the artifact is resolved here.
+        """
         library = resolved_base.name
         self._report_collisions(name, program_name, resolved_base)
         # The sidecar belongs to the selected body's prefix; see
@@ -343,8 +374,11 @@ class ProjectPlanner:
                 program_name,
                 f"unable to read dependency file {deps_path.name} for {name!r}",
                 dependency=dependency,
+                path=deps_path,
             ) from exc
 
 
 #: The artifact resolver the planner uses: the loader's own method by default.
+#: It receives the code path and base the planner already resolved, so a
+#: spelling that reaches a planned body never causes a sidecar read.
 ArtifactResolver = Callable[..., ResolvedArtifact]

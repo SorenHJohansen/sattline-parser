@@ -158,6 +158,7 @@ sequenceDiagram
     F-->>PL: code_path, resolved_base
     PL->>PL: plan key = resolved code path
     PL->>PL: plan key already planned? reuse it
+    PL->>PL: and report a sidecar at the alias prefix as unused
     PL->>F: find_deps_beside(code_path, name)
     F-->>PL: deps_path or None
     PL->>PL: read dependency names
@@ -226,9 +227,10 @@ observable orders:
 - **Diagnostics.** `SattLineProject.diagnostics()` reports only the non-fatal
   load conditions: a missing or empty sidecar, a sidecar elsewhere, a sidecar
   from the other artifact family, a companion from the other artifact family, a
-  code file whose stem cannot be a unit name, and a folded-name collision. A
-  failure to resolve or parse raises instead. Discovery rows come first, in
-  discovery order, then assembly rows in plan order.
+  code file whose stem cannot be a unit name, a folded-name collision, and an
+  alias prefix whose sidecar declarations were not used. A failure to resolve
+  or parse raises instead. Discovery rows come first, in discovery order, then
+  assembly rows in plan order.
 
 `validate=INVOKED` runs **after** the graph is complete, because it needs the
 whole invocation graph. The loader first builds the registry, then walks
@@ -289,6 +291,13 @@ is keyed by language identity, so `AliasBase` resolves to the body that
 `dependencies_of` and `dependents_of` resolve their argument the same way, so a
 `programs()` view key, an alias, and a source spelling all designate the unit
 they name.
+
+The body is resolved before its sidecar, so a spelling that reaches a body this
+load already planned reads no sidecar for that spelling. A sidecar at the alias
+prefix is resolved but never read: it is reported as
+`LoadDiagnosticKind.ALIAS_DECLARATIONS_UNUSED`, and its declarations do not
+reach the registry. An unreadable file at that prefix is therefore not a load
+failure, because the body alone still supplies the unit and its real sidecar.
 
 ### Folded-name collisions
 
@@ -411,6 +420,13 @@ registry or raises. That applies to a configured root that is not a readable
 directory, a missing body, an unreadable dependency sidecar, a malformed
 companion, and a parse failure in any body the closure reaches. Validation
 findings never raise, because they are findings and not load failures.
+
+The error carries the artifact it is about (`path`) and, when the raise site has
+the source at hand, the text of the failing line (`source_line`, bounded). A
+body parse failure also keeps the parser exception as its cause, so the program,
+the dependency edge, the artifact, the line and column, and the parser sentence
+all describe the same failure. The CLI renders `path` as the finding's `file`
+and `source_line` as its excerpt; it does not re-read the tree to fill them in.
 
 The two structural errors are fatal in the same way: a recursive sidecar chain
 and a module type that instantiates itself.
