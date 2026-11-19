@@ -338,12 +338,17 @@ def test_worker_and_in_process_failures_have_the_same_cause(tmp_path: Path) -> N
     write_file(tmp_path, "Broken.s", _BROKEN)
 
     causes: dict[int, BaseException] = {}
+    artifacts: dict[int, tuple[Path | None, str | None]] = {}
     for workers in (1, 2):
         with pytest.raises(DependencyParseError) as exc_info:
             _load(tmp_path, workers=workers)
         cause = exc_info.value.__cause__
         assert cause is not None
         causes[workers] = cause
+        artifacts[workers] = (exc_info.value.path, exc_info.value.source_line)
+
+    assert artifacts[1] == (tmp_path / "Broken.s", _BROKEN.rstrip("\n"))
+    assert artifacts[2] == (tmp_path / "Broken.s", _BROKEN.rstrip("\n"))
 
     in_process = causes[1]
     worker = causes[2]
@@ -1358,6 +1363,24 @@ def test_a_failure_source_line_is_bounded(tmp_path: Path) -> None:
     assert outcome.source_line is not None
     assert len(outcome.source_line) == MAX_FAILURE_SOURCE_LINE + len("...")
     assert outcome.source_line.endswith("...")
+
+
+def test_a_failure_excerpt_is_absent_when_the_source_cannot_be_decoded() -> None:
+    assert executor_module.failure_source_line(b"\x81", 1) is None
+    # A line past the end of the text has no excerpt either.
+    assert executor_module.failure_source_line(b"one line", 9) is None
+    assert executor_module.failure_source_line(b"one line", None) is None
+
+
+def test_a_worker_cache_hit_reports_its_debug_message(tmp_path: Path) -> None:
+    code = write_file(tmp_path, "Cached.s", _CODE)
+    cache_dir = tmp_path / "cache"
+    project_loader.FileASTCache(cache_dir).save(code, LoadMode.DRAFT.value, parse_source_file(code))
+
+    outcome = parse_code_file((str(code), LoadMode.DRAFT.value, str(cache_dir), True, True))
+
+    assert outcome.cached
+    assert outcome.debug == (f"Using cached AST for: {code}",)
 
 
 def test_parse_code_file_serves_a_warm_entry_without_reparsing(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
