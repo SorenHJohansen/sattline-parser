@@ -128,7 +128,8 @@ def test_parse_failure_jsonl_streams_the_finding_then_a_summary(tmp_path, capsys
     assert len(lines) == 2
     [finding, summary] = (json.loads(line) for line in lines)
     assert finding["rule"] == "PARSE_ERROR"
-    assert "line" in finding and "source_line" in finding
+    assert (finding["line"], finding["column"]) == (7, 21)
+    assert finding["source_line"] == "ENDDEF (*BasePicture*)"
     assert summary == {
         "schema": "sattline.v1.parse",
         "summary": True,
