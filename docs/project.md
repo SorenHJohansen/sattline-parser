@@ -666,16 +666,19 @@ real boundary is a directory proven private to this user:
   a real directory, not a reparse point, whose owner is this user and whose DACL
   grants write access to nobody else; a failed security-descriptor read disables
   the cache.
-- The cache root is opened once with `O_DIRECTORY | O_NOFOLLOW` and its
-  `(st_dev, st_ino)` is recorded. The `file_ast` subdirectory is opened relative
-  to that descriptor. Every entry and key operation is relative to the held
-  descriptor with `O_NOFOLLOW`, so a link is never followed.
-- Every load and every save revalidates the held descriptor against the recorded
-  identity, the name that still resolves to it, and the owner and mode. A cache
-  root or `file_ast` directory that is renamed, replaced, symlinked, or widened
-  after construction disables the handle instead of being written into. A
-  removed cache directory is not recreated during that run; the next process
-  opens a fresh one.
+- On POSIX the cache root is opened once with `O_DIRECTORY | O_NOFOLLOW` and
+  its `(st_dev, st_ino)` is recorded; the `file_ast` subdirectory is opened
+  relative to that descriptor, and every entry and key operation is relative to
+  it with `O_NOFOLLOW`, so a link is never followed. Windows has no portable
+  directory descriptor: each entry is opened by path after the revalidation, and
+  the privacy check refuses a reparse point.
+- Every load and every save revalidates the directory against the recorded
+  identity, the name that still resolves to it, and the owner and mode (through
+  the held descriptor on POSIX, and through the security descriptor on
+  Windows). A cache root or `file_ast` directory that is renamed, replaced,
+  symlinked, or widened after construction disables the handle instead of being
+  written into. A removed cache directory is not recreated during that run; the
+  next process opens a fresh one.
 - Only a writer creates the HMAC key, and it reads and installs the key through
   the validated descriptor. A read with no key is a miss, so a reader never
   creates a key. Entry files and the key are created `0600`.
