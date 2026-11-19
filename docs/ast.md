@@ -573,7 +573,10 @@ The practical budget is `MAX_SOURCE_DEPTH` (256) levels of node nesting. In the
 deep-structure test template that is a 249-term left-associative expression
 chain: 240 and 244 terms parse and now also attach, and the term after the
 accepted maximum is still rejected by the parser with `SourceTooDeepError` before
-a project sees it.
+a project sees it. A load freezes the parsed tree in place, which costs one
+Python frame per level, and
+`tests/parser/test_project_from_programs_depth.py` loads the largest accepted
+tree as well, so both freeze paths are pinned at the boundary.
 
 The read-only mapping is a `FrozenMapping`, not a `types.MappingProxyType`. The
 proxy supports neither pickling nor `copy.deepcopy`, so a frozen graphics-bearing
