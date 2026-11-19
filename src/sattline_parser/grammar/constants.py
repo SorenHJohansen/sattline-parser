@@ -68,6 +68,8 @@ KEY_SEQ_CONTROL_OPS: Final = "seq_control_opt"
 KEY_COORDS: Final = "coords"
 #: Per-value groups for the coordinate run: one tuple of tails per REAL.
 KEY_COORD_TAILS: Final = "coord_tails"
+#: Per-value groups for a coordinate run: nested ``ClippingBounds`` annotations.
+KEY_COORD_CLIPPINGS: Final = "coord_clippings"
 KEY_SEGMENT_POINT: Final = "segment_point"
 KEY_POLYGON_TYPE: Final = "polygon_type"
 KEY_POINTS: Final = "points"

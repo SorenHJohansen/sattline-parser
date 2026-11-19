@@ -42,10 +42,11 @@ classDiagram
         declaration_span: SourceSpan | None
         arguments: ModuleArguments
         invoke_coord_tails: list[Tail]
+        coordinate_tails: tuple
+        coordinate_clippings: tuple
         groupconn: VarRef | None
         groupconn_global: bool
         description_comments: list[CodeComment]
-        coordinate_tails: tuple
     }
 
     class SingleModule {
@@ -134,8 +135,9 @@ arguments, and `Name = value` assignments. The singular names `layer_info`,
 `invocation_arguments` are read-only views over that field. `invoke_coord_tails`
 is the flat list of tails attached to the five invocation coordinates, and
 `coordinate_tails` is the same tails grouped by coordinate (index-aligned with
-`invoke_coord`), so a reader can place each one. The two views hold the same
-objects, never copies.
+`invoke_coord`), so a reader can place each one. A nested `ClippingBounds`
+annotation on one of those values lives in `coordinate_clippings`, under the
+same grouping. The tail views hold the same objects, never copies.
 
 ## Declarations
 
@@ -308,7 +310,9 @@ single layer. An object keeps its own `Layer_ = 1` or `Layer_ = 2` in
 corners and the tails attached to them live in one payload. `clipping_bounds`
 and `clipping_tails` are read-only views over it. `ClippingClause.tails` is the
 flat list of corner tails and `corner_tails` groups the same objects by corner,
-in `bounds` order. The block has no separate property map.
+in `bounds` order. A nested `ClippingBounds` annotation on a corner, which the
+grammar allows, lives in `corner_clippings` under the same grouping. The block
+has no separate property map.
 
 ## Typed property maps
 
@@ -351,6 +355,7 @@ than by drawing effect:
 | --- | --- | --- |
 | `coords` | `tuple` pair or box | a box object's `(x, y) (w, h)` pairs |
 | `coord_tails` | `tuple` of tail groups | the tails written after each coordinate value |
+| `coord_clippings` | `tuple` of `NestedClipping` groups | a nested `ClippingBounds` annotation written after a coordinate value |
 | `segment_point` | `tuple` pair | a `SegmentObject`'s third pair |
 | `polygon_type` | `list[str]` | `Polyline`, `Spline`, `Connection` |
 | `points` | `list[PolygonPoint]` | every polygon coordinate pair |
@@ -364,12 +369,24 @@ than by drawing effect:
 | `layer` | `int` | `Layer_ = <int>` |
 
 A `PolygonPoint` holds `x`, `y`, `x_tails`, and `y_tails`, so a tail written
-after one value stays attached to that value. Every other coordinate run uses
-`coord_tails`, one group per REAL, in the same order as the values; an
-`InteractObject` has the same key for its coordinate run. A polygon whose
-coordinate carries a nested `ClippingBounds` annotation folds that annotation's
-tails into the same coordinate. The flat `tails` view lists the same tail
-objects, never copies.
+after one value stays attached to that value. `x_clippings` and `y_clippings`
+hold the nested `ClippingBounds` annotations written after each value. Every
+other coordinate run uses `coord_tails`, one group per REAL, in the same order
+as the values, and `coord_clippings` with the annotations for the same values;
+an `InteractObject` has the same keys for its coordinate run. A polygon whose
+coordinate carries a nested `ClippingBounds` annotation keeps its tails in the
+same coordinate group and the annotation beside them, so neither the annotation
+nor the tails are lost. The flat `tails` view lists the same tail objects, never
+copies.
+
+`NestedClipping` is an ordered tuple of `NestedClippingValue` payloads, each a
+written real and the optional tail that followed it. It is a positional payload,
+not an AST node: `walk` never yields one and it carries no span, and the tails
+it owns appear once through the owning coordinate's flat tail view. The
+`NestedClipping.tails` property reads them in written order. A nested annotation
+belongs to the value it follows, so a plain tail written after it cannot be
+placed back in order; the formatter refuses that shape instead of reordering the
+coordinate.
 
 A text-object clause keeps its value and its tail in one payload, so a literal
 and its `InVar_` binding are read together. Compare a clause by `key` and
@@ -416,7 +433,8 @@ interact objects, and module definitions) carries a `span`
 (`SourceSpan | None`) recording the source range of the rule that produced it.
 Two nested payloads are exceptions: a `PolygonPoint` and a text object's
 `ConnectionNode` are built without a meta span, so their `.span` is `None` for
-parsed sources. `ModuleArguments.span` is also `None` when the argument list is
+parsed sources. `NestedClipping` and `NestedClippingValue` also carry no span,
+because they are positional payloads rather than nodes. `ModuleArguments.span` is also `None` when the argument list is
 empty, because an empty grammar match reports no position; the enclosing
 `ModuleHeader.declaration_span` still covers the header.
 A span is layout metadata: it does not participate in equality, so two
@@ -446,7 +464,9 @@ before it returns a `BasePicture`: `CommonProperties`, `ModuleOptions`,
 are not part of the model or the `sattline_parser.ast` surface, because a parsed
 tree never contains one. An `isinstance` check against them on a parsed AST is
 always false, `walk` never yields them, and `iter_child_nodes` never reports
-them.
+them. A nested `ClippingBounds` annotation is folded into a `NestedClipping`
+before the tree is returned, so `CoordinateClipping` is only its build-time
+form.
 
 ## SFC nodes
 
@@ -738,7 +758,7 @@ Property payloads are visited in a fixed order:
 | `GraphObject` | `colours`, `enable_tail`, `width`, `value_fraction`, `format_string`, `alignments`, `connection_node`, `points`, `tails` |
 | `InteractObject` | `procedure`, `assigns`, `enables`, `flags`, `colours`, `body`, `tails` |
 
-`coord_tails` keeps its place in both order tuples but is a grouping view: it yields no nodes, and the flat `tails` list emits each tail once. A key is in the order tuple because the table must cover every property key, not because the walker descends into it.
+`coord_tails` keeps its place in both order tuples but is a grouping view: it yields no nodes, and the flat `tails` list emits each tail once. `coord_clippings` is the same kind of view: a nested annotation is not a node, and its tails are the ones the flat list already emits. A key is in the order tuple because the table must cover every property key, not because the walker descends into it.
 
 `ModuleHeader.arguments` is walked as a node, so a consumer reaches `enable`,
 `module_in_view`, `zoom_limits`, `markers`, and `assigns` through it.
@@ -825,6 +845,10 @@ header line is written with the inner quote doubled again, and a preserved
 `CodeComment` is written with its own line breaks intact, so a second pass
 changes neither.
 
+A nested `ClippingBounds` annotation is written after the value it annotated,
+with every number and every value tail, so a coordinate keeps its annotation
+across a format pass.
+
 ## Tests that pin the model
 
 | Test | What it protects |
@@ -837,6 +861,7 @@ changes neither.
 | `tests/parser/test_models_walk.py` | Field coverage, node order, field and indices, ancestry, pruning, leave events, literal leaves, visitor dispatch |
 | `tests/parser/test_formatter.py` | Expression rendering in source spelling, SFC footers, round-trip parsing |
 | `tests/parser/test_format_source.py` | Whole-file round trip for every corpus fixture, idempotence, graphics properties |
+| `tests/parser/test_format_nested_clipping.py` | Nested `ClippingBounds` values and tails written back on every coordinate position |
 | `tests/parser/test_serialization.py` | JSON-friendly data for scalars, spans, containers, and a whole picture |
 | `tests/parser/test_models_boundary.py` | The model layer imports no Lark module |
 | `tests/parser/test_ast_namespace.py` | Every node type and model dataclass is on the `sattline_parser.ast` surface |

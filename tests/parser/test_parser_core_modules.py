@@ -158,6 +158,7 @@ def test_modules_mixin_coordinate_helpers_preserve_pairs_tails_and_clipping_tree
         coords=(1.0, 2.0),
         tails=[VarTail("in", "PanelResize")],
         coord_tails=((), (VarTail("in", "PanelResize"),)),
+        coord_clippings=((), ()),
     )
     assert pair == InterimCoords(
         coords=((1.0, 2.0), (3.0, 4.0)),
@@ -167,6 +168,7 @@ def test_modules_mixin_coordinate_helpers_preserve_pairs_tails_and_clipping_tree
         coords=(1.0, 2.0, 3.0, 4.0, 5.0),
         tails=[VarTail("in", "PanelResize")],
         coord_tails=((), (), (), (), (VarTail("in", "PanelResize"),)),
+        coord_clippings=((), (), (), (), ()),
     )
     assert mixin.origo_size_pair([InterimCoords(coords=(1.0, 2.0)), InterimCoords(coords=(3.0, 4.0))]) == (
         InterimCoords(coords=((1.0, 2.0), (3.0, 4.0)), tails=None)

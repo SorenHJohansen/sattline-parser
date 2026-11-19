@@ -241,14 +241,14 @@ def test_a_procedure_tail_argument_keeps_its_colon() -> None:
 
 def test_coordinate_helpers_reject_unknown_shapes() -> None:
     with pytest.raises(UnsupportedFormattingError, match="coordinate shape"):
-        fmt._tailed_coords_text((1.0,), (), 0)
+        fmt._tailed_coords_text((1.0,), (), (), 0)
     with pytest.raises(UnsupportedFormattingError, match="coordinate number"):
         fmt._as_float("nope")
     assert fmt._is_pair(1) is False
 
 
 def test_a_single_coordinate_pair_is_written_as_one_pair() -> None:
-    assert fmt._tailed_coords_text((1.0, 2.0), (), 0) == "( 1.0 , 2.0 )"
+    assert fmt._tailed_coords_text((1.0, 2.0), (), (), 0) == "( 1.0 , 2.0 )"
 
 
 def test_a_bare_connection_node_is_written_without_coordinates() -> None:
@@ -341,7 +341,7 @@ def test_an_interactor_whose_orders_disagree_raises() -> None:
 
 def test_tailed_coordinates_reject_an_unknown_shape() -> None:
     with pytest.raises(UnsupportedFormattingError, match="coordinate shape"):
-        fmt._tailed_coords_text("nope", (), 0)
+        fmt._tailed_coords_text("nope", (), (), 0)
 
 
 def test_a_graph_object_tail_without_an_owning_clause_raises() -> None:

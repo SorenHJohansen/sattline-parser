@@ -21,6 +21,7 @@ from .clauses import (
     CoordPair,
     EnableClause,
     FlagClause,
+    NestedClipping,
     PickButton,
     PolygonPoint,
     ProcedureCall,
@@ -71,6 +72,11 @@ class GraphProperties(TypedDict, total=False):
     #: order as the values in ``coords`` (or ``coords`` then ``segment_point``).
     #: The flat ``tails`` view lists the same objects, never copies.
     coord_tails: tuple[tuple[Tail, ...], ...]
+    #: ``KEY_COORD_CLIPPINGS``: nested ``ClippingBounds`` annotations, one group
+    #: per coordinate REAL in the same order as ``coord_tails``. Each annotation
+    #: keeps the values written after that value, and its tails are part of the
+    #: matching ``coord_tails`` group.
+    coord_clippings: tuple[tuple[NestedClipping, ...], ...]
     #: ``KEY_SEGMENT_POINT``
     segment_point: CoordPair
     #: ``KEY_POLYGON_TYPE``
@@ -109,6 +115,9 @@ class InteractProperties(TypedDict, total=False):
     #: ``KEY_COORD_TAILS``: one tuple of tails per coordinate REAL, across the
     #: whole coordinate run in written order.
     coord_tails: tuple[tuple[Tail, ...], ...]
+    #: ``KEY_COORD_CLIPPINGS``: nested ``ClippingBounds`` annotations, one group
+    #: per coordinate REAL, matching ``coord_tails``.
+    coord_clippings: tuple[tuple[NestedClipping, ...], ...]
     #: ``KEY_TAILS``
     tails: list[Tail]
     #: ``KEY_BODY``

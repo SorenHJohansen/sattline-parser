@@ -13,6 +13,8 @@ from sattline_parser.models.clauses import (
     ClippingClause,
     CoordBox,
     CoordPair,
+    NestedClipping,
+    NestedClippingValue,
     ZoomLimits,
 )
 from sattline_parser.models.tails import LitStringTail, Tail, VarTail
@@ -87,6 +89,24 @@ def _coordinate_tail_groups(items: list[TransformerItem]) -> tuple[tuple[Tail, .
     return tuple(tuple(group) for group in groups)
 
 
+def _coordinate_clipping_groups(items: list[TransformerItem]) -> tuple[tuple[NestedClipping, ...], ...]:
+    """The nested ``ClippingBounds`` annotations that follow each coordinate value.
+
+    Index-aligned with the REAL values the same way ``_coordinate_tail_groups``
+    is. An annotation keeps the values it carries, including each value's own
+    tail, so a formatter can write the annotation back instead of dropping it.
+    """
+    groups: list[list[NestedClipping]] = []
+    for item in items:
+        if isinstance(item, (int, float)) and not isinstance(item, bool):
+            groups.append([])
+        elif isinstance(item, CoordinateClipping) and groups:
+            groups[-1].append(
+                NestedClipping(tuple(NestedClippingValue(value.value, value.tail) for value in item.values))
+            )
+    return tuple(tuple(group) for group in groups)
+
+
 def _float_values(items: list[TransformerItem]) -> list[float]:
     return [float(item) for item in items if isinstance(item, (int, float))]
 
@@ -115,6 +135,7 @@ class ModuleLayoutMixin:
             (nums[0], nums[1]),
             tails or None,
             coord_tails=_coordinate_tail_groups(items)[:2],
+            coord_clippings=_coordinate_clipping_groups(items)[:2],
         )
 
     def origo_size_pair(self, items: list[TransformerItem]) -> InterimCoords:
@@ -126,6 +147,7 @@ class ModuleLayoutMixin:
         coords: list[CoordPair] = []
         tails: list[Tail] = []
         corner_groups: list[tuple[Tail, ...]] = []
+        clipping_groups: list[tuple[NestedClipping, ...]] = []
         complete = True
         for item in items:
             if not isinstance(item, InterimCoords):
@@ -135,16 +157,18 @@ class ModuleLayoutMixin:
                 coords.append(pair)
                 if item.tails:
                     tails.extend(item.tails)
-                if item.coord_tails is None:
+                if item.coord_tails is None or item.coord_clippings is None:
                     complete = False
                 else:
                     corner_groups.extend(item.coord_tails)
+                    clipping_groups.extend(item.coord_clippings)
         if len(coords) != 2:
             raise ValueError(f"origo_size_pair expected 2 coordinate pairs, found {len(coords)}")
         return InterimCoords(
             (coords[0], coords[1]),
             tails or None,
             coord_tails=tuple(corner_groups) if complete and len(corner_groups) == 4 else None,
+            coord_clippings=tuple(clipping_groups) if complete and len(clipping_groups) == 4 else None,
         )
 
     def invoke_coord(self, items: list[TransformerItem]) -> InterimCoords:
@@ -156,6 +180,7 @@ class ModuleLayoutMixin:
             cast(tuple[float, float, float, float, float], tuple(nums[:5])),
             tails or None,
             coord_tails=_coordinate_tail_groups(items),
+            coord_clippings=_coordinate_clipping_groups(items),
         )
 
     @v_args(meta=True)
@@ -224,6 +249,7 @@ class ModuleLayoutMixin:
                     tuple(item.tails or ()),
                     meta_span(meta),
                     corner_tails=item.coord_tails or (),
+                    corner_clippings=item.coord_clippings or (),
                 )
         raise ValueError("clippingbounds expected a payload; got no items")
 

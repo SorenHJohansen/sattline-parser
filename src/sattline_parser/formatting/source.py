@@ -67,6 +67,7 @@ from sattline_parser.models.clauses import (
     FlagClause,
     ModuleArguments,
     ModuleInViewClause,
+    NestedClipping,
     PickButton,
     PolygonPoint,
     ProcedureCall,
@@ -443,7 +444,10 @@ def _emit_clipping(printer: _Printer, clipping: ClippingClause, level: int) -> N
             "clipping tails: this clause carries tails without their corners, "
             "so the corner each tail belonged to is not known"
         )
-    rendered = [_real(value) + _tails_text(groups, index) for index, value in enumerate(values)]
+    rendered = [
+        _coordinate_value_text(value, _group_at(groups, index), _group_at(clipping.corner_clippings, index))
+        for index, value in enumerate(values)
+    ]
     printer.emit(level, f"ClippingBounds = ( {rendered[0]} , {rendered[1]} ) ( {rendered[2]} , {rendered[3]} )")
 
 
@@ -456,7 +460,8 @@ def _module_header(header: ModuleHeader) -> str:
             "coordinates, so the coordinate each tail belonged to is not known"
         )
     coordinames = ", ".join(
-        _real(value) + _tails_text(groups, index) for index, value in enumerate(header.invoke_coord)
+        _coordinate_value_text(value, _group_at(groups, index), _group_at(header.coordinate_clippings, index))
+        for index, value in enumerate(header.invoke_coord)
     )
     arguments = _arguments_text(header.arguments)
     inner = f"( {coordinames}" + (f" {arguments}" if arguments else "") + " )"
@@ -687,20 +692,21 @@ def _graph_head(properties: GraphProperties, kind: str, used: set[int]) -> list[
     if kind == const.GRAMMAR_VALUE_POLYGONOBJECT:
         head.extend(properties.get(const.KEY_POLYGON_TYPE, ()))
     groups = properties.get(const.KEY_COORD_TAILS, ())
+    clippings = properties.get(const.KEY_COORD_CLIPPINGS, ())
     coords = properties.get(const.KEY_COORDS)
     if coords is not None:
         if kind == const.GRAMMAR_VALUE_SEGMENTOBJECT:
-            head.append(_tailed_coords_text(coords, groups, 0))
+            head.append(_tailed_coords_text(coords, groups, clippings, 0))
             _mark_groups(used, groups, 0, 4)
         else:
-            head.append(_tailed_coords_text(coords, groups, 0))
+            head.append(_tailed_coords_text(coords, groups, clippings, 0))
             _mark_groups(used, groups, 0, len(groups))
     for point in properties.get(const.KEY_POINTS, ()):  # PolygonObject
         head.append(_polygon_point_text(point))
         for tail in (*point.x_tails, *point.y_tails):
             used.add(id(tail))
     if kind == const.GRAMMAR_VALUE_SEGMENTOBJECT and const.KEY_SEGMENT_POINT in properties:
-        head.append(_tailed_coords_text(properties[const.KEY_SEGMENT_POINT], groups, 4))
+        head.append(_tailed_coords_text(properties[const.KEY_SEGMENT_POINT], groups, clippings, 4))
         _mark_groups(used, groups, 4, 6)
     return head
 
@@ -799,12 +805,17 @@ def _colour_tails(colour: ColourSpec) -> tuple[Tail, ...]:
     return tuple(tails)
 
 
-def _tailed_coords_text(coords: object, groups: tuple[tuple[Tail, ...], ...], offset: int) -> str:
+def _tailed_coords_text(
+    coords: object,
+    groups: tuple[tuple[Tail, ...], ...],
+    clippings: tuple[tuple[NestedClipping, ...], ...],
+    offset: int,
+) -> str:
     """Render one pair or box, placing each value's tails after that value."""
     if _is_pair(coords):
         return (
-            f"( {_real(_as_float(coords[0]))}{_tails_text(groups, offset)} , "
-            f"{_real(_as_float(coords[1]))}{_tails_text(groups, offset + 1)} )"
+            f"( {_coordinate_value_text(coords[0], _group_at(groups, offset), _group_at(clippings, offset))} , "
+            f"{_coordinate_value_text(coords[1], _group_at(groups, offset + 1), _group_at(clippings, offset + 1))} )"
         )
     if isinstance(coords, tuple):
         box = cast("tuple[object, object]", coords)
@@ -812,10 +823,10 @@ def _tailed_coords_text(coords: object, groups: tuple[tuple[Tail, ...], ...], of
             first = cast("tuple[object, object]", box[0])
             second = cast("tuple[object, object]", box[1])
             return (
-                f"( {_real(_as_float(first[0]))}{_tails_text(groups, offset)} , "
-                f"{_real(_as_float(first[1]))}{_tails_text(groups, offset + 1)} ) "
-                f"( {_real(_as_float(second[0]))}{_tails_text(groups, offset + 2)} , "
-                f"{_real(_as_float(second[1]))}{_tails_text(groups, offset + 3)} )"
+                f"( {_coordinate_value_text(first[0], _group_at(groups, offset), _group_at(clippings, offset))} , "
+                f"{_coordinate_value_text(first[1], _group_at(groups, offset + 1), _group_at(clippings, offset + 1))} ) "
+                f"( {_coordinate_value_text(second[0], _group_at(groups, offset + 2), _group_at(clippings, offset + 2))} , "
+                f"{_coordinate_value_text(second[1], _group_at(groups, offset + 3), _group_at(clippings, offset + 3))} )"
             )
     raise UnsupportedFormattingError(f"unexpected coordinate shape: {coords!r}")
 
@@ -827,9 +838,10 @@ def _emit_interact_object(printer: _Printer, interact_object: InteractObject, le
     used: set[int] = set()
     parts = [interact_object.type]
     groups = properties.get(const.KEY_COORD_TAILS, ())
+    clippings = properties.get(const.KEY_COORD_CLIPPINGS, ())
     offset = 0
     for coords in properties.get(const.KEY_COORDS) or ():
-        parts.append(_tailed_coords_text(coords, groups, offset))
+        parts.append(_tailed_coords_text(coords, groups, clippings, offset))
         offset += 4 if not _is_pair(coords) else 2
     for tail in (tail for group in groups for tail in group):
         used.add(id(tail))
@@ -1013,8 +1025,8 @@ def _as_float(value: object) -> float:
 
 
 def _polygon_point_text(point: PolygonPoint) -> str:
-    x = _real(point.x) + "".join(_tail_text(tail, parenthesised=False) for tail in point.x_tails)
-    y = _real(point.y) + "".join(_tail_text(tail, parenthesised=False) for tail in point.y_tails)
+    x = _coordinate_value_text(point.x, point.x_tails, point.x_clippings)
+    y = _coordinate_value_text(point.y, point.y_tails, point.y_clippings)
     return f"( {x} , {y} )"
 
 
@@ -1044,11 +1056,61 @@ def _mapping_text(mapping: ParameterMapping) -> str:
     return f"{prefix}{_value_text(literal)}"
 
 
-def _tails_text(groups: tuple[tuple[Tail, ...], ...], index: int) -> str:
-    """The tails written after the value at *index*, or an empty string."""
-    if index >= len(groups):
-        return ""
-    return "".join(_tail_text(tail, parenthesised=False) for tail in groups[index])
+def _group_at(groups: tuple[tuple[object, ...], ...], index: int) -> tuple[object, ...]:
+    """One positional group, or an empty group when the model records none."""
+    return groups[index] if index < len(groups) else ()
+
+
+def _coordinate_value_text(value: object, tails: tuple[object, ...], clippings: tuple[object, ...]) -> str:
+    """One coordinate number, the tails after it, and any nested clipping.
+
+    A nested ``ClippingBounds`` annotation owns the tails of its own values, and
+    those same tail objects are part of the coordinate's flat tail group. The
+    annotation is written after the plain tails, so the tails it owns are skipped
+    here and rendered inside the annotation instead.
+    """
+    nested = cast("tuple[NestedClipping, ...]", clippings)
+    if not nested:
+        return _real(_as_float(value)) + "".join(_tail_text(tail, parenthesised=False) for tail in tails)
+    owned = {
+        id(clipping_value.tail)
+        for clipping in nested
+        for clipping_value in clipping.values
+        if clipping_value.tail is not None
+    }
+    _ensure_clipping_suffix(tails, owned)
+    plain = "".join(_tail_text(tail, parenthesised=False) for tail in tails if id(tail) not in owned)
+    return _real(_as_float(value)) + plain + "".join(_nested_clipping_text(clipping) for clipping in nested)
+
+
+def _ensure_clipping_suffix(tails: tuple[object, ...], owned: set[int]) -> None:
+    """Refuse a tail written after a nested clipping annotation.
+
+    The model keeps the annotation beside the coordinate's tails rather than
+    inside their order, so the only order it can write back is "plain tails,
+    then the annotation". A source that wrote a plain tail after the annotation
+    is therefore not reconstructible, and the formatter refuses instead of
+    reordering the coordinate.
+    """
+    seen_annotation = False
+    for tail in tails:
+        if id(tail) in owned:
+            seen_annotation = True
+        elif seen_annotation:
+            raise UnsupportedFormattingError(
+                "nested ClippingBounds: a plain coordinate tail was written after the "
+                "annotation, so the written order of the coordinate is not known"
+            )
+
+
+def _nested_clipping_text(clipping: NestedClipping) -> str:
+    """One nested ``ClippingBounds = <values>`` annotation and its values."""
+    values = " ".join(
+        _real(clipping_value.value)
+        + ("" if clipping_value.tail is None else _tail_text(clipping_value.tail, parenthesised=False))
+        for clipping_value in clipping.values
+    )
+    return f" {const.GRAMMAR_VALUE_CLIPPINGBOUNDS} = {values}"
 
 
 def _tail_text(tail: object, *, parenthesised: bool) -> str:

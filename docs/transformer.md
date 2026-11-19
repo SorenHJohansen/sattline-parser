@@ -65,6 +65,8 @@ class SLTransformer(
 into an owner: `CommonProperties`, `ModuleOptions`, `TwoLayers`, `Grid`,
 `Zoomable`, `ClipValue`, and `CoordinateClipping`. They are not AST nodes and
 are not part of `sattline_parser.ast`; a parsed tree never contains one.
+`CoordinateClipping` becomes a `NestedClipping` on the coordinate it follows,
+so its values reach the tree even though the interim payload does not.
 
 `_module_shared.py` holds helpers and types shared by several mixins:
 `flatten_items`, `meta_span`, `tree_children`, `InterimCoords`,
@@ -286,13 +288,15 @@ consumer sees the failure as Lark's `VisitError` around the transformer error.
 
 `ModuleLayoutMixin` handles:
 
-- `ClippingBounds` coordinates, including tail expressions;
+- `ClippingBounds` coordinates, including tail expressions and nested
+  `ClippingBounds` annotations;
 - `ZoomLimits`, `Two_Layers_`, `LayerLimit_`, `Grid`, `Zoomable`;
 - `ModuleDef` assembly.
 
 `ClippingBounds` becomes one `ClippingClause` on `ModuleDef.clipping`, keeping
-the resolved corners and the corner tails together. Validation type-checks the
-tails through that clause.
+the resolved corners and the corner tails together. A nested
+`ClippingBounds = <values>` on one corner is kept as a `NestedClipping` under
+`corner_clippings`. Validation type-checks the tails through that clause.
 
 `GraphicsInteractMixin` handles:
 
@@ -339,6 +343,15 @@ payloads, the alignments as `Alignment` values, and its `ConnectionNode` anchor
 as a `GraphObject`. Each clause is one payload: the value and its binding tail
 are read together, and the tail is the same object the flat list holds.
 
+A nested `ClippingBounds = <values>` annotation is a `CoordinateClipping` while
+the rule runs and becomes a `NestedClipping` on the coordinate it follows, so
+every number and every value tail reach the tree. The per-value split is the
+same one `coord_tails` records, exposed as `coord_clippings` on a graph or
+interact object, `x_clippings`/`y_clippings` on a polygon point,
+`coordinate_clippings` on a module header, and `corner_clippings` on a clipping
+clause. The annotation's tails stay in the flat tail view, so a consumer that
+counts references sees each one once.
+
 Free-form interactor names are accepted on purpose. The transformer preserves
 them as `InteractObject.type` strings; the package does not decide which
 free-form names are valid UI widgets.
@@ -369,3 +382,4 @@ semantically wrong, the finding belongs in `validation/`, not here.
 | `tests/parser/test_parser_core_comments.py` | Comment roles |
 | `tests/parser/test_parser_core_sfc.py` | SFC building |
 | `tests/parser/test_parser_core_module_definitions.py` | Layout and graphics |
+| `tests/parser/test_format_nested_clipping.py` | Nested `ClippingBounds` values on every coordinate position |

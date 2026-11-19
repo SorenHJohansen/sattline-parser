@@ -30,7 +30,7 @@ from ._ast_model_support import (
     submodule_list,
     variable_list,
 )
-from .clauses import ClippingClause, ModuleArguments
+from .clauses import ClippingClause, ModuleArguments, NestedClipping
 from .expressions import (
     Assignment,
     BinOp,
@@ -466,6 +466,10 @@ class ModuleHeader(FrozenNode):
     #: without position information. The tails are the same objects as
     #: ``invoke_coord_tails``, never copies.
     coordinate_tails: tuple[tuple[Tail, ...], ...] = ()
+    #: Nested ``ClippingBounds`` annotations written after one ``invoke_coord``
+    #: value, one group per value in ``invoke_coord`` order. Their tails are part
+    #: of ``invoke_coord_tails``, and the annotation keeps the values themselves.
+    coordinate_clippings: tuple[tuple[NestedClipping, ...], ...] = ()
 
     @property
     def invocation_arguments(self) -> tuple[str, ...]:
