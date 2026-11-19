@@ -25,7 +25,7 @@ from typing import TYPE_CHECKING, cast
 
 from lark.exceptions import UnexpectedCharacters, UnexpectedEOF, UnexpectedInput, UnexpectedToken
 
-from sattline_parser.source_document import is_remapped
+from sattline_parser.source_document import is_remapped, split_source_lines
 
 if TYPE_CHECKING:
     from sattline_parser.source_document import SourceDocument
@@ -361,19 +361,19 @@ def describe_parse_error(
 def _source_line(source_text: str, line: int | None) -> str | None:
     """The original source line at ``line`` (1-based), when it exists.
 
-    Lines are split on ``"\\n"`` only, exactly like the offsets that produce
-    ``line``. ``str.splitlines`` also splits on a lone ``\\r``, ``\\v``, ``\\f``
-    and ``\\x1c``-``\\x1e``, which are legal inside a string literal, so it would
-    disagree with the line numbers the parser reports. One trailing ``\\r`` is
-    removed so a CRLF file does not leave a stray CR on the reported line.
+    Lines end at CRLF, LF, or a lone CR, the line-break rule the grammar's
+    string terminals and the compressed scanner use, and the rule
+    :meth:`SourceDocument.line_col` applies to an original-source offset. Using
+    one definition keeps a reported line and its excerpt on the same text. A
+    form feed, a vertical tab, and the other ``str.splitlines`` separators are
+    ordinary content and never start a line.
     """
     if not isinstance(line, int) or line < 1:
         return None
-    lines = source_text.split("\n")
+    lines = split_source_lines(source_text)
     if line > len(lines):
         return None
-    text = lines[line - 1]
-    return text[:-1] if text.endswith("\r") else text
+    return lines[line - 1]
 
 
 def source_line_at(source_text: str, line: int | None) -> str | None:

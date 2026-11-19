@@ -47,7 +47,7 @@ JSON-friendly data.
 | `build_lark_parser` | `api` | `(*, start="start", propagate_positions=True)` | `Lark` |
 | `describe_parse_error` | both | `(exc, source_text=None, *, source_document=None)` | `ParseErrorDetails`; with `source_text=None` the position is kept and no excerpt is produced |
 | `PARSE_FAILURES` | `api` | tuple of exception types | the invalid-input contract: `UnexpectedInput`, `ValueError`, `UnicodeError`, `OSError` |
-| `source_line_at` | `api` | `(source_text, line)` | the original source line, split on `"\n"` only |
+| `source_line_at` | `api` | `(source_text, line)` | the original source line, split at CRLF, LF, or a lone CR |
 | `SourceTooDeepError` | both | `(limit, *, line=None, column=None, pos_in_stream=None)` | `UnexpectedInput` subclass for an over-deep structure |
 | `MAX_SOURCE_DEPTH` | both | `256` | Maximum structural depth accepted by `parse_source_text` |
 | `is_compressed` | top-level | `(text)` | `bool` |
@@ -86,9 +86,11 @@ propagates instead of being reported as a broken source. In particular,
 `RuntimeError` (a transformer returning the wrong type) is not part of the
 contract. Catch `PARSE_FAILURES` rather than testing exception types by name.
 
-`source_line_at` is the excerpt lookup every diagnostic uses. It splits on
-`"\n"` only, so a lone `\r`, `\v`, or `\f` inside a string literal does not
-shift the line the parser reported.
+`source_line_at` is the excerpt lookup every diagnostic uses. It splits at
+CRLF, LF, or a lone CR, the same line-break definition the grammar and
+`SourceDocument.line_col` use, so a CR-only document reports the quoted line it
+reports the number for. A form feed or a vertical tab is content, not a line
+break.
 
 ## Grammar vocabulary
 

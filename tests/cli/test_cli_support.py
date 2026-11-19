@@ -151,17 +151,17 @@ def test_finding_from_diagnostic_attaches_the_source_line() -> None:
 
 
 def test_finding_source_line_agrees_with_a_line_number_after_a_lone_cr() -> None:
-    """A lone CR inside a string is text, not a line break.
+    """A lone CR ends a line, so the excerpt and the line number agree.
 
-    The excerpt must use the same ``"\\n"`` split as the parser's line numbers,
-    or a diagnostic on line 3 would print the text of line 2.
+    The excerpt must use the same CRLF/LF/CR rule as the position index, or a
+    diagnostic on line 3 of a CR-only document would print the text of line 2.
     """
     diagnostic = Diagnostic(
         code=DiagnosticCode.CONSECUTIVE_SEQUENCE_STEPS,
         message="Consecutive SFC steps",
         span=SourceSpan(start=12, end=20, line=3, column=1),
     )
-    source = '"a\rb"\nsecond\nModuleCode\n'
+    source = '"a"\rsecond\rModuleCode\r'
 
     finding = finding_from_diagnostic(diagnostic, file="M.s", source_text=source, absolute_paths=False)
 
