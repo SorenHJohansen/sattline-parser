@@ -1315,11 +1315,12 @@ def test_parse_code_file_reports_a_parse_failure_as_text(tmp_path: Path) -> None
 
 
 def test_a_worker_returns_one_parser_message_per_file_under_debug(tmp_path: Path) -> None:
-    code = write_file(tmp_path, "Broken.s", _BROKEN)
+    code = write_file(tmp_path, "Main.s", _CODE)
 
     outcome = parse_code_file((str(code), LoadMode.DRAFT.value, None, True, True))
 
     assert outcome.debug[0] == f"Parsing: {code}"
+    assert "Parse OK, transforming with SLTransformer" in outcome.debug
     assert len(outcome.debug) <= MAX_WORKER_DEBUG_MESSAGES
 
 
@@ -2292,7 +2293,12 @@ def test_a_pool_worker_marks_itself_before_it_runs_a_task(monkeypatch: pytest.Mo
 
     project_loader_parallel._mark_pool_worker()  # pyright: ignore[reportPrivateUsage]
 
-    assert pool_allowed() is False
+    try:
+        assert pool_allowed() is False
+    finally:
+        # ``_mark_pool_worker`` writes the environment directly, so the marker
+        # would otherwise leak into every later test in this process.
+        os.environ.pop(project_loader_parallel.POOL_WORKER_ENV, None)
 
 
 def test_a_nested_load_parses_in_this_process_and_says_so_once(

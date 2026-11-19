@@ -116,7 +116,9 @@ def test_project_sarif_reports_a_load_failure(tmp_path: Path, capsys) -> None:
 
     result = log["runs"][0]["results"][0]
     assert result["ruleId"] == "PROJECT_LOAD_ERROR"
-    assert "locations" not in result
+    physical = result["locations"][0]["physicalLocation"]
+    assert physical["artifactLocation"]["uri"].endswith("Broken.s")
+    assert physical["region"]["startLine"] == 1
 
 
 def test_sarif_uri_is_repository_relative_and_encoded(tmp_path: Path, capsys, monkeypatch) -> None:
