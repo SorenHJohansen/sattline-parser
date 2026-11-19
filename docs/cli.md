@@ -177,7 +177,10 @@ loaded. When `--targets` is omitted, every source directly under each effective
 root is a target.
 A missing or unparseable artifact is a load failure: the command reports
 `cannot load project` with the underlying error and exits `1`, whatever
-`--fail-on` says. A recursive `.l`/`.z` dependency
+`--fail-on` says. When the failure is a body that does not parse, the finding
+keeps the parser's sentence, `line`, `column`, and `hint` from the cause, so the
+report points at the source rather than only naming the artifact. A recursive
+`.l`/`.z` dependency
 (`DependencyCycleError`) and a module type that instantiates itself
 (`ModuleTypeCycleError`) are load failures too, reported the same way. There is
 no partial project: `--fail-on` governs validation findings only.

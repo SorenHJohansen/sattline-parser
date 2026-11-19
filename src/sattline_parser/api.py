@@ -19,7 +19,7 @@ from pathlib import Path
 
 from lark import Lark
 
-from .errors import ParseErrorDetails, SourceTooDeepError, describe_parse_error
+from .errors import PARSE_FAILURES, ParseErrorDetails, SourceTooDeepError, describe_parse_error, source_line_at
 from .models.ast_model import BasePicture, DataType, ModuleTypeDef
 from .preprocessing import render_ide_text
 from .source_io import (
@@ -74,6 +74,7 @@ def parse_and_validate(
 
 __all__ = [
     "MAX_SOURCE_DEPTH",
+    "PARSE_FAILURES",
     "ParseErrorDetails",
     "SourceTooDeepError",
     "build_lark_parser",
@@ -87,6 +88,7 @@ __all__ = [
     "parse_source_text",
     "read_text_cp1252",
     "render_ide_text",
+    "source_line_at",
     "source_text_for_parse",
     "validate_basepicture",
 ]

@@ -55,6 +55,7 @@ __all__ = [
     "SourceTooDeepError",
     "_log_parser_failure",  # imported by source_io as the internal failure logger
     "describe_parse_error",
+    "source_line_at",
 ]
 
 log = logging.getLogger("sattline_parser")
@@ -303,16 +304,19 @@ def _context_at(source_text: str, pos: int, span: int = 40) -> str:
 
 def describe_parse_error(
     exc: Exception,
-    source_text: str,
+    source_text: str | None = None,
     *,
     source_document: SourceDocument | None = None,
 ) -> ParseErrorDetails:
     """Describe a parse failure, reporting positions in the *original* source.
 
-    ``source_text`` must be the original (un-preprocessed) source. When
-    ``source_document`` is supplied and the exception position is in normalized
-    (decoded) coordinates, the reported line/column are mapped back to the
-    original source.
+    ``source_text`` must be the original (un-preprocessed) source. It may be
+    ``None`` when only the exception's own position is available, as when a
+    project load error carries a parse failure as its cause: the details then
+    keep ``line`` and ``column`` but have no excerpt. When ``source_document``
+    is supplied and the exception position is in normalized (decoded)
+    coordinates, the reported line/column are mapped back to the original
+    source.
     """
     line = getattr(exc, "line", None)
     column = getattr(exc, "column", None)
@@ -320,7 +324,9 @@ def describe_parse_error(
         mapped: int | None = None
         if source_document is not None:
             mapped = _mapped_error_position(exc, source_document)
-        if mapped is not None and source_document is not None:
+        if source_text is None:
+            context = ""
+        elif mapped is not None and source_document is not None:
             line, column = source_document.line_col(mapped)
             context = _context_at(source_text, mapped).rstrip()
         else:
@@ -347,7 +353,7 @@ def describe_parse_error(
             found=found,
             expected=expected,
             hint=hint,
-            source_line=_source_line(source_text, line),
+            source_line=_source_line(source_text, line) if source_text is not None else None,
         )
     return ParseErrorDetails(message=str(exc), line=line, column=column, sentence=str(exc))
 
@@ -370,18 +376,21 @@ def _source_line(source_text: str, line: int | None) -> str | None:
     return text[:-1] if text.endswith("\r") else text
 
 
+def source_line_at(source_text: str, line: int | None) -> str | None:
+    """The original source line at ``line`` (1-based), when it exists.
+
+    This is the public spelling of the excerpt lookup every diagnostic uses.
+    See :func:`_source_line` for the line-splitting rule.
+    """
+    return _source_line(source_text, line)
+
+
 def _failure_details(
     exc: Exception,
     source_text: str | None = None,
     source_document: SourceDocument | None = None,
 ) -> ParseErrorDetails:
-    if source_text is not None:
-        return describe_parse_error(exc, source_text, source_document=source_document)
-    return ParseErrorDetails(
-        message=str(exc),
-        line=getattr(exc, "line", None),
-        column=getattr(exc, "column", None),
-    )
+    return describe_parse_error(exc, source_text, source_document=source_document)
 
 
 def _log_parser_failure(
