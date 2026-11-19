@@ -1,0 +1,1 @@
+- **LALR conflicts are pinned.** A test now asserts the exact shift/reduce conflict set the grammar leaves to Lark's default: 46 conflicts, 38 on `COMMENT_START` and 8 on `CONNECTIONNODE`, each resolved as a shift. A grammar or Lark change that alters a resolution fails the test instead of changing a parse silently.
