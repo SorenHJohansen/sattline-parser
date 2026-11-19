@@ -1,0 +1,2 @@
+- **Literal leaves in a mapping payload.** `iter_literal_leaves` now reads the values of a mapping payload, so the text of a `Time_Value` initializer or parameter mapping is visible with a relation such as `init_value[Time_Value]`.
+- **Literal spelling and the JSON view.** `to_jsonable` still emits a literal as its plain number; `span`, `clamped`, and `written` are model attributes for source text and provenance and are deliberately absent from the data view.
