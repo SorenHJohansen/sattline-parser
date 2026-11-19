@@ -67,7 +67,10 @@ skipped. For an identity document:
 - `map_position(i)` returns `min(i, len(original_text))`;
 - `map_range(start, end)` returns the range clamped to the original text, and a
   zero-width range at the mapped boundary when `start >= end`;
-- `remap_tree_to_original` is a no-op;
+- `remap_tree_to_original` is a no-op unless the text contains a lone CR. A
+  CR-only text rewrites each span's line and column through `line_col`, because
+  the language treats a lone CR as a line break while the Lark position index
+  counts LF, so its token lines would otherwise all stay on line 1;
 - `is_decoded_range` is always `False`.
 
 Most sources are identity documents. The expensive path only runs for coded or

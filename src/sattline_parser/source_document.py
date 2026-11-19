@@ -112,6 +112,9 @@ GENERATED = Generated()
 #: must use it too.
 _LINE_BREAK_RE = re.compile(r"\r\n|\r|\n")
 
+#: A CR that is not the first half of CRLF, so it ends a line on its own.
+_LONE_CR_RE = re.compile(r"\r(?!\n)")
+
 
 def split_source_lines(text: str) -> tuple[str, ...]:
     """Split *text* at CRLF, LF, or a lone CR, dropping the terminators.
@@ -392,9 +395,13 @@ def remap_tree_to_original(tree: Tree[Token], doc: SourceDocument) -> None:
     """Rewrite every position in *tree* from normalized to original coordinates.
 
     ``tree`` is mutated in place so that ``meta`` and ``Token`` positions refer
-    to the original source. This is a no-op for identity documents.
+    to the original source. An identity document whose text has no lone CR needs
+    no rewrite: offsets and LF-based lines already match. A CR-only identity
+    document still does, because the language treats a lone CR as a line break
+    while the Lark position index counts LF, so its token lines would otherwise
+    all stay on line 1.
     """
-    if doc.is_identity():
+    if doc.is_identity() and ("\r" not in doc.original_text or _LONE_CR_RE.search(doc.original_text) is None):
         return
     _walk(tree, doc)
 
