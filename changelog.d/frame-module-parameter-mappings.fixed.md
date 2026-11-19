@@ -1,0 +1,1 @@
+- **Frame-module parameter mappings.** A frame-module declaration's mapping tail is now validated like a single module's, so a type-incompatible source, a duplicate target, and an absent formal report `SL-V027`, `SL-V049`, and `SL-V048` instead of passing silently.

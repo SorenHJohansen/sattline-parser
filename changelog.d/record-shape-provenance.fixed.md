@@ -1,0 +1,1 @@
+- **Record shape provenance.** A record declared in a file with zero fields now has a known shape, so a field access through it reports `SL-V019` instead of staying silent. A datatype name declared twice leaves a field's datatype unproven, so an assignment through it is not type-checked, and a same-named dependency definition no longer marks the file's own record as duplicated.

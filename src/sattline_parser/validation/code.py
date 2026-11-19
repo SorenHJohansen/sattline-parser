@@ -310,7 +310,7 @@ def walk_code_item(item: object, context: ValidationContext) -> None:
 def walk_expression(expr: SLExpression, context: ValidationContext) -> None:
     if isinstance(expr, VarRef):
         resolved = resolve_var(expr, context.scope, context.records)
-        _check_old_new(expr, resolved, context.errors)
+        check_old_new(expr, None if resolved is None else bool(resolved.state), context.errors)
         if (
             resolved is None
             and unresolved_reference_is_a_defect(expr, context.scope, context.type_graph)
@@ -338,6 +338,7 @@ def walk_expression(expr: SLExpression, context: ValidationContext) -> None:
         _check_unary_operand(expr, context)
         walk_expression(expr.operand, context)
     elif isinstance(expr, FuncCall):
+        _check_procedure_value_position(expr, context)
         _check_call(expr, context)
         for arg in expr.args:
             walk_expression(arg, context)
@@ -589,7 +590,7 @@ def _check_assignment(assignment: Assignment, context: ValidationContext) -> Non
                 span=assignment.span,
             )
         )
-    _check_old_new(assignment.target, resolved, context.errors)
+    check_old_new(assignment.target, bool(resolved.state), context.errors)
     _check_old_write_target(assignment.target, resolved, context.errors)
     if resolved.datatype == ScalarDatatype.STRING:
         # Scope: plain ``String`` only. The other string families
@@ -639,10 +640,16 @@ def _check_old_write_target(ref: VarRef, resolved: Variable | None, errors: list
     )
 
 
-def _check_old_new(ref: VarRef, resolved: Variable | None, errors: list[Diagnostic]) -> None:
+def check_old_new(ref: VarRef, is_state: bool | None, errors: list[Diagnostic]) -> None:
+    """``:Old``/``:New`` require a resolved State declaration.
+
+    ``is_state`` is ``None`` when the reference does not resolve, in which case
+    the reference is unproven and another rule owns the problem. A resolved
+    non-State declaration is the finding.
+    """
     if ref.state not in ("old", "new"):
         return
-    if resolved is None or resolved.state:
+    if is_state is None or is_state:
         return
     is_field = "." in ref.name
     code = DiagnosticCode.OLD_NEW_ON_NON_STATE_FIELD if is_field else DiagnosticCode.OLD_NEW_ON_NON_STATE_VARIABLE
@@ -652,6 +659,31 @@ def _check_old_new(ref: VarRef, resolved: Variable | None, errors: list[Diagnost
             code=code,
             message=f":{ref.state} is only valid on State {kind}s; '{ref.name}' is not declared State",
             span=ref.span,
+        )
+    )
+
+
+def _check_procedure_value_position(call: FuncCall, context: ValidationContext) -> None:
+    """A known procedure returns no value, so a value position is rejected.
+
+    The catalogue records a call's ``kind`` separately from its return type, and
+    a procedure carries no return type. ``infer_expression_datatype`` treats that
+    ``None`` as unproven, which is right for an unknown callee but wrong for a
+    known procedure: the callee cannot supply a value in an assignment source, a
+    condition, an operand, a ternary branch, or a call argument. Only a resolved
+    procedure is reported; an unknown callee stays silent.
+    """
+    signature = builtin_function_signature(call.name)
+    if signature is None or signature.kind != "procedure":
+        return
+    context.errors.append(
+        Diagnostic(
+            code=DiagnosticCode.PROCEDURE_IN_VALUE_POSITION,
+            message=(
+                f"Built-in {signature.name} is a procedure and returns no value; "
+                "its call cannot be used where a value is required"
+            ),
+            span=call.span,
         )
     )
 
@@ -694,9 +726,11 @@ def _check_call(call: FuncCall, context: ValidationContext) -> None:
         is_write = parameter.direction in {"out", "inout"}
         # A string-cursor parameter (`accepts_const_string`) names a string
         # buffer rather than a data destination, so a Const string is accepted
-        # there. The exemption covers the Const-write finding only: the argument
-        # is still checked for being a reference and for its datatype.
-        const_exempt = parameter.accepts_const_string
+        # there. The same reasoning exempts a builtin parameter that names the
+        # object member the call writes (see `_OBJECT_WRITE_PARAMETERS`). Both
+        # exemptions cover the Const-write finding only: the argument is still
+        # checked for being a reference and for its datatype.
+        const_exempt = parameter.accepts_const_string or _is_object_write_parameter(signature.name, parameter.name)
         if isinstance(arg, VarRef):
             if is_write:
                 resolved = resolve_var(arg, context.scope, context.records)
@@ -754,6 +788,25 @@ def _check_call(call: FuncCall, context: ValidationContext) -> None:
                     span=call.span,
                 )
             )
+
+
+#: Builtin parameters that write a value into an object the call addresses,
+#: rather than assigning a caller variable. The argument is the value written
+#: into the object, so a Const reference there is not a caller write and
+#: `SL-V007` does not apply. `setioattribute`'s `Variable` parameter (position
+#: 6, catalogue type `AnyType`) is the only established case: the call targets an
+#: I/O object by module, node, board, and channel, and writes the supplied value
+#: into that object. The exemption is per builtin and per parameter name, not a
+#: blanket `inout` exemption, so every other output argument keeps the rule.
+_OBJECT_WRITE_PARAMETERS: dict[str, frozenset[str]] = {
+    fold_identifier("setioattribute"): frozenset({fold_identifier("Variable")}),
+}
+
+
+def _is_object_write_parameter(builtin_name: str, parameter_name: str) -> bool:
+    """Whether this builtin parameter names an object member written by the call."""
+    parameters = _OBJECT_WRITE_PARAMETERS.get(fold_identifier(builtin_name))
+    return parameters is not None and fold_identifier(parameter_name) in parameters
 
 
 def _accepts_string_literal(signature: BuiltinFunction | None, position: int) -> bool:

@@ -154,7 +154,11 @@ typing that needs a validation scope stays in this layer.
 - Identifiers must be at most 20 characters and must not be a reserved keyword.
   This covers parameters, locals, and module-code names in single modules and
   frame modules alike.
-- Sibling submodules must have unique names.
+- Sibling submodule instance labels must be unique within their container,
+  regardless of the module kind. Two inline modules, two frame modules, two
+  module-type instances, or any mix that fold to one label are a duplicate
+  (`SL-V004`). The label is an instance name, not a resolvable symbol: it is not
+  entered into the variable scope, so a reference to it is undefined.
 - Declaration modifiers are checked in source order. `State OpSave` is valid;
   `OpSave State` and `OpSave Const` are invalid.
 - A declared datatype name must resolve to a file datatype, a builtin record,
@@ -164,7 +168,13 @@ typing that needs a validation scope stays in this layer.
   are a tie, so no suggestion is offered and the name is reported as unknown
   instead.
 - Record fields must resolve, and every definition of a duplicated datatype
-  name is validated on its own.
+  name is validated on its own. A record declared in a file has a known shape
+  even when it declares zero fields, so a field it omits is a typo. A builtin
+  record whose field table is not transcribed is declared but not modelled, so
+  a field access through it stays unproven. A name declared more than once has
+  more than one valid shape, so a field's datatype there is unproven and an
+  assignment through it is not type-checked. A same-named definition from a
+  loaded dependency is replaced by the file's own, not counted as a duplicate.
 
 ### Module code and expressions
 
@@ -172,7 +182,12 @@ typing that needs a validation scope stays in this layer.
   state.
 - A write to a `Const` variable is rejected. The `Const` modifier is read from
   every segment of a dotted target, so `Rec.Field := 1` is rejected when `Rec`
-  is `Const`, and the same rule covers a builtin output argument.
+  is `Const`, and the same rule covers a builtin output argument. The
+  `setioattribute` `Variable` argument is exempt: it names the object member the
+  call writes, so the argument is a value written into the addressed object, not
+  a caller variable the callee assigns. The exemption is per builtin and per
+  parameter, not a blanket `inout` exemption, so every other output argument
+  keeps the rule.
 - References to undefined variables are rejected, except SFC runtime
   accessors and the `On`/`Off` runtime constants. A missing root name is
   undefined. A dotted field path is judged one step at a time: a field on a
@@ -194,6 +209,13 @@ typing that needs a validation scope stays in this layer.
   legal. A written position (`in var`, `out`, `inout`) names a buffer that the
   call fills or advances, so a literal there is rejected. A callee with no known
   signature stays rejected, because nothing evidences that it takes a value.
+- A call to a known procedure is rejected wherever a value is required: an
+  assignment source, a condition, an arithmetic or logical operand, a ternary
+  branch, and a call argument (`SL-V060`). The catalogue records a call's `kind`
+  separately from its return type, so a procedure is known to return no value
+  instead of being read as an unproven type. The statement form is the legal way
+  to call a procedure, and an unknown callee stays silent because it may be a
+  function defined elsewhere.
 - Numeric operands are required for arithmetic; boolean operands for `AND`,
   `OR`, and `NOT`; a boolean condition for `IF`, `ELSIF`, and `WAIT_FOR`.
 - Assignment types must be compatible.
@@ -241,10 +263,16 @@ reuse the name of an element inside its own body.
 
 ### Parameter transfers and mappings
 
-- A submodule declaration and a module-type instance are checked for
-  parameter-transfer type compatibility against their own formal parameters.
-  Mapping sources resolve in the invoking scope. A module type definition has no
-  mapping list in the grammar, so it carries none to check.
+- A submodule declaration, including a frame-module declaration, and a
+  module-type instance are checked for parameter-transfer type compatibility
+  against their own formal parameters. A frame module carries the same
+  parameter list and mapping tail as a single module, so it gets the same
+  contract. Mapping sources resolve in the invoking scope. A module type
+  definition has no mapping list in the grammar, so it carries none to check.
+- A mapping source is checked independently of the target. It resolves in the
+  invoking scope, so an undefined source and an `:Old`/`:New` suffix on a
+  non-State source are local findings even when the target module type is not
+  loaded and its formals are unknown.
 - Every mapping is checked for a duplicate target, field access, unknown target,
   a source that does not resolve, and literal or variable type mismatch. The
   checks are the same for a plain submodule as for a module-type instance. A
@@ -370,6 +398,7 @@ here. `sattline rules` exposes the same data on the command line.
 | `SL-V057` | `DATECODE_CONFLICT` | active | project | The same module type or datatype may not be declared with different datecodes in a visible closure. |
 | `SL-V058` | `UNKNOWN_MODULETYPE_NAME` | active | mappings | A module-type instance must name a declared type or one visible from a loaded dependency. |
 | `SL-V059` | `NUMERIC_LITERAL_OUT_OF_RANGE` | active | code | A numeric literal must fit the declared 32-bit integer or real range. |
+| `SL-V060` | `PROCEDURE_IN_VALUE_POSITION` | active | code | A procedure call returns no value and cannot be used where a value is required. |
 <!-- RULE-TABLE:END -->
 
 ### Retired and unimplemented codes

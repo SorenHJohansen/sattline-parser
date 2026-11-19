@@ -1,0 +1,1 @@
+- **Out-of-range numeric literal sentence.** `SL-V059` no longer quotes the clamped value, which could be in range, for a source that wrote a larger number. The finding names the range and leaves the written value to the source span.
