@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 
 from sattline_parser.api import parse_source_file, parse_source_text
-from sattline_parser.ast import VarTail
+from sattline_parser.ast import CodeComment, VarTail
 from sattline_parser.formatting import UnsupportedFormattingError, format_module, format_source
 from sattline_parser.grammar import constants as const
 
@@ -323,3 +323,98 @@ def test_a_frame_module_mapping_is_written_after_enddef() -> None:
     )
 
     assert "ENDDEF (*FrameInst*) (P => 1);" in formatted
+
+
+def test_an_interactor_layer_line_keeps_its_keyword() -> None:
+    formatted = _formatted(
+        _round_trip_source(
+            _ROUND_TRIP_MODULE_DEF + "InteractObjects :\n   TextBox_ ( 0.0 , 0.0 ) ( 1.0 , 1.0 )\n      Layer_ = 2\n"
+        )
+    )
+
+    assert "\n        Layer_ = 2\n" in formatted
+
+
+def test_an_interactor_layer_value_is_a_plain_int_not_a_literal() -> None:
+    picture = parse_source_text(
+        _round_trip_source(
+            _ROUND_TRIP_MODULE_DEF + "InteractObjects :\n   TextBox_ ( 0.0 , 0.0 ) ( 1.0 , 1.0 )\n      Layer_ = 2\n"
+        ),
+        log_failures=False,
+    )
+
+    assert picture.moduledef is not None
+    body = picture.moduledef.interact_objects[0].properties.get(const.KEY_BODY)
+    assert body is not None
+    assert type(body[0]) is int
+
+
+def test_a_group_connection_keeps_its_state_suffix() -> None:
+    formatted = _formatted(
+        _round_trip_source(
+            _ROUND_TRIP_MODULE_DEF,
+            header="BasePicture Invocation ( 0.0 , 0.0 , 0.0 , 1.0 , 1.0 )",
+            definition_tail=" (GroupConn = P:Old)",
+        )
+    )
+
+    assert "(GroupConn = P:Old)" in formatted
+
+
+def test_a_parameter_mapping_keeps_state_suffixes_on_both_sides() -> None:
+    formatted = _formatted(
+        _round_trip_source(
+            "SUBMODULES\n   Child Invocation ( 0.0 , 0.0 , 0.0 , 1.0 , 1.0 ) : ModType ( P:Old => Q:New );\n"
+            + _ROUND_TRIP_MODULE_DEF
+        )
+    )
+
+    assert "P:Old => Q:New" in formatted
+
+
+def test_mixed_colour_blocks_keep_their_written_order() -> None:
+    formatted = _formatted(
+        _round_trip_source(
+            "LOCALVARIABLES\n   A: integer := 0;\n"
+            + _ROUND_TRIP_MODULE_DEF
+            + "GraphObjects :\n"
+            + "   RectangleObject ( 0.0 , 0.0 ) ( 1.0 , 1.0 )\n"
+            + '      OutlineColour : Colour0 = 1 : InVar_ "A"\n'
+            + "      FillColour : Colour0 = 2\n"
+        )
+    )
+
+    assert formatted.index("OutlineColour") < formatted.index("FillColour")
+    assert 'OutlineColour : Colour0 = 1 : InVar_ "A" FillColour : Colour0 = 2' in formatted
+
+
+def test_a_multi_line_comment_keeps_its_own_indentation() -> None:
+    picture = parse_source_text(
+        _round_trip_source(
+            _ROUND_TRIP_MODULE_DEF + "MODULECODE\n   EQUATIONBLOCK :\n      (* first line\n      second line *)\n"
+        ),
+        log_failures=False,
+    )
+    assert picture.modulecode is not None
+    assert picture.modulecode.equationblocks is not None
+    comment = picture.modulecode.equationblocks[0].code[0]
+    assert isinstance(comment, CodeComment)
+
+    formatted = _formatted(format_source(picture))
+
+    assert comment.text in formatted
+
+
+def test_a_header_line_with_a_doubled_quote_is_escaped_again() -> None:
+    source = (
+        '"Syntax version 2.23"\n'
+        '"Original file date: ---"\n'
+        '"Program date: ---, name: ""hi"""\n'
+        "BasePicture Invocation ( 0.0 , 0.0 , 0.0 , 1.0 , 1.0 ) : MODULEDEFINITION DateCode_ 1\n"
+        + _ROUND_TRIP_MODULE_DEF
+        + "ENDDEF (*BasePicture*);\n"
+    )
+
+    formatted = _formatted(source)
+
+    assert '"Program date: ---, name: ""hi"""' in formatted

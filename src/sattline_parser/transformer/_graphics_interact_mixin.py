@@ -872,10 +872,15 @@ class _GraphicsInteractMixin:
         raise ValueError(f"interact_value_line expected a value; got: {items!r}")
 
     def layer_info(self, items: list[TransformerItem]) -> int:
-        """Grammar layer_info -> int layer number."""
+        """Grammar layer_info -> int layer number.
+
+        The number is stored as a plain ``int``, not the ``IntLiteral`` the
+        token coerces to. A formatter can then tell a ``Layer_ = 2`` line from a
+        literal ``2`` body value, which is a different construct.
+        """
         for it in items:
             if isinstance(it, int) and not isinstance(it, bool):
-                return it
+                return int(it)
         raise ValueError(f"layer_info expected an int; got: {items}")
 
     def seq_control_opt(self, items: list[TransformerItem]) -> TransformerTree:

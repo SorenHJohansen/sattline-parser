@@ -331,6 +331,10 @@ for `LeftAligned`/`CenterAligned`/`RightAligned`, and the typed clauses (`Enable
 reaches a caller, so a consumer reads body entries directly instead of
 unwrapping a grammar node.
 
+The `Layer_` entry is a plain `int`, while a literal body value keeps the
+span-carrying `IntLiteral` the token coerces to. The two are different
+constructs, and `type(entry) is int` is how a reader tells them apart.
+
 `InteractObject.type` is the interactor keyword exactly as written, for every
 interactor: `ComBut_`, `OptBut_`, `CheckBox_`, `TextBox_`, `MenuInteract`,
 `SimpleInteract`, `ComButProc_`, `ProcedureInteract`, or a free-form name. The
@@ -370,6 +374,10 @@ objects, never copies.
 A text-object clause keeps its value and its tail in one payload, so a literal
 and its `InVar_` binding are read together. Compare a clause by `key` and
 `value`, and read `tail` only when the binding matters.
+
+`colours` holds the outline and fill blocks in written order, so a tailed
+`OutlineColour` written before an untailed `FillColour` keeps that order when
+the formatter writes the object back.
 
 A `VarName` marker is a postfix of one `text_content`, so each `text_vars` entry
 binds the text written immediately before its marker, even when that text is
@@ -809,6 +817,13 @@ renderer chooses the closing keyword from the node kind, so a `SUBSEQSTEP`
 renders `Substep ... EndSubstep` while a `SUBSEQUENCE` renders
 `Subsequence ... EndSubsequence`. The SFC labels are display text, not source
 keywords; only `format_expr` output is round-trip parseable.
+
+Every reference that the grammar spells as a `variable_name`, including
+`ModuleHeader.groupconn` and both sides of a `ParameterMapping`, is rendered
+through that same spelling, so a written `:Old`/`:New` suffix survives. A
+header line is written with the inner quote doubled again, and a preserved
+`CodeComment` is written with its own line breaks intact, so a second pass
+changes neither.
 
 ## Tests that pin the model
 
