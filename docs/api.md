@@ -2,13 +2,14 @@
 
 The supported public surface is the names listed in
 `sattline_parser.__all__`, `sattline_parser.api.__all__`,
-`sattline_parser.ast.__all__`, `sattline_parser.models.__all__`,
-`sattline_parser.types.__all__`, `sattline_parser.formatting.__all__`,
-`sattline_parser.serialization.__all__`,
+`sattline_parser.ast.__all__`, `sattline_parser.types.__all__`,
+`sattline_parser.formatting.__all__`, `sattline_parser.serialization.__all__`,
 `sattline_parser.preprocessing.__all__`, `sattline_parser.validation.__all__`,
 `sattline_parser.project.__all__`, and `sattline_parser.builtins.__all__`, plus
 the documented `sattline` command and its JSON schemas. Submodule paths not
-listed there are internal and may change between releases.
+listed there are internal and may change between releases. The modules under
+`sattline_parser.models` are internal implementation modules: import the model
+through `sattline_parser.ast`, which publishes it.
 
 ## Import doors
 
@@ -18,7 +19,7 @@ flowchart LR
     TOP --> ASTTYPES["AST and diagnostic types"]
     TOP --> GRAPH["graphics entry points"]
     AST["sattline_parser.ast<br/>full model surface"] --> ASTTYPES
-    MODELS["sattline_parser.models<br/>expression and model nodes"] --> ASTTYPES
+    INTERNAL["sattline_parser.models<br/>internal implementation"] -.->|published by| AST
     FAÇADE["sattline_parser.api"] --> CORE
     FAÇADE --> VALID["validate_basepicture"]
     FACTS["sattline_parser.types<br/>scalar type facts"] --> VALIDATION["validation type facts"]

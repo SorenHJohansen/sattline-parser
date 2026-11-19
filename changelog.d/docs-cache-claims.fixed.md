@@ -1,0 +1,1 @@
+- **Documentation matches the caches.** The Windows cache paragraph now describes the security-descriptor check instead of claiming there is no owner check, the entry-cap and pruning guarantees state what the code enforces, `sattline_parser.models` is described as internal everywhere, and the README names the three runtime distributions an install receives.

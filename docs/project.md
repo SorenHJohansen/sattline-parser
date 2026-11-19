@@ -571,11 +571,18 @@ plan keys), its values are module-type names folded with `fold_identifier`, and
 ## Caches
 
 Both project caches are opt-in through `cache_dir=`. When it is `None`, the
-project layer reads and writes neither cache and shares no state. The compiled
-Lark grammar cache is separate: it lives under the temporary directory and may
-still be written on the first parse, as `sattline --no-cache` documents.
-`sattline project` passes a private directory under the user's cache root
-unless `--no-cache` is given, so a repeated load of the same tree skips
+project layer reads and writes neither cache and shares no state. A supplied
+`cache_dir` must be a directory this user owns privately: the level itself and
+every directory above it, so no other user can rename the tree and replace it.
+A root-owned sticky directory such as the system temporary directory is an
+acceptable ancestor, because another user cannot rename an entry they do not
+own there. Never point `cache_dir` at a shared location; a location that cannot
+be proven private disables both caches instead of being tightened or followed.
+
+The compiled Lark grammar cache is separate: it lives under the temporary
+directory and may still be written on the first parse, as `sattline --no-cache`
+documents. `sattline project` passes a private directory under the user's cache
+root unless `--no-cache` is given, so a repeated load of the same tree skips
 parsing.
 
 The companion directory index is not one of those caches. It lives only for one
@@ -601,20 +608,26 @@ resolved through the same case-insensitive index a cold scan uses, so a
 dependency spelling whose case differs from the file name resolves identically
 warm and cold. A warm lookup and a cold lookup always agree.
 
-Startup pruning drops an entry whose recorded base directory no longer exists,
-removes abandoned `*.tmp` siblings older than an hour, and caps the entry count
-(`MAX_LOOKUP_CACHE_ENTRIES`); the surplus is dropped in key order. Writes stay
-atomic: a temporary sibling, `fsync`, then `os.replace`.
+Startup pruning drops a file it cannot use (wrong version, or an entry whose
+shape is not `(base_dir, ext)` strings), removes abandoned `*.tmp` siblings older
+than an hour, and caps the entry count (`MAX_LOOKUP_CACHE_ENTRIES`); the surplus
+is dropped in key order. Pruning never stats a recorded base directory: that
+string is untrusted data, and on Windows a planted UNC path would otherwise turn
+a startup prune into an outbound SMB connection. The same cap also runs on every
+insert, so one long run cannot grow the file past it. Writes stay atomic: a
+temporary sibling, `fsync`, then `os.replace`.
 
 ### AST cache
 
-`FileASTCache` stores each parsed `BasePicture` in an HMAC-signed pickle
-envelope. The key includes:
+`FileASTCache` stores each parsed `BasePicture` in an HMAC-signed envelope: a
+small signed JSON metadata header followed by the pickled AST. The key includes:
 
 - the code path;
 - the load mode;
 - the package version;
 - the resolved grammar fingerprint;
+- the installed `lark` and `regex` versions and the interpreter version, so an
+  upgrade inside a pin cannot serve an AST parsed by a different parser stack;
 - a fingerprint of every regular file shipped in the package, including
   `grammar/`, `models/`, `transformer/`, `preprocessing/`, and non-Python
   resources such as `preprocessing/scanner_tokens.json`; bytecode caches are
@@ -639,41 +652,77 @@ was not parsed from. A body whose source changed while a worker was reading it
 is left uncached: the next load reparses it instead of trusting a stale AST.
 
 The namespace and file-format magic belong to `sattline-parser`
-(`FILE_AST_CACHE_VERSION`), so another tool's cache never cross-reads. The HMAC
-key lives beside the entries. It proves the entry was written by whoever could
-write that directory; it is not a defence against that user. The real boundary
-is a private `0700` directory owned by the current user. Both the cache root
-and its `file_ast` subdirectory are checked; a root or subdirectory that is a
-symlink, or a directory owned by someone else, disables the caches instead of
-being followed or tightened in place. An entry file that is a symlink is
-ignored, never followed. Never point `cache_dir` at a shared location.
+(`FILE_AST_CACHE_VERSION`), so another tool's cache never cross-reads.
 
-Only a writer creates the HMAC key. A read with no key is a miss, so a reader
-never creates a key. Every write revalidates the directory through
-`private_cache_dir`; a directory removed during a long load is recreated
-`0700`, not with the process umask. Entry files are created `0600`.
+#### Privacy boundary
 
-On Windows there is no POSIX owner or mode check: `os.getuid` does not exist,
-and the cache validates only that the root and `file_ast` are real directories.
-The default per-user cache location is still private to the profile, but an
-explicit `--cache-dir` on a shared path is not protected against a planted
-pickle. Keep a Windows cache under the user profile or disable it with
-`--no-cache`.
+The HMAC key lives beside the entries. It proves the entry was written by
+whoever could write that directory; it is not a defence against that user. The
+real boundary is a directory proven private to this user:
 
-Pruning drops an entry whose envelope, identity, grammar, or code fingerprint no
-longer matches, an entry whose recorded source path no longer exists (a rename,
-a branch switch, a deleted temporary checkout), and the least recently used
-entries past `MAX_AST_CACHE_ENTRIES` (1024 by default; the library constructor
-accepts `max_entries=`). A successful load touches the entry, so eviction
-follows last use rather than the time the entry was written. The count cap runs
-on every startup because it only stats files; the full fingerprint and path
-check runs when the cache identity changes. Abandoned `*.tmp` siblings older
-than an hour are removed too.
+- On POSIX the cache root and every directory above it must be owned by this
+  user or by root with no group or world write bit, and the root must have mode
+  `0700`. A root-owned sticky ancestor is accepted. On Windows the root must be
+  a real directory, not a reparse point, whose owner is this user and whose DACL
+  grants write access to nobody else; a failed security-descriptor read disables
+  the cache.
+- The cache root is opened once with `O_DIRECTORY | O_NOFOLLOW` and its
+  `(st_dev, st_ino)` is recorded. The `file_ast` subdirectory is opened relative
+  to that descriptor. Every entry and key operation is relative to the held
+  descriptor with `O_NOFOLLOW`, so a link is never followed.
+- Every load and every save revalidates the held descriptor against the recorded
+  identity, the name that still resolves to it, and the owner and mode. A cache
+  root or `file_ast` directory that is renamed, replaced, symlinked, or widened
+  after construction disables the handle instead of being written into. A
+  removed cache directory is not recreated during that run; the next process
+  opens a fresh one.
+- Only a writer creates the HMAC key, and it reads and installs the key through
+  the validated descriptor. A read with no key is a miss, so a reader never
+  creates a key. Entry files and the key are created `0600`.
+
+A read-only worker handle performs the same revalidation but never prunes,
+rewrites the identity marker, touches an entry, or writes one.
+
+#### Pruning and bounds
+
+Pruning drops an entry whose file name carries another identity, an entry whose
+signed header records a source path that no longer exists (a rename, a branch
+switch, a deleted temporary checkout), and abandoned `*.tmp` siblings older than
+an hour. The vanished-source check reads only the signed header, so it never
+unpickles a payload it cannot verify and never stats a path from an unverified
+header. Entry-level validity (envelope, version, source revision) is decided by
+the load path, which is the only place that unpickles a payload.
+
+The least recently used entries past `MAX_AST_CACHE_ENTRIES` (1024 by default;
+the library constructor accepts `max_entries=`) are dropped as well. A
+successful load touches the entry, so eviction follows last use rather than the
+time the entry was written. The cap runs at startup and again during a run after
+`max_entries // 8` writes (capped at 64, at least 1), so a single process can
+overshoot the cap by at most that many entries; the next load starts at the cap.
+The full identity and vanished-source pass runs when the cache identity changes,
+because the count check only stats files.
 
 A cache read or write failure is a miss; it must not turn a successful parse
 into a load failure. The fingerprint is captured when the cache is constructed,
 so an install whose package files disappear mid-run disables caching for that
 process instead of failing each lookup.
+
+#### Lark parser cache
+
+The compiled-grammar cache is an unsigned pickle shared by every worker. Its
+security boundary is the directory, not the file: the per-user directory has a
+predictable name under the shared temporary directory, so the directory and its
+parent chain are proven private before it is used, and an unusable directory
+disables the cache. Inside that directory, the file carries a header naming the
+grammar fingerprint, start rule, position mode, Lark version, and interpreter
+version; a file with a different header, a partial body from an interrupted
+writer, or a file in an older format is discarded and rebuilt.
+
+The file is written to a unique staging sibling, flushed, and published with
+`os.replace`, so another process reads either the previous complete file or the
+new complete file, never a partial pickle. It is not signed: adding a second key
+store for a parser that is already in a private directory would add a secret to
+protect without adding a boundary.
 
 ## Graphics companions
 
@@ -868,8 +917,10 @@ on the worker count: discovery fixes the plan order before any parse runs.
 | `tests/project/test_project_layer.py` | `SattLineProject` views and graph |
 | `tests/project/test_project_validation.py` | Scopes and datecodes |
 | `tests/project/test_reachability.py` | Invoked module-type walk |
-| `tests/project/test_lookup_cache.py` | Cache trust and invalidation |
-| `tests/project/test_ast_cache.py` | Cache key, signature, pruning |
+| `tests/project/test_lookup_cache.py` | Cache trust, invalidation, and a prune that never stats a recorded base |
+| `tests/project/test_ast_cache.py` | Cache key, signature, envelope header, pruning |
+| `tests/project/test_ast_cache_privacy.py` | Directory identity, key and entry links, cap during a run, foreign owner |
+| `tests/project/test_private_directory.py` | Descriptor and path forms of the private directory handle |
 | `tests/project/test_graphics_parsing.py` | Companion parsing |
 | `tests/project/test_distribution.py` | Distribution companion parsing and pairing |
 | `tests/project/test_graphics_records.py` | Composite and picture display records |
