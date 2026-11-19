@@ -1,0 +1,1 @@
+- **Module-type recursion follows the referencing unit.** A module-type reference now binds to what the file that holds it can see, so a wrapper library that reuses a dependency's type name no longer captures the dependency's reference and no longer fails the load with a cycle the sources do not declare. A cycle inside the checked unit's own closure is still rejected.

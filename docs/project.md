@@ -45,9 +45,10 @@ by the body suffix. See `body_mode`, `deps_extensions_for_code`,
 
 There is no "guess the extension" step. A companion has exactly one candidate
 extension and a sidecar has exactly one too, both chosen by the body suffix. A
-companion whose stem differs only in case from its body still pairs, so a tree
-copied from a case-insensitive filesystem keeps working. Only a regular file
-pairs: a directory named like a companion is not one.
+companion whose stem matches its body under the language name table still pairs,
+so a tree copied from a case-insensitive filesystem keeps working. The exact
+stem is tried first; a case variant is found through the directory index. Only a
+regular file pairs: a directory named like a companion is not one.
 
 `ProgramFormat.mode` is the artifact family of the **resolved body**, not the
 mode the caller requested. A draft load that fell back to an `.x` body reports
@@ -110,6 +111,18 @@ here: that length is the declaration rule `SL-V038`, not a resolution rule. The
 base. A `.l` line of `../outside/Secret`, or an absolute path, therefore resolves
 to nothing and is reported as a missing dependency instead of loading a body
 outside every root.
+
+Default target discovery uses the same name rule, so `sattline project <dir>`
+never offers a name the resolver would refuse. A code file directly under a
+root whose stem cannot be a unit name, such as `Pump.v2.s`, is left out of the
+target set and reported once as `SKIPPED_FILE`: a whole-tree load carries on
+instead of failing on an unresolvable target.
+
+A configured root that is not a readable directory (a regular file, a missing
+path, or a directory under a denied ancestor) is a load failure naming that
+root, not an empty root. The check runs before any target is resolved, so
+`SattLineProject.load` never reports a missing body for a root it could not
+search.
 
 `ProjectLookup.find` resolves only a code body or a dependency sidecar. It
 raises `ValueError` for `ArtifactKind.GRAPHICS` and
@@ -212,9 +225,10 @@ observable orders:
   over everything.
 - **Diagnostics.** `SattLineProject.diagnostics()` reports only the non-fatal
   load conditions: a missing or empty sidecar, a sidecar elsewhere, a sidecar
-  from the other artifact family, and a folded-name collision. A failure to
-  resolve or parse raises instead. Discovery rows come first, in discovery
-  order, then assembly rows in plan order.
+  from the other artifact family, a companion from the other artifact family, a
+  code file whose stem cannot be a unit name, and a folded-name collision. A
+  failure to resolve or parse raises instead. Discovery rows come first, in
+  discovery order, then assembly rows in plan order.
 
 `validate=INVOKED` runs **after** the graph is complete, because it needs the
 whole invocation graph. The loader first builds the registry, then walks
@@ -228,7 +242,7 @@ real bugs. They now have names.
 
 | Identity | Type or rule | Used for |
 | --- | --- | --- |
-| Unit name in the project view | `str.casefold()` | `programs()` keys, graph node names |
+| Unit name in the project view | `str.casefold()`, or `fold_identifier` for every unit of a shared casefold key | `programs()` keys, graph node names |
 | Language identity of a unit | `UnitIdentity`, `fold_identifier` (CP1252 table) | artifact resolution, `get`, `__contains__`, the symbol index, the lookup cache key |
 | Language identity inside a unit | `fold_identifier` | record, module-type, field, and variable lookup |
 | Artifact identity | `ArtifactIdentity`, resolved path compared with `os.path.normcase` | roots, plan keys, the cycle stack |
@@ -245,13 +259,18 @@ the language rejects is a missing dependency, never a successful resolution.
 `programs()` keys stay `str.casefold`, which keeps every ordinary ASCII name at
 the key it has always had. That key is a view key, not the language name table:
 two language names that differ outside the CP1252 fold, such as `Straße` and
-`STRASSE`, share one. `get` and `__contains__` therefore also require the stored
-spelling to match the requested name under `fold_identifier`, so a casefold-only
-name does not designate a unit. Module-type, record, field, and variable lookup
-inside a unit use `fold_identifier` and keep them apart. A filesystem path is
-never case-folded unconditionally: `ArtifactIdentity` resolves it and lets the
-platform decide, so `/lib` and `/Lib` are two roots on a case-sensitive
-filesystem and one directory on Windows.
+`STRASSE`, share one. When that happens the shared key names no single unit, so
+every unit in the group is keyed by its language identity instead. Every loaded
+unit then has one key, none is dropped, and each keeps its own identity in
+`get`, the graph, and the symbol index. `get` and `__contains__` accept a view
+key as written, and any other spelling must match a loaded unit's name under
+`fold_identifier`, so a casefold-only name designates the unit whose language
+identity it is and never the unit that happens to share its Unicode fold.
+Module-type, record, field, and variable lookup inside a unit use
+`fold_identifier` and keep them apart. A filesystem path is never case-folded
+unconditionally: `ArtifactIdentity`
+resolves it and lets the platform decide, so `/lib` and `/Lib` are two roots on
+a case-sensitive filesystem and one directory on Windows.
 
 `UnitIdentity.of(name)` and `ArtifactIdentity.of(path)` are exported for a
 consumer that needs the same comparisons. Equality and hashing use the key, so
@@ -264,11 +283,12 @@ through a symlink. The body is planned once, and every spelling that reached it
 is kept as an alias, so `dependencies_of` only returns names `get` resolves and
 every `graph()` endpoint is also a node. An alias is a name for a unit, not a
 second unit: `programs()` still holds one entry per body, and
-`get(alias).name` is the spelling that planned the body first. An alias resolves
-under the spelling that reached it and under the language's own case rule, never
-under a casefold-only variant. `dependencies_of` and `dependents_of` resolve
-their argument the same way, so a `programs()` view key, an alias, and a source
-spelling all designate the unit they name.
+`get(alias).name` is the spelling that planned the body first. The alias table
+is keyed by language identity, so `AliasBase` resolves to the body that
+`Base` planned while a casefold-only spelling of either name does not.
+`dependencies_of` and `dependents_of` resolve their argument the same way, so a
+`programs()` view key, an alias, and a source spelling all designate the unit
+they name.
 
 ### Folded-name collisions
 
@@ -277,9 +297,12 @@ Two files in one root whose stems fold to one language identity, such as
 the filesystem holds two. The index keeps the first in sorted name order and
 records a `NameCollision`; the loader reports
 `LoadDiagnosticKind.FOLDED_NAME_COLLISION` naming every file and the winner. Two
-loaded units whose names share a project view key are reported the same way, and
-the first in plan order stays in the view. The load still succeeds: the layout is
-reported as ambiguous instead of one unit disappearing without a finding.
+loaded units whose names share a project view key are reported the same way.
+That shared key names no single unit, so both are keyed by their language
+identity: `get`, `programs()`, the index, and the graph see one unit per name,
+and a dependent's declared spelling round-trips through `get`. The load still
+succeeds: the layout is reported as ambiguous instead of one unit disappearing
+without a finding or an edge retargeting at the other unit.
 
 ## Cycles
 
@@ -314,9 +337,16 @@ has no finite expansion. After the registry is complete, for each program the
 loader builds the instantiation graph over the module types that program can
 see and rejects the first cycle with `ModuleTypeCycleError`. A graph node is one
 *definition*, identified by its owning program and folded type name, so two
-libraries that reuse a name are not merged. A reference resolves to the
-referencing file's own definition first, then to any definition in the checked
-program's closure, so a library that shadows a dependency's type name loads.
+libraries that reuse a name are not merged.
+
+A reference binds to what its own file can see. It resolves to the referencing
+file's own definition first, then to any definition in the referencing unit's
+own closure, never to a definition the referencing unit cannot resolve. A
+wrapper that defines `Motor` around a dependency's `Valve` therefore cannot
+capture the dependency's `Valve -> Motor` reference, even though the wrapper is
+the unit being checked. Only a cycle whose definitions all lie in the checked
+unit's closure is reported, so an unrelated closure's layout cannot fail this
+one.
 
 The check runs before validation and is not governed by `LoadValidation`, so
 `validate=NONE` cannot let a recursive type through. Unused module types in a
@@ -346,7 +376,9 @@ is still a library whose body was found, while a missing sidecar may indicate a
 layout mistake. `SIDECAR_ELSEWHERE` reports a stray file in another directory
 without pairing it. `SIDECAR_FAMILY_MISMATCH` reports a sidecar that sits beside
 the body but belongs to the other artifact family, for example a `.z` beside a
-`.s` body. Neither stray is ever paired.
+`.s` body. The stray is found by the body's stem under the language name table,
+so `STRASSE.z` is not a stray sidecar for `Straße.s` and the report is
+`SIDECAR_MISSING` instead. Neither stray is ever paired.
 
 ## Validation scopes
 
@@ -375,10 +407,10 @@ and transfer rules see every definition their program's closure reaches.
 
 A missing or unparseable artifact raises `ProjectLoadError` and its subclasses.
 There is no partial project: `SattLineProject.load` either returns a complete
-registry or raises. That applies to a missing body, an unreadable dependency
-sidecar, a malformed companion, and a parse failure in any body the closure
-reaches. Validation findings never raise, because they are findings and not load
-failures.
+registry or raises. That applies to a configured root that is not a readable
+directory, a missing body, an unreadable dependency sidecar, a malformed
+companion, and a parse failure in any body the closure reaches. Validation
+findings never raise, because they are findings and not load failures.
 
 The two structural errors are fatal in the same way: a recursive sidecar chain
 and a module type that instantiates itself.
@@ -463,13 +495,18 @@ classDiagram
     DistributionData --> DistributionTarget
 ```
 
-`SattLineProject` keys programs by `str.casefold()` identity internally while
-preserving the caller's original spelling on `SattLineProgram.name`. `get`,
-`__contains__`, `dependencies_of`, and `dependents_of` are case-insensitive.
+`SattLineProject` keys programs by view key internally while preserving the
+caller's original spelling on `SattLineProgram.name`. The view key is
+`str.casefold()`, except for the units of a shared casefold key, which use their
+language identity instead. `get`, `__contains__`, `dependencies_of`, and
+`dependents_of` are case-insensitive under the language name table.
 `dependencies_of` returns the declared spelling in declaration order, and
 `dependents_of` returns each dependent's declared spelling in load order, so a
-name either method returns can be passed back to `get`. Graph nodes and edge
-endpoints are canonical casefolded identities.
+name either method returns can be passed back to `get`.
+
+A `DependencyGraph` resolves a name by its exact node key first, then by the
+casefolded spelling, then by the language identity, so a unit keyed by its
+identity is reachable under any of its spellings.
 
 `graph()` returns every declared edge. In a loaded project every declared
 dependency is also loaded, because a missing one fails the load. A project
@@ -540,6 +577,10 @@ still be written on the first parse, as `sattline --no-cache` documents.
 `sattline project` passes a private directory under the user's cache root
 unless `--no-cache` is given, so a repeated load of the same tree skips
 parsing.
+
+The companion directory index is not one of those caches. It lives only for one
+load, so a second load lists its directories again and sees a file that changed
+in between; nothing about a companion scan outlives the load that made it.
 
 ### Lookup cache
 
@@ -643,15 +684,27 @@ code file's directory. It never does a root-ordered lookup:
 - `.s` resolves only to `.g`;
 - a `.g` or `.y` input resolves to itself.
 
-The stem is compared ignoring case, so `Pump.S` pairs with `pump.g`. Only a
-regular file pairs: a directory named `Pump.g` is not a companion.
+The stem is compared with the language name table, so `Pump.S` pairs with
+`pump.g` while `Straße` never pairs with `STRASSE`. The exact stem and extension
+are tried first; a case variant is found through the load's directory index.
+Only a regular file pairs: a directory named `Pump.g` is not a companion. When a
+directory holds two case variants of one companion name, `Main.g` and `MAIN.G`,
+the alphabetically first file wins whatever order the directory lists them in,
+and the load reports `FOLDED_NAME_COLLISION` naming both and the winner.
+
+A companion from the other artifact family beside the body, for example a `.y`
+beside a `.s` body, is never paired and is reported as
+`COMPANION_FAMILY_MISMATCH`, so a missing graphics model is explained instead of
+silently absent. The report is produced only when no same-family companion
+exists, matching the sidecar rule.
 
 The loader parses the companion into `program.graphics`. Structural problems
 become `GraphicsMessage` values, never exceptions. A companion larger than
 `MAX_GRAPHICS_COMPANION_BYTES` (4 MiB) is a file-level refusal instead: it
 raises `GraphicsParseError`, which the loader maps onto `ArtifactLoadError` or
 `DependencyParseError`, because a partially scanned model would misreport what
-the file says. See [graphics.md](graphics.md).
+the file says. Both `GraphicsParseError` and `MAX_GRAPHICS_COMPANION_BYTES` are
+exported from `sattline_parser.project`. See [graphics.md](graphics.md).
 
 ## Distribution companion
 
@@ -678,7 +731,12 @@ code file's directory, never a root-ordered lookup:
 - a `.s` body resolves only to `.p`;
 - a `.p` or `.q` input resolves to itself.
 
-The stem is compared ignoring case, so `Pump.S` pairs with `pump.p`.
+The stem is compared with the language name table, so `Pump.S` pairs with
+`pump.p` while `Straße` never pairs with `STRASSE`. As with graphics, the exact
+stem wins, a case variant is found through the load's directory index, and a
+collision between case variants is reported with its winner. A `.q` beside a
+`.s` body is not paired and is reported as `COMPANION_FAMILY_MISMATCH`, which is
+why `has_executing_system` is `None` rather than a silent unknown.
 
 The file is a small nested structure of named groups:
 
@@ -746,6 +804,10 @@ re-parsing the body.
 - The lookup cache skips repeated ordered scans for a stable layout.
 - The AST cache skips re-parsing an unchanged file.
 - `INVOKED` scope avoids validating a library's unused module types.
+- Companion resolution lists each directory once per load and indexes it by
+  language identity and extension. Graphics, distribution, and the sidecar
+  family probe share that one scan, so the non-parse phase stays flat as a
+  directory fills with units instead of growing with unit count times roles.
 
 Measured with `sattline project` over a 268-program library tree (315 MB of
 `.x` bodies, `validate=invoked`) on a 6-core machine:
@@ -758,7 +820,6 @@ Measured with `sattline project` over a 268-program library tree (315 MB of
 Parsing is 99% of a load. Lookup, sidecar reads, graphics and distribution
 companions, and graph assembly together are under a second on that tree, which
 is why `workers` is the only lever with a large factor.
-
 A `ProjectLoader` resolves one load. Discovery plans, parse outcomes, and the
 registry are per-load state, so a second `resolve()` call raises rather than
 doubling the plans over an existing registry; construct another loader.
@@ -776,8 +837,11 @@ on the worker count: discovery fixes the plan order before any parse runs.
   platform default, which no longer prefers `fork`. Discovery parses nothing,
   so the parser is not built before the pool starts: every worker builds it
   from the on-disk Lark cache, about 50 ms and 50 MB each.
-- A daemonic process may not start children, so a load called from inside an
-  outer pool parses in that process instead of raising.
+- A daemonic process may not start children, a process that is itself a pool
+  worker must not start a second pool, and a load constructed while another
+  load is resolving is nested. Each of those parses in that process instead of
+  raising. The fallback logs one warning per load, not one per body, so a run
+  that silently lost its parallelism does not look like a clean parallel load.
 - A worker reads the AST cache but never writes it: the parent owns every
   write, so the per-user key and the entry signatures stay single-process, and
   the parent stores a worker's body only under the source snapshot the worker
