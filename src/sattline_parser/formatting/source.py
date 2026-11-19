@@ -8,15 +8,20 @@ language cares, not the original whitespace, so the output is normalised.
 Every parsed corpus fixture round-trips, including graphics and interactor
 bodies. A tail is written after the value it followed, using the positional
 views ``ModuleHeader.coordinate_tails``, ``ClippingClause.corner_tails``, and
-the graph and interact ``coord_tails`` property key.
+the graph and interact ``coord_tails`` property key. A nested
+``ClippingBounds`` annotation is written after the value it annotated, from the
+matching ``coordinate_clippings``, ``corner_clippings``, ``coord_clippings``, or
+``x_clippings``/``y_clippings`` view.
 
-Four shapes are refused rather than written somewhere they did not appear:
+Five shapes are refused rather than written somewhere they did not appear:
 
 * a hand-assembled model that carries a tail without its positional grouping;
 * a parameter mapping whose source literal is absent;
 * a multi-key ``time_value`` payload, whose written keyword is not modelled;
 * more than two module-header description comments, because the grammar has one
-  position before ``Invocation`` and one after it.
+  position before ``Invocation`` and one after it;
+* a plain coordinate tail written after a nested ``ClippingBounds`` annotation,
+  because the model keeps the annotation beside the tail order.
 
 The output is display text: it is not guaranteed to be byte-identical to any
 particular editor's layout, and it is not a supported interchange format.
@@ -445,7 +450,9 @@ def _emit_clipping(printer: _Printer, clipping: ClippingClause, level: int) -> N
             "so the corner each tail belonged to is not known"
         )
     rendered = [
-        _coordinate_value_text(value, _group_at(groups, index), _group_at(clipping.corner_clippings, index))
+        _coordinate_value_text(
+            value, _tail_group_at(groups, index), _clipping_group_at(clipping.corner_clippings, index)
+        )
         for index, value in enumerate(values)
     ]
     printer.emit(level, f"ClippingBounds = ( {rendered[0]} , {rendered[1]} ) ( {rendered[2]} , {rendered[3]} )")
@@ -460,7 +467,9 @@ def _module_header(header: ModuleHeader) -> str:
             "coordinates, so the coordinate each tail belonged to is not known"
         )
     coordinames = ", ".join(
-        _coordinate_value_text(value, _group_at(groups, index), _group_at(header.coordinate_clippings, index))
+        _coordinate_value_text(
+            value, _tail_group_at(groups, index), _clipping_group_at(header.coordinate_clippings, index)
+        )
         for index, value in enumerate(header.invoke_coord)
     )
     arguments = _arguments_text(header.arguments)
@@ -814,8 +823,8 @@ def _tailed_coords_text(
     """Render one pair or box, placing each value's tails after that value."""
     if _is_pair(coords):
         return (
-            f"( {_coordinate_value_text(coords[0], _group_at(groups, offset), _group_at(clippings, offset))} , "
-            f"{_coordinate_value_text(coords[1], _group_at(groups, offset + 1), _group_at(clippings, offset + 1))} )"
+            f"( {_coordinate_text(coords[0], groups, clippings, offset)} , "
+            f"{_coordinate_text(coords[1], groups, clippings, offset + 1)} )"
         )
     if isinstance(coords, tuple):
         box = cast("tuple[object, object]", coords)
@@ -823,12 +832,22 @@ def _tailed_coords_text(
             first = cast("tuple[object, object]", box[0])
             second = cast("tuple[object, object]", box[1])
             return (
-                f"( {_coordinate_value_text(first[0], _group_at(groups, offset), _group_at(clippings, offset))} , "
-                f"{_coordinate_value_text(first[1], _group_at(groups, offset + 1), _group_at(clippings, offset + 1))} ) "
-                f"( {_coordinate_value_text(second[0], _group_at(groups, offset + 2), _group_at(clippings, offset + 2))} , "
-                f"{_coordinate_value_text(second[1], _group_at(groups, offset + 3), _group_at(clippings, offset + 3))} )"
+                f"( {_coordinate_text(first[0], groups, clippings, offset)} , "
+                f"{_coordinate_text(first[1], groups, clippings, offset + 1)} ) "
+                f"( {_coordinate_text(second[0], groups, clippings, offset + 2)} , "
+                f"{_coordinate_text(second[1], groups, clippings, offset + 3)} )"
             )
     raise UnsupportedFormattingError(f"unexpected coordinate shape: {coords!r}")
+
+
+def _coordinate_text(
+    value: object,
+    groups: tuple[tuple[Tail, ...], ...],
+    clippings: tuple[tuple[NestedClipping, ...], ...],
+    index: int,
+) -> str:
+    """One coordinate value at a known position in its run."""
+    return _coordinate_value_text(value, _tail_group_at(groups, index), _clipping_group_at(clippings, index))
 
 
 def _emit_interact_object(printer: _Printer, interact_object: InteractObject, level: int) -> None:
@@ -1056,12 +1075,24 @@ def _mapping_text(mapping: ParameterMapping) -> str:
     return f"{prefix}{_value_text(literal)}"
 
 
-def _group_at(groups: tuple[tuple[object, ...], ...], index: int) -> tuple[object, ...]:
-    """One positional group, or an empty group when the model records none."""
+def _tail_group_at(groups: tuple[tuple[Tail, ...], ...], index: int) -> tuple[Tail, ...]:
+    """One coordinate tail group, or an empty group when the model records none."""
     return groups[index] if index < len(groups) else ()
 
 
-def _coordinate_value_text(value: object, tails: tuple[object, ...], clippings: tuple[object, ...]) -> str:
+def _clipping_group_at(
+    groups: tuple[tuple[NestedClipping, ...], ...],
+    index: int,
+) -> tuple[NestedClipping, ...]:
+    """One nested clipping group, or an empty group when it records none."""
+    return groups[index] if index < len(groups) else ()
+
+
+def _coordinate_value_text(
+    value: object,
+    tails: tuple[Tail, ...],
+    clippings: tuple[NestedClipping, ...],
+) -> str:
     """One coordinate number, the tails after it, and any nested clipping.
 
     A nested ``ClippingBounds`` annotation owns the tails of its own values, and
@@ -1069,21 +1100,20 @@ def _coordinate_value_text(value: object, tails: tuple[object, ...], clippings: 
     annotation is written after the plain tails, so the tails it owns are skipped
     here and rendered inside the annotation instead.
     """
-    nested = cast("tuple[NestedClipping, ...]", clippings)
-    if not nested:
+    if not clippings:
         return _real(_as_float(value)) + "".join(_tail_text(tail, parenthesised=False) for tail in tails)
     owned = {
         id(clipping_value.tail)
-        for clipping in nested
+        for clipping in clippings
         for clipping_value in clipping.values
         if clipping_value.tail is not None
     }
     _ensure_clipping_suffix(tails, owned)
     plain = "".join(_tail_text(tail, parenthesised=False) for tail in tails if id(tail) not in owned)
-    return _real(_as_float(value)) + plain + "".join(_nested_clipping_text(clipping) for clipping in nested)
+    return _real(_as_float(value)) + plain + "".join(_nested_clipping_text(clipping) for clipping in clippings)
 
 
-def _ensure_clipping_suffix(tails: tuple[object, ...], owned: set[int]) -> None:
+def _ensure_clipping_suffix(tails: tuple[Tail, ...], owned: set[int]) -> None:
     """Refuse a tail written after a nested clipping annotation.
 
     The model keeps the annotation beside the coordinate's tails rather than
