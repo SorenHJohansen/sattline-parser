@@ -132,10 +132,7 @@ def _check_numeric_literal_ranges(root: object, errors: list[Diagnostic]) -> Non
             errors.append(
                 Diagnostic(
                     code=DiagnosticCode.NUMERIC_LITERAL_OUT_OF_RANGE,
-                    message=(
-                        f"Numeric literal {value!r} is outside the supported "
-                        "32-bit integer or real range and was clamped"
-                    ),
+                    message=("A numeric literal is outside the supported 32-bit integer or real range and was clamped"),
                     span=value.span,
                 )
             )
@@ -183,7 +180,7 @@ def validate_basepicture(
     context = _ValidationContext(
         records=records,
         moduletypes={fold_identifier(moduletype.name): moduletype for moduletype in available_moduletypes},
-        type_graph=TypeGraph.from_datatypes(available_datatypes),
+        type_graph=TypeGraph.from_datatypes(bp.datatype_defs, fallback=external_datatypes),
         allow_unresolved_external_datatypes=allow_unresolved_external_datatypes,
         sfc_names=collect_program_sfc_names(bp),
     )
@@ -257,15 +254,16 @@ def _walk_submodule(
         )
         return
     scope = _child_scope(child, parent)
-    if isinstance(child, SingleModule):
-        _check_parameter_contract(
-            child.parametermappings,
-            child.moduleparameters,
-            f"Submodule {child.header.name}",
-            parent,
-            context,
-            errors,
-        )
+    # A single module and a frame module both declare formals and carry a
+    # mapping tail, so both get the transfer and mapping contract.
+    _check_parameter_contract(
+        child.parametermappings,
+        child.moduleparameters,
+        f"Submodule {child.header.name}",
+        parent,
+        context,
+        errors,
+    )
     _walk_definition(child, scope, context, errors)
 
 

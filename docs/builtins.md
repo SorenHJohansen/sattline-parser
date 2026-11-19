@@ -80,6 +80,11 @@ string-literal argument stays rejected there, because no documented parameter
 accepts one. The generator rejects an untyped entry that omits `arity`, and
 rejects an `arity` on a typed entry so the two copies cannot drift.
 
+`kind` and `return_type` are separate facts. A procedure carries no return
+type, so validation reads `kind` to reject a known procedure used where a value
+is required (`SL-V060`). A `null` return type on a function is still only an
+unproven type, not a rejection.
+
 ### Name lookup
 
 Function names are case-insensitive and use the same `fold_identifier` as the
@@ -120,6 +125,7 @@ flowchart TB
     V --> R1["arity check"]
     V --> R2["output argument must be writable"]
     V --> R3["argument type compatibility"]
+    V --> R6["a procedure used as a value"]
     REC["builtins/records.py<br/>field specs"] --> TG["validation/type_graph.py"]
     TG --> R4["dotted field resolution"]
     TG --> R5["leaf path expansion"]
@@ -130,7 +136,8 @@ The validator adapts the documented signature into:
 - `min_args`: the count of leading required parameters;
 - `max_args`: the total parameter count;
 - `parameters`: the documented direction and datatype, used by the argument
-  direction and argument type rules.
+  direction and argument type rules;
+- `kind`: `function` or `procedure`, read by the value-position rule.
 
 The adaptation is cached per documented signature. A written position is derived
 from the parameter direction, so the validator view keeps no second copy of it.

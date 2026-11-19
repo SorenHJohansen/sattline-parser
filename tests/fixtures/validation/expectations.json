@@ -9,6 +9,7 @@
     "edge_cases/DeepNestedParentheses.s": [],
     "edge_cases/DeeplyNestedComments.s": [],
     "edge_cases/DeeplyNestedComments1000.s": [],
+    "edge_cases/DuplicateDatatypeFieldType.s": [],
     "edge_cases/DurationInParameterMapping.s": [],
     "edge_cases/DurationVariousFormats.s": [],
     "edge_cases/ElsifExpression.s": [],
@@ -27,6 +28,8 @@
     "edge_cases/SeqForkMultipleTargets.s": [],
     "edge_cases/SequenceAlternative.s": [],
     "edge_cases/SequenceWithoutInitStep.s": [],
+    "edge_cases/SetIoAttributeConstArgument.s": [],
+    "edge_cases/SiblingSameTypeDifferentLabels.s": [],
     "edge_cases/SimpleModuleTypeInvocation.s": [],
     "edge_cases/StringLiteralLoggedIn.s": [],
     "edge_cases/SubSequenceTransition.s": [],
@@ -197,6 +200,30 @@
         "line": 28
       }
     ],
+    "invalid/DuplicateSiblingCrossType.s": [
+      {
+        "code": "SL-V004",
+        "column": 4,
+        "length": 62,
+        "line": 29
+      }
+    ],
+    "invalid/DuplicateSiblingFrameAndModule.s": [
+      {
+        "code": "SL-V004",
+        "column": 4,
+        "length": 62,
+        "line": 21
+      }
+    ],
+    "invalid/DuplicateSiblingFrameModules.s": [
+      {
+        "code": "SL-V004",
+        "column": 4,
+        "length": 62,
+        "line": 21
+      }
+    ],
     "invalid/DuplicateSiblingSubmodules.s": [
       {
         "code": "SL-V004",
@@ -206,6 +233,14 @@
       }
     ],
     "invalid/DuplicateVariableNames.s": [],
+    "invalid/EmptyRecordFieldAccess.s": [
+      {
+        "code": "SL-V019",
+        "column": 11,
+        "length": 14,
+        "line": 26
+      }
+    ],
     "invalid/EnableTailNotBoolean.s": [
       {
         "code": "SL-V030",
@@ -217,6 +252,26 @@
     "invalid/EncodingStress.s": [
       {
         "parse_error": true
+      }
+    ],
+    "invalid/FrameModuleParameterMappings.s": [
+      {
+        "code": "SL-V027",
+        "column": 23,
+        "length": 13,
+        "line": 25
+      },
+      {
+        "code": "SL-V049",
+        "column": 38,
+        "length": 14,
+        "line": 25
+      },
+      {
+        "code": "SL-V048",
+        "column": 54,
+        "length": 16,
+        "line": 25
       }
     ],
     "invalid/FreestandingCommentInModuleCode.s": [
@@ -319,6 +374,14 @@
         "line": 30
       }
     ],
+    "invalid/OldOnMappingSource.s": [
+      {
+        "code": "SL-V005",
+        "column": 27,
+        "length": 9,
+        "line": 24
+      }
+    ],
     "invalid/OpSaveAndStateCombined.s": [
       {
         "code": "SL-V031",
@@ -344,6 +407,32 @@
     "invalid/OversizedInput.s": [
       {
         "parse_error": true
+      }
+    ],
+    "invalid/ProcedureAsValue.s": [
+      {
+        "code": "SL-V060",
+        "column": 8,
+        "length": 21,
+        "line": 25
+      },
+      {
+        "code": "SL-V060",
+        "column": 7,
+        "length": 21,
+        "line": 26
+      },
+      {
+        "code": "SL-V060",
+        "column": 16,
+        "length": 21,
+        "line": 29
+      },
+      {
+        "code": "SL-V060",
+        "column": 21,
+        "length": 21,
+        "line": 30
       }
     ],
     "invalid/PropertyInVarBareName.s": [
