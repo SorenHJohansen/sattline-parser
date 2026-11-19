@@ -2,9 +2,13 @@
 
 Persists ``(kind, name, mode) -> (base_dir, ext)`` resolutions so consecutive
 project loads skip filesystem scans for stable layouts. The namespace and
-version belong to this package. A resolution whose base directory is gone is
-dropped at startup, abandoned temporary siblings are pruned, and the entry count
-is capped so a long-lived cache directory stays bounded.
+version belong to this package. A resolution is never trusted because it is in
+the cache: resolution validates the recorded base against the configured roots
+before it is used, and forgets the entry on any mismatch. Startup pruning drops
+entries the file cannot use (wrong version, wrong shape), abandoned temporary
+siblings, and the surplus past the entry cap. It never stats a recorded base: a
+recorded base is untrusted data, and on Windows a planted UNC path would turn a
+startup prune into an outbound SMB connection.
 """
 
 from __future__ import annotations
@@ -81,14 +85,6 @@ def _remove_file(path: Path) -> bool:
     return True
 
 
-def _base_dir_is_gone(entry: dict[str, str]) -> bool:
-    """Whether the base directory a resolution was recorded against is gone."""
-    try:
-        return not Path(entry["base_dir"]).is_dir()
-    except OSError:
-        return True
-
-
 class FileLookupCache:
     """File-lookup resolution cache with atomic, interval-flushed persistence."""
 
@@ -135,8 +131,10 @@ class FileLookupCache:
         Runs at construction, before the in-memory table is loaded, so the
         survivors are what a later ``_load`` sees. Returns the number of entries
         and files removed. An unusable cache file counts as one removal, because
-        the whole file is discarded. A stale entry is one whose recorded base
-        directory no longer exists, so it can never resolve again.
+        the whole file is discarded. An entry is kept when its shape is usable:
+        a recorded base directory is *not* stat-ed here. It is untrusted data
+        until resolution compares it with the configured roots, so a foreign or
+        planted path is never touched by a prune.
         """
         removed = self._prune_temporary_files()
         if not self.path.exists():
@@ -151,7 +149,7 @@ class FileLookupCache:
         entries = _load_file_lookup_entries(data.get("entries"))
         if entries is None:
             return removed + (1 if _remove_file(self.path) else 0)
-        survivors = {key: entry for key, entry in entries.items() if not _base_dir_is_gone(entry)}
+        survivors = dict(entries)
         surplus = len(survivors) - MAX_LOOKUP_CACHE_ENTRIES
         if surplus > 0:
             for key in sorted(survivors)[:surplus]:

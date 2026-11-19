@@ -14,7 +14,7 @@ import os
 import stat
 import sys
 from collections.abc import Callable, Collection, Generator
-from contextlib import contextmanager
+from contextlib import contextmanager, suppress
 from functools import lru_cache
 from hashlib import sha256
 from pathlib import Path
@@ -48,6 +48,7 @@ from .preprocessing.compressed import closed_comment_spans
 
 _CACHE_DIR_MODE = 0o700
 _CACHE_DIR_NAME = "sattline-parser"
+_LARK_STAGING_SUFFIX = ".tmp"
 
 #: Maximum number of structural levels accepted from one source.
 #:
@@ -175,6 +176,58 @@ def _cache_owner_token() -> str:
     return str(_getuid())
 
 
+def _ancestor_is_private(info: os.stat_result) -> bool:
+    """Whether one ancestor directory cannot be changed by another user.
+
+    A cache level is only as private as the directories above it: whoever can
+    write a parent can rename the whole cache tree and put a forged copy in its
+    place. This user's own directory (no group or world write bit) and a
+    root-owned directory (no group or world write bit) both qualify. A
+    root-owned sticky directory qualifies too, because another user cannot
+    rename or delete an entry they do not own there, which is what makes a
+    shared temporary root usable without making it a place to plant a cache.
+
+    A group-writable directory owned by this user is refused even though it
+    belongs to this user: another member of the group can replace the tree.
+    """
+    uid = _getuid
+    if uid is None:
+        return False
+    if info.st_uid not in (uid(), 0):
+        return False
+    if not info.st_mode & 0o022:
+        return True
+    return info.st_uid == 0 and bool(info.st_mode & stat.S_ISVTX)
+
+
+def _ancestor_chain_is_private(path: Path) -> bool:
+    """Whether every directory above *path* is private enough to hold it.
+
+    The walk stops at the filesystem root, so a cache root whose parent chain
+    cannot be proven private is refused rather than trusted. This runs after the
+    level itself is created, because creating ``~/.cache/x`` requires ``.cache``
+    to exist first: the created level is left in place and the cache is
+    disabled.
+    """
+    if _IS_WINDOWS:
+        # Windows proves privacy through the security descriptor of the level
+        # itself; its inherited ACEs already describe the parent chain, and
+        # there is no portable owner/mode walk.
+        return True
+    current = path.parent
+    while True:
+        try:
+            info = current.lstat()
+        except OSError:
+            return False
+        if not stat.S_ISDIR(info.st_mode) or not _ancestor_is_private(info):
+            return False
+        parent = current.parent
+        if parent == current:
+            return True
+        current = parent
+
+
 def _private_directory(path: Path, *, create: bool = True) -> Path | None:
     """Create or validate one cache directory level as private.
 
@@ -236,6 +289,13 @@ def private_cache_dir(path: Path, *, create: bool = True) -> Path | None:
     security-descriptor read) disables the cache instead of following or
     tightening a path this process does not own.
 
+    Every directory above the level is checked too: whoever can write a parent
+    can rename the whole cache tree and replace it, so a root under a
+    group-writable or foreign-owned parent is refused even when the leaf itself
+    looks private. A root-owned sticky parent such as the shared temporary
+    directory is accepted, because another user cannot rename an entry they do
+    not own there.
+
     ``create=False`` is for a reader such as a worker process: the directory
     must already exist and be private, and this call never creates or changes
     it.
@@ -245,7 +305,10 @@ def private_cache_dir(path: Path, *, create: bool = True) -> Path | None:
             path.parent.mkdir(parents=True, exist_ok=True)
         except OSError:
             return None
-    return _private_directory(path, create=create)
+    validated = _private_directory(path, create=create)
+    if validated is None or not _ancestor_chain_is_private(validated):
+        return None
+    return validated
 
 
 def _parser_cache_dir() -> Path | None:
@@ -256,11 +319,14 @@ def _parser_cache_dir() -> Path | None:
     directory has a predictable name under a shared temporary directory, which
     is exactly what another user can pre-create, and owning that parent would
     let them replace the ``lark-cache`` entry after it passed its own check.
+    :func:`private_cache_dir` adds the ancestor walk, so a temporary root that
+    only this user can change is required as well.
     """
     root = Path(gettempdir()) / f"{_CACHE_DIR_NAME}-{_cache_owner_token()}"
-    if _private_directory(root) is None:
+    secure_root = private_cache_dir(root)
+    if secure_root is None:
         return None
-    return _private_directory(root / "lark-cache")
+    return private_cache_dir(root / "lark-cache")
 
 
 class _ParserProtocol(Protocol):
@@ -289,6 +355,117 @@ def _parser_cache_path(
     return str(directory / f"{cache_key.hexdigest()}.lark")
 
 
+def _lark_staging_path(cache_path: Path) -> Path:
+    """A unique sibling path the cache is built in before it is published."""
+    return cache_path.with_name(f"{cache_path.name}.{os.getpid()}.{os.urandom(8).hex()}{_LARK_STAGING_SUFFIX}")
+
+
+def _discard(path: Path) -> None:
+    with suppress(OSError):
+        path.unlink()
+
+
+_LARK_CACHE_MAGIC = b"SATTLINE-LARK-CACHE-V1 "
+
+
+def _lark_cache_header(*, start: str, propagate_positions: bool) -> bytes:
+    """The header line that identifies the parser a cache file holds.
+
+    The file name already isolates the grammar, start rule, position mode, Lark
+    version, and interpreter version. The header repeats the same inputs inside
+    the file, so a file copied to the wrong name, written by an older format, or
+    cut short is discarded instead of loaded.
+    """
+    digest = sha256()
+    digest.update(grammar_fingerprint().encode("ascii"))
+    digest.update(start.encode("utf-8"))
+    digest.update(str(propagate_positions).encode("ascii"))
+    digest.update(lark_version.encode("utf-8"))
+    digest.update(f"py-{sys.version_info[0]}.{sys.version_info[1]}".encode("ascii"))
+    return _LARK_CACHE_MAGIC + digest.hexdigest().encode("ascii") + b"\n"
+
+
+def _load_cached_lark_parser(
+    cache_path: Path,
+    *,
+    start: str,
+    propagate_positions: bool,
+) -> Lark | None:
+    """Load the saved parser, or return ``None`` when the file is unusable.
+
+    Every failure is a cold cache: a truncated header, a partial pickle from an
+    interrupted writer, an incompatible saved shape, or a file an older format
+    wrote. The caller rebuilds and publishes a complete file, so a bad cache
+    costs one rebuild and never a failed parse.
+    """
+    expected = _lark_cache_header(start=start, propagate_positions=propagate_positions)
+    try:
+        with cache_path.open("rb") as handle:
+            if handle.readline() != expected:
+                return None
+            # ``Lark.load`` restores the parser and the options the writer
+            # saved, including the contextual-lexer plugin.
+            return Lark.load(handle)  # pyright: ignore[reportUnknownMemberType]
+    except Exception:  # noqa: BLE001 - any unusable cache file is a miss
+        return None
+
+
+def _publish_lark_parser(cache_path: Path, parser: Lark, *, start: str, propagate_positions: bool) -> None:
+    """Serialize *parser* to a staging file and publish it atomically.
+
+    The cache file is an unsigned pickle in a directory whose privacy is the
+    security boundary; a reader never trusts its contents beyond what
+    ``Lark.load`` deserializes. Publishing through ``os.replace`` means a reader
+    in another process sees either the previous complete file or the new
+    complete file, never a partial pickle.
+    """
+    staging = _lark_staging_path(cache_path)
+    try:
+        with staging.open("wb") as handle:
+            handle.write(_lark_cache_header(start=start, propagate_positions=propagate_positions))
+            parser.save(handle)  # pyright: ignore[reportUnknownMemberType]
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(staging, cache_path)
+    except Exception:  # noqa: BLE001 - a cache write failure must not fail a parse
+        return
+    finally:
+        _discard(staging)
+
+
+def _build_cached_lark_parser(cache_path: str, *, start: str, propagate_positions: bool) -> Lark:
+    """Load the saved parser when it is usable, otherwise build and publish one."""
+    shared = Path(cache_path)
+    cached = _load_cached_lark_parser(shared, start=start, propagate_positions=propagate_positions)
+    if cached is not None:
+        return cached
+    parser = _make_lark_parser(
+        cache=None,
+        start=start,
+        propagate_positions=propagate_positions,
+    )
+    _publish_lark_parser(shared, parser, start=start, propagate_positions=propagate_positions)
+    return parser
+
+
+def _make_lark_parser(*, cache: str | None, start: str, propagate_positions: bool) -> Lark:
+    return Lark(
+        _resolved_grammar(),
+        start=start,
+        parser="lalr",
+        lexer="contextual",
+        propagate_positions=propagate_positions,
+        regex=True,
+        cache=cache,
+        # Lark rejects cache_grammar when no cache path is available.
+        cache_grammar=cache is not None,
+        # Lark's contextual-lexer plugin hook is private. The `<1.4` pin plus the
+        # "Lark Compatibility" CI job that builds against the newest 1.3.x is what
+        # keeps that dependency explicit instead of silently drifting.
+        _plugins={"ContextualLexer": SattLineLexer},
+    )
+
+
 def build_lark_parser(
     *,
     start: str = "start",
@@ -298,24 +475,19 @@ def build_lark_parser(
 
     Every build uses :func:`_resolved_grammar` (comments legal exactly where
     ``sattline.lark`` places them) and the :class:`SattLineLexer` (structural,
-    context-aware ``(* ... *)`` comment handling).
+    context-aware ``(* ... *)`` comment handling). The on-disk parser cache is
+    read directly and written through a staging file published with
+    ``os.replace``, so a reader in another process never sees a partial pickle;
+    an unusable file is discarded and rebuilt.
     """
     cache_path = _parser_cache_path(start=start, propagate_positions=propagate_positions)
-    return Lark(
-        _resolved_grammar(),
-        start=start,
-        parser="lalr",
-        lexer="contextual",
-        propagate_positions=propagate_positions,
-        regex=True,
-        cache=cache_path,
-        # Lark rejects cache_grammar when no cache path is available.
-        cache_grammar=cache_path is not None,
-        # Lark's contextual-lexer plugin hook is private. The `<1.4` pin plus the
-        # "Lark Compatibility" CI job that builds against the newest 1.3.x is what
-        # keeps that dependency explicit instead of silently drifting.
-        _plugins={"ContextualLexer": SattLineLexer},
-    )
+    if cache_path is None:
+        return _make_lark_parser(
+            cache=None,
+            start=start,
+            propagate_positions=propagate_positions,
+        )
+    return _build_cached_lark_parser(cache_path, start=start, propagate_positions=propagate_positions)
 
 
 def create_parser() -> Lark:

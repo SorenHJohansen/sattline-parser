@@ -1,0 +1,1 @@
+- **AST cache entry cap during a run.** The least-recently-used cap now runs at startup and again every `max_entries // 8` writes (at most 64), so one long process overshoots the cap by at most that many entries instead of leaving the directory at whatever it reached. The run count is documented.

@@ -690,7 +690,8 @@ level.
 
 Import the model and its traversal through `sattline_parser.ast`. The public
 walker is `sattline_parser.ast.walk`; `models/walk.py` holds the implementation,
-and the small `sattline_parser.models` surface also re-exports the walker names.
+and `sattline_parser.models` is internal, so its re-exports are not a supported
+import door.
 `walk(node)` yields a `WalkEvent` for every AST node in pre-order.
 Each event carries the node, the display relation that holds it in its parent
 (for example `localvariables[2]` or `branches[0][1]`), the model field and

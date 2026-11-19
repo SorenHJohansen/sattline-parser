@@ -81,7 +81,8 @@ This package owns the Lark grammar, the strict single-file syntax behavior, the 
 - PEP 561 typed: `py.typed` ships, so downstream type checkers use the inline
   annotations
 - Standalone fuzz harness with hard subprocess timeouts and corpus regression
-- Zero runtime dependencies beyond `lark` and `regex`
+- Three runtime dependencies: `lark` (with the `interegular` extra it pulls in)
+  and `regex`
 
 ## Install
 
@@ -405,11 +406,14 @@ from the transformer is treated as a crash, not as ordinary invalid input.
 ## Dependencies
 
 The declared runtime dependencies are `lark[interegular]>=1.3.1,<1.4` and
-`regex>=2023.12.25`. The parser does not call `regex` directly; Lark's `regex`
-engine does. The floor is the first release with the Python 3.12 wheels used by
-CI, not a feature requirement. CI tests both the locked minimum (lark 1.3.1)
-and the latest lark that satisfies the range, so the supported range is
-actually exercised. Installs use `uv.lock` for reproducibility.
+`regex>=2023.12.25`. The `interegular` extra pulls in `interegular` itself, so
+an install has three runtime distributions: `lark`, `interegular`, and `regex`.
+The parser does not call `regex` or `interegular` directly; Lark's `regex`
+engine and its grammar checks do. The floor is the first release with the Python
+3.12 wheels used by CI, not a feature requirement. CI tests both the locked
+minimum (lark 1.3.1) and the latest lark that satisfies the range, so the
+supported range is actually exercised. Installs use `uv.lock` for
+reproducibility.
 
 ## Project layout
 

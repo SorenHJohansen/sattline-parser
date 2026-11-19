@@ -1,0 +1,1 @@
+- **AST cache envelope header.** Each entry now starts with a signed JSON metadata header before the pickle. Pruning reads that header to drop an entry whose recorded source path has vanished without unpickling the payload or stat-ing a path from an unverified header.

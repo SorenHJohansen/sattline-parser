@@ -119,7 +119,8 @@ ENDDEF (*BasePicture*);
     parser_api._default_parser.cache_clear()
 
 
-def test_create_parser_uses_regex_and_disk_cache(monkeypatch, tmp_path):
+def test_create_parser_uses_regex_and_no_lark_cache_path(monkeypatch, tmp_path):
+    """Lark is built without its own cache; the pipeline owns the disk cache."""
     captured: dict[str, object] = {}
     cache_dir = tmp_path / "lark-cache"
 
@@ -136,8 +137,8 @@ def test_create_parser_uses_regex_and_disk_cache(monkeypatch, tmp_path):
     options = captured["options"]
     assert isinstance(options, dict)
     assert options["regex"] is True
-    assert options["cache_grammar"] is True
-    assert Path(options["cache"]).parent == cache_dir
+    assert options["cache"] is None
+    assert options["cache_grammar"] is False
     assert options["parser"] == "lalr"
 
 
