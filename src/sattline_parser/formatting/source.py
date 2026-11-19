@@ -731,8 +731,13 @@ def _graph_free_items(properties: GraphProperties) -> list[str]:
         items.append(f"{_string(text_var.name)} VarName")
     for alignment in properties.get(const.KEY_ALIGNMENTS, ()):
         items.append(_alignment_text(alignment))
-    if const.KEY_CONNECTION_NODE in properties:
-        items.append(_connection_node_text(properties[const.KEY_CONNECTION_NODE]))
+    # Only a text object's positioned ``ConnectionNode (x, y)`` clause belongs
+    # in the clause run. The bare marker the shared common properties allow is
+    # written with the common pieces instead, because the clause run has no bare
+    # form.
+    connection_node = properties.get(const.KEY_CONNECTION_NODE)
+    if connection_node is not None and const.KEY_COORDS in connection_node.properties:
+        items.append(_connection_node_text(connection_node))
     for key in (const.KEY_VALUE_FRACTION, const.KEY_WIDTH, const.KEY_FORMAT_STRING):
         clause = properties.get(key)
         if clause is not None and clause.tail is None:
@@ -767,22 +772,29 @@ def _graph_common_pieces(
     position of its own and keeps the model order.
     """
     colours = [(_colour_text(colour), _colour_tails(colour)) for colour in properties.get(const.KEY_COLOURS, ())]
+    pieces = list(colours)
     enable = _enable_clause(properties)
-    if enable is None:
-        return colours
-    text = _enable_text(enable, parenthesised=True)
-    if enable.tail is None:
-        return [(text, ()), *colours]
-    position = _tail_order(tail_order, enable.tail)
-    index = next(
-        (
-            index
-            for index, (_text, tails) in enumerate(colours)
-            if tails and _tail_order(tail_order, tails[0]) > position
-        ),
-        len(colours),
-    )
-    return [*colours[:index], (text, (enable.tail,)), *colours[index:]]
+    if enable is not None:
+        text = _enable_text(enable, parenthesised=True)
+        if enable.tail is None:
+            pieces = [(text, ()), *colours]
+        else:
+            position = _tail_order(tail_order, enable.tail)
+            index = next(
+                (
+                    index
+                    for index, (_text, tails) in enumerate(colours)
+                    if tails and _tail_order(tail_order, tails[0]) > position
+                ),
+                len(colours),
+            )
+            pieces = [*colours[:index], (text, (enable.tail,)), *colours[index:]]
+    # A bare ``ConnectionNode`` marker has no tail and no modelled position
+    # inside the common run, so it is written last.
+    connection_node = properties.get(const.KEY_CONNECTION_NODE)
+    if connection_node is not None and const.KEY_COORDS not in connection_node.properties:
+        pieces.append((_connection_node_text(connection_node), ()))
+    return pieces
 
 
 def _mark_groups(used: set[int], groups: tuple[tuple[Tail, ...], ...], start: int, stop: int) -> None:

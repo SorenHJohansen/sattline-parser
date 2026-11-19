@@ -185,7 +185,10 @@ def _text_object_properties(go: GraphObject, items: list[TransformerItem]) -> No
             alignments.append(item)
         elif isinstance(item, GraphObject) and item.type == const.GRAMMAR_VALUE_CONNECTIONNODE:
             if const.KEY_CONNECTION_NODE in go.properties:
-                raise ValueError("text object has more than one ConnectionNode clause")
+                raise ValueError(
+                    "text object has more than one ConnectionNode: the text-object clause "
+                    "and the common_properties marker are both singular"
+                )
             go.properties[const.KEY_CONNECTION_NODE] = item
     if alignments:
         go.properties[const.KEY_ALIGNMENTS] = alignments
@@ -199,18 +202,26 @@ class _GraphicsInteractMixin:
         return [str(item) for item in items if isinstance(item, Token)]
 
     def common_properties(self, items: list[TransformerItem]) -> CommonProperties:
-        """Grammar common_properties -> layer/enable/colour content.
+        """Grammar common_properties -> layer/enable/colour/connection content.
 
-        ``connection_node_bare`` markers are position-only and carry no property
-        payload, so they are skipped rather than merged. The rule repeats, but
-        ``Layer_`` and ``Enable_`` are singular properties: a second one is
-        ambiguous, so it is rejected instead of silently overwriting the first.
+        A bare ``ConnectionNode`` marker is kept, not dropped: it is a
+        ``GraphObject`` with no coordinates, the same node shape a text object's
+        positioned ``ConnectionNode (x, y)`` clause uses. The rule repeats, but
+        ``Layer_``, ``Enable_``, and the bare marker are singular properties, so
+        a second one is ambiguous and is rejected instead of overwriting the
+        first silently.
         """
         layer: int | None = None
         enable: EnableClause | None = None
         colours: list[ColourSpec] = []
+        connection_node: GraphObject | None = None
         for item in items:
-            if is_comment_tree(item) or isinstance(item, GraphObject):
+            if is_comment_tree(item):
+                continue
+            if isinstance(item, GraphObject):
+                if connection_node is not None:
+                    raise ValueError("graph object has more than one bare ConnectionNode marker")
+                connection_node = item
                 continue
             if isinstance(item, int) and not isinstance(item, bool):
                 if layer is not None:
@@ -222,7 +233,12 @@ class _GraphicsInteractMixin:
                 enable = item
             elif isinstance(item, ColourSpec):
                 colours.append(item)
-        return CommonProperties(layer=layer, enable=enable, colours=tuple(colours))
+        return CommonProperties(
+            layer=layer,
+            enable=enable,
+            colours=tuple(colours),
+            connection_node=connection_node,
+        )
 
     @staticmethod
     def _apply_common_properties(properties: GraphProperties, items: list[TransformerItem]) -> None:
@@ -237,6 +253,13 @@ class _GraphicsInteractMixin:
                     properties[const.KEY_ENABLE_TAIL] = item.enable.tail
             if item.colours:
                 properties[const.KEY_COLOURS] = list(item.colours)
+            if item.connection_node is not None:
+                if const.KEY_CONNECTION_NODE in properties:
+                    raise ValueError(
+                        "graph object has more than one ConnectionNode: a text-object clause "
+                        "and a common_properties marker are both singular"
+                    )
+                properties[const.KEY_CONNECTION_NODE] = item.connection_node
 
     def _tailed_clause(self, items: list[TransformerItem], span: SourceSpan | None = None) -> TailedClause:
         """Build the typed ``Keyword = value [tail]`` clause a rule produced."""
