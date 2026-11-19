@@ -219,7 +219,13 @@ def _format_expr(expr: object, indent: str, *, parent_precedence: int, parent_op
         return f"({left} {expr.op} {right})"
 
     if isinstance(expr, UnaryOp):
-        return f"{expr.op}{_format_child(expr.operand, indent, 8, None)}"
+        operand = _format_child(expr.operand, indent, 8, None)
+        # A sign written directly against a numeric literal lexes as one signed
+        # literal, so ``-5`` would reparse as a literal and the ``UnaryOp``
+        # would disappear. A separating space is accepted by the grammar and
+        # keeps the node, so the written form decides the shape.
+        separator = " " if operand[:1].isdigit() or operand[:1] in {".", "+", "-"} else ""
+        return f"{expr.op}{separator}{operand}"
 
     if isinstance(expr, FuncCall):
         args = ", ".join(_format_expr(argument, indent, parent_precedence=0, parent_op=None) for argument in expr.args)
