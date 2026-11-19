@@ -581,6 +581,11 @@ tree that carried a `Time_Value` payload could not leave the project boundary. A
 `FrozenMapping` rejects item assignment and item deletion the way the proxy
 does, and both copy protocols return the same immutable object.
 
+`FrozenMapping` is exported from `sattline_parser.ast`, so a consumer that holds
+a mapping-valued field can name its type and check it without importing a models
+submodule. It is a `collections.abc.Mapping`, so reading through the abstract
+class is equally valid and does not depend on the concrete type.
+
 ```mermaid
 classDiagram
     class VarRef {

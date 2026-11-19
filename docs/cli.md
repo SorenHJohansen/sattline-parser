@@ -401,7 +401,7 @@ code `1`, exactly like an error.
 | --- | --- |
 | `programs` | One row per loaded artifact: `name`, `code`, `graphics`, `deps`, `distribution`, `sidecar`, `dependencies`, `source`, `library`, `resolved_base`, `has_executing_system`, `executing_systems` |
 | `edges` | `{"from": dependent, "to": dependency}` over casefolded names |
-| `diagnostics` | One row per non-fatal load condition: `kind` (`sidecar-missing`, `sidecar-elsewhere`, `sidecar-empty`, `sidecar-family-mismatch`, or `folded-name-collision`), `program`, `detail`, `path` |
+| `diagnostics` | One row per non-fatal load condition: `kind` (`sidecar-missing`, `sidecar-elsewhere`, `sidecar-empty`, `sidecar-family-mismatch`, `folded-name-collision`, `alias-declarations-unused`, `skipped-file`, or `companion-family-mismatch`), `program`, `detail`, `path` |
 | `validation` | One row per diagnostic: `program`, `code` (`SL-V###`), `message`, `line`, `column` |
 | `findings` | Present only when the tree could not be loaded at all: one `Finding` with rule `PROJECT_LOAD_ERROR`, or when `--of` names a program outside the graph: one `Finding` with rule `PROJECT_QUERY_ERROR` |
 
