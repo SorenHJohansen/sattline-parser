@@ -234,6 +234,7 @@ _FIELD_SPECS: _FieldSpecs = {
         "groupconn_global": "leaf",
         "description_comments": "node",
         "coordinate_tails": "leaf",
+        "coordinate_clippings": "leaf",
     },
     m.ModuleTypeDef: {
         "name": "leaf",
@@ -322,7 +323,13 @@ _FIELD_SPECS: _FieldSpecs = {
     Assignment: {"target": "node", "value": "value", "span": "leaf"},
     BinOp: {"left": "value", "op": "leaf", "right": "value", "span": "leaf"},
     BoolOp: {"op": "leaf", "operands": "value", "span": "leaf"},
-    ClippingClause: {"bounds": "leaf", "tails": "value", "span": "leaf", "corner_tails": "leaf"},
+    ClippingClause: {
+        "bounds": "leaf",
+        "tails": "value",
+        "span": "leaf",
+        "corner_tails": "leaf",
+        "corner_clippings": "leaf",
+    },
     ColourSpec: {
         "kind": "leaf",
         "width": "node",
@@ -351,7 +358,15 @@ _FIELD_SPECS: _FieldSpecs = {
     ModuleMarker: {"kind": "leaf", "span": "leaf"},
     NotOp: {"operand": "value", "span": "leaf"},
     PickButton: {"value": "leaf", "reference": "node", "span": "leaf"},
-    PolygonPoint: {"x": "leaf", "y": "leaf", "x_tails": "value", "y_tails": "value", "span": "leaf"},
+    PolygonPoint: {
+        "x": "leaf",
+        "y": "leaf",
+        "x_tails": "value",
+        "y_tails": "value",
+        "x_clippings": "leaf",
+        "y_clippings": "leaf",
+        "span": "leaf",
+    },
     ProcedureCall: {"name": "leaf", "args": "value", "span": "leaf"},
     ScaleSelector: {"mode": "leaf", "span": "leaf"},
     TailedClause: {"key": "leaf", "value": "value", "tail": "value", "span": "leaf"},
@@ -367,6 +382,7 @@ _FIELD_SPECS: _FieldSpecs = {
 #: forces a decision here; a test compares the tuple with the annotation keys.
 _GRAPH_PROPERTY_ORDER: tuple[str, ...] = (
     "coord_tails",
+    "coord_clippings",
     "colours",
     "enable_tail",
     "width",
@@ -387,6 +403,7 @@ _GRAPH_PROPERTY_ORDER: tuple[str, ...] = (
 #: Node-bearing keys of ``InteractProperties`` in walk order.
 _INTERACT_PROPERTY_ORDER: tuple[str, ...] = (
     "coord_tails",
+    "coord_clippings",
     "procedure",
     "assigns",
     "enables",
@@ -629,10 +646,12 @@ def _property_entries(node: m.GraphObject | m.InteractObject) -> Iterator[_Child
         value = properties.get(key)
         if value is None:
             continue
-        if key in {"tails", "coord_tails"}:
+        if key in {"tails", "coord_tails", "coord_clippings"}:
             # Both are views of tails that another key or the flat list owns.
             # ``coord_tails`` is grouped, so it yields no nodes itself; the flat
-            # ``tails`` list emits each tail once.
+            # ``tails`` list emits each tail once. ``coord_clippings`` groups the
+            # same tail objects under their annotation, so reading it here would
+            # hide them from the flat list without emitting them anywhere.
             if key == "tails":
                 yield from _unowned_tail_entries(value, owned)
             continue

@@ -8,15 +8,20 @@ language cares, not the original whitespace, so the output is normalised.
 Every parsed corpus fixture round-trips, including graphics and interactor
 bodies. A tail is written after the value it followed, using the positional
 views ``ModuleHeader.coordinate_tails``, ``ClippingClause.corner_tails``, and
-the graph and interact ``coord_tails`` property key.
+the graph and interact ``coord_tails`` property key. A nested
+``ClippingBounds`` annotation is written after the value it annotated, from the
+matching ``coordinate_clippings``, ``corner_clippings``, ``coord_clippings``, or
+``x_clippings``/``y_clippings`` view.
 
-Four shapes are refused rather than written somewhere they did not appear:
+Five shapes are refused rather than written somewhere they did not appear:
 
 * a hand-assembled model that carries a tail without its positional grouping;
 * a parameter mapping whose source literal is absent;
 * a multi-key ``time_value`` payload, whose written keyword is not modelled;
 * more than two module-header description comments, because the grammar has one
-  position before ``Invocation`` and one after it.
+  position before ``Invocation`` and one after it;
+* a plain coordinate tail written after a nested ``ClippingBounds`` annotation,
+  because the model keeps the annotation beside the tail order.
 
 The output is display text: it is not guaranteed to be byte-identical to any
 particular editor's layout, and it is not a supported interchange format.
@@ -24,6 +29,7 @@ particular editor's layout, and it is not a supported interchange format.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 from typing import TypeGuard, cast
 
@@ -66,6 +72,7 @@ from sattline_parser.models.clauses import (
     FlagClause,
     ModuleArguments,
     ModuleInViewClause,
+    NestedClipping,
     PickButton,
     PolygonPoint,
     ProcedureCall,
@@ -127,6 +134,17 @@ class _Printer:
             else:
                 self.emit(level)
 
+    def emit_verbatim(self, level: int, text: str) -> None:
+        """Emit token text whose own line breaks and indentation are significant.
+
+        Only the first line takes the level prefix. A preserved comment keeps
+        the continuation lines exactly as the token carried them, so a second
+        format pass does not shift them.
+        """
+        lines = text.splitlines() or [text]
+        self.emit(level, lines[0])
+        self.lines.extend(lines[1:])
+
     def render(self) -> str:
         return "\n".join(self.lines).rstrip("\n") + "\n"
 
@@ -183,7 +201,9 @@ def _enddef_text(comments: list[CodeComment], *, tail: str = "") -> str:
 
 
 def _quoted_header_line(text: str) -> str:
-    return f'"{text}"'
+    # A header line keeps the text inside its quotes, so a doubled inner quote
+    # has to be escaped again when it is written back.
+    return _string(text)
 
 
 def _emit_body(printer: _Printer, picture: BasePicture, level: int) -> None:
@@ -210,7 +230,7 @@ def _scan_group_text(header: ModuleHeader) -> str:
     if header.groupconn is None:
         return ""
     global_keyword = "GLOBAL " if header.groupconn_global else ""
-    return f" (GroupConn = {global_keyword}{header.groupconn.name})"
+    return f" (GroupConn = {global_keyword}{format_expr(header.groupconn)})"
 
 
 def _emit_definitions(
@@ -245,7 +265,7 @@ def _emit_moduletype(printer: _Printer, moduletype: ModuleTypeDef, level: int) -
     groupconn = ""
     if moduletype.groupconn is not None:
         global_keyword = "GLOBAL " if moduletype.groupconn_global else ""
-        groupconn = f" (GroupConn = {global_keyword}{moduletype.groupconn.name})"
+        groupconn = f" (GroupConn = {global_keyword}{format_expr(moduletype.groupconn)})"
     printer.emit(level, f"{moduletype.name}{description_comments} = {private}MODULEDEFINITION{datecode}{groupconn}")
     _emit_variables(printer, const.GRAMMAR_VALUE_MODULEPARAMETERS, moduletype.moduleparameters, level + 1)
     _emit_variables(printer, const.GRAMMAR_VALUE_LOCALVARIABLES, moduletype.localvariables, level + 1)
@@ -348,12 +368,12 @@ def _init_value_text(variable: Variable) -> str:
             # marker alone is the initializer.
             return const.GRAMMAR_VALUE_DURATION_VALUE
         return str(value)
-    if isinstance(value, dict):
+    if isinstance(value, Mapping):
         return _time_value_text(value)
     return _value_text(value)
 
 
-def _time_value_text(payload: dict[str, str | None]) -> str:
+def _time_value_text(payload: Mapping[str, str | None]) -> str:
     """Render a parsed ``Time_Value`` payload as the source spelling."""
     if len(payload) != 1:
         raise UnsupportedFormattingError("a multi-key time_value payload cannot be rendered from its parsed dict")
@@ -429,7 +449,12 @@ def _emit_clipping(printer: _Printer, clipping: ClippingClause, level: int) -> N
             "clipping tails: this clause carries tails without their corners, "
             "so the corner each tail belonged to is not known"
         )
-    rendered = [_real(value) + _tails_text(groups, index) for index, value in enumerate(values)]
+    rendered = [
+        _coordinate_value_text(
+            value, _tail_group_at(groups, index), _clipping_group_at(clipping.corner_clippings, index)
+        )
+        for index, value in enumerate(values)
+    ]
     printer.emit(level, f"ClippingBounds = ( {rendered[0]} , {rendered[1]} ) ( {rendered[2]} , {rendered[3]} )")
 
 
@@ -442,7 +467,10 @@ def _module_header(header: ModuleHeader) -> str:
             "coordinates, so the coordinate each tail belonged to is not known"
         )
     coordinames = ", ".join(
-        _real(value) + _tails_text(groups, index) for index, value in enumerate(header.invoke_coord)
+        _coordinate_value_text(
+            value, _tail_group_at(groups, index), _clipping_group_at(header.coordinate_clippings, index)
+        )
+        for index, value in enumerate(header.invoke_coord)
     )
     arguments = _arguments_text(header.arguments)
     inner = f"( {coordinames}" + (f" {arguments}" if arguments else "") + " )"
@@ -614,7 +642,13 @@ def _emit_code_items(printer: _Printer, items: list[CodeItem], level: int) -> No
 
 
 def _emit_code_item(printer: _Printer, item: CodeItem, level: int) -> None:
-    printer.emit_block(level, format_expr(item, indent=printer.indent))
+    text = format_expr(item, indent=printer.indent)
+    if isinstance(item, CodeComment):
+        # The comment's own line breaks and indentation are part of the token,
+        # so re-indenting each line would change the preserved text.
+        printer.emit_verbatim(level, text)
+        return
+    printer.emit_block(level, text)
 
 
 def _emit_graph_object(printer: _Printer, graph_object: GraphObject, level: int) -> None:
@@ -634,26 +668,30 @@ def _emit_graph_object(printer: _Printer, graph_object: GraphObject, level: int)
     tail_order = {id(tail): index for index, tail in enumerate(flat_tails)}
     used: set[int] = set()
     head = _graph_head(properties, kind, used)
-    items_free, common_free = _graph_free_pieces(properties)
-    items_tailed, common_tailed = _graph_tailed_pieces(properties, tail_order)
-    for piece in (*items_tailed, *common_tailed):
-        for tail in piece[2]:
+    items_free = _graph_free_items(properties)
+    items_tailed = _graph_tailed_items(properties, tail_order)
+    for _order, _text, tails in items_tailed:
+        for tail in tails:
+            used.add(id(tail))
+    common = _graph_common_pieces(properties, tail_order)
+    for _text, tails in common:
+        for tail in tails:
             used.add(id(tail))
     if kind == const.GRAMMAR_VALUE_TEXTOBJECT and items_free == [] and items_tailed == []:
         # A text object's bare label text is not modelled, but the grammar needs
         # one item before the common properties. An empty string parses back to
         # the same tree because no field records a bare text content.
         items_free.append(_string(""))
-    if const.KEY_LAYER in properties:
-        common_free.append(_layer_text(properties[const.KEY_LAYER]))
     if any(id(tail) not in used for tail in flat_tails):
         raise UnsupportedFormattingError(
             f"{kind}: a tail is not attached to a modelled coordinate or clause, "
             "so it cannot be written where it was written"
         )
     item_texts = [text for _order, text, _tails in sorted(items_tailed, key=lambda piece: piece[0])]
-    common_texts = [text for _order, text, _tails in sorted(common_tailed, key=lambda piece: piece[0])]
-    parts = (*head, *items_free, *item_texts, *common_free, *common_texts)
+    common_texts = [text for text, _tails in common]
+    if const.KEY_LAYER in properties:
+        common_texts.insert(0, _layer_text(properties[const.KEY_LAYER]))
+    parts = (*head, *items_free, *item_texts, *common_texts)
     printer.emit(level, " ".join(part for part in parts if part))
 
 
@@ -663,29 +701,30 @@ def _graph_head(properties: GraphProperties, kind: str, used: set[int]) -> list[
     if kind == const.GRAMMAR_VALUE_POLYGONOBJECT:
         head.extend(properties.get(const.KEY_POLYGON_TYPE, ()))
     groups = properties.get(const.KEY_COORD_TAILS, ())
+    clippings = properties.get(const.KEY_COORD_CLIPPINGS, ())
     coords = properties.get(const.KEY_COORDS)
     if coords is not None:
         if kind == const.GRAMMAR_VALUE_SEGMENTOBJECT:
-            head.append(_tailed_coords_text(coords, groups, 0))
+            head.append(_tailed_coords_text(coords, groups, clippings, 0))
             _mark_groups(used, groups, 0, 4)
         else:
-            head.append(_tailed_coords_text(coords, groups, 0))
+            head.append(_tailed_coords_text(coords, groups, clippings, 0))
             _mark_groups(used, groups, 0, len(groups))
     for point in properties.get(const.KEY_POINTS, ()):  # PolygonObject
         head.append(_polygon_point_text(point))
         for tail in (*point.x_tails, *point.y_tails):
             used.add(id(tail))
     if kind == const.GRAMMAR_VALUE_SEGMENTOBJECT and const.KEY_SEGMENT_POINT in properties:
-        head.append(_tailed_coords_text(properties[const.KEY_SEGMENT_POINT], groups, 4))
+        head.append(_tailed_coords_text(properties[const.KEY_SEGMENT_POINT], groups, clippings, 4))
         _mark_groups(used, groups, 4, 6)
     return head
 
 
-def _graph_free_pieces(properties: GraphProperties) -> tuple[list[str], list[str]]:
-    """Object pieces that carry no tail: ``(items, common properties)``.
+def _graph_free_items(properties: GraphProperties) -> list[str]:
+    """A text object's own pieces that carry no tail.
 
-    A text object's grammar puts its own items before the shared common
-    properties, so the two groups are kept apart and emitted in that order.
+    The grammar puts these before the shared common properties, so they stay
+    apart from the common pieces and are emitted first.
     """
     items: list[str] = []
     for text_var in properties.get(const.KEY_TEXT_VARS, ()):
@@ -698,36 +737,52 @@ def _graph_free_pieces(properties: GraphProperties) -> tuple[list[str], list[str
         clause = properties.get(key)
         if clause is not None and clause.tail is None:
             items.append(_tailed_clause_text(clause))
-    common: list[str] = []
-    enable = _enable_clause(properties)
-    if enable is not None and enable.tail is None:
-        common.append(_enable_text(enable, parenthesised=True))
-    for colour in properties.get(const.KEY_COLOURS, ()):
-        if not _colour_tails(colour):
-            common.append(_colour_text(colour))
-    return items, common
+    return items
 
 
-def _graph_tailed_pieces(
+def _graph_tailed_items(
     properties: GraphProperties,
     tail_order: dict[int, int],
-) -> tuple[list[tuple[int, str, tuple[Tail, ...]]], list[tuple[int, str, tuple[Tail, ...]]]]:
-    """Tailed pieces: ``(text items, common properties)``, each in source order."""
+) -> list[tuple[int, str, tuple[Tail, ...]]]:
+    """A text object's tailed clauses, each with its position in the tail list."""
     items: list[tuple[int, str, tuple[Tail, ...]]] = []
     for key in (const.KEY_VALUE_FRACTION, const.KEY_WIDTH, const.KEY_FORMAT_STRING):
         clause = properties.get(key)
         if clause is None or clause.tail is None:
             continue
         items.append((_tail_order(tail_order, clause.tail), _tailed_clause_text(clause), (clause.tail,)))
-    common: list[tuple[int, str, tuple[Tail, ...]]] = []
+    return items
+
+
+def _graph_common_pieces(
+    properties: GraphProperties,
+    tail_order: dict[int, int],
+) -> list[tuple[str, tuple[Tail, ...]]]:
+    """The shared common properties in source order: ``Enable_`` and colours.
+
+    The colour blocks keep their list order, because the model stores them in
+    written order and their order is part of the tree. A tailed ``Enable_`` is
+    placed relative to the tailed colours by its position in the flat tail list,
+    so the written tail order survives the round trip. An untailed clause has no
+    position of its own and keeps the model order.
+    """
+    colours = [(_colour_text(colour), _colour_tails(colour)) for colour in properties.get(const.KEY_COLOURS, ())]
     enable = _enable_clause(properties)
-    if enable is not None and enable.tail is not None:
-        common.append((_tail_order(tail_order, enable.tail), _enable_text(enable, parenthesised=True), (enable.tail,)))
-    for colour in properties.get(const.KEY_COLOURS, ()):
-        colour_tails = _colour_tails(colour)
-        if colour_tails:
-            common.append((_tail_order(tail_order, colour_tails[0]), _colour_text(colour), colour_tails))
-    return items, common
+    if enable is None:
+        return colours
+    text = _enable_text(enable, parenthesised=True)
+    if enable.tail is None:
+        return [(text, ()), *colours]
+    position = _tail_order(tail_order, enable.tail)
+    index = next(
+        (
+            index
+            for index, (_text, tails) in enumerate(colours)
+            if tails and _tail_order(tail_order, tails[0]) > position
+        ),
+        len(colours),
+    )
+    return [*colours[:index], (text, (enable.tail,)), *colours[index:]]
 
 
 def _mark_groups(used: set[int], groups: tuple[tuple[Tail, ...], ...], start: int, stop: int) -> None:
@@ -759,12 +814,17 @@ def _colour_tails(colour: ColourSpec) -> tuple[Tail, ...]:
     return tuple(tails)
 
 
-def _tailed_coords_text(coords: object, groups: tuple[tuple[Tail, ...], ...], offset: int) -> str:
+def _tailed_coords_text(
+    coords: object,
+    groups: tuple[tuple[Tail, ...], ...],
+    clippings: tuple[tuple[NestedClipping, ...], ...],
+    offset: int,
+) -> str:
     """Render one pair or box, placing each value's tails after that value."""
     if _is_pair(coords):
         return (
-            f"( {_real(_as_float(coords[0]))}{_tails_text(groups, offset)} , "
-            f"{_real(_as_float(coords[1]))}{_tails_text(groups, offset + 1)} )"
+            f"( {_coordinate_text(coords[0], groups, clippings, offset)} , "
+            f"{_coordinate_text(coords[1], groups, clippings, offset + 1)} )"
         )
     if isinstance(coords, tuple):
         box = cast("tuple[object, object]", coords)
@@ -772,12 +832,22 @@ def _tailed_coords_text(coords: object, groups: tuple[tuple[Tail, ...], ...], of
             first = cast("tuple[object, object]", box[0])
             second = cast("tuple[object, object]", box[1])
             return (
-                f"( {_real(_as_float(first[0]))}{_tails_text(groups, offset)} , "
-                f"{_real(_as_float(first[1]))}{_tails_text(groups, offset + 1)} ) "
-                f"( {_real(_as_float(second[0]))}{_tails_text(groups, offset + 2)} , "
-                f"{_real(_as_float(second[1]))}{_tails_text(groups, offset + 3)} )"
+                f"( {_coordinate_text(first[0], groups, clippings, offset)} , "
+                f"{_coordinate_text(first[1], groups, clippings, offset + 1)} ) "
+                f"( {_coordinate_text(second[0], groups, clippings, offset + 2)} , "
+                f"{_coordinate_text(second[1], groups, clippings, offset + 3)} )"
             )
     raise UnsupportedFormattingError(f"unexpected coordinate shape: {coords!r}")
+
+
+def _coordinate_text(
+    value: object,
+    groups: tuple[tuple[Tail, ...], ...],
+    clippings: tuple[tuple[NestedClipping, ...], ...],
+    index: int,
+) -> str:
+    """One coordinate value at a known position in its run."""
+    return _coordinate_value_text(value, _tail_group_at(groups, index), _clipping_group_at(clippings, index))
 
 
 def _emit_interact_object(printer: _Printer, interact_object: InteractObject, level: int) -> None:
@@ -787,9 +857,10 @@ def _emit_interact_object(printer: _Printer, interact_object: InteractObject, le
     used: set[int] = set()
     parts = [interact_object.type]
     groups = properties.get(const.KEY_COORD_TAILS, ())
+    clippings = properties.get(const.KEY_COORD_CLIPPINGS, ())
     offset = 0
     for coords in properties.get(const.KEY_COORDS) or ():
-        parts.append(_tailed_coords_text(coords, groups, offset))
+        parts.append(_tailed_coords_text(coords, groups, clippings, offset))
         offset += 4 if not _is_pair(coords) else 2
     for tail in (tail for group in groups for tail in group):
         used.add(id(tail))
@@ -973,8 +1044,8 @@ def _as_float(value: object) -> float:
 
 
 def _polygon_point_text(point: PolygonPoint) -> str:
-    x = _real(point.x) + "".join(_tail_text(tail, parenthesised=False) for tail in point.x_tails)
-    y = _real(point.y) + "".join(_tail_text(tail, parenthesised=False) for tail in point.y_tails)
+    x = _coordinate_value_text(point.x, point.x_tails, point.x_clippings)
+    y = _coordinate_value_text(point.y, point.y_tails, point.y_clippings)
     return f"( {x} , {y} )"
 
 
@@ -988,27 +1059,88 @@ def _connection_node_text(node: GraphObject) -> str:
 def _mapping_text(mapping: ParameterMapping) -> str:
     global_keyword = "GLOBAL " if mapping.is_source_global else ""
     duration_keyword = "Duration_Value " if mapping.is_duration else ""
-    prefix = f"{mapping.target.name} => {global_keyword}{duration_keyword}"
+    prefix = f"{format_expr(mapping.target)} => {global_keyword}{duration_keyword}"
     if mapping.source is not None:
-        return f"{prefix}{mapping.source.name}"
+        return f"{prefix}{format_expr(mapping.source)}"
     literal = mapping.source_literal
     if literal is None:
         raise UnsupportedFormattingError(
             f"mapping {mapping.target.name!r}: the model kept no source literal, "
             "so a written falsy literal cannot be reproduced"
         )
-    if isinstance(literal, dict):
-        # A ``Time_Value`` payload is a parsed dict, not a Python literal: it
+    if isinstance(literal, Mapping):
+        # A ``Time_Value`` payload is a parsed mapping, not a Python literal: it
         # has to be written back as the keyword and its optional time string.
         return f"{prefix}{_time_value_text(literal)}"
     return f"{prefix}{_value_text(literal)}"
 
 
-def _tails_text(groups: tuple[tuple[Tail, ...], ...], index: int) -> str:
-    """The tails written after the value at *index*, or an empty string."""
-    if index >= len(groups):
-        return ""
-    return "".join(_tail_text(tail, parenthesised=False) for tail in groups[index])
+def _tail_group_at(groups: tuple[tuple[Tail, ...], ...], index: int) -> tuple[Tail, ...]:
+    """One coordinate tail group, or an empty group when the model records none."""
+    return groups[index] if index < len(groups) else ()
+
+
+def _clipping_group_at(
+    groups: tuple[tuple[NestedClipping, ...], ...],
+    index: int,
+) -> tuple[NestedClipping, ...]:
+    """One nested clipping group, or an empty group when it records none."""
+    return groups[index] if index < len(groups) else ()
+
+
+def _coordinate_value_text(
+    value: object,
+    tails: tuple[Tail, ...],
+    clippings: tuple[NestedClipping, ...],
+) -> str:
+    """One coordinate number, the tails after it, and any nested clipping.
+
+    A nested ``ClippingBounds`` annotation owns the tails of its own values, and
+    those same tail objects are part of the coordinate's flat tail group. The
+    annotation is written after the plain tails, so the tails it owns are skipped
+    here and rendered inside the annotation instead.
+    """
+    if not clippings:
+        return _real(_as_float(value)) + "".join(_tail_text(tail, parenthesised=False) for tail in tails)
+    owned = {
+        id(clipping_value.tail)
+        for clipping in clippings
+        for clipping_value in clipping.values
+        if clipping_value.tail is not None
+    }
+    _ensure_clipping_suffix(tails, owned)
+    plain = "".join(_tail_text(tail, parenthesised=False) for tail in tails if id(tail) not in owned)
+    return _real(_as_float(value)) + plain + "".join(_nested_clipping_text(clipping) for clipping in clippings)
+
+
+def _ensure_clipping_suffix(tails: tuple[Tail, ...], owned: set[int]) -> None:
+    """Refuse a tail written after a nested clipping annotation.
+
+    The model keeps the annotation beside the coordinate's tails rather than
+    inside their order, so the only order it can write back is "plain tails,
+    then the annotation". A source that wrote a plain tail after the annotation
+    is therefore not reconstructible, and the formatter refuses instead of
+    reordering the coordinate.
+    """
+    seen_annotation = False
+    for tail in tails:
+        if id(tail) in owned:
+            seen_annotation = True
+        elif seen_annotation:
+            raise UnsupportedFormattingError(
+                "nested ClippingBounds: a plain coordinate tail was written after the "
+                "annotation, so the written order of the coordinate is not known"
+            )
+
+
+def _nested_clipping_text(clipping: NestedClipping) -> str:
+    """One nested ``ClippingBounds = <values>`` annotation and its values."""
+    values = " ".join(
+        _real(clipping_value.value)
+        + ("" if clipping_value.tail is None else _tail_text(clipping_value.tail, parenthesised=False))
+        for clipping_value in clipping.values
+    )
+    return f" {const.GRAMMAR_VALUE_CLIPPINGBOUNDS} = {values}"
 
 
 def _tail_text(tail: object, *, parenthesised: bool) -> str:

@@ -14,11 +14,50 @@ freezing, so the caller keeps ownership of the tree it passed in.
 from __future__ import annotations
 
 import dataclasses
-from collections.abc import Mapping
-from types import MappingProxyType
+from collections.abc import Iterator, Mapping
 from typing import Any, cast
 
-__all__ = ["FrozenNode", "freeze_ast"]
+__all__ = ["FrozenMapping", "FrozenNode", "freeze_ast"]
+
+
+class FrozenMapping(Mapping[object, object]):
+    """A read-only mapping that still pickles and deep-copies.
+
+    ``types.MappingProxyType`` supports neither, so a frozen tree that carries a
+    parsed ``Time_Value`` payload could not be pickled, deep-copied, or passed
+    through ``from_programs``. This class is the read-only replacement: item
+    assignment and deletion raise ``TypeError`` the way the proxy does, and
+    ``__reduce__`` rebuilds it from a plain dict, so ``pickle`` and
+    ``copy.deepcopy`` round-trip. It is immutable, so both copy protocols return
+    the same object.
+    """
+
+    __slots__ = ("_data",)
+
+    def __init__(self, data: Mapping[object, object] | None = None) -> None:
+        self._data: dict[object, object] = dict(data or {})
+
+    def __getitem__(self, key: object) -> object:
+        return self._data[key]
+
+    def __iter__(self) -> Iterator[object]:
+        return iter(self._data)
+
+    def __len__(self) -> int:
+        return len(self._data)
+
+    def __repr__(self) -> str:
+        return f"FrozenMapping({self._data!r})"
+
+    def __reduce__(self) -> tuple[type[FrozenMapping], tuple[dict[object, object]]]:
+        return (FrozenMapping, (dict(self._data),))
+
+    def __copy__(self) -> FrozenMapping:
+        return self
+
+    def __deepcopy__(self, memo: dict[int, object] | None = None) -> FrozenMapping:
+        del memo
+        return self
 
 
 class FrozenNode:
@@ -65,8 +104,7 @@ def _freeze(value: object) -> object:
         return tuple(_freeze(item) for item in items)
     if isinstance(value, dict):
         mapping = cast("dict[object, object]", value)
-        frozen_mapping = MappingProxyType({key: _freeze(item) for key, item in mapping.items()})
-        return cast("Mapping[object, object]", frozen_mapping)
+        return FrozenMapping({key: _freeze(item) for key, item in mapping.items()})
     if dataclasses.is_dataclass(value) and not isinstance(value, type):
         # Frozen dataclasses from the model layer still contain containers that
         # need the same treatment, but they cannot be locked again.

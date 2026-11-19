@@ -21,6 +21,7 @@ from sattline_parser.models.clauses import (
     EnableClause,
     FlagClause,
     ModuleInViewClause,
+    NestedClipping,
     PickButton,
     PolygonPoint,
     ProcedureCall,
@@ -114,6 +115,22 @@ def _coordinate_groups(items: list[TransformerItem]) -> tuple[tuple[Tail, ...], 
     return tuple(groups)
 
 
+def _coordinate_clipping_groups(items: list[TransformerItem]) -> tuple[tuple[NestedClipping, ...], ...]:
+    """Every nested ``ClippingBounds`` group among *items*, in written order.
+
+    The same concatenation rule as ``_coordinate_groups``: a run that did not
+    record its split makes the whole grouping unknown.
+    """
+    groups: list[tuple[NestedClipping, ...]] = []
+    for item in items:
+        if not isinstance(item, InterimCoords):
+            continue
+        if item.coord_clippings is None:
+            return ()
+        groups.extend(item.coord_clippings)
+    return tuple(groups)
+
+
 def _box_item(items: list[TransformerItem]) -> InterimCoords | None:
     """The coordinate box payload among *items*, with its per-value tails."""
     for item in items:
@@ -123,14 +140,15 @@ def _box_item(items: list[TransformerItem]) -> InterimCoords | None:
 
 
 def _polygon_points(items: list[TransformerItem]) -> list[PolygonPoint]:
-    """Every polygon coordinate pair, with the tails written after each value."""
+    """Every polygon coordinate pair, with the tails and clippings after each value."""
     points: list[PolygonPoint] = []
     for item in items:
         if not isinstance(item, InterimCoords) or not _is_coord_pair(item.coords):
             continue
         x, y = item.coords
         x_tails, y_tails = item.coord_tails or ((), ())
-        points.append(PolygonPoint(x, y, x_tails, y_tails))
+        x_clippings, y_clippings = item.coord_clippings or ((), ())
+        points.append(PolygonPoint(x, y, x_tails, y_tails, x_clippings=x_clippings, y_clippings=y_clippings))
     return points
 
 
@@ -375,6 +393,8 @@ class _GraphicsInteractMixin:
             go.properties[const.KEY_COORDS] = cast("CoordPair | CoordBox", box.coords)
             if box.coord_tails:
                 go.properties[const.KEY_COORD_TAILS] = box.coord_tails
+            if box.coord_clippings and any(box.coord_clippings):
+                go.properties[const.KEY_COORD_CLIPPINGS] = box.coord_clippings
         tails = _tails_of(items)
         if tails:
             go.properties[const.KEY_TAILS] = tails
@@ -414,6 +434,8 @@ class _GraphicsInteractMixin:
             go.properties[const.KEY_COORDS] = cast("CoordPair | CoordBox", box.coords)
             if box.coord_tails:
                 go.properties[const.KEY_COORD_TAILS] = box.coord_tails
+            if box.coord_clippings and any(box.coord_clippings):
+                go.properties[const.KEY_COORD_CLIPPINGS] = box.coord_clippings
         tails = _tails_of(items)
         if tails:
             go.properties[const.KEY_TAILS] = tails
@@ -470,6 +492,7 @@ class _GraphicsInteractMixin:
         """
         go = GraphObject(const.GRAMMAR_VALUE_SEGMENTOBJECT)
         groups: list[tuple[Tail, ...]] = []
+        clipping_groups: list[tuple[NestedClipping, ...]] = []
         complete = True
         for item in items:
             if not isinstance(item, InterimCoords):
@@ -478,12 +501,15 @@ class _GraphicsInteractMixin:
                 go.properties[const.KEY_COORDS] = item.coords
             elif _is_coord_pair(item.coords) and const.KEY_SEGMENT_POINT not in go.properties:
                 go.properties[const.KEY_SEGMENT_POINT] = item.coords
-            if item.coord_tails is None:
+            if item.coord_tails is None or item.coord_clippings is None:
                 complete = False
             else:
                 groups.extend(item.coord_tails)
+                clipping_groups.extend(item.coord_clippings)
         if complete and groups:
             go.properties[const.KEY_COORD_TAILS] = tuple(groups)
+        if complete and any(clipping_groups):
+            go.properties[const.KEY_COORD_CLIPPINGS] = tuple(clipping_groups)
         tails = _tails_of(items)
         if tails:
             go.properties[const.KEY_TAILS] = tails
@@ -603,6 +629,9 @@ class _GraphicsInteractMixin:
         groups = _coordinate_groups(items)
         if groups:
             properties[const.KEY_COORD_TAILS] = groups
+        clipping_groups = _coordinate_clipping_groups(items)
+        if any(clipping_groups):
+            properties[const.KEY_COORD_CLIPPINGS] = clipping_groups
         if procedure is not None:
             properties[const.KEY_PROCEDURE] = procedure
         if layers:
@@ -758,6 +787,9 @@ class _GraphicsInteractMixin:
         groups = _coordinate_groups(items)
         if groups:
             properties[const.KEY_COORD_TAILS] = groups
+        clipping_groups = _coordinate_clipping_groups(items)
+        if any(clipping_groups):
+            properties[const.KEY_COORD_CLIPPINGS] = clipping_groups
         tails = _tails_of(items)
         if tails:
             properties[const.KEY_TAILS] = tails
@@ -872,10 +904,15 @@ class _GraphicsInteractMixin:
         raise ValueError(f"interact_value_line expected a value; got: {items!r}")
 
     def layer_info(self, items: list[TransformerItem]) -> int:
-        """Grammar layer_info -> int layer number."""
+        """Grammar layer_info -> int layer number.
+
+        The number is stored as a plain ``int``, not the ``IntLiteral`` the
+        token coerces to. A formatter can then tell a ``Layer_ = 2`` line from a
+        literal ``2`` body value, which is a different construct.
+        """
         for it in items:
             if isinstance(it, int) and not isinstance(it, bool):
-                return it
+                return int(it)
         raise ValueError(f"layer_info expected an int; got: {items}")
 
     def seq_control_opt(self, items: list[TransformerItem]) -> TransformerTree:

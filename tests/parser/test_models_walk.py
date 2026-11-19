@@ -665,6 +665,12 @@ def test_walk_skips_non_node_items_in_a_sequence() -> None:
 _NOT_AST_NODE = {
     ast_model.SourceSpan,
     ast_model.GraphicsBinding,
+    # A nested clipping annotation is a positional payload, not a node: its
+    # tails are part of the owning coordinate's flat tail view, which is where
+    # the walker emits them. ``PolygonPoint.x_clippings`` and the grouped
+    # coordinate views expose it, and no walk event carries one.
+    clauses.NestedClipping,
+    clauses.NestedClippingValue,
 }
 
 

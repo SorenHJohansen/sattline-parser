@@ -13,7 +13,12 @@ from sattline_parser.errors import describe_parse_error
 from sattline_parser.grammar import constants as const
 from sattline_parser.grammar.keywords import make_keywords_case_insensitive
 from sattline_parser.models.ast_model import BasePicture, FloatLiteral, IntLiteral, ModuleTypeInstance
-from sattline_parser.models.clauses import Alignment, AssignClause
+from sattline_parser.models.clauses import (
+    Alignment,
+    AssignClause,
+    NestedClipping,
+    NestedClippingValue,
+)
 from sattline_parser.models.expressions import Assignment, BinOp, TernaryOp, VarRef
 from sattline_parser.models.tails import VarTail
 from sattline_parser.validation import DiagnosticCode
@@ -607,8 +612,13 @@ ENDDEF (*BasePicture*);
     assert bp.moduledef.clipping_tails == (2.5,)
 
 
-def test_parser_core_flattens_nested_clipping_bounds_tails():
-    """`ClippingBounds = <values>` annotations contribute only their tails."""
+def test_parser_core_models_nested_clipping_bounds_values_and_tails():
+    """A nested `ClippingBounds = <values>` annotation keeps every value.
+
+    The annotation's own tails stay in the coordinate's flat tail view, so a
+    consumer that only counts references is unchanged while the formatter can
+    write the values back.
+    """
     code = """
 "SyntaxVersion"
 "OriginalFileDate"
@@ -628,6 +638,17 @@ ENDDEF (*BasePicture*);
         VarTail("in", "XMin"),
         VarTail("in", "XMax"),
     ]
+    assert bp.header.coordinate_clippings[0] == (
+        NestedClipping(
+            (
+                NestedClippingValue(3.48),
+                NestedClippingValue(3.48),
+                NestedClippingValue(0.0, VarTail("in", "XMin")),
+                NestedClippingValue(100.0, VarTail("in", "XMax")),
+            )
+        ),
+    )
+    assert bp.header.coordinate_clippings[1:] == ((), (), (), ())
 
 
 def test_parser_core_preserves_outvar_tails_in_module_invocation_arguments():

@@ -120,8 +120,10 @@ class ClipValue:
 class CoordinateClipping:
     """A nested ``ClippingBounds = <values>`` annotation on a coordinate.
 
-    The form still belongs to the coordinate position; its per-value tails are
-    folded into the coordinate's flat tail list.
+    The form still belongs to the coordinate position: its per-value tails are
+    folded into the coordinate's flat tail list, and the values themselves become
+    a :class:`~sattline_parser.models.clauses.NestedClipping` on the coordinate
+    they follow, so a formatter can write them back.
     """
 
     values: tuple[ClipValue, ...]
