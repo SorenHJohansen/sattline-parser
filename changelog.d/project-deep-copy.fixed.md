@@ -1,1 +1,0 @@
-- **Project copies at the accepted depth.** `SattLineProject.from_programs` copies and freezes a tree in one iterative pass instead of calling `copy.deepcopy`, so a tree at the depth the parser accepts now attaches: a 249-term expression chain works, where 244 terms used to raise `RecursionError`.

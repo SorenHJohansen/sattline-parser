@@ -1,1 +1,0 @@
-- **A raw `DateCode_` prefix keeps its datecode pair in a coded document.** When a digit follows the raw prefix, the lexer keeps `DATECODE_PREFIX` as the keyword half of `DATECODE_PREFIX SL_DATECODE`, so the compact twin of a datecode parses exactly like the plain form.

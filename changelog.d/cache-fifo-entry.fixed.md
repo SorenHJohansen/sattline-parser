@@ -1,1 +1,0 @@
-- **A FIFO cache entry answers a miss instead of blocking.** An entry is opened with `O_NONBLOCK` before the regular-file check, so a FIFO named like a cache entry can no longer stall a load or a prune while the open waits for a writer.

@@ -1,1 +1,0 @@
-- **Transformer rejections are parse failures.** An exception a transformer raises while building the tree is re-raised as its own error instead of Lark's `VisitError` wrapper, so `sattline check` and a project load report a rejected duplicate clause as a parse failure rather than an internal error. A `RuntimeError` stays wrapped and still marks a parser defect.

@@ -1,1 +1,0 @@
-- **Worker error cause.** A parse failure raised in a worker keeps its `OSError` subclass, so a `PermissionError`, `FileNotFoundError`, or `IsADirectoryError` reaches the caller as the cause instead of a `RuntimeError`.

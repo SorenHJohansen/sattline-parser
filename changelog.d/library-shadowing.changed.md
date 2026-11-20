@@ -1,1 +1,0 @@
-- **The loading path holds one library per name.** A root whose directory name repeats an earlier root, folded with the language name table, is shadowed and contributes no units or targets. Library labels are therefore unique, and `SattLineProject.libraries()` reports each effective root once.

@@ -1,1 +1,0 @@
-- **Bare `ConnectionNode`.** A `ConnectionNode` marker written in an object's `common_properties` is modelled as a `GraphObject` under `properties["connection_node"]` instead of being dropped, so it survives the walk, the serializer, and the formatter. A text object that writes both the positioned clause and the bare marker is rejected as ambiguous.

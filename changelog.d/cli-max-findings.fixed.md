@@ -1,1 +1,0 @@
-- **A negative `--max-findings` is a usage error.** The cap now validates like the other count flags instead of silently disabling itself; `0` still prints no finding and keeps the exit code.

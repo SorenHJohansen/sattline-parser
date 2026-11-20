@@ -1,1 +1,0 @@
-- **Projects own an immutable snapshot.** `SattLineProject.load` freezes the loaded trees and `from_programs` deep-copies before freezing, so `project.index` cannot go stale. Attached model nodes reject field assignment, and attached lists and mappings are read-only.

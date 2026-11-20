@@ -1,1 +1,0 @@
-- **AST cache identity covers the parser stack.** The key and identity marker now include the installed `lark` and `regex` versions and the interpreter version, and `FILE_AST_CACHE_VERSION` is 14. An upgrade inside a dependency pin is a cache miss instead of an AST parsed by one parser stack and served under another.

@@ -1,1 +1,0 @@
-- **Lookup-cache pruning no longer touches recorded paths.** Startup pruning keeps entries whose shape is usable and never stats a recorded base directory, so a planted UNC path cannot turn a prune into an outbound SMB connection. Resolution validates the base against the configured roots and forgets a foreign entry.

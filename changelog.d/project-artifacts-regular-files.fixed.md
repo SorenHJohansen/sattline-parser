@@ -1,1 +1,0 @@
-- **Only regular files are project artifacts.** The stat fallback now requires a regular file, so a directory named like a body can no longer shadow a real body in a later root and a FIFO named like a body is never opened. A unit name is also no longer capped at 20 characters during resolution: the length rule is `SL-V038` at the declaration, so a 21-character unit loads.

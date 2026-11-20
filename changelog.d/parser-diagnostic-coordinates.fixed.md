@@ -1,1 +1,0 @@
-- **Parser diagnostics name what the source wrote.** An unknown compressed marker reports its offset in the original source rather than in the placeholder text the decoder substitutes, and a comment the grammar rejects is reported as `(*` or `*)` instead of the `*` that the multiplication operator matched.

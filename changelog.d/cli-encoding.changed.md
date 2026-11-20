@@ -1,1 +1,0 @@
-- **`parse --json` encoding values.** `encoding` is now `plain`, `compressed` (marker-compressed text), or `coded` (a byte-coded stream) instead of collapsing compressed text into `coded`.

@@ -1,1 +1,0 @@
-- **`SourceDocument` validates its character map.** A map whose real entries leave the original text, repeat an offset, or run backwards now raises `ValueError` at construction instead of producing an inverted or zero-width span. The public constructor is unchanged otherwise.

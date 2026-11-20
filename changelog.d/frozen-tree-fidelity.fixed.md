@@ -1,1 +1,0 @@
-- **A frozen project tree stays renderable, picklable, and copyable.** The freeze boundary replaces a parsed `Time_Value` mapping with a read-only `FrozenMapping` instead of a `types.MappingProxyType`, so `format_source` writes `Time_Value "1h"` rather than Python dict syntax and a frozen graphics-bearing tree survives both `pickle` and `copy.deepcopy`.
