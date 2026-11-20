@@ -13,6 +13,7 @@ import os
 import shutil
 import stat
 import subprocess
+import sys
 from pathlib import Path
 from types import SimpleNamespace
 from typing import cast
@@ -60,6 +61,7 @@ def test_a_private_acl_needs_the_owner_to_be_this_user() -> None:
 
     assert acl_is_private(_USER, entries, _USER)
     assert not acl_is_private(_OTHER_USER, entries, _USER)
+    assert not acl_is_private(_ADMINISTRATORS, entries, _USER)
     assert not acl_is_private(None, entries, _USER)
     assert not acl_is_private(_USER, entries, None)
 
@@ -170,6 +172,24 @@ def test_a_fresh_directory_is_private_on_windows(tmp_path: Path) -> None:
     directory.mkdir()
 
     assert windows_directory_is_private(directory) is True, _windows_privacy_report(directory)
+
+
+@pytest.mark.skipif(os.name != "nt", reason="needs a Windows token")
+def test_windows_pytest_uses_a_private_default_owner() -> None:
+    root = Path(__file__).resolve().parents[2]
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(root / "scripts" / "windows_pytest.py"),
+            f"{__file__}::test_a_fresh_directory_is_private_on_windows",
+            "-q",
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+        timeout=60,
+    )
+    assert result.returncode == 0, result.stdout + result.stderr
 
 
 @pytest.mark.skipif(os.name != "nt", reason="needs a Windows security descriptor")
