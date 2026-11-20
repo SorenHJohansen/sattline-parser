@@ -120,13 +120,6 @@ class ProjectAssembler:
             key=plan.key,
             artifact=artifact,
         )
-        self._validator.remember_definitions(
-            basepicture,
-            library=artifact.library,
-            file_name=artifact.code_path.name,
-            program_key=plan.key,
-        )
-
         graphics_path, graphics = self._companion_loader(
             artifact.code_path,
             name=name,

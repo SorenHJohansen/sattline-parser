@@ -175,13 +175,22 @@ def test_a_fallback_datatype_does_not_shadow_the_primary_one() -> None:
     assert graph.field("Rec", "Value") is None
 
 
-def test_builtin_record_wins_over_local_and_fallback_collisions() -> None:
+def test_a_declared_record_wins_over_the_builtin_spec() -> None:
+    """The transcription carries no modifiers, so the declaration is authoritative."""
     local = _record("BooleanSignal", _var("Value", "integer"))
     external = _record("BooleanSignal", _var("Value", "real"))
-    graph = TypeGraph.from_datatypes([local, local], fallback=[external])
+    graph = TypeGraph.from_datatypes([local], fallback=[external])
 
     assert graph.has_known_fields("BooleanSignal")
-    assert graph.field_type("BooleanSignal", "Value") == ScalarDatatype.BOOLEAN
+    assert graph.field_type("BooleanSignal", "Value") == ScalarDatatype.INTEGER
+
+
+def test_two_declared_records_of_one_name_leave_the_shape_unproven() -> None:
+    local = _record("BooleanSignal", _var("Value", "integer"))
+    graph = TypeGraph.from_datatypes([local, local])
+
+    assert graph.has_known_fields("BooleanSignal") is False
+    assert graph.field("BooleanSignal", "Value") is None
 
 
 def test_a_fallback_datatype_has_a_known_shape_on_its_own() -> None:
@@ -519,12 +528,13 @@ def _codes(errors: list[Diagnostic]) -> list[str]:
     return [error.code.value for error in errors]
 
 
-def test_parameter_mapping_duplicate_target() -> None:
+def test_parameter_mapping_repeated_target_is_accepted() -> None:
+    """The language accepts a repeated target; each entry is still checked."""
     graph = _graph()
     expected = {fold_identifier("Flag"): _var("Flag", "boolean")}
     errors: list[Diagnostic] = []
     check_parameter_mappings([_mapping("Flag"), _mapping("flag")], expected, build_scope(None, []), graph, errors)
-    assert _codes(errors) == ["SL-V049"]
+    assert errors == []
 
 
 def test_parameter_mapping_field_access_on_non_record() -> None:
@@ -552,18 +562,91 @@ def test_parameter_mapping_unknown_field_on_external_record_is_silent() -> None:
     assert errors == []
 
 
-def test_parameter_mapping_unknown_target_is_reported_when_formals_are_known() -> None:
+def test_parameter_mapping_unknown_target_is_silent_when_formals_are_known() -> None:
+    """A formal deleted from the definition leaves the mapping behind; it is inert."""
     graph = _graph()
     errors: list[Diagnostic] = []
     check_parameter_mappings(
         [_mapping("Missing")], {fold_identifier("Flag"): _var("Flag", "boolean")}, build_scope(None, []), graph, errors
     )
-    assert _codes(errors) == ["SL-V048"]
-    assert "Missing" in errors[0].message
-    # The sentence names the resolved definition and the stale-mapping cause, so
-    # a deleted formal is distinguishable from an unrelated local problem.
-    assert "resolved definition" in errors[0].message
-    assert "stale" in errors[0].message
+    assert errors == []
+
+
+def test_parameter_mapping_stale_target_silences_its_source() -> None:
+    """The source of an inert clause is not checked either."""
+    graph = _graph()
+    errors: list[Diagnostic] = []
+    check_parameter_mappings(
+        [_mapping("Removed", source="NoSuchVariable")],
+        {fold_identifier("Flag"): _var("Flag", "boolean")},
+        build_scope(None, []),
+        graph,
+        errors,
+    )
+    assert errors == []
+
+
+def test_parameter_mapping_unresolved_source_is_reported() -> None:
+    graph = _graph()
+    expected = {fold_identifier("Flag"): _var("Flag", "boolean")}
+    errors: list[Diagnostic] = []
+    check_parameter_mappings(
+        [_mapping("Flag", source="NoSuchVariable")],
+        expected,
+        build_scope(None, []),
+        graph,
+        errors,
+    )
+    assert _codes(errors) == ["SL-V019"]
+
+
+def test_parameter_mapping_repeated_target_keeps_the_first_entry() -> None:
+    """A later entry with the same target is discarded without checking it."""
+    graph = _graph()
+    expected = {fold_identifier("Flag"): _var("Flag", "boolean")}
+    errors: list[Diagnostic] = []
+    check_parameter_mappings(
+        [_mapping("Flag"), _mapping("Flag", source="NoSuchVariable")],
+        expected,
+        build_scope(None, []),
+        graph,
+        errors,
+    )
+    assert errors == []
+
+
+def test_parameter_mapping_sfc_accessor_source_resolves_program_wide() -> None:
+    """A mapping source may name a sequence declared in another module."""
+    graph = _graph()
+    expected = {fold_identifier("StateReset"): _var("StateReset", "boolean")}
+    errors: list[Diagnostic] = []
+    check_parameter_mappings(
+        [_mapping("StateReset", source="StateSequence.Reset")],
+        expected,
+        build_scope(None, []),
+        graph,
+        errors,
+        sfc_names={fold_identifier("StateSequence")},
+        sfc_accessors={fold_identifier("StateSequence"): frozenset({"hold", "reset", "disable"})},
+    )
+    assert errors == []
+
+
+def test_parameter_mapping_sfc_accessor_is_kind_restricted() -> None:
+    """``.X`` belongs to a step, so a sequence root does not expose it."""
+    graph = _graph()
+    expected = {fold_identifier("StateReset"): _var("StateReset", "boolean")}
+    errors: list[Diagnostic] = []
+    check_parameter_mappings(
+        [_mapping("StateReset", source="StateSequence.X")],
+        expected,
+        build_scope(None, []),
+        graph,
+        errors,
+        sfc_names={fold_identifier("StateSequence")},
+        sfc_accessors={fold_identifier("StateSequence"): frozenset({"hold", "reset", "disable"})},
+    )
+    assert _codes(errors) == ["SL-V019"]
 
 
 def test_parameter_mapping_unknown_target_is_silent_when_formals_are_unknown() -> None:

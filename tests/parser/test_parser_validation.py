@@ -102,9 +102,7 @@ _INVALID_VALIDATION_FIXTURES: dict[str, str] = {
     "SubSequenceDefinition": "SL-V033",
     "TerminalSeqStep": "SL-V033",
     "DuplicateSiblingSubmodules": "SL-V004",
-    "DuplicateSiblingCrossType": "SL-V004",
     "DuplicateSiblingFrameModules": "SL-V004",
-    "DuplicateSiblingFrameAndModule": "SL-V004",
     "EmptyRecordFieldAccess": "SL-V019",
     "FrameModuleParameterMappings": "SL-V027",
     "OldOnMappingSource": "SL-V005",
@@ -120,7 +118,6 @@ _INVALID_VALIDATION_FIXTURES: dict[str, str] = {
     "BuiltinDatatypeTypo": "SL-V018",
     "AmbiguousDatatypeTypo": "SL-V020",
     "DirectStringAssignment": "SL-V045",
-    "StaleMappingTarget": "SL-V048",
     "UndefinedVariableRef": "SL-V019",
     "UnknownDatatypeName": "SL-V020",
     "DuplicateSFCElementNames": "SL-V021",
@@ -574,6 +571,35 @@ def test_duplicate_sibling_submodules_flagged():
         ModuleTypeInstance(header=_module_header("A"), moduletype_name="T"),
         ModuleTypeInstance(header=_module_header("a"), moduletype_name="T"),
     ]
+    codes = {d.code.value for d in validate_basepicture(bp)}
+    assert "SL-V004" in codes
+
+
+def test_one_label_per_sibling_module_kind_is_allowed():
+    """A module-type instance, a single module, and a frame module are separate namespaces."""
+    bp = _base_picture()
+    bp.submodules = [
+        ModuleTypeInstance(header=_module_header("Shared"), moduletype_name="T"),
+        _single_module("Shared", []),
+        FrameModule(header=_module_header("Shared")),
+    ]
+    codes = {d.code.value for d in validate_basepicture(bp)}
+    assert "SL-V004" not in codes
+
+
+def test_two_moduletype_instances_of_different_types_may_share_a_label():
+    bp = _base_picture()
+    bp.submodules = [
+        ModuleTypeInstance(header=_module_header("Shared"), moduletype_name="A"),
+        ModuleTypeInstance(header=_module_header("shared"), moduletype_name="B"),
+    ]
+    codes = {d.code.value for d in validate_basepicture(bp)}
+    assert "SL-V004" not in codes
+
+
+def test_two_single_modules_with_one_label_are_still_flagged():
+    bp = _base_picture()
+    bp.submodules = [_single_module("Shared", []), _single_module("shared", [])]
     codes = {d.code.value for d in validate_basepicture(bp)}
     assert "SL-V004" in codes
 
@@ -1093,7 +1119,7 @@ def test_param_transfer_same_record_and_anytype_clean():
 
 
 def test_param_transfer_undefined_source_is_reported():
-    """A typo in a mapping source is one finding at the mapping span."""
+    """A live mapping with an undeclared source is one finding at the mapping span."""
     moduletype = ModuleTypeDef(name="T", moduleparameters=[_var("EnableFlag", "boolean")])
     bp = _base_picture()
     bp.moduletype_defs = [moduletype]
@@ -1111,7 +1137,8 @@ def test_param_transfer_undefined_source_is_reported():
     assert "NoSuchVariable" in diagnostics[0].message
 
 
-def test_an_undefined_source_does_not_hide_an_unknown_target():
+def test_an_undefined_source_of_a_stale_mapping_is_silent():
+    """A mapping to a deleted formal stays behind; neither side is a finding."""
     moduletype = ModuleTypeDef(name="T", moduleparameters=[_var("EnableFlag", "boolean")])
     bp = _base_picture()
     bp.moduletype_defs = [moduletype]
@@ -1123,9 +1150,7 @@ def test_an_undefined_source_does_not_hide_an_unknown_target():
         )
     ]
 
-    codes = [d.code.value for d in validate_basepicture(bp)]
-
-    assert codes == ["SL-V019", "SL-V048"]
+    assert validate_basepicture(bp) == ()
 
 
 def test_single_module_undefined_mapping_source_is_reported():
@@ -1136,12 +1161,8 @@ def test_single_module_undefined_mapping_source_is_reported():
     assert [d.code.value for d in validate_basepicture(bp)] == ["SL-V019"]
 
 
-def test_mapping_source_is_checked_when_the_target_type_is_unknown():
-    """The source resolves in the invoking scope, so it is judged without the formals.
-
-    Only the target side needs the formals: a duplicate target or an absent
-    formal stays unproven, while an undefined source is a local defect.
-    """
+def test_an_unknown_target_type_hides_only_the_target_side():
+    """The formals are unknown, so the target stays silent but the source is checked."""
     bp = _base_picture()
     bp.submodules = [
         ModuleTypeInstance(
@@ -1151,10 +1172,7 @@ def test_mapping_source_is_checked_when_the_target_type_is_unknown():
         )
     ]
 
-    diagnostics = validate_basepicture(bp)
-
-    # The unknown module type and the undefined source are both provable.
-    assert [d.code.value for d in diagnostics] == ["SL-V058", "SL-V019"]
+    assert [d.code.value for d in validate_basepicture(bp)] == ["SL-V058", "SL-V019"]
 
 
 def test_dotted_mapping_target_compares_the_field_datatype():
@@ -1240,7 +1258,7 @@ def test_param_transfer_skips_a_dotted_target_the_type_graph_cannot_resolve():
 
 
 def test_mapping_source_is_checked_even_when_the_target_field_is_opaque():
-    """A typo in the source is independent of an unmodelled target shape."""
+    """A live source is independent of an unmodelled target shape."""
     moduletype = ModuleTypeDef(name="T", moduleparameters=[_var("Settings", "ComliMessage")])
     bp = _base_picture()
     bp.moduletype_defs = [moduletype]
@@ -1255,8 +1273,8 @@ def test_mapping_source_is_checked_even_when_the_target_field_is_opaque():
     assert [d.code.value for d in validate_basepicture(bp)] == ["SL-V019"]
 
 
-def test_param_mapping_absent_target_is_reported_on_a_moduletype_instance():
-    """A mapping that names no declared parameter is the rule's headline case."""
+def test_param_mapping_absent_target_is_silent_on_a_moduletype_instance():
+    """A formal deleted from the definition leaves an inert mapping behind."""
     moduletype = ModuleTypeDef(name="T", moduleparameters=[_var("Gain", "real")])
     bp = _base_picture()
     bp.localvariables = [_var("SpeedRef", "real")]
@@ -1268,9 +1286,7 @@ def test_param_mapping_absent_target_is_reported_on_a_moduletype_instance():
             parametermappings=[_transfer("AbsentParam", "SpeedRef")],
         )
     ]
-    diagnostics = validate_basepicture(bp)
-    assert [d.code.value for d in diagnostics] == ["SL-V048"]
-    assert "AbsentParam" in diagnostics[0].message
+    assert validate_basepicture(bp) == ()
 
 
 def _single_module(
@@ -1298,7 +1314,7 @@ def test_single_module_parameter_mappings_are_checked():
     assert "Child" in diagnostics[0].message
 
 
-def test_single_module_duplicate_mapping_target_is_reported():
+def test_single_module_repeated_mapping_target_is_accepted():
     child = _single_module(
         "Child",
         [_var("Gain", "real")],
@@ -1308,23 +1324,20 @@ def test_single_module_duplicate_mapping_target_is_reported():
     bp.localvariables = [_var("SpeedRef", "real")]
     bp.submodules = [child]
 
-    assert [d.code.value for d in validate_basepicture(bp)] == ["SL-V049"]
+    assert validate_basepicture(bp) == ()
 
 
-def test_single_module_unknown_mapping_target_is_reported():
+def test_single_module_unknown_mapping_target_is_silent():
     child = _single_module("Child", [_var("Gain", "real")], [_transfer("Absent", "SpeedRef")])
     bp = _base_picture()
     bp.localvariables = [_var("SpeedRef", "real")]
     bp.submodules = [child]
 
-    diagnostics = validate_basepicture(bp)
-
-    assert [d.code.value for d in diagnostics] == ["SL-V048"]
-    assert "Absent" in diagnostics[0].message
+    assert validate_basepicture(bp) == ()
 
 
-def test_unknown_moduletype_still_reports_duplicate_mapping_targets():
-    """An unknown type hides the formals, not the purely local duplicate rule."""
+def test_unknown_moduletype_reports_only_the_unknown_name():
+    """An unknown type hides the formals; a repeated target is still accepted."""
     bp = _base_picture()
     bp.localvariables = [_var("SpeedRef", "real")]
     bp.submodules = [
@@ -1335,7 +1348,7 @@ def test_unknown_moduletype_still_reports_duplicate_mapping_targets():
         )
     ]
 
-    assert [d.code.value for d in validate_basepicture(bp)] == ["SL-V058", "SL-V049"]
+    assert [d.code.value for d in validate_basepicture(bp)] == ["SL-V058"]
 
 
 def test_unknown_moduletype_name_reports_a_span_and_can_be_suppressed():
@@ -1389,7 +1402,7 @@ def test_local_datatype_wins_over_an_external_definition_of_the_same_name():
     assert [d.code.value for d in validate_basepicture(file_boolean, external_datatypes=[local_integer])] == ["SL-V029"]
 
 
-def test_builtin_record_wins_over_local_and_external_datatypes():
+def test_declared_record_wins_over_builtin_and_external_datatypes():
     local = DataType(name="BooleanSignal", description=None, datecode=1, var_list=[_var("Value", "integer")])
     external = DataType(name="BooleanSignal", description=None, datecode=2, var_list=[_var("Value", "real")])
     bp = _typed_bp(
@@ -1398,7 +1411,9 @@ def test_builtin_record_wins_over_local_and_external_datatypes():
         datatypes=[local],
     )
 
-    assert validate_basepicture(bp, external_datatypes=[external]) == ()
+    # The file declaration is authoritative: Value is integer, so a boolean
+    # assignment is a mismatch. The transcription would have said boolean.
+    assert [d.code.value for d in validate_basepicture(bp, external_datatypes=[external])] == ["SL-V029"]
 
 
 def test_parse_and_validate_accepts_external_definitions():

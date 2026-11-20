@@ -17,6 +17,7 @@ returns ``None`` for anything it cannot determine, and every caller skips
 from __future__ import annotations
 
 import re
+from collections.abc import Collection, Mapping
 from collections.abc import Sequence as AbcSequence
 from enum import StrEnum
 from typing import Protocol, cast
@@ -82,6 +83,15 @@ _STRING_SIMPLE_TYPES: frozenset[ScalarDatatype] = frozenset(
 )
 
 _ANYTYPE = fold_identifier("anytype")
+
+#: Runtime suffixes a step exposes through its node shape.
+SFC_STEP_ACCESSOR_SUFFIXES: frozenset[str] = frozenset({"x", "hold", "reset", "t"})
+#: Runtime suffixes a sequence exposes once it enables ``SeqControl``.
+SFC_SEQUENCE_ACCESSOR_SUFFIXES: frozenset[str] = frozenset({"hold", "reset", "disable"})
+#: Fallback for a root whose element kind is not recorded, such as a name
+#: reached only through the program-wide SFC set in a mapping.
+SFC_ACCESSOR_SUFFIXES: frozenset[str] = SFC_STEP_ACCESSOR_SUFFIXES | SFC_SEQUENCE_ACCESSOR_SUFFIXES
+
 
 _PLAIN_DURATION_LITERAL_RE = re.compile(r"\d+(?:\.\d+)?")
 _DURATION_COMPONENT_PATTERNS: tuple[re.Pattern[str], ...] = (
@@ -241,6 +251,29 @@ def unresolved_reference_is_a_defect(ref: VarRef, scope: Scope, type_graph: Type
             return True
         current = field.datatype
     return False
+
+
+def is_sfc_runtime_accessor(
+    ref: VarRef,
+    sfc_names: Collection[str],
+    sfc_accessors: Mapping[str, frozenset[str]],
+) -> bool:
+    """Whether *ref* is a dotted runtime field of a known SFC element.
+
+    A root declared in the current module uses its element-kind set, so
+    ``Step.X`` and ``Seq.Hold`` are accessors while ``Seq.X`` and ``Step.Foo``
+    are not. A root known only by name has no element-kind entry, so the generic
+    accessor names apply; that is the case for a mapping source, where the
+    sequence may live in another module of the same program.
+    """
+    root, separator, suffix = ref.name.partition(".")
+    if not separator or "." in suffix:
+        return False
+    key = fold_identifier(root)
+    allowed = sfc_accessors.get(key)
+    if allowed is not None:
+        return suffix.casefold() in allowed
+    return key in sfc_names and suffix.casefold() in SFC_ACCESSOR_SUFFIXES
 
 
 def resolve_ref_state(

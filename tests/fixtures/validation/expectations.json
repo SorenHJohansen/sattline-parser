@@ -10,6 +10,8 @@
     "edge_cases/DeeplyNestedComments.s": [],
     "edge_cases/DeeplyNestedComments1000.s": [],
     "edge_cases/DuplicateDatatypeFieldType.s": [],
+    "edge_cases/DuplicateSiblingCrossType.s": [],
+    "edge_cases/DuplicateSiblingFrameAndModule.s": [],
     "edge_cases/DurationInParameterMapping.s": [],
     "edge_cases/DurationVariousFormats.s": [],
     "edge_cases/ElsifExpression.s": [],
@@ -23,14 +25,18 @@
     "edge_cases/NegativeDurationValue.s": [],
     "edge_cases/OldNewOnDottedStateField.s": [],
     "edge_cases/QuotedIdentifierMaxLength.s": [],
+    "edge_cases/RepeatedMappingTarget.s": [],
     "edge_cases/ScanGroupClause.s": [],
     "edge_cases/SeqBreak.s": [],
     "edge_cases/SeqForkMultipleTargets.s": [],
     "edge_cases/SequenceAlternative.s": [],
     "edge_cases/SequenceWithoutInitStep.s": [],
     "edge_cases/SetIoAttributeConstArgument.s": [],
+    "edge_cases/SfcMappingSource.s": [],
+    "edge_cases/SiblingLabelAcrossKinds.s": [],
     "edge_cases/SiblingSameTypeDifferentLabels.s": [],
     "edge_cases/SimpleModuleTypeInvocation.s": [],
+    "edge_cases/StaleMappingTarget.s": [],
     "edge_cases/StringLiteralLoggedIn.s": [],
     "edge_cases/SubSequenceTransition.s": [],
     "edge_cases/TimeValueInit.s": [],
@@ -206,22 +212,6 @@
         "line": 28
       }
     ],
-    "invalid/DuplicateSiblingCrossType.s": [
-      {
-        "code": "SL-V004",
-        "column": 4,
-        "length": 62,
-        "line": 29
-      }
-    ],
-    "invalid/DuplicateSiblingFrameAndModule.s": [
-      {
-        "code": "SL-V004",
-        "column": 4,
-        "length": 62,
-        "line": 21
-      }
-    ],
     "invalid/DuplicateSiblingFrameModules.s": [
       {
         "code": "SL-V004",
@@ -265,18 +255,6 @@
         "code": "SL-V027",
         "column": 23,
         "length": 13,
-        "line": 25
-      },
-      {
-        "code": "SL-V049",
-        "column": 38,
-        "length": 14,
-        "line": 25
-      },
-      {
-        "code": "SL-V048",
-        "column": 54,
-        "length": 16,
         "line": 25
       }
     ],
@@ -507,14 +485,6 @@
         "line": 27
       }
     ],
-    "invalid/StaleMappingTarget.s": [
-      {
-        "code": "SL-V048",
-        "column": 7,
-        "length": 19,
-        "line": 36
-      }
-    ],
     "invalid/StandaloneSeqBreak.s": [
       {
         "parse_error": true
@@ -663,7 +633,7 @@
         "code": "SL-V019",
         "column": 7,
         "length": 28,
-        "line": 32
+        "line": 33
       }
     ],
     "invalid/UndefinedVariableRef.s": [

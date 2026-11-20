@@ -21,6 +21,8 @@ policy are documented in the README.
 
 - **Graphics refusal is part of the project surface.** `GraphicsParseError` and `MAX_GRAPHICS_COMPANION_BYTES` are exported from `sattline_parser.project`, so a caller can catch the error an oversized graphics companion raises without importing an internal module.
 
+- **Sequence `Disable` accessor.** A sequence that enables `SeqControl` exposes `.Disable` alongside `.Hold` and `.Reset`. `SL-V019` no longer reports it in module code or in a mapping source, and `SL-V051` reports a missing `SeqControl` for it.
+
 ### Changed
 
 - **The invalid-source contract is public and diagnostics keep their line.** `PARSE_FAILURES` is exported from `sattline_parser.api` and documented, a project load failure keeps the underlying parse error's sentence, line, column, and hint, and the CLI excerpt uses the library's line split so a lone CR inside a string no longer shifts `source_line`. `describe_parse_error` now accepts `source_text=None` when only the exception position is known, and `source_line_at` is the public excerpt helper.
@@ -60,13 +62,15 @@ policy are documented in the README.
 - **Projects own an immutable snapshot.** `SattLineProject.load` freezes the loaded trees and `from_programs` deep-copies before freezing, so `project.index` cannot go stale. Attached model nodes reject field assignment, and attached lists and mappings are read-only.
 
 - **Breaking: project declaration validation.** All project validation scopes, including `NONE`, report unresolved declaration type references in every loaded file. `INVOKED` checks executable bodies only for targets and transitively invoked dependency module types.
-- **Variable and datatype resolution.** Ordinary modules no longer inherit enclosing variable scopes; frame modules remain transparent. Builtin record specifications take precedence over same-named local and dependency records.
+- **Variable and datatype resolution.** Ordinary modules no longer inherit enclosing variable scopes; frame modules remain transparent. A declared record wins over a builtin transcription of the same name, because the transcription carries field datatypes but no `State`, `Const`, or `OpSave` modifier.
 
 - **Sequence openers must match their closers.** `SEQUENCE` must end with `ENDSEQUENCE` and `OPENSEQUENCE` with `ENDOPENSEQUENCE`; a mismatched pair is now a parse error instead of a sequence whose type and closer disagree.
 
-- **Sibling submodule identity.** A sibling instance label must be unique within its container regardless of the module kind, so two inline modules, two frame modules, two module-type instances, or any mix that fold to one label report `SL-V004`. Frame-module siblings are covered like every other kind, and the label is documented as an instance name rather than a resolvable symbol.
+- **Sibling submodule identity.** A module-type instance is scoped by its module type, and a single module or frame module by kind, so one container may hold them under one label. `SL-V004` now fires only for siblings that share a label and a scope.
 
 - **Source lines count every line terminator.** `SourceDocument.line_col`, the source excerpt every diagnostic renders, and the AST line and column of a plain CR-only document now treat CRLF, LF, and a lone CR as line breaks, the same definition the grammar, the compressed scanner, and `render_ide_text` use. A CR-only document reports the physical line and column of a position instead of keeping every position on line 1.
+
+- **A repeated mapping target keeps its first entry.** `SL-V049` is retired: SattLine accepts one parameter target mapped more than once and uses the first entry. A later entry for the same target is discarded, and neither its source nor its datatype is checked.
 
 - **`SL-V045` covers every string family.** A direct assignment to `IdentString`, `TagString`, `MaxString`, or `LineString` now reports the same finding as `String`: the value is copied with `CopyString` or `CopyVar`. The destination datatype decides, so a destination that does not resolve stays silent. A new fixture writes one assignment per family and keeps the copied form clean.
 
@@ -153,9 +157,11 @@ policy are documented in the README.
 
 - **A parallel `--debug` load keeps a message for every file.** A worker collects a bounded number of parser progress messages and returns them with the outcome, and the parent replays them in plan order. A load with `workers` greater than 1 therefore reports the same per-file progress as a serial one without sending the callback across the process boundary.
 
-- **Parameter-mapping findings.** `SL-V048` now says that the target is not a formal parameter in the resolved definition and that a formal removed from that definition leaves the mapping stale, so a deleted formal is not presented as a local typo.
+- **Parameter-mapping targets.** A target that names no formal parameter is silent, because SattLine keeps an instance mapping after its parameter is removed and the clause has no effect. `SL-V048` now reports only field access on a scalar parameter and a field the resolved record does not declare.
 
-- **Parameter-mapping sources.** A mapping source is now checked independently of the target: an undefined source and an `:Old` or `:New` suffix on a non-State source report `SL-V019`, `SL-V005`, or `SL-V006` even when the target module type is not loaded.
+- **Parameter-mapping sources.** A live mapping checks its source in the invoking scope, so an undeclared source variable reports `SL-V019` and an `:Old` or `:New` suffix on a non-State declaration reports `SL-V005` or `SL-V006`. A sequence control accessor such as `StateSequence.Reset` resolves through the program-wide SFC facts.
+
+- **Datecode conflicts compare one unit's own declarations.** A declaration shadows a same-named declaration held by a dependency, so a program and its libraries may carry different revisions without a finding. `SL-V057` now fires only when one unit declares the same name twice with different datecodes.
 
 - **A parse-error excerpt follows the reported line on a CR-only document.** The context window now splits at CRLF, LF, or a lone CR, the rule the reported line and column already use, so the quoted line and the caret no longer span several physical lines.
 

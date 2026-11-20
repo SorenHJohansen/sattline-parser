@@ -232,6 +232,44 @@ def test_sequence_hold_requires_seqcontrol() -> None:
     assert "SL-V051" in _codes(bp)
 
 
+def test_sequence_disable_is_allowed_with_seqcontrol() -> None:
+    step = SFCStep(kind="init", name="S1", code=SFCCodeBlocks())
+    bp = BasePicture(header=_header())
+    bp.modulecode = ModuleCode(
+        equationblocks=[_equation(Assignment(VarRef("Sink"), VarRef("Seq.Disable")))],
+        sequences=[
+            _sequence(step, SFCTransition(name="T1", condition=True), name="Seq", seqcontrol=True),
+        ],
+    )
+    bp.localvariables = [_var("Sink", "boolean")]
+    assert "SL-V019" not in _codes(bp)
+    assert "SL-V051" not in _codes(bp)
+
+
+def test_sequence_disable_requires_seqcontrol() -> None:
+    step = SFCStep(kind="init", name="S1", code=SFCCodeBlocks())
+    bp = BasePicture(header=_header())
+    bp.modulecode = ModuleCode(
+        equationblocks=[_equation(Assignment(VarRef("Sink"), VarRef("Seq.Disable")))],
+        sequences=[_sequence(step, SFCTransition(name="T1", condition=True), name="Seq")],
+    )
+    bp.localvariables = [_var("Sink", "boolean")]
+    assert "SL-V051" in _codes(bp)
+
+
+def test_step_disable_is_an_undefined_reference() -> None:
+    """A step exposes .X/.Hold/.Reset/.T, not .Disable."""
+    step = SFCStep(kind="init", name="S1", code=SFCCodeBlocks())
+    bp = BasePicture(header=_header())
+    bp.modulecode = ModuleCode(
+        equationblocks=[_equation(Assignment(VarRef("Sink"), VarRef("S1.Disable")))],
+        sequences=[_sequence(step, SFCTransition(name="T1", condition=True), seqcontrol=True)],
+    )
+    bp.localvariables = [_var("Sink", "boolean")]
+    assert "SL-V019" in _codes(bp)
+    assert "SL-V051" not in _codes(bp)
+
+
 def test_unknown_step_accessor_is_an_undefined_reference() -> None:
     step = SFCStep(kind="init", name="S1", code=SFCCodeBlocks())
     bp = BasePicture(header=_header())

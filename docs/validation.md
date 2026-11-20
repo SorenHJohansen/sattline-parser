@@ -47,10 +47,11 @@ validate_basepicture(
 
 The validator builds one `_ValidationContext`:
 
-- `records`: the external definitions, the file's `DATATYPE` definitions, and
-  the builtin record specs, keyed by `fold_identifier`. A builtin record wins
-  over a same-named file or dependency definition; a file definition wins over
-  a same-named dependency definition;
+- `records`: the builtin record specs, the external definitions, and the
+  file's `DATATYPE` definitions, keyed by `fold_identifier`. A declared record
+  wins over a same-named builtin transcription, because the transcription
+  carries field datatypes but no `State`, `Const`, or `OpSave` modifier. A file
+  definition wins over a same-named dependency definition;
 - `moduletypes`: external module types, then the file's own;
 - `type_graph`: a case-insensitive `TypeGraph` over the same records;
 - `sfc_names`: every SFC step, transition, subsequence, and sequence name in
@@ -150,7 +151,7 @@ them, not a separate scope.
 | `code.py` | Module code and SFC: expressions, assignments, calls, conditions, `:Old`/`:New`, const writes, sequence structure, fork targets |
 | `sequences.py` | SFC position grammar: S/T/M body shapes for closed, transition, step, and open bodies |
 | `transfers.py` | Parameter-transfer type compatibility for a submodule or a module-type instance whose formals are known |
-| `parameter_mappings.py` | Submodule and module-type instance mappings: duplicate targets, field access, literal and variable types |
+| `parameter_mappings.py` | Submodule and module-type instance mappings: field access, literal and variable types |
 | `typing.py` | Scalar families, literal inference, assignment and operand compatibility, datatype typo suggestions |
 | `type_graph.py` | Record field resolution and leaf-path expansion |
 | `symbols.py` | Scope chain and reference resolution |
@@ -170,11 +171,14 @@ typing that needs a validation scope stays in this layer.
 - Identifiers must be at most 20 characters and must not be a reserved keyword.
   This covers parameters, locals, and module-code names in single modules and
   frame modules alike.
-- Sibling submodule instance labels must be unique within their container,
-  regardless of the module kind. Two inline modules, two frame modules, two
-  module-type instances, or any mix that fold to one label are a duplicate
-  (`SL-V004`). The label is an instance name, not a resolvable symbol: it is not
-  entered into the variable scope, so a reference to it is undefined.
+- Sibling submodule instance labels must be unique within their declaration
+  scope. A module-type instance is scoped by its module type, so two instances
+  of different types may share a label. A single module and a frame module are
+  each scoped by kind, so one container may hold a module-type instance, a
+  single module, and a frame module under one label. Only siblings that share a
+  label and a scope are a duplicate (`SL-V004`). The label is an instance name,
+  not a resolvable symbol: it is not entered into the variable scope, so a
+  reference to it is undefined.
 - Declaration modifiers are checked in source order. `State OpSave` is valid;
   `OpSave State` and `OpSave Const` are invalid.
 - A declared datatype name must resolve to a file datatype, a builtin record,
@@ -205,8 +209,12 @@ typing that needs a validation scope stays in this layer.
   parameter, not a blanket `inout` exemption, so every other output argument
   keeps the rule.
 - References to undefined variables are rejected, except SFC runtime
-  accessors and the `On`/`Off` runtime constants. A missing root name is
-  undefined. A dotted field path is judged one step at a time: a field on a
+  accessors and the `On`/`Off` runtime constants. A step exposes `.X`, and
+  `.Hold`/`.Reset` with `SeqControl` plus `.T` with `SeqTimer`; a sequence
+  exposes `.Hold`, `.Reset`, and `.Disable` with `SeqControl`. SFC element names
+  resolve program-wide, so an accessor is known from an equation block or a
+  parameter mapping even when the sequence lives in a sibling or nested frame
+  module. A missing root name is undefined. A dotted field path is judged one step at a time: a field on a
   scalar is invalid, a field absent from a record whose shape is known is
   undefined, and a step through a record whose shape is not modelled (an opaque
   system type or an unloaded external record) is unproven, so it stays silent.
@@ -286,25 +294,31 @@ reuse the name of an element inside its own body.
   parameter list and mapping tail as a single module, so it gets the same
   contract. Mapping sources resolve in the invoking scope. A module type
   definition has no mapping list in the grammar, so it carries none to check.
-- A mapping source is checked independently of the target. It resolves in the
-  invoking scope, so an undefined source and an `:Old`/`:New` suffix on a
-  non-State source are local findings even when the target module type is not
-  loaded and its formals are unknown.
-- Every mapping is checked for a duplicate target, field access, unknown target,
-  a source that does not resolve, and literal or variable type mismatch. The
-  checks are the same for a plain submodule as for a module-type instance. A
-  source typo is reported even when the target field's shape is unproven,
-  because the source resolves in the invoking scope either way.
+- A target that names no formal parameter is a deleted formal: SattLine keeps
+  the mapping after the parameter is removed, so the clause is inert and its
+  source is not checked either. When the formal list is unknown, the target
+  stays unproven while a source is still checked.
+- A live mapping source must resolve in the invoking scope. A target that does
+  exist makes the clause live, so an undeclared source variable is `SL-V019`.
+  The source also resolves through the program-wide SFC facts, so a sequence
+  control accessor such as `StateReset => StateSequence.Reset` names a sequence
+  declared in a sibling or nested module. A source that resolves still has its
+  `:Old`/`:New` suffix checked.
+- A repeated target is accepted. The first entry for a target is the one the
+  instance uses, so a later entry with the same target is discarded and neither
+  its source nor its datatype is checked.
+- Every live mapping is checked for field access, an unknown target field, a
+  source that does not resolve, and literal or variable type mismatch. The
+  checks are the same for a plain submodule as for a module-type instance.
 - A dotted target such as `Settings.Flag` resolves through the record's fields,
   so the source is compared against the field's datatype rather than the
   record's. A target field that the type graph cannot resolve is the
   mapping-target rule's finding, and the transfer rule leaves it alone.
-- An absent mapping target is reported when the formal parameter list is known.
-  When the target type comes from a definition that is not loaded, the formals
-  are unknown: the target check stays silent while the local duplicate-target
-  check still runs. The sentence names the resolved definition and states that a
-  formal removed from it leaves the mapping stale, so a deleted formal is not
-  presented as a local typo.
+- An absent mapping target is silent. A formal parameter deleted from a
+  definition leaves the instance mapping in place, which is how SattLine works,
+  so the clause is inert rather than a local typo. When the target type comes
+  from a definition that is not loaded, the formals are unknown and the target
+  checks stay silent.
 - A module-type instance whose type is neither declared in the file nor visible
   from a loaded dependency reports `SL-V058`. The single-file escape hatch
   suppresses it; a project load always has the whole closure.
@@ -359,7 +373,7 @@ here. `sattline rules` exposes the same data on the command line.
 | `SL-V001` | `DUPLICATE_DATATYPE_NAME` | retired | declarations | A datatype name may be declared twice. |
 | `SL-V002` | `DUPLICATE_MODULETYPE_NAME` | retired | declarations | A module-type name may be declared twice. |
 | `SL-V003` | `DUPLICATE_VARIABLE_NAME` | retired | declarations | A variable name may be declared twice. |
-| `SL-V004` | `DUPLICATE_SIBLING_SUBMODULE` | active | declarations | Two sibling submodule instances may not share a name. |
+| `SL-V004` | `DUPLICATE_SIBLING_SUBMODULE` | active | declarations | Two siblings in one declaration scope may not share an instance label. |
 | `SL-V005` | `OLD_NEW_ON_NON_STATE_VARIABLE` | active | code | `:Old` and `:New` require a State variable. |
 | `SL-V006` | `OLD_NEW_ON_NON_STATE_FIELD` | active | code | `:Old` and `:New` require a State record field. |
 | `SL-V007` | `WRITE_TO_CONST_VARIABLE` | active | code | A Const variable may not be assigned or written through an output argument. |
@@ -374,7 +388,7 @@ here. `sattline rules` exposes the same data on the command line.
 | `SL-V016` | `CONSECUTIVE_SEQUENCE_STEPS` | active | sfc | SFC steps must be separated by a transition. |
 | `SL-V017` | `SEQUENCE_FORK_UNKNOWN_TARGET` | active | sfc | A SEQFORK target must name an SFC element in the module. |
 | `SL-V018` | `BUILTIN_DATATYPE_TYPO` | active | declarations | A near miss of a builtin datatype name is reported as a typo. |
-| `SL-V019` | `UNDEFINED_VARIABLE` | active | code | A reference or assignment target must resolve to a declared variable or parameter. |
+| `SL-V019` | `UNDEFINED_VARIABLE` | active | code | A code reference or assignment target must resolve to a declared variable or parameter. |
 | `SL-V020` | `UNKNOWN_DATATYPE_NAME` | active | declarations | A datatype reference must resolve to a builtin or a declared DATATYPE. |
 | `SL-V021` | `DUPLICATE_SFC_ELEMENT_NAME` | active | sfc | SFC step and transition names must be unique within a module. |
 | `SL-V022` | `SFC_INIT_STEP_PLACEMENT` | retired | sfc | A sequence must contain exactly one init step in a valid position. |
@@ -403,8 +417,8 @@ here. `sattline rules` exposes the same data on the command line.
 | `SL-V045` | `STRING_ASSIGNMENT_NOT_ALLOWED` | active | code | A string variable is copied with CopyString or CopyVar, not assigned directly. |
 | `SL-V046` | `BUILTIN_ARG_NOT_VARIABLE` | active | code | An `in var` builtin parameter requires a variable reference argument. |
 | `SL-V047` | `BUILTIN_ARG_TYPE_MISMATCH` | active | code | A builtin argument must match its declared parameter datatype. |
-| `SL-V048` | `PARAMETER_MAPPING_TARGET_UNKNOWN` | active | mappings | A module-type instance mapping must target a declared parameter. |
-| `SL-V049` | `PARAMETER_MAPPING_DUPLICATE_TARGET` | active | mappings | A module-type instance may map each parameter target only once. |
+| `SL-V048` | `PARAMETER_MAPPING_TARGET_UNKNOWN` | active | mappings | A mapping target must name a field the resolved parameter exposes. |
+| `SL-V049` | `PARAMETER_MAPPING_DUPLICATE_TARGET` | retired | mappings | A module-type instance may map each parameter target only once. |
 | `SL-V050` | `PARAMETER_MAPPING_TYPE_MISMATCH` | active | mappings | A module-type instance mapping value must match the parameter datatype. |
 | `SL-V051` | `STEP_AUTO_VARIABLE_UNAVAILABLE` | active | code | A step or sequence accessor requires the matching SeqControl or SeqTimer flag. |
 | `SL-V052` | `SEQUENCE_TRANSITION_AFTER_TRANSITION` | retired | sfc | A transition may not directly follow another transition. |
@@ -412,7 +426,7 @@ here. `sattline rules` exposes the same data on the command line.
 | `SL-V054` | `SUBSEQTRANSITION_STARTS_WITH_STEP` | active | sfc | A SUBSEQTRANSITION body must start with a SEQTRANSITION. |
 | `SL-V055` | `SEQUENCE_REQUIRES_INIT_STEP` | retired | sfc | A closed sequence must contain an init step. |
 | `SL-V056` | `SEQUENCE_AMBIGUOUS_FORK_TARGET` | active | sfc | A SEQFORK target may not be declared more than once in a module. |
-| `SL-V057` | `DATECODE_CONFLICT` | active | project | The same module type or datatype may not be declared with different datecodes in a visible closure. |
+| `SL-V057` | `DATECODE_CONFLICT` | active | project | A unit may not declare one module type or datatype with two datecodes. |
 | `SL-V058` | `UNKNOWN_MODULETYPE_NAME` | active | mappings | A module-type instance must name a declared type or one visible from a loaded dependency. |
 | `SL-V059` | `NUMERIC_LITERAL_OUT_OF_RANGE` | active | code | A numeric literal that does not fit the 32-bit integer or real range is reported. |
 | `SL-V060` | `PROCEDURE_IN_VALUE_POSITION` | active | code | A procedure call returns no value and cannot be used where a value is required. |

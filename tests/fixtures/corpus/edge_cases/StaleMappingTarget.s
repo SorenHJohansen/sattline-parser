@@ -1,11 +1,12 @@
-"Syntax version 2.23, date: 2026-04-23-12:00:00.000 N"
+"Syntax version 2.23, date: 2026-11-20-12:00:00.000 N"
 "Original file date: ---"
-"Program date: 2026-04-23-12:00:00.000, name: StaleMappingTarget"
-(* INVALID: A parameter mapping whose target is not a formal parameter.
-   The module type declares Gain only, and the instance maps Absent. A formal
-   that was removed from the definition leaves exactly this stale mapping, so
-   the finding names the resolved definition rather than the instance alone.
-   Expected: strict syntax-check fails at stage "validation". *)
+"Program date: 2026-11-20-12:00:00.000, name: StaleMappingTarget"
+(* EDGE: A parameter mapping whose target is not a formal parameter.
+   SattLine keeps an instance mapping when its formal parameter is deleted from
+   the definition, so the clause is inert. Neither the removed target nor its
+   source is reported, even when the source name is undeclared.
+   The module type declares Gain only, and the instance maps Absent.
+   Expected: strict syntax-check passes. *)
 
 BasePicture Invocation
    ( 0.0 , 0.0 , 0.0 , 1.0 , 1.0
@@ -33,7 +34,7 @@ SUBMODULES
    GainBlock Invocation
       ( 0.1 , 0.1 , 0.0 , 0.8 , 0.8
        ) : GainType (
-      Absent => LocalGain);
+      Absent => NoSuchVariable);
 
 ModuleDef
 ClippingBounds = ( -1.0 , -1.0 ) ( 1.0 , 1.0 )

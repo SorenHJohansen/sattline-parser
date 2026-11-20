@@ -60,9 +60,6 @@ class ProjectValidator:
         self._registry = registry
         self._resolved_dependencies = resolved_dependencies
         self._target_plan_keys = target_plan_keys
-        self._moduletype_versions: dict[str, dict[int, set[str]]] = {}
-        self._datatype_versions: dict[str, dict[int, set[str]]] = {}
-        self._labels: dict[str, str] = {}
 
     def artifact_diagnostics(
         self,
@@ -105,30 +102,9 @@ class ProjectValidator:
                     basepicture,
                     library=artifact.library,
                     file_name=artifact.code_path.name,
-                    visible=self.visible_plan_keys(key),
                 )
             ),
         )
-
-    def remember_definitions(
-        self,
-        basepicture: BasePicture,
-        *,
-        library: str,
-        file_name: str,
-        program_key: str,
-    ) -> None:
-        self._labels[program_key] = f"{library}/{file_name}"
-        for moduletype in basepicture.moduletype_defs:
-            if moduletype.datecode is not None:
-                self._moduletype_versions.setdefault(fold_identifier(moduletype.name), {}).setdefault(
-                    moduletype.datecode, set()
-                ).add(program_key)
-        for datatype in basepicture.datatype_defs:
-            if datatype.datecode is not None:
-                self._datatype_versions.setdefault(fold_identifier(datatype.name), {}).setdefault(
-                    datatype.datecode, set()
-                ).add(program_key)
 
     def assert_no_moduletype_cycles(self) -> None:
         """Reject a module type whose instantiation chain returns to itself.
@@ -267,27 +243,9 @@ class ProjectValidator:
                 basepicture,
                 library=library,
                 file_name=file_name,
-                visible=self.visible_plan_keys(key),
             )
         )
         return tuple(diagnostics)
-
-    def _versions_in_scope(
-        self,
-        table: dict[str, dict[int, set[str]]],
-        name: str,
-        visible: frozenset[str],
-    ) -> dict[int, set[str]] | None:
-        """Datecodes declared for *name* by units in *visible*."""
-        entry = table.get(fold_identifier(name))
-        if not entry:
-            return None
-        known: dict[int, set[str]] = {}
-        for datecode, keys in entry.items():
-            in_scope = keys & visible
-            if in_scope:
-                known[datecode] = {self._labels[key] for key in in_scope if key in self._labels}
-        return known or None
 
     def _datecode_conflicts(
         self,
@@ -295,32 +253,68 @@ class ProjectValidator:
         *,
         library: str,
         file_name: str,
-        visible: frozenset[str],
     ) -> list[Diagnostic]:
+        """Report a name this unit declares with two different datecodes.
+
+        A declaration shadows a same-named declaration held by a dependency, so
+        versions held by other units never conflict with this one. Only the
+        unit's own declarations are compared.
+        """
         source_label = f"{library}/{file_name}"
-        conflicts: list[Diagnostic] = []
+        moduletype_versions: dict[str, dict[int, set[str]]] = {}
         for moduletype in basepicture.moduletype_defs:
+            if moduletype.datecode is not None:
+                moduletype_versions.setdefault(fold_identifier(moduletype.name), {}).setdefault(
+                    moduletype.datecode, set()
+                ).add(source_label)
+        datatype_versions: dict[str, dict[int, set[str]]] = {}
+        for datatype in basepicture.datatype_defs:
+            if datatype.datecode is not None:
+                datatype_versions.setdefault(fold_identifier(datatype.name), {}).setdefault(
+                    datatype.datecode, set()
+                ).add(source_label)
+
+        conflicts: list[Diagnostic] = []
+        reported: set[tuple[str, str]] = set()
+
+        def conflict_for(
+            kind: str,
+            name: str,
+            datecode: int | None,
+            versions: dict[str, dict[int, set[str]]],
+            span: SourceSpan | None,
+        ) -> None:
+            key = (kind, fold_identifier(name))
+            if key in reported:
+                return
             conflict = _datecode_conflict(
+                kind,
+                name,
+                datecode,
+                versions.get(fold_identifier(name)),
+                source_label=source_label,
+                span=span,
+            )
+            if conflict is not None:
+                reported.add(key)
+                conflicts.append(conflict)
+
+        for moduletype in basepicture.moduletype_defs:
+            conflict_for(
                 "moduletype",
                 moduletype.name,
                 moduletype.datecode,
-                self._versions_in_scope(self._moduletype_versions, moduletype.name, visible),
-                source_label=source_label,
-                span=moduletype.declaration_span,
+                moduletype_versions,
+                moduletype.declaration_span,
             )
-            if conflict is not None:
-                conflicts.append(conflict)
         for datatype in basepicture.datatype_defs:
-            conflict = _datecode_conflict(
+            conflict_for(
                 "datatype",
                 datatype.name,
                 datatype.datecode,
-                self._versions_in_scope(self._datatype_versions, datatype.name, visible),
-                source_label=source_label,
-                span=datatype.declaration_span,
+                datatype_versions,
+                datatype.declaration_span,
             )
-            if conflict is not None:
-                conflicts.append(conflict)
         return conflicts
 
 
