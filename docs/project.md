@@ -179,7 +179,7 @@ sequenceDiagram
     A->>A: record datecodes
     A->>A: resolve and parse graphics companion
     A->>A: resolve and parse distribution companion
-    A->>VAL: check type bindings; validate FULL or target datecodes
+    A->>VAL: check type bindings and validate FULL or target datecodes
     A->>A: store SattLineProgram in registry
     Note over L: phase 4: validate invoked scope
     L->>VAL: validate invoked bodies when scope is INVOKED
