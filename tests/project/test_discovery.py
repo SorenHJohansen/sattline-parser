@@ -804,7 +804,7 @@ def test_a_casefold_only_name_does_not_resolve(tmp_path: Path) -> None:
     assert lookup.find_code("STRASSE") is None
 
 
-def test_source_index_records_a_folded_name_collision(tmp_path: Path) -> None:
+def test_source_index_records_a_folded_name_collision(tmp_path: Path, case_sensitive_fs: None) -> None:
     """Two files the language considers one unit are an ambiguity, not a winner."""
     root = tmp_path / "p"
     write_file(root, "Util.s")

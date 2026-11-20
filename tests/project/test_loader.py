@@ -1913,7 +1913,7 @@ def test_dependents_of_accepts_a_view_key_and_rejects_a_casefold_only_name(tmp_p
     assert project.dependents_of("STRASSE") == ()
 
 
-def test_a_folded_name_collision_is_reported_and_one_unit_wins(tmp_path: Path) -> None:
+def test_a_folded_name_collision_is_reported_and_one_unit_wins(tmp_path: Path, case_sensitive_fs: None) -> None:
     """Two files the language considers one unit are reported, not dropped."""
     write_file(tmp_path, "Util.s", _source("Util"))
     write_file(tmp_path, "UTIL.s", _source("UTIL"))
@@ -2191,7 +2191,7 @@ def test_a_paired_companion_does_not_report_the_other_family(tmp_path: Path) -> 
 
 
 def test_a_companion_name_collision_is_reported_with_its_winner(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, case_sensitive_fs: None
 ) -> None:
     """The alphabetically first case variant pairs, whatever order the directory lists."""
     write_file(tmp_path, "main.s", _source("Main"))

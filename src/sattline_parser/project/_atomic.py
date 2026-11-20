@@ -148,9 +148,9 @@ class PrivateDirectory:
     owner and mode, which is what makes the "validated on every write" claim
     true.
 
-    Windows cannot open a directory descriptor portably, so it re-reads the
-    security descriptor through :func:`private_cache_dir` on every revalidation
-    instead. The policy is the same; only the mechanism differs.
+    Windows cannot open a directory descriptor portably, so it compares the
+    recorded path identity and re-reads the security descriptor through
+    :func:`private_cache_dir` on every revalidation instead.
     """
 
     def __init__(
@@ -189,6 +189,8 @@ class PrivateDirectory:
             return None
         identity = (info.st_dev, info.st_ino)
         if not _USES_DIRECTORY_DESCRIPTOR:
+            if not info.st_ino:
+                return None
             return cls(validated, descriptor=None, identity=identity, owner=info.st_uid)
         try:
             descriptor = os.open(validated, _DIRECTORY_FLAGS)
@@ -210,7 +212,13 @@ class PrivateDirectory:
         check.
         """
         if parent._descriptor is None:
-            return cls.open(parent.path / name, create=create)
+            if not parent.revalidate():
+                return None
+            child = cls.open(parent.path / name, create=create)
+            if child is not None:
+                child._parent = parent
+                child._name = name
+            return child
         if create:
             try:
                 os.mkdir(name, 0o700, dir_fd=parent._descriptor)
@@ -254,7 +262,12 @@ class PrivateDirectory:
         if self._closed:
             return False
         if self._descriptor is None:
-            return private_cache_dir(self.path, create=False) is not None
+            if self._parent is not None and not self._parent.revalidate():
+                return False
+            if private_cache_dir(self.path, create=False) is None:
+                return False
+            info = _lstat(self.path)
+            return info is not None and stat.S_ISDIR(info.st_mode) and (info.st_dev, info.st_ino) == self._identity
         info = _fstat(self._descriptor)
         if info is None or not stat.S_ISDIR(info.st_mode):
             return False

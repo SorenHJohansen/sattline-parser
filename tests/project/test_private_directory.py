@@ -69,8 +69,12 @@ def test_lstat_reports_a_missing_path(tmp_path: Path) -> None:
     assert _lstat(tmp_path) is not None
 
 
-def test_read_all_rejects_a_bad_descriptor_and_a_non_regular_entry(tmp_path: Path) -> None:
+def test_read_all_rejects_a_bad_descriptor() -> None:
     assert _read_all(-1) is None
+
+
+@pytest.mark.skipif(os.name != "posix", reason="opening a directory descriptor requires POSIX")
+def test_read_all_rejects_a_non_regular_entry(tmp_path: Path) -> None:
     directory_fd = _descriptor_for(tmp_path)
     try:
         assert _read_all(directory_fd) is None
@@ -116,7 +120,7 @@ def test_path_mode_round_trip(path_mode: None, tmp_path: Path) -> None:
     assert not handle.revalidate()
 
 
-def test_path_mode_never_follows_a_symlink(path_mode: None, tmp_path: Path) -> None:
+def test_path_mode_never_follows_a_symlink(path_mode: None, tmp_path: Path, symlink_supported: None) -> None:
     handle = _open(tmp_path)
     outside = tmp_path / "outside"
     outside.write_bytes(b"secret")
@@ -200,11 +204,37 @@ def test_path_mode_child_and_nested_operations(path_mode: None, tmp_path: Path) 
 
 def test_path_mode_revalidate_follows_the_path_policy(path_mode: None, tmp_path: Path) -> None:
     handle = _open(tmp_path)
-    os.chmod(tmp_path, 0o755)
-    try:
+    with patch(f"{_atomic.__name__}.private_cache_dir", return_value=None):
         assert not handle.revalidate()
-    finally:
-        os.chmod(tmp_path, 0o700)
+
+
+def test_path_mode_revalidate_refuses_a_replaced_parent(path_mode: None, tmp_path: Path) -> None:
+    root = tmp_path / "root"
+    root.mkdir()
+    parent = _open(root)
+    child = PrivateDirectory.child(parent, "child", create=True)
+    assert child is not None
+    root.rename(tmp_path / "old-root")
+    root.mkdir()
+    (tmp_path / "old-root" / "child").rename(root / "child")
+
+    assert not child.revalidate()
+    child.close()
+    parent.close()
+
+
+def test_path_mode_child_refuses_an_invalid_parent(path_mode: None, tmp_path: Path) -> None:
+    parent = _open(tmp_path)
+    parent.close()
+    assert PrivateDirectory.child(parent, "child", create=True) is None
+    assert not (tmp_path / "child").exists()
+
+
+def test_path_mode_refuses_unavailable_identity(path_mode: None, tmp_path: Path) -> None:
+    info = tmp_path.lstat()
+    no_inode = os.stat_result((info.st_mode, 0, info.st_dev, info.st_nlink, info.st_uid, info.st_gid, 0, 0, 0, 0))
+    with patch(f"{_atomic.__name__}._lstat", return_value=no_inode):
+        assert PrivateDirectory.open(tmp_path, create=True) is None
 
 
 def test_path_mode_names_and_stat_tolerate_a_removed_directory(path_mode: None, tmp_path: Path) -> None:
@@ -215,6 +245,7 @@ def test_path_mode_names_and_stat_tolerate_a_removed_directory(path_mode: None, 
     assert handle.stat("entry") is None
 
 
+@pytest.mark.skipif(os.name != "posix", reason="POSIX directory descriptor")
 def test_open_refuses_an_identity_that_changed_between_check_and_open(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
@@ -300,6 +331,7 @@ def test_child_refuses_when_the_wide_level_cannot_be_tightened(tmp_path: Path, m
     parent.close()
 
 
+@pytest.mark.skipif(os.name != "posix", reason="POSIX directory descriptor")
 def test_revalidate_refuses_a_failed_or_non_directory_stat(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     handle = _open(tmp_path)
 
@@ -378,6 +410,7 @@ def test_child_refuses_a_level_that_stays_wide_after_chmod(tmp_path: Path, monke
     parent.close()
 
 
+@pytest.mark.skipif(os.name != "posix", reason="POSIX directory descriptor")
 def test_revalidate_refuses_a_changed_identity(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     handle = _open(tmp_path)
     real_fstat = os.fstat

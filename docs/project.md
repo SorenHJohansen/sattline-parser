@@ -709,8 +709,10 @@ real boundary is a directory proven private to this user:
   path after the revalidation, and the privacy check refuses a reparse point.
 - Every load and every save revalidates the directory against the recorded
   identity, the name that still resolves to it, and the owner and mode (through
-  the held descriptor on POSIX, and through the security descriptor on
-  Windows). A cache root or `file_ast` directory that is renamed, replaced,
+  the held descriptor on POSIX, and by comparing the path's recorded device and
+  inode and checking its security descriptor on Windows). Windows path-based
+  checks cannot hold a directory stable across an operation. A cache root or
+  `file_ast` directory that is renamed, replaced,
   symlinked, or widened after construction disables the handle instead of being
   written into. A removed cache directory is not recreated during that run; the
   next process opens a fresh one.

@@ -52,12 +52,14 @@ def test_set_get_roundtrip_is_case_insensitive(tmp_path: Path) -> None:
 def test_set_get_keeps_language_distinct_names_apart(tmp_path: Path) -> None:
     """``Straße`` and ``STRASSE`` are different units, so they need two entries."""
     cache = FileLookupCache(tmp_path, write_through=True)
-    cache.set("code", "Straße", "draft", base_dir=Path("/sharp"), ext=".s")
-    cache.set("code", "STRASSE", "draft", base_dir=Path("/upper"), ext=".s")
+    sharp = tmp_path / "sharp"
+    upper = tmp_path / "upper"
+    cache.set("code", "Straße", "draft", base_dir=sharp, ext=".s")
+    cache.set("code", "STRASSE", "draft", base_dir=upper, ext=".s")
 
-    assert cache.get("code", "Straße", "draft") == {"base_dir": "/sharp", "ext": ".s"}
-    assert cache.get("code", "STRASSE", "draft") == {"base_dir": "/upper", "ext": ".s"}
-    assert cache.get("code", "Strasse", "draft") == {"base_dir": "/upper", "ext": ".s"}
+    assert cache.get("code", "Straße", "draft") == {"base_dir": str(sharp), "ext": ".s"}
+    assert cache.get("code", "STRASSE", "draft") == {"base_dir": str(upper), "ext": ".s"}
+    assert cache.get("code", "Strasse", "draft") == {"base_dir": str(upper), "ext": ".s"}
 
 
 def test_set_get_roundtrips_resolved_base_dir(tmp_path: Path) -> None:

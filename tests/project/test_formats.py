@@ -221,7 +221,7 @@ def test_find_companion_beside_chooses_a_case_variant_by_sorted_name(
     assert second.exists()
 
 
-def test_a_companion_collision_is_reported_once_with_the_winner(tmp_path: Path) -> None:
+def test_a_companion_collision_is_reported_once_with_the_winner(tmp_path: Path, case_sensitive_fs: None) -> None:
     body = tmp_path / "main.s"
     body.write_text("", encoding="utf-8")
     winner = tmp_path / "MAIN.P"

@@ -1206,7 +1206,7 @@ def test_entry_cap_uses_max_entries_and_last_use(tmp_path: Path) -> None:
     assert restarted.load(paths[2], "draft") is not None
 
 
-def test_a_symlinked_entry_is_not_followed(tmp_path: Path) -> None:
+def test_a_symlinked_entry_is_not_followed(tmp_path: Path, symlink_supported: None) -> None:
     code_path = _write_code(tmp_path)
     cache = FileASTCache(tmp_path)
     cache.save(code_path, "draft", _picture(code_path))

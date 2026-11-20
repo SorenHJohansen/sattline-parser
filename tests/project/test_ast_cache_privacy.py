@@ -104,7 +104,7 @@ def test_a_replaced_leaf_directory_is_refused(tmp_path: Path) -> None:
     assert len(list(original.glob("*.pickle"))) == 1
 
 
-def test_a_symlink_replacing_the_cache_name_is_refused(tmp_path: Path) -> None:
+def test_a_symlink_replacing_the_cache_name_is_refused(tmp_path: Path, symlink_supported: None) -> None:
     cache = FileASTCache(tmp_path)
     code_path = _write_code(tmp_path)
     picture = parse_source_file(code_path)
@@ -148,7 +148,7 @@ def test_every_save_revalidates_the_held_directory(tmp_path: Path) -> None:
     assert list(cache.cache_dir.iterdir()) == []
 
 
-def test_a_symlinked_key_file_is_refused(tmp_path: Path) -> None:
+def test_a_symlinked_key_file_is_refused(tmp_path: Path, symlink_supported: None) -> None:
     """The key is read through the descriptor with ``O_NOFOLLOW``."""
     code_path = _write_code(tmp_path)
     cache = FileASTCache(tmp_path)
@@ -187,6 +187,7 @@ def test_a_read_only_handle_refuses_a_replaced_directory(tmp_path: Path) -> None
     assert not reader.enabled
 
 
+@pytest.mark.skipif(os.name != "posix", reason="POSIX owner and mode bits")
 def test_a_cache_under_a_group_writable_parent_is_disabled(tmp_path: Path) -> None:
     """Whoever can write a parent can replace the whole cache tree."""
     shared = tmp_path / "shared"
@@ -281,7 +282,7 @@ def test_the_closed_handle_never_falls_back_to_a_path(tmp_path: Path) -> None:
     assert not directory.revalidate()
 
 
-def test_a_symlinked_entry_is_never_followed(tmp_path: Path) -> None:
+def test_a_symlinked_entry_is_never_followed(tmp_path: Path, symlink_supported: None) -> None:
     code_path = _write_code(tmp_path)
     cache = FileASTCache(tmp_path)
     cache.save(code_path, "draft", parse_source_file(code_path))
