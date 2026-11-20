@@ -1389,6 +1389,18 @@ def test_local_datatype_wins_over_an_external_definition_of_the_same_name():
     assert [d.code.value for d in validate_basepicture(file_boolean, external_datatypes=[local_integer])] == ["SL-V029"]
 
 
+def test_builtin_record_wins_over_local_and_external_datatypes():
+    local = DataType(name="BooleanSignal", description=None, datecode=1, var_list=[_var("Value", "integer")])
+    external = DataType(name="BooleanSignal", description=None, datecode=2, var_list=[_var("Value", "real")])
+    bp = _typed_bp(
+        [_var("Signal", "BooleanSignal")],
+        Assignment(VarRef("Signal.Value"), True),
+        datatypes=[local],
+    )
+
+    assert validate_basepicture(bp, external_datatypes=[external]) == ()
+
+
 def test_parse_and_validate_accepts_external_definitions():
     """A consumer with loaded dependency definitions resolves them in one call."""
     source = """"SyntaxVersion"
@@ -2363,6 +2375,40 @@ def test_frame_modules_inherit_the_enclosing_scope():
     assert [(diagnostic.code.value, diagnostic.message) for diagnostic in diagnostics] == []
     assert [parameter.name for parameter in picture.moduleparameters] == ["ParentParam"]
     assert isinstance(picture.submodules[0], FrameModule)
+
+    ordinary_source = source.replace("DateCode_ 3 ( Frame_Module )", "DateCode_ 3")
+    _, ordinary_diagnostics = parse_and_validate(ordinary_source)
+    assert [diagnostic.code.value for diagnostic in ordinary_diagnostics] == ["SL-V019"] * 4
+    assert sum("ParentFlag" in diagnostic.message for diagnostic in ordinary_diagnostics) == 2
+    assert sum("ParentParam" in diagnostic.message for diagnostic in ordinary_diagnostics) == 2
+
+
+def test_ordinary_modules_bound_variable_scope_and_frames_are_transparent():
+    parent_assignment = Assignment(VarRef("ParentOutput"), VarRef("ParentInput"))
+    frame = FrameModule(
+        header=_module_header("Frame"),
+        localvariables=[_var("ParentInput", "integer")],
+        modulecode=ModuleCode(equationblocks=[_equation(parent_assignment)]),
+    )
+    nested_frame = FrameModule(
+        header=_module_header("NestedFrame"),
+        modulecode=ModuleCode(equationblocks=[_equation(Assignment(VarRef("Own"), VarRef("ParentInput")))]),
+    )
+    ordinary = SingleModule(
+        header=_module_header("Ordinary"),
+        localvariables=[_var("Own", "boolean")],
+        submodules=[nested_frame],
+        modulecode=ModuleCode(equationblocks=[_equation(parent_assignment)]),
+    )
+    bp = _base_picture()
+    bp.localvariables = [_var("ParentInput", "boolean"), _var("ParentOutput", "boolean")]
+    bp.submodules = [frame, ordinary]
+
+    diagnostics = validate_basepicture(bp)
+
+    assert [d.code.value for d in diagnostics] == ["SL-V019", "SL-V019", "SL-V019"]
+    assert "ParentOutput" in diagnostics[0].message
+    assert all("ParentInput" in d.message for d in diagnostics[1:])
 
 
 def test_sfc_element_names_resolve_across_module_bounds():

@@ -179,9 +179,10 @@ sequenceDiagram
     A->>A: record datecodes
     A->>A: resolve and parse graphics companion
     A->>A: resolve and parse distribution companion
+    A->>VAL: check type bindings; validate FULL or target datecodes
     A->>A: store SattLineProgram in registry
-    Note over L: phase 4: validate the assembled registry
-    L->>VAL: validate when scope is INVOKED or FULL
+    Note over L: phase 4: validate invoked scope
+    L->>VAL: validate invoked bodies when scope is INVOKED
     VAL-->>L: diagnostics
 ```
 
@@ -233,10 +234,10 @@ observable orders:
   prefix is silent. A failure to resolve or parse raises instead. Discovery rows
   come first, in discovery order, then assembly rows in plan order.
 
-`validate=INVOKED` runs **after** the graph is complete, because it needs the
-whole invocation graph. The loader first builds the registry, then walks
-`invoked_moduletypes` and replaces each program with a copy that carries the
-invoked-scope diagnostics.
+Type-reference binding checks run as each file is assembled against its
+dependency-first closure. `validate=INVOKED` additionally runs **after** the
+graph is complete, because it needs the whole invocation graph. The loader
+walks `invoked_moduletypes` and appends the invoked-scope diagnostics.
 
 ## Identity
 
@@ -401,18 +402,41 @@ so `STRASSE.z` is not a stray sidecar for `Straße.s` and the report is
 
 ```mermaid
 flowchart TB
+    A["all loaded files"] --> B["check declaration type bindings"]
     T["targets"] --> R["invoked_moduletypes"]
     R --> M["program key -> invoked module type names"]
     T --> TV["validate each target in full"]
     M --> DV["validate only invoked module types<br/>in each dependency file"]
     TV --> D["diagnostics"]
     DV --> D
+    B --> D
 ```
 
-`invoked_moduletypes` walks the target's module tree, follows every
-`ModuleTypeInstance` reference into loaded definitions, and continues through
-their submodules. Only reached module types are validated. The target itself is
-always validated in full.
+All scopes check datatype references on record fields, parameters and local
+variables, and module-type instance references, including those in unused
+declarations and nested modules. A reference resolves against the containing
+file and its transitive dependencies, not against a consumer or an unrelated
+target. The finding belongs to the containing file. Builtin datatype typo
+suggestions and unknown datatype or module-type names are reported once.
+
+| Scope | Checks in addition to type-reference binding |
+| --- | --- |
+| `NONE` | None |
+| `INVOKED` | Each target in full and transitively invoked module types in dependencies |
+| `FULL` | Every loaded file in full |
+
+The unconditional pass does not check executable bodies, initializers or
+default expressions, parameter mappings, write checks, or other declaration
+rules. Any such checks remain scoped as before. `invoked_moduletypes`
+walks the target's module tree, follows every `ModuleTypeInstance` reference
+into loaded definitions, and continues through their submodules. Only reached
+dependency module types receive the additional checks. Their containing files'
+record definitions still supply their local type shapes, but unrelated record
+declarations and base parameters do not receive additional checks merely because
+a module type is invoked.
+
+Datecode conflicts keep their existing scope: `NONE` skips them, `INVOKED`
+reports them on targets, and `FULL` reports them on loaded files as assembled.
 
 Every finding the loader produces is final. A load is all or nothing, so a
 definition can never be missing from a closure that a finding was computed
@@ -892,7 +916,8 @@ re-parsing the body.
 - The parser is shared across files.
 - The lookup cache skips repeated ordered scans for a stable layout.
 - The AST cache skips re-parsing an unchanged file.
-- `INVOKED` scope avoids validating a library's unused module types.
+- `INVOKED` scope skips additional validation of a library's unused module
+  types, while still checking their type bindings.
 - Companion resolution lists each directory once per load and indexes it by
   language identity and extension. Graphics, distribution, and the sidecar
   family probe share that one scan, so the non-parse phase stays flat as a

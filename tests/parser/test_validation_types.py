@@ -175,6 +175,15 @@ def test_a_fallback_datatype_does_not_shadow_the_primary_one() -> None:
     assert graph.field("Rec", "Value") is None
 
 
+def test_builtin_record_wins_over_local_and_fallback_collisions() -> None:
+    local = _record("BooleanSignal", _var("Value", "integer"))
+    external = _record("BooleanSignal", _var("Value", "real"))
+    graph = TypeGraph.from_datatypes([local, local], fallback=[external])
+
+    assert graph.has_known_fields("BooleanSignal")
+    assert graph.field_type("BooleanSignal", "Value") == ScalarDatatype.BOOLEAN
+
+
 def test_a_fallback_datatype_has_a_known_shape_on_its_own() -> None:
     graph = TypeGraph.from_datatypes([], fallback=[_record("Loaded")])
 

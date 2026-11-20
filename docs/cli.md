@@ -218,7 +218,7 @@ empty list. See [project.md](project.md#distribution-companion).
 | `--workers N` | Parse bodies in `N` processes, 1 to 32. Default `min(8, cpu_count)`; `1` parses in this process |
 | `--cache-dir DIR` | Parser cache directory |
 | `--no-cache` | Bypass the project caches |
-| `--validate invoked\|full\|none` | What to validate. Default `invoked` |
+| `--validate invoked\|full\|none` | Additional validation scope. Type references in all loaded files are checked even for `none`. Default `invoked`; see [validation scopes](project.md#validation-scopes) |
 | `--fail-on none\|error` | Whether a validation finding fails the run. Default `error` |
 
 The project caches live under `$XDG_CACHE_HOME/sattline-parser/project` (or

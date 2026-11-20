@@ -131,8 +131,8 @@ def register(subparsers: argparse._SubParsersAction[argparse.ArgumentParser]) ->
         choices=("invoked", "full", "none"),
         default="invoked",
         help=(
-            "what to validate: the selected programs plus the module types they invoke "
-            "(default), every loaded program, or nothing"
+            "always bind type references in all loaded files; also validate the selected programs "
+            "and invoked module types (default), all loaded programs, or no additional code"
         ),
     )
     add_fail_on(parser)

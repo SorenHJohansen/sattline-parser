@@ -107,9 +107,9 @@ class SattLineProject:
     ) -> SattLineProject:
         """Load a project from ``roots`` plus ``targets``.
 
-        ``validate`` defaults to :attr:`LoadValidation.INVOKED`: each target is
-        validated in full, while a dependency file contributes only the module
-        types the target invokes.
+        Every scope checks type-reference bindings in all loaded files.
+        ``validate`` defaults to :attr:`LoadValidation.INVOKED`: additional
+        checks cover each target and the dependency module types it invokes.
 
         Each target is resolved through ``roots`` in the caller's order, its
         ``.l`` / ``.z`` dependency file (when present) is read, and the whole
@@ -129,8 +129,9 @@ class SattLineProject:
 
         ``validate=INVOKED`` (default) validates each target in full while a
         dependency file contributes only the module types the target invokes,
-        transitively. ``validate=FULL`` runs the single-file validator over
-        every loaded program. ``validate=NONE`` parses only.
+        transitively, beyond the always-on type-reference checks.
+        ``validate=FULL`` validates every loaded program. ``validate=NONE``
+        runs only type-reference binding checks.
 
         ``cache_dir`` optionally enables the parser-owned lookup and AST caches
         so repeated loads skip re-discovery and re-parsing. When ``None`` the

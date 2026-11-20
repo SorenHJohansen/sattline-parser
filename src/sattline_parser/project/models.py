@@ -26,15 +26,13 @@ class LoadMode(Enum):
 
 
 class LoadValidation(StrEnum):
-    """Whether the loader runs semantic validation while loading.
+    """Choose scoped validation beyond type-reference binding.
 
-    ``INVOKED`` is the default: a target program is validated in full, while a
-    dependency file is limited to the module types the target actually invokes,
-    transitively, so an imported library's unused module types are never
-    blamed on the consumer. ``FULL`` runs
-    :func:`sattline_parser.validation.validate_basepicture` over every loaded
-    program, which is what a whole-tree audit wants. ``NONE`` parses only and
-    leaves every program's diagnostics empty.
+    Every scope checks type references in all loaded files, including unused
+    declarations, against each containing file's dependency closure.
+    ``INVOKED`` additionally validates each target and the dependency module
+    types it invokes transitively. ``FULL`` validates every loaded program.
+    ``NONE`` skips those additional checks, not type-reference binding.
     """
 
     NONE = "none"

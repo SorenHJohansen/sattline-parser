@@ -43,6 +43,7 @@ from sattline_parser.validation.code import (
 )
 from sattline_parser.validation.declarations import (
     check_identifiers,
+    check_moduletype_identifiers,
     check_record_fields,
     check_sibling_submodules,
     check_variable_declarations,
@@ -182,6 +183,28 @@ def _reject_over_deep_tree(bp: BasePicture) -> None:
         raise SourceTooDeepError(MAX_VALIDATED_DEPTH)
 
 
+def _validation_context(
+    bp: BasePicture,
+    external_datatypes: Sequence[DataType],
+    external_moduletype_defs: Sequence[ModuleTypeDef],
+    allow_unresolved_external_datatypes: bool,
+    *,
+    sfc_names: frozenset[str],
+) -> _ValidationContext:
+    available_datatypes = [*external_datatypes, *bp.datatype_defs]
+    available_moduletypes = [*external_moduletype_defs, *bp.moduletype_defs]
+    records = {fold_identifier(datatype.name): datatype for datatype in available_datatypes}
+    for builtin in _builtin_record_datatypes():
+        records[fold_identifier(builtin.name)] = builtin
+    return _ValidationContext(
+        records=records,
+        moduletypes={fold_identifier(moduletype.name): moduletype for moduletype in available_moduletypes},
+        type_graph=TypeGraph.from_datatypes(bp.datatype_defs, fallback=external_datatypes),
+        allow_unresolved_external_datatypes=allow_unresolved_external_datatypes,
+        sfc_names=sfc_names,
+    )
+
+
 def validate_basepicture(
     bp: BasePicture,
     *,
@@ -198,9 +221,8 @@ def validate_basepicture(
     it suppresses only the unknown-name findings, not typo suggestions or local
     rules.
 
-    The tables are built external-first, so a definition in this file wins over a
-    same-named definition from a dependency, and a builtin name is only a
-    fallback. Resolution order is therefore file, dependency, builtin.
+    Builtin records take precedence over file definitions, which take precedence
+    over same-named dependency definitions.
 
     Raises :class:`~sattline_parser.errors.SourceTooDeepError` when the node
     nesting is deeper than :data:`MAX_VALIDATED_DEPTH`. Parsed input never
@@ -209,16 +231,11 @@ def validate_basepicture(
     """
     _reject_over_deep_tree(bp)
     errors: list[Diagnostic] = []
-    available_datatypes = [*external_datatypes, *bp.datatype_defs]
-    available_moduletypes = [*external_moduletype_defs, *bp.moduletype_defs]
-    records = {fold_identifier(datatype.name): datatype for datatype in available_datatypes}
-    for builtin in _builtin_record_datatypes():
-        records.setdefault(fold_identifier(builtin.name), builtin)
-    context = _ValidationContext(
-        records=records,
-        moduletypes={fold_identifier(moduletype.name): moduletype for moduletype in available_moduletypes},
-        type_graph=TypeGraph.from_datatypes(bp.datatype_defs, fallback=external_datatypes),
-        allow_unresolved_external_datatypes=allow_unresolved_external_datatypes,
+    context = _validation_context(
+        bp,
+        external_datatypes,
+        external_moduletype_defs,
+        allow_unresolved_external_datatypes,
         sfc_names=collect_program_sfc_names(bp),
     )
 
@@ -253,6 +270,31 @@ def validate_basepicture(
     for moduletype in bp.moduletype_defs:
         _walk_moduletype_def(moduletype, context, errors)
 
+    return tuple(errors)
+
+
+def validate_moduletype_definitions(
+    bp: BasePicture,
+    selected: BasePicture,
+    *,
+    external_datatypes: Sequence[DataType] = (),
+    external_moduletype_defs: Sequence[ModuleTypeDef] = (),
+) -> tuple[Diagnostic, ...]:
+    """Validate selected module types using the containing picture's type shapes."""
+    _reject_over_deep_tree(bp)
+    context = _validation_context(
+        bp,
+        external_datatypes,
+        external_moduletype_defs,
+        False,
+        sfc_names=collect_program_sfc_names(selected),
+    )
+    errors: list[Diagnostic] = []
+    for moduletype in selected.moduletype_defs:
+        check_moduletype_identifiers(moduletype, errors)
+    _check_numeric_literal_ranges(selected.moduletype_defs, errors)
+    for moduletype in selected.moduletype_defs:
+        _walk_moduletype_def(moduletype, context, errors)
     return tuple(errors)
 
 
@@ -333,7 +375,9 @@ def _walk_moduletype_def(
 
 
 def _child_scope(child: SingleModule | FrameModule, parent: Scope) -> Scope:
-    return build_scope(parent, [*_module_parameters(child), *_local_variables(child)])
+    if isinstance(child, FrameModule):
+        return parent
+    return build_scope(None, [*_module_parameters(child), *_local_variables(child)])
 
 
 def _module_parameters(child: SingleModule | FrameModule) -> list[Variable]:

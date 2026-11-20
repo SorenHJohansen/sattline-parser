@@ -13,8 +13,9 @@ flowchart TB
     A --> V{"caller chooses"}
     V -->|parse only| N["no validation"]
     V -->|parse_and_validate| S["validate_basepicture(bp)"]
-    V -->|SattLineProject, validate != NONE| L["loader supplies external definitions"]
-    L --> S
+    V -->|SattLineProject| L["loader supplies external definitions"]
+    L --> B["check declaration type references<br/>in every loaded file"]
+    L -->|INVOKED or FULL| S
     S --> D["tuple[Diagnostic, ...]"]
 ```
 
@@ -24,9 +25,9 @@ chooses a validation scope: `INVOKED` (default), `FULL`, or `NONE`.
 
 | Scope | What is validated |
 | --- | --- |
-| `INVOKED` | Each target in full. A dependency file contributes only the module types the target invokes, transitively |
+| `INVOKED` | Declaration type-reference binding in every loaded file; each target in full; transitively invoked dependency module types |
 | `FULL` | Every loaded program |
-| `NONE` | Nothing; parse only |
+| `NONE` | Declaration type-reference binding in every loaded file; no executable-body validation |
 
 `INVOKED` exists because a library file usually defines far more than any one
 consumer uses. Blaming the consumer for an unused library module type is not a
@@ -47,10 +48,9 @@ validate_basepicture(
 The validator builds one `_ValidationContext`:
 
 - `records`: the external definitions, the file's `DATATYPE` definitions, and
-  the builtin record specs, keyed by `fold_identifier`. The tables are built
-  external-first so the file wins over a same-named dependency definition, and
-  a builtin name is only a fallback. Resolution order is file, dependency,
-  builtin;
+  the builtin record specs, keyed by `fold_identifier`. A builtin record wins
+  over a same-named file or dependency definition; a file definition wins over
+  a same-named dependency definition;
 - `moduletypes`: external module types, then the file's own;
 - `type_graph`: a case-insensitive `TypeGraph` over the same records;
 - `sfc_names`: every SFC step, transition, subsequence, and sequence name in
@@ -61,6 +61,9 @@ Each module-code block then builds a `code.ValidationContext` holding the
 current scope, the shared records and type graph, that block's SFC names, and
 the shared diagnostic list. The code walk passes this one object instead of
 five positional arguments.
+
+The builtin record catalogue represents the system records modelled here. The
+validator does not model a complete system module-type environment.
 
 The single-file caller may legitimately reference a datatype that lives in
 another file it has not loaded. `allow_unresolved_external_datatypes=True`
@@ -103,9 +106,11 @@ flowchart TB
     S3 --> S4["nested submodules"]
 ```
 
-Scopes nest: a module sees its own parameters and locals, then its enclosing
-module's, up to the `BasePicture` scope. Record field access resolves through
-the top-level `DATATYPE` definitions and the builtin record specifications.
+An ordinary module resolves variable roots in its own parameters and locals,
+not in enclosing ordinary modules. A frame is transparent to this lookup:
+resolution uses the first enclosing non-frame module's scope. Record field
+access resolves through the top-level `DATATYPE` definitions and the builtin
+record specifications.
 
 Annotation tails are checked in the scope that encloses their container: the
 base scope for the unit header and base `ModuleDef`, the parent scope for a
@@ -490,7 +495,8 @@ where the source is merely unproven.
 | --- | --- |
 | Is direct assignment forbidden for every string family, or only `String`? | `SL-V045` covers the plain `String` datatype. `IdentString`, `TagString`, `MaxString`, and `LineString` are grouped with it for compatibility, but nothing establishes that the language rejects a direct assignment to them, so they stay silent. |
 | Is an `AnyType` coordinate tail legal? | `SL-V032` exempts it, because `AnyType` proves nothing about the value. The tail is unproven rather than accepted. |
-| For an instance inside a file that declares a `PRIVATE_` module type, does the real tool bind the private type or a library-visible type of the same name? | The validator binds the file's own definition. `records` and `moduletypes` are built external-first and then updated from the file, so a file definition wins over a same-named dependency definition, and a builtin name is only a fallback. A private declaration therefore shadows the library type for datatype references, field resolution, and parameter mappings. The language's own precedence, if it has one, is not modelled. |
+| Can a dependency expose its `PRIVATE_` module types to another unit? | File-local definitions win over same-named dependency definitions regardless of `PRIVATE_`. Filtering private definitions when importing a dependency is not established. |
+| Which definition wins when multiple dependencies declare the same name? | The validator's dependency order is not established as the bound dependency-list order used by the language resolver. |
 | Can `SL-V048` distinguish a formal deleted from the resolved definition from a misspelled target? | No. The finding names both causes, because the mapping and the definition are separate files and the validator sees only the loaded closure. |
 
 ## Adding a rule

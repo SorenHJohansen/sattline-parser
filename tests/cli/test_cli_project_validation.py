@@ -43,13 +43,23 @@ def test_project_fail_on_none_does_not_hide_a_load_failure(tmp_path, capsys) -> 
     assert [row["rule"] for row in payload["findings"]] == ["PROJECT_LOAD_ERROR"]
 
 
-def test_project_validate_none_skips_validation(tmp_path, capsys) -> None:
+def test_project_validate_none_skips_body_validation(tmp_path, capsys) -> None:
     write_source(tmp_path, "Sample.s", CONSECUTIVE_STEPS_SOURCE)
 
     assert main(["project", str(tmp_path), "--json", "--validate", "none"]) == ExitCode.OK
 
     payload = json.loads(capsys.readouterr().out)
     assert payload["validation"] == []
+
+
+def test_project_validate_none_reports_type_bindings(tmp_path, capsys) -> None:
+    source = VALID_SOURCE.replace("Flag: boolean := False;", "Flag: MissingType;")
+    write_source(tmp_path, "Sample.s", source)
+
+    assert main(["project", str(tmp_path), "--json", "--validate", "none"]) == ExitCode.FINDINGS
+
+    payload = json.loads(capsys.readouterr().out)
+    assert [row["code"] for row in payload["validation"]] == ["SL-V020"]
 
 
 def test_project_text_output_lists_validation_findings(tmp_path, capsys) -> None:

@@ -18,7 +18,9 @@ from dataclasses import replace
 from sattline_parser.models.ast_model import BasePicture, DataType, ModuleTypeDef, SourceSpan
 from sattline_parser.names import fold_identifier
 from sattline_parser.validation import validate_basepicture
+from sattline_parser.validation.declarations import check_type_references
 from sattline_parser.validation.diagnostics import Diagnostic, DiagnosticCode
+from sattline_parser.validation.validator import validate_moduletype_definitions
 
 from ._cycles import first_cycle
 from .errors import ModuleTypeCycleError
@@ -27,6 +29,14 @@ from .plan import ResolvedArtifact
 from .reachability import invoked_moduletypes, iter_moduletype_refs
 
 __all__ = ["ProjectValidator"]
+
+_TYPE_REFERENCE_CODES = frozenset(
+    {
+        DiagnosticCode.BUILTIN_DATATYPE_TYPO,
+        DiagnosticCode.UNKNOWN_DATATYPE_NAME,
+        DiagnosticCode.UNKNOWN_MODULETYPE_NAME,
+    }
+)
 
 
 class ProjectValidator:
@@ -61,13 +71,25 @@ class ProjectValidator:
         key: str,
         artifact: ResolvedArtifact,
     ) -> tuple[Diagnostic, ...]:
+        dependencies = self._resolved_dependencies.get(key, ())
+        datatypes, moduletypes = self._visible_definitions(dependencies)
+        binding_diagnostics: list[Diagnostic] = []
+        check_type_references(
+            basepicture,
+            binding_diagnostics,
+            external_datatypes=datatypes,
+            external_moduletype_defs=moduletypes,
+        )
         if self._validate is not LoadValidation.INVOKED:
-            return self._program_diagnostics(
-                basepicture,
-                dependencies=self._resolved_dependencies.get(key, ()),
-                library=artifact.library,
-                file_name=artifact.code_path.name,
-                key=key,
+            return (
+                *binding_diagnostics,
+                *self._program_diagnostics(
+                    basepicture,
+                    dependencies=dependencies,
+                    library=artifact.library,
+                    file_name=artifact.code_path.name,
+                    key=key,
+                ),
             )
         # Module diagnostics need the whole graph. Datecode findings belong to
         # an explicitly selected unit; a library import is not the place to
@@ -75,14 +97,17 @@ class ProjectValidator:
         # from discovery order, so a target that was first reached as a
         # dependency still reports its own conflict whatever the target order.
         if key not in self._target_plan_keys:
-            return ()
-        return tuple(
-            self._datecode_conflicts(
-                basepicture,
-                library=artifact.library,
-                file_name=artifact.code_path.name,
-                visible=self.visible_plan_keys(key),
-            )
+            return tuple(binding_diagnostics)
+        return (
+            *binding_diagnostics,
+            *tuple(
+                self._datecode_conflicts(
+                    basepicture,
+                    library=artifact.library,
+                    file_name=artifact.code_path.name,
+                    visible=self.visible_plan_keys(key),
+                )
+            ),
         )
 
     def remember_definitions(
@@ -147,9 +172,16 @@ class ProjectValidator:
                 names = reachable.get(key)
                 if not names:
                     continue
-                module_diagnostics = self._validate_code(
-                    self._invoked_view(program.code, names),
-                    dependencies=dependencies,
+                visible_datatypes, visible_moduletypes = self._visible_definitions(dependencies)
+                module_diagnostics = tuple(
+                    diagnostic
+                    for diagnostic in validate_moduletype_definitions(
+                        program.code,
+                        self._invoked_view(program.code, names),
+                        external_datatypes=visible_datatypes,
+                        external_moduletype_defs=visible_moduletypes,
+                    )
+                    if diagnostic.code not in _TYPE_REFERENCE_CODES
                 )
             diagnostics = [*program.diagnostics, *module_diagnostics]
             self._registry[key] = replace(program, diagnostics=tuple(diagnostics))
@@ -191,21 +223,27 @@ class ProjectValidator:
 
     def _validate_code(self, code: BasePicture, *, dependencies: Sequence[str]) -> tuple[Diagnostic, ...]:
         visible_datatypes, visible_moduletypes = self._visible_definitions(dependencies)
-        return validate_basepicture(
-            code,
-            external_datatypes=visible_datatypes,
-            external_moduletype_defs=visible_moduletypes,
+        return tuple(
+            diagnostic
+            for diagnostic in validate_basepicture(
+                code,
+                external_datatypes=visible_datatypes,
+                external_moduletype_defs=visible_moduletypes,
+            )
+            if diagnostic.code not in _TYPE_REFERENCE_CODES
         )
 
     @staticmethod
     def _invoked_view(basepicture: BasePicture, names: set[str]) -> BasePicture:
-        """A copy that contains only the invoked module types from one file."""
+        """A view for selecting module types and collecting their SFC names."""
         selected = [
             moduletype for moduletype in basepicture.moduletype_defs if fold_identifier(moduletype.name) in names
         ]
         return replace(
             basepicture,
+            datatype_defs=[],
             moduletype_defs=selected,
+            moduleparameters=[],
             submodules=[],
             moduledef=None,
             modulecode=None,
@@ -223,14 +261,7 @@ class ProjectValidator:
     ) -> tuple[Diagnostic, ...]:
         if self._validate is LoadValidation.NONE:
             return ()
-        visible_datatypes, visible_moduletypes = self._visible_definitions(dependencies)
-        diagnostics = list(
-            validate_basepicture(
-                basepicture,
-                external_datatypes=visible_datatypes,
-                external_moduletype_defs=visible_moduletypes,
-            )
-        )
+        diagnostics = list(self._validate_code(basepicture, dependencies=dependencies))
         diagnostics.extend(
             self._datecode_conflicts(
                 basepicture,
