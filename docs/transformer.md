@@ -63,9 +63,10 @@ class SLTransformer(
 
 `_payloads.py` holds the interim payloads a rule builds and a later rule folds
 into an owner: `CommonProperties`, `ModuleOptions`, `TwoLayers`, `Grid`,
-`SeqLayers`, `Zoomable`, `ClipValue`, and `CoordinateClipping`. They are not AST
-nodes and are not part of `sattline_parser.ast`; a parsed tree never contains
-one.
+`Zoomable`, `ClipValue`, and `CoordinateClipping`. They are not AST nodes and
+are not part of `sattline_parser.ast`; a parsed tree never contains one.
+`CoordinateClipping` becomes a `NestedClipping` on the coordinate it follows,
+so its values reach the tree even though the interim payload does not.
 
 `_module_shared.py` holds helpers and types shared by several mixins:
 `flatten_items`, `meta_span`, `tree_children`, `InterimCoords`,
@@ -233,7 +234,11 @@ or transition. A `Layer_ = <int>` after the `OBJSIZE` pair is stored on
 - `invoke_coord_tails` for the tails attached to the five invocation
   coordinates only, plus `coordinate_tails` with the same tails grouped by
   coordinate. Argument tails stay on their clause under `arguments`;
-- description comments.
+- description comments in source order. The grammar has one position before
+  `Invocation` and one after it, so `description_comments` holds at most two
+  entries and their order is that of the two positions;
+- `arguments` span, which is `None` when the argument list is empty because an
+  empty match reports no position.
 
 The singular header names (`layer_info`, `enable`, `enable_tail`,
 `module_in_view`, `zoom_limits`, `zoomable`, `invocation_arguments`) are
@@ -251,27 +256,53 @@ assembles the AST:
   `RECORD` keyword token;
 - gives every variable in a group its own copy of a mutable init payload;
 - builds `ModuleTypeDef` for `TYPEDEFINITIONS ... MODULEDEFINITION` blocks;
-- builds `BasePicture` for the root;
+- builds `BasePicture` for the root, including the root `(Frame_Module)` marker;
+- builds `FrameModule` with the parameter mappings written after its `ENDDEF`;
 - rejects a second `moduledef` or `modulecode` in one body instead of silently
   overwriting the first;
 - attaches trailing and description comments to the right field;
-- collects parameter mappings for module-type instances.
+- collects parameter mappings for module-type instances;
+- keeps the `Duration_Value` keyword as an identity sentinel, so a quoted
+  `"Duration_Value"` literal is never read as the keyword;
+- keeps a bare `:= Duration_Value` marker (`init_is_duration` stays `True` while
+  `init_value` is `None`) and skips the `Time_Value` keyword token, so the
+  keyword never becomes the payload text.
 
 The assembly mixin deliberately preserves absence: an optional block that the
 source omitted is `None` or an empty list, never a synthesized default object.
+
+### Repeated singular clauses
+
+The grammar repeats several rules whose properties are singular: the invocation
+`arguments`, a graph object's `common_properties`, a colour block, and a text
+object's clause run. A second `Layer_`, `Enable_`, `Module_In_View`,
+`ZoomLimits`, `Width_`, `ColourStyle`, `ValueFraction`, `Format_String_`,
+`ConnectionNode`, or bare `ConnectionNode` marker in one of those positions is
+ambiguous, so the transformer raises `ValueError` naming the clause instead of
+keeping the last one. That matches `_only_one_block` for a second `ModuleDef`.
+Clause keys are compared through `fold_identifier`, so `Width_` and `WIDTH_` are
+one clause. Only the interactor body keeps repeats, because its entries are an
+ordered list. A consumer sees the failure as Lark's `VisitError` around the
+transformer error.
+
+A text object can write `ConnectionNode` twice in two roles: as a positioned
+`ConnectionNode (x, y)` clause of its own run, and as the bare marker the shared
+`common_properties` run allows. Both reach one property key, so the pair is
+rejected instead of one being dropped.
 
 ## Layout and graphics
 
 `ModuleLayoutMixin` handles:
 
-- `ClippingBounds` coordinates, including tail expressions;
+- `ClippingBounds` coordinates, including tail expressions and nested
+  `ClippingBounds` annotations;
 - `ZoomLimits`, `Two_Layers_`, `LayerLimit_`, `Grid`, `Zoomable`;
-- `SeqLayers`;
 - `ModuleDef` assembly.
 
 `ClippingBounds` becomes one `ClippingClause` on `ModuleDef.clipping`, keeping
-the resolved corners and the corner tails together. Validation type-checks the
-tails through that clause.
+the resolved corners and the corner tails together. A nested
+`ClippingBounds = <values>` on one corner is kept as a `NestedClipping` under
+`corner_clippings`. Validation type-checks the tails through that clause.
 
 `GraphicsInteractMixin` handles:
 
@@ -283,12 +314,38 @@ tails through that clause.
   fractions, alignment, pick buttons, scale selectors;
 - `InVar_` / `OutVar_` tails.
 
+Colour clause keys and a text object's `Width_`, `ValueFraction`, and
+`Format_String_` keys are compared through `fold_identifier`, so `Width_` and
+`WIDTH_` are the same clause and the written spelling is kept on the clause. A
+second one of those clauses, or a second `ConnectionNode`, is rejected rather
+than overwriting the earlier payload and its tail.
+
+`InteractObject.type` is the interactor keyword as written, for the procedure
+interactor too: `ComButProc_` and `ProcedureInteract` no longer collapse into one
+spelling. `InteractObject.kind` is the folded spelling for case-insensitive
+comparison.
+
+A text object's `VarName` marker binds the `text_content` written immediately
+before it, including an empty one. A marker with no text before it is kept as an
+empty label, so the grammar-legal shape neither raises nor borrows an earlier
+caption.
+
+`graph_objects` takes no section-level layer: the grammar has no such
+production, and each object's `Layer_` comes from its own `common_properties`.
+
 A graph object keeps the enable tail in `properties["enable_tail"]` as well as
 the resolved boolean in `properties["enable"]`. Interact objects keep their
 `EnableClause` payloads in `enables` or `body`. The flat
 `properties["tails"]` list is a derived view over the same tail objects; the
 walker emits a clause-owned tail through its clause and only the remaining
 coordinate tails from the flat list.
+
+A bare `ConnectionNode` written in `common_properties` is kept as a `GraphObject`
+with an empty property map under `properties["connection_node"]`, the same key a
+text object's positioned `ConnectionNode (x, y)` clause uses. The marker is
+therefore modelled rather than dropped, its presence is visible to the walker and
+the serializer, and the formatter writes it back in the common-properties
+position.
 
 A polygon keeps every coordinate pair in `properties["points"]` as a
 `PolygonPoint`, with `x_tails` and `y_tails` holding the tails written after
@@ -298,6 +355,15 @@ object keeps `Width_`, `ValueFraction`, and `Format_String_` as `TailedClause`
 payloads, the alignments as `Alignment` values, and its `ConnectionNode` anchor
 as a `GraphObject`. Each clause is one payload: the value and its binding tail
 are read together, and the tail is the same object the flat list holds.
+
+A nested `ClippingBounds = <values>` annotation is a `CoordinateClipping` while
+the rule runs and becomes a `NestedClipping` on the coordinate it follows, so
+every number and every value tail reach the tree. The per-value split is the
+same one `coord_tails` records, exposed as `coord_clippings` on a graph or
+interact object, `x_clippings`/`y_clippings` on a polygon point,
+`coordinate_clippings` on a module header, and `corner_clippings` on a clipping
+clause. The annotation's tails stay in the flat tail view, so a consumer that
+counts references sees each one once.
 
 Free-form interactor names are accepted on purpose. The transformer preserves
 them as `InteractObject.type` strings; the package does not decide which
@@ -329,3 +395,4 @@ semantically wrong, the finding belongs in `validation/`, not here.
 | `tests/parser/test_parser_core_comments.py` | Comment roles |
 | `tests/parser/test_parser_core_sfc.py` | SFC building |
 | `tests/parser/test_parser_core_module_definitions.py` | Layout and graphics |
+| `tests/parser/test_format_nested_clipping.py` | Nested `ClippingBounds` values on every coordinate position |

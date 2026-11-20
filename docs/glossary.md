@@ -83,9 +83,9 @@
 | Type graph | A case-insensitive map from record datatype to its fields. |
 | Builtin record | A record datatype whose fields come from `builtins/records.py`. |
 | Retired code | A diagnostic id no longer emitted because the rule was disproved. The id stays reserved so it cannot be reused. |
-| `INVOKED` | Validation scope: targets in full, dependencies only for the module types a target invokes. |
-| `FULL` | Validation scope: every loaded program. |
-| `NONE` | Validation scope: parse only. |
+| `INVOKED` | Type bindings in every loaded file, plus full checks for targets and transitively invoked dependency module types. |
+| `FULL` | Type bindings and full checks in every loaded file. |
+| `NONE` | Type bindings in every loaded file; no additional validation. |
 
 ## Project layer
 

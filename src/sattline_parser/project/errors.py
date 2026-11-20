@@ -8,21 +8,38 @@ per-target reports.
 from __future__ import annotations
 
 from collections.abc import Sequence
+from pathlib import Path
 
 
 class ProjectLoadError(Exception):
     """Base error for project loading failures.
 
     ``program`` is the affected program name; ``dependency`` is the dependency
-    involved when the failure was observed through an edge of the graph.
+    involved when the failure was observed through an edge of the graph. ``path``
+    is the artifact the failure is about, and ``source_line`` is its source text
+    at the failing line when the raise site could produce one cheaply. The CLI
+    renders the path and the excerpt from these fields instead of re-reading the
+    tree, so a finding names the file a load stopped on.
     """
 
     program: str
     dependency: str | None
+    path: Path | None
+    source_line: str | None
 
-    def __init__(self, program: str, message: str, *, dependency: str | None = None) -> None:
+    def __init__(
+        self,
+        program: str,
+        message: str,
+        *,
+        dependency: str | None = None,
+        path: Path | None = None,
+        source_line: str | None = None,
+    ) -> None:
         self.program = program
         self.dependency = dependency
+        self.path = path
+        self.source_line = source_line
         prefix = f"{program}: {message}"
         super().__init__(prefix if dependency is None else f"{prefix} (dependency {dependency!r})")
 

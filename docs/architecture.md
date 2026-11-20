@@ -50,6 +50,8 @@ flowchart TB
     API --> SOURCE_IO
     API --> PREPROCESS
     API --> VALIDATION
+    API --> MODELS
+    API --> TRANSFORMER
     INIT --> API
     INIT --> ASTSURF
     INIT --> TRANSFORMER
@@ -97,9 +99,12 @@ The important import-direction rules:
   over those four, and `identity.py` names the comparison rules they share.
   The package imports `source_io.parse_source_bytes` and
   `validation.validate_basepicture`. It never imports `api`.
-- `api.py` re-exports `source_io`, `errors`, `preprocessing`, and `validation`.
-  It is a façade, not an implementation. The top-level package re-exports the graphics entry
-  points from the project layer.
+- `api.py` re-exports `source_io`, `errors`, `preprocessing`, and `validation`,
+  and owns `parse_and_validate`, the one entry point that composes parsing with
+  the validator. `source_io` therefore stays parse-only and never imports the
+  validation layer. The top-level package resolves the graphics entry points
+  from the project layer lazily, so importing `sattline_parser.api` does not
+  load `project/`.
 - `ast.py` is a façade over `models/`: every node, clause, tail, and walker
   name crosses one import door, and it depends on nothing above `models/`.
 - `types.py` is a façade over the pure type facts in `validation/typing.py`.
@@ -121,7 +126,7 @@ The important import-direction rules:
 | Path | Responsibility | Read when |
 | --- | --- | --- |
 | `src/sattline_parser/__init__.py` | Public names and version | You need the stable import surface |
-| `src/sattline_parser/api.py` | Public façade over `source_io`, `errors`, and `validation` | You add a public parse or validation entry point |
+| `src/sattline_parser/api.py` | Public façade over `source_io`, `errors`, `models`, `transformer`, and `validation`; owns `parse_and_validate` | You add a public parse or validation entry point |
 | `src/sattline_parser/ast.py` | Supported AST surface: every node, clause, tail, and the walker | You import or document the model |
 | `src/sattline_parser/types.py` | Public scalar type facts and literal inference | You import a type fact in a consumer |
 | `src/sattline_parser/serialization.py` | JSON-friendly data for the model | You export AST data |

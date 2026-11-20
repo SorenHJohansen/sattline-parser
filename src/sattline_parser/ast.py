@@ -21,6 +21,11 @@ them. ``iter_literal_leaves`` reads the literal values a node holds, and
 ``WalkEvent`` carries the relation and ancestry of each visited node.
 ``tail_list`` is the default factory for tail-bearing fields, and
 ``is_expression_tail`` is the shared predicate for a computed ``Tail``.
+
+``FrozenMapping`` is the read-only mapping a frozen project tree carries. It is
+a ``collections.abc.Mapping`` that also pickles and deep-copies, so a consumer
+can type a mapping-valued field as ``Mapping`` and still rely on the concrete
+class for a round trip.
 """
 
 from __future__ import annotations
@@ -70,6 +75,8 @@ from .models.clauses import (
     ModuleArguments,
     ModuleInViewClause,
     ModuleMarker,
+    NestedClipping,
+    NestedClippingValue,
     PickButton,
     PolygonPoint,
     ProcedureCall,
@@ -93,6 +100,7 @@ from .models.expressions import (
     UnaryOp,
     VarRef,
 )
+from .models.freeze import FrozenMapping
 from .models.header import HeaderInfo
 from .models.interactor_properties import (
     InteractorPropertyKind,
@@ -139,6 +147,7 @@ __all__ = [
     "FlagClause",
     "FloatLiteral",
     "FrameModule",
+    "FrozenMapping",
     "FuncCall",
     "FuncCallStmt",
     "GraphObject",
@@ -163,6 +172,8 @@ __all__ = [
     "ModuleMarker",
     "ModuleTypeDef",
     "ModuleTypeInstance",
+    "NestedClipping",
+    "NestedClippingValue",
     "NodeVisitor",
     "NotOp",
     "ParameterMapping",

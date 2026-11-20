@@ -50,7 +50,7 @@ from sattline_parser.models.expressions import (
     VarRef,
 )
 from sattline_parser.names import fold_identifier
-from sattline_parser.validation.builtins import builtin_function_signature
+from sattline_parser.validation.builtins import BuiltinFunction, builtin_function_signature
 from sattline_parser.validation.diagnostics import Diagnostic, DiagnosticCode
 from sattline_parser.validation.sequences import check_sequence_positions
 from sattline_parser.validation.symbols import (
@@ -69,6 +69,7 @@ from sattline_parser.validation.typing import (
     is_anytype_datatype,
     is_boolean,
     is_numeric,
+    is_string_simple_type,
     merge_compatible_types,
     unresolved_reference_is_a_defect,
 )
@@ -309,7 +310,7 @@ def walk_code_item(item: object, context: ValidationContext) -> None:
 def walk_expression(expr: SLExpression, context: ValidationContext) -> None:
     if isinstance(expr, VarRef):
         resolved = resolve_var(expr, context.scope, context.records)
-        _check_old_new(expr, resolved, context.errors)
+        check_old_new(expr, None if resolved is None else bool(resolved.state), context.errors)
         if (
             resolved is None
             and unresolved_reference_is_a_defect(expr, context.scope, context.type_graph)
@@ -337,6 +338,7 @@ def walk_expression(expr: SLExpression, context: ValidationContext) -> None:
         _check_unary_operand(expr, context)
         walk_expression(expr.operand, context)
     elif isinstance(expr, FuncCall):
+        _check_procedure_value_position(expr, context)
         _check_call(expr, context)
         for arg in expr.args:
             walk_expression(arg, context)
@@ -588,9 +590,14 @@ def _check_assignment(assignment: Assignment, context: ValidationContext) -> Non
                 span=assignment.span,
             )
         )
-    _check_old_new(assignment.target, resolved, context.errors)
+    check_old_new(assignment.target, bool(resolved.state), context.errors)
     _check_old_write_target(assignment.target, resolved, context.errors)
     if resolved.datatype == ScalarDatatype.STRING:
+        # Scope: plain ``String`` only. The other string families
+        # (``IdentString``, ``TagString``, ``MaxString``, ``LineString``) are
+        # grouped with it for compatibility, but nothing establishes that the
+        # language forbids assigning to them directly, so they stay silent.
+        # See docs/validation.md, "Open questions".
         context.errors.append(
             Diagnostic(
                 code=DiagnosticCode.STRING_ASSIGNMENT_NOT_ALLOWED,
@@ -633,10 +640,16 @@ def _check_old_write_target(ref: VarRef, resolved: Variable | None, errors: list
     )
 
 
-def _check_old_new(ref: VarRef, resolved: Variable | None, errors: list[Diagnostic]) -> None:
+def check_old_new(ref: VarRef, is_state: bool | None, errors: list[Diagnostic]) -> None:
+    """``:Old``/``:New`` require a resolved State declaration.
+
+    ``is_state`` is ``None`` when the reference does not resolve, in which case
+    the reference is unproven and another rule owns the problem. A resolved
+    non-State declaration is the finding.
+    """
     if ref.state not in ("old", "new"):
         return
-    if resolved is None or resolved.state:
+    if is_state is None or is_state:
         return
     is_field = "." in ref.name
     code = DiagnosticCode.OLD_NEW_ON_NON_STATE_FIELD if is_field else DiagnosticCode.OLD_NEW_ON_NON_STATE_VARIABLE
@@ -650,9 +663,35 @@ def _check_old_new(ref: VarRef, resolved: Variable | None, errors: list[Diagnost
     )
 
 
+def _check_procedure_value_position(call: FuncCall, context: ValidationContext) -> None:
+    """A known procedure returns no value, so a value position is rejected.
+
+    The catalogue records a call's ``kind`` separately from its return type, and
+    a procedure carries no return type. ``infer_expression_datatype`` treats that
+    ``None`` as unproven, which is right for an unknown callee but wrong for a
+    known procedure: the callee cannot supply a value in an assignment source, a
+    condition, an operand, a ternary branch, or a call argument. Only a resolved
+    procedure is reported; an unknown callee stays silent.
+    """
+    signature = builtin_function_signature(call.name)
+    if signature is None or signature.kind != "procedure":
+        return
+    context.errors.append(
+        Diagnostic(
+            code=DiagnosticCode.PROCEDURE_IN_VALUE_POSITION,
+            message=(
+                f"Built-in {signature.name} is a procedure and returns no value; "
+                "its call cannot be used where a value is required"
+            ),
+            span=call.span,
+        )
+    )
+
+
 def _check_call(call: FuncCall, context: ValidationContext) -> None:
-    for arg in call.args:
-        if isinstance(arg, str):
+    signature = builtin_function_signature(call.name)
+    for position, arg in enumerate(call.args, start=1):
+        if isinstance(arg, str) and not _accepts_string_literal(signature, position):
             context.errors.append(
                 Diagnostic(
                     code=DiagnosticCode.STRING_LITERAL_CALL_ARGUMENT,
@@ -660,7 +699,6 @@ def _check_call(call: FuncCall, context: ValidationContext) -> None:
                     span=call.span,
                 )
             )
-    signature = builtin_function_signature(call.name)
     if signature is None:
         return
     if (
@@ -688,9 +726,11 @@ def _check_call(call: FuncCall, context: ValidationContext) -> None:
         is_write = parameter.direction in {"out", "inout"}
         # A string-cursor parameter (`accepts_const_string`) names a string
         # buffer rather than a data destination, so a Const string is accepted
-        # there. The exemption covers the Const-write finding only: the argument
-        # is still checked for being a reference and for its datatype.
-        const_exempt = parameter.accepts_const_string
+        # there. The same reasoning exempts a builtin parameter that names the
+        # object member the call writes (see `_OBJECT_WRITE_PARAMETERS`). Both
+        # exemptions cover the Const-write finding only: the argument is still
+        # checked for being a reference and for its datatype.
+        const_exempt = parameter.accepts_const_string or _is_object_write_parameter(signature.name, parameter.name)
         if isinstance(arg, VarRef):
             if is_write:
                 resolved = resolve_var(arg, context.scope, context.records)
@@ -748,6 +788,41 @@ def _check_call(call: FuncCall, context: ValidationContext) -> None:
                     span=call.span,
                 )
             )
+
+
+#: Builtin parameters that write a value into an object the call addresses,
+#: rather than assigning a caller variable. The argument is the value written
+#: into the object, so a Const reference there is not a caller write and
+#: `SL-V007` does not apply. `setioattribute`'s `Variable` parameter (position
+#: 6, catalogue type `AnyType`) is the only established case: the call targets an
+#: I/O object by module, node, board, and channel, and writes the supplied value
+#: into that object. The exemption is per builtin and per parameter name, not a
+#: blanket `inout` exemption, so every other output argument keeps the rule.
+_OBJECT_WRITE_PARAMETERS: dict[str, frozenset[str]] = {
+    fold_identifier("setioattribute"): frozenset({fold_identifier("Variable")}),
+}
+
+
+def _is_object_write_parameter(builtin_name: str, parameter_name: str) -> bool:
+    """Whether this builtin parameter names an object member written by the call."""
+    parameters = _OBJECT_WRITE_PARAMETERS.get(fold_identifier(builtin_name))
+    return parameters is not None and fold_identifier(parameter_name) in parameters
+
+
+def _accepts_string_literal(signature: BuiltinFunction | None, position: int) -> bool:
+    """Whether the resolved signature documents a value position for a string literal.
+
+    A literal is a value, so it is accepted only where the documented parameter
+    is an ``in`` parameter of a string datatype: ``LoggedIn`` declares its
+    user-name parameter that way, so ``LoggedIn("operator")`` passes. A written
+    position (``in var``, ``out``, ``inout``) names a buffer that the call fills
+    or advances, so a literal there is still rejected, and an unknown callee
+    proves nothing, so its literal stays rejected too.
+    """
+    if signature is None or position > len(signature.parameters):
+        return False
+    parameter = signature.parameters[position - 1]
+    return parameter.direction == "in" and is_string_simple_type(parameter.datatype)
 
 
 def _is_sfc_runtime_accessor(ref: VarRef, sfc_names: set[str], sfc_accessors: dict[str, frozenset[str]]) -> bool:

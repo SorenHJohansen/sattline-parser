@@ -32,14 +32,24 @@ from sattline_parser.models.expressions import Assignment, VarRef
 from ._parser_core_test_support import _module_header
 
 
+def test_a_clamped_literal_keeps_the_written_text_and_pickles_it() -> None:
+    span = SourceSpan(start=2, end=13, line=1, column=3)
+    written = IntLiteral(2147483647, span, True, "2147483648")
+
+    assert written.__reduce__() == (IntLiteral, (2147483647, span, True, "2147483648"))
+    assert written.written == "2147483648"
+    assert written.clamped is True
+    assert int(written) == 2147483647
+
+
 def test_ast_model_helpers_cover_reduce_usage_and_string_formats(monkeypatch: pytest.MonkeyPatch):
     span = SourceSpan(start=2, end=3, line=1, column=3)
     int_lit = IntLiteral(7, span)
     float_lit = FloatLiteral(2.5, span)
 
     assert span.__reduce__() == (SourceSpan, (2, 3, 1, 3))
-    assert int_lit.__reduce__() == (IntLiteral, (7, span))
-    assert float_lit.__reduce__() == (FloatLiteral, (2.5, span))
+    assert int_lit.__reduce__() == (IntLiteral, (7, span, False, None))
+    assert float_lit.__reduce__() == (FloatLiteral, (2.5, span, False, None))
     assert ScalarDatatype.from_any(ScalarDatatype.BOOLEAN) is ScalarDatatype.BOOLEAN
     assert Variable(name="Flag", datatype="BOOLEAN").datatype_text == "boolean"
     assert Variable(name="RecordValue", datatype="CustomRecord").datatype_text == "CustomRecord"

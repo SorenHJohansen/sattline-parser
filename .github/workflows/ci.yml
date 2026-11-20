@@ -275,5 +275,7 @@ jobs:
 
       # Full suite on Windows: encodings, paths, and packaging are platform
       # sensitive, so the entire suite (including fuzz-worker subprocesses) runs.
+      # Elevated Windows tokens may default new objects to Administrators as
+      # owner. Use the current user as owner without weakening the cache policy.
       - name: Run full pytest suite
-        run: uv run python -m pytest
+        run: uv run python scripts/windows_pytest.py

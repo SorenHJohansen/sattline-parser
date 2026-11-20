@@ -7,13 +7,18 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from sattline_parser.api import decode_source_bytes
-from sattline_parser.preprocessing import PreprocessError, is_coded
+from sattline_parser.preprocessing import PreprocessError, is_coded, is_compressed
 
 from ._errors import CliError
 
-__all__ = ["Source", "display_path", "read_source", "read_source_path"]
+__all__ = ["Source", "display_path", "encoding_name", "read_source", "read_source_path"]
 
 _STDIN = "-"
+
+#: The UTF-8 byte-order mark. ``decode_source_bytes`` removes it before it
+#: classifies the stream, so the CLI classifies the same slice: a marked coded
+#: file is still ``coded`` even though its first bytes are the mark.
+_UTF8_BOM = b"\xef\xbb\xbf"
 
 
 @dataclass(frozen=True, slots=True)
@@ -26,6 +31,17 @@ class Source:
     coded: bool
     #: Length of the input as stored: bytes on disk, characters on stdin.
     original_length: int
+
+
+def encoding_name(text: str, *, coded: bool) -> str:
+    """The on-disk flavor of one source: ``coded``, ``compressed``, or ``plain``.
+
+    A byte-coded stream stays ``coded`` even when the text it decodes to is
+    still marker-compressed, because the on-disk format is what a caller reads.
+    """
+    if coded:
+        return "coded"
+    return "compressed" if is_compressed(text) else "plain"
 
 
 def read_source(target: str, *, name: str | None) -> Source:
@@ -55,12 +71,16 @@ def read_source_path(path: Path) -> Source:
 
 def _source(raw: bytes, name: str) -> Source:
     try:
-        text = decode_source_bytes(raw)
+        # The CLI reports a decode failure as its own sentence, so the library
+        # must not log the same failure (and its traceback) a second time.
+        text = decode_source_bytes(raw, log_failures=False)
     except UnicodeDecodeError as exc:
         raise CliError(f"{name}: not valid Windows-1252 (byte {exc.start}: {exc.reason})") from exc
     except PreprocessError as exc:
         raise CliError(f"{name}: cannot decode: {exc}") from exc
-    return Source(name=name, text=text, coded=is_coded(raw), original_length=len(raw))
+    # A leading mark is not part of the stream the decoder classifies.
+    coded = is_coded(raw.removeprefix(_UTF8_BOM))
+    return Source(name=name, text=text, coded=coded, original_length=len(raw))
 
 
 def display_path(name: str, *, absolute: bool) -> str:

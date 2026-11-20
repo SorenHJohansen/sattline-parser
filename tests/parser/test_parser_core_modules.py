@@ -41,6 +41,7 @@ from sattline_parser.transformer._module_shared import (
     meta_span,
 )
 from sattline_parser.transformer._payloads import ClipValue, CoordinateClipping, Zoomable
+from sattline_parser.transformer._tokens_mixin import DURATION_VALUE_SENTINEL
 from sattline_parser.transformer.sl_transformer import _is_tree
 
 from ._parser_core_test_support import _module_header, _ModulesHarness
@@ -157,6 +158,7 @@ def test_modules_mixin_coordinate_helpers_preserve_pairs_tails_and_clipping_tree
         coords=(1.0, 2.0),
         tails=[VarTail("in", "PanelResize")],
         coord_tails=((), (VarTail("in", "PanelResize"),)),
+        coord_clippings=((), ()),
     )
     assert pair == InterimCoords(
         coords=((1.0, 2.0), (3.0, 4.0)),
@@ -166,6 +168,7 @@ def test_modules_mixin_coordinate_helpers_preserve_pairs_tails_and_clipping_tree
         coords=(1.0, 2.0, 3.0, 4.0, 5.0),
         tails=[VarTail("in", "PanelResize")],
         coord_tails=((), (), (), (), (VarTail("in", "PanelResize"),)),
+        coord_clippings=((), (), (), (), ()),
     )
     assert mixin.origo_size_pair([InterimCoords(coords=(1.0, 2.0)), InterimCoords(coords=(3.0, 4.0))]) == (
         InterimCoords(coords=((1.0, 2.0), (3.0, 4.0)), tails=None)
@@ -301,7 +304,7 @@ def test_modules_mixin_variable_group_and_mapping_helpers_preserve_modifiers_and
         [
             parsed_name,
             GLOBAL_KEYWORD,
-            parser_const.GRAMMAR_VALUE_DURATION_VALUE,
+            DURATION_VALUE_SENTINEL,
             VarRef("SourceVar"),
         ],
     )
@@ -377,3 +380,14 @@ ENDDEF (*BasePicture*);
     assert isinstance(instance, ModuleTypeInstance)
     assert [mapping.source_literal for mapping in instance.parametermappings] == [False, True, 0, ""]
     assert not any(mapping.is_source_global for mapping in instance.parametermappings)
+
+
+def test_base_picture_module_keeps_the_root_frame_marker():
+    mixin = _ModulesHarness()
+
+    framed = mixin.base_picture_module([_module_header("Base"), True, 7, ModuleDef()])
+    plain = mixin.base_picture_module([_module_header("Base"), 7, ModuleDef()])
+
+    assert framed.is_frame_module is True
+    assert framed.datecode == 7
+    assert plain.is_frame_module is False

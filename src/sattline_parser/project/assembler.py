@@ -25,17 +25,34 @@ from .distribution import (
 )
 from .errors import ArtifactLoadError, DependencyParseError, ProjectLoadError
 from .executor import ParseOutcome, rebuild_parse_failure
-from .formats import body_mode
+from .formats import (
+    ALL_DISTRIBUTION_EXTENSIONS,
+    ALL_GRAPHICS_EXTENSIONS,
+    CompanionIndex,
+    body_mode,
+    companion_extensions_for_code,
+    distribution_extensions_for_code,
+)
 from .graphics_parsing import (
     GraphicsParseError,
     parse_graphics_file,
     resolve_graphics_companion_path,
 )
-from .models import DistributionData, GraphicsModel, LoadMode, ProgramFormat, SattLineProgram
+from .models import (
+    DistributionData,
+    GraphicsModel,
+    LoadDiagnosticKind,
+    LoadMode,
+    ProgramFormat,
+    SattLineProgram,
+)
 from .plan import Plan, dependency_of, program_of
 from .scope import ProjectValidator
 
 __all__ = ["ProjectAssembler"]
+
+#: A callback the assembler uses to report a non-fatal load condition.
+Diagnose = Callable[[LoadDiagnosticKind, str, str, Path | None], None]
 
 
 class ProjectAssembler:
@@ -48,12 +65,16 @@ class ProjectAssembler:
         registry: dict[str, SattLineProgram],
         validator: ProjectValidator,
         debug: Callable[[str], None] | None,
+        companions: CompanionIndex,
+        diagnose: Diagnose,
         companion_loader: CompanionLoader | None = None,
     ) -> None:
         self._mode = mode
         self._registry = registry
         self._validator = validator
         self._debug = debug
+        self._companions = companions
+        self._diagnose = diagnose
         self._companion_loader = companion_loader or self._load_companion
 
     def _dbg(self, message: str) -> None:
@@ -74,7 +95,13 @@ class ProjectAssembler:
         artifact = plan.artifact
         basepicture = outcome.ast
         if basepicture is None:
-            error = _parse_failure(program_of(plan), artifact.code_path.name, dependency_of(plan))
+            error = _parse_failure(
+                program_of(plan),
+                artifact.code_path.name,
+                dependency_of(plan),
+                path=artifact.code_path,
+                source_line=outcome.source_line,
+            )
             cause = outcome.error
             if cause is None and outcome.failure_record is not None:
                 cause = rebuild_parse_failure(outcome.failure_record)
@@ -142,8 +169,14 @@ class ProjectAssembler:
         program_name: str,
         dependency: str | None,
     ) -> tuple[Path | None, GraphicsModel | None]:
-        graphics_path = resolve_graphics_companion_path(code_path, mode=self._mode)
+        graphics_path = resolve_graphics_companion_path(code_path, mode=self._mode, index=self._companions)
         if graphics_path is None:
+            self._report_family_mismatch(
+                code_path,
+                name=name,
+                wanted=companion_extensions_for_code(code_path.suffix, self._mode),
+                family=ALL_GRAPHICS_EXTENSIONS,
+            )
             return None, None
         graphics = _load_graphics(
             self._dbg,
@@ -153,6 +186,32 @@ class ProjectAssembler:
             name=name,
         )
         return graphics_path, graphics
+
+    def _report_family_mismatch(
+        self,
+        code_path: Path,
+        *,
+        name: str,
+        wanted: Sequence[str],
+        family: frozenset[str],
+    ) -> None:
+        """Report a companion that sits at the body prefix in the other family.
+
+        The body's suffix decides the artifact family for the whole unit, so the
+        companion is not paired. Saying so keeps the missing answer visible: a
+        silent ignore would leave ``has_executing_system`` unknown with no
+        explanation when a ``.q`` beside a ``.s`` body states the answer.
+        """
+        other = tuple(sorted(family - set(wanted)))
+        stray = self._companions.find(code_path, other)
+        if stray is None:
+            return
+        self._diagnose(
+            LoadDiagnosticKind.COMPANION_FAMILY_MISMATCH,
+            name,
+            f"companion {stray.name!r} does not match the artifact family of body {code_path.name!r}; not paired",
+            stray,
+        )
 
     def _load_distribution(
         self,
@@ -167,10 +226,18 @@ class ProjectAssembler:
         A missing companion answers "unknown" and stays silent: distribution data
         is optional. A companion that exists but does not parse is an artifact
         failure, because an unreadable file must never be reported as "no
-        executing system".
+        executing system". A companion in the other artifact family is not
+        paired and is reported, so the operator can see why the answer is
+        unknown.
         """
-        distribution_path = resolve_distribution_companion_path(code_path, mode=self._mode)
+        distribution_path = resolve_distribution_companion_path(code_path, mode=self._mode, index=self._companions)
         if distribution_path is None:
+            self._report_family_mismatch(
+                code_path,
+                name=name,
+                wanted=distribution_extensions_for_code(code_path.suffix, self._mode),
+                family=ALL_DISTRIBUTION_EXTENSIONS,
+            )
             return None, None
         self._dbg(f"Parsing distribution: {distribution_path}")
         try:
@@ -180,11 +247,13 @@ class ProjectAssembler:
                 raise ArtifactLoadError(
                     program_name,
                     f"failed to parse distribution companion {distribution_path.name} for {name!r}: {exc}",
+                    path=distribution_path,
                 ) from exc
             raise DependencyParseError(
                 program_name,
                 f"failed to parse distribution companion for dependency {dependency!r}: {exc}",
                 dependency=dependency,
+                path=distribution_path,
             ) from exc
         return distribution_path, distribution
 
@@ -193,14 +262,23 @@ class ProjectAssembler:
 CompanionLoader = Callable[..., tuple[Path | None, "GraphicsModel | None"]]
 
 
-def _parse_failure(program_name: str, code_name: str, dependency: str | None) -> ProjectLoadError:
+def _parse_failure(
+    program_name: str,
+    code_name: str,
+    dependency: str | None,
+    *,
+    path: Path,
+    source_line: str | None,
+) -> ProjectLoadError:
     """The load error for a body that did not parse."""
     if dependency is None:
-        return ArtifactLoadError(program_name, f"failed to parse {code_name}")
+        return ArtifactLoadError(program_name, f"failed to parse {code_name}", path=path, source_line=source_line)
     return DependencyParseError(
         program_name,
         f"failed to parse dependency {dependency!r}",
         dependency=dependency,
+        path=path,
+        source_line=source_line,
     )
 
 
@@ -231,9 +309,11 @@ def _load_graphics(
             raise ArtifactLoadError(
                 program_name,
                 f"failed to read graphics companion {graphics_path.name} for {name!r}: {exc}",
+                path=graphics_path,
             ) from exc
         raise DependencyParseError(
             program_name,
             f"failed to read graphics companion for dependency {dependency!r}",
             dependency=dependency,
+            path=graphics_path,
         ) from exc

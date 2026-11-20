@@ -12,12 +12,14 @@ from unittest.mock import patch
 
 import pytest
 
+from sattline_parser.project import LoadMode
+from sattline_parser.project.discovery import ProjectLookup
+from sattline_parser.project.formats import ArtifactKind
 from sattline_parser.project.lookup_cache import (
     DEFAULT_LOOKUP_CACHE_FLUSH_INTERVAL,
     LOOKUP_CACHE_VERSION,
     FileLookupCache,
     _as_file_lookup_entry,
-    _base_dir_is_gone,
     _load_file_lookup_entries,
     _normalize_base_dir,
     _remove_file,
@@ -36,7 +38,7 @@ def test_defaults_are_exposed() -> None:
     assert isinstance(LOOKUP_CACHE_VERSION, int)
 
 
-def test_set_get_roundtrip_casefolds_name(tmp_path: Path) -> None:
+def test_set_get_roundtrip_is_case_insensitive(tmp_path: Path) -> None:
     cache = FileLookupCache(tmp_path, write_through=True)
     base_dir = Path("/tmp/X")
     cache.set("code", "ControlLib", "draft", base_dir=base_dir, ext=".s")
@@ -45,6 +47,19 @@ def test_set_get_roundtrip_casefolds_name(tmp_path: Path) -> None:
         "ext": ".s",
     }
     assert cache.get("code", "Unknown", "draft") is None
+
+
+def test_set_get_keeps_language_distinct_names_apart(tmp_path: Path) -> None:
+    """``Straße`` and ``STRASSE`` are different units, so they need two entries."""
+    cache = FileLookupCache(tmp_path, write_through=True)
+    sharp = tmp_path / "sharp"
+    upper = tmp_path / "upper"
+    cache.set("code", "Straße", "draft", base_dir=sharp, ext=".s")
+    cache.set("code", "STRASSE", "draft", base_dir=upper, ext=".s")
+
+    assert cache.get("code", "Straße", "draft") == {"base_dir": str(sharp), "ext": ".s"}
+    assert cache.get("code", "STRASSE", "draft") == {"base_dir": str(upper), "ext": ".s"}
+    assert cache.get("code", "Strasse", "draft") == {"base_dir": str(upper), "ext": ".s"}
 
 
 def test_set_get_roundtrips_resolved_base_dir(tmp_path: Path) -> None:
@@ -234,18 +249,30 @@ def test_keeps_a_temporary_sibling_a_writer_may_still_own(tmp_path: Path) -> Non
     assert inflight.exists()
 
 
-def test_prunes_an_entry_whose_base_is_gone(tmp_path: Path) -> None:
-    """A resolution recorded against a deleted directory can never resolve again."""
-    base = tmp_path / "gone"
-    base.mkdir()
-    cache = FileLookupCache(tmp_path, write_through=True)
-    cache.set("code", "A", "draft", base_dir=base, ext=".s")
-    base.rmdir()
+def test_pruning_does_not_stat_a_recorded_base(tmp_path: Path) -> None:
+    """A recorded base is untrusted data, so startup never touches it.
 
-    assert cache.prune_stale_entries() == 1
+    On Windows a planted UNC path would otherwise turn a prune into an outbound
+    SMB connection. The entry is kept and resolution is what rejects it.
+    """
+    cache = FileLookupCache(tmp_path, write_through=True)
+    cache.set("code", "A", "draft", base_dir=tmp_path / "gone", ext=".s")
+
+    with patch("pathlib.Path.is_dir", side_effect=AssertionError("prune must not stat a recorded base")):
+        assert cache.prune_stale_entries() == 0
 
     reloaded = FileLookupCache(tmp_path)
-    assert reloaded.get("code", "A", "draft") is None
+    assert reloaded.get("code", "A", "draft") is not None
+
+
+def test_resolution_forgets_a_recorded_base_outside_the_roots(tmp_path: Path) -> None:
+    """A planted base outside the configured roots is dropped, never trusted."""
+    cache = FileLookupCache(tmp_path, write_through=True)
+    cache.set("code", "Planted", "draft", base_dir=Path("/planted"), ext=".s")
+    lookup = ProjectLookup([tmp_path], LoadMode.DRAFT, cache=cache)
+
+    assert lookup.find("Planted", ArtifactKind.CODE) is None
+    assert cache.get("code", "Planted", "draft") is None
 
 
 def test_caps_the_entry_count(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -260,26 +287,18 @@ def test_caps_the_entry_count(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -
     assert sum(1 for name in ("A", "B", "C") if reloaded.get("code", name, "draft") is not None) == 2
 
 
-def test_prune_keeps_the_file_when_the_rewrite_fails(tmp_path: Path) -> None:
-    base = tmp_path / "gone"
-    base.mkdir()
-    cache = FileLookupCache(tmp_path, write_through=True)
-    cache.set("code", "A", "draft", base_dir=base, ext=".s")
-    base.rmdir()
+def test_prune_keeps_the_file_when_the_rewrite_fails(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A failed cap rewrite leaves the old file; the next flush replaces it."""
+    entries = {f"code:draft:{name}": {"base_dir": str(tmp_path), "ext": ".s"} for name in ("A", "B")}
+    _write_raw(tmp_path, {"version": LOOKUP_CACHE_VERSION, "entries": entries})
+    monkeypatch.setattr(f"{_CACHE_PATH}.MAX_LOOKUP_CACHE_ENTRIES", 1)
 
     with patch(f"{_CACHE_PATH}.os.replace", side_effect=OSError("boom")):
-        assert cache.prune_stale_entries() == 0
+        cache = FileLookupCache(tmp_path)
 
-    assert (tmp_path / "file_lookup_cache.json").exists()
-
-
-def test_base_dir_is_gone_treats_a_stat_failure_as_gone(monkeypatch: pytest.MonkeyPatch) -> None:
-    def _raise(_path: Path) -> bool:
-        raise OSError("boom")
-
-    monkeypatch.setattr(Path, "is_dir", _raise)
-
-    assert _base_dir_is_gone({"base_dir": "/gone"}) is True
+    assert cache.drain_startup_pruned_entries() == 0
+    payload = json.loads((tmp_path / "file_lookup_cache.json").read_text(encoding="utf-8"))
+    assert len(payload["entries"]) == 2
 
 
 def test_prune_temporary_files_is_a_noop_without_a_cache_directory(tmp_path: Path) -> None:
@@ -287,3 +306,26 @@ def test_prune_temporary_files_is_a_noop_without_a_cache_directory(tmp_path: Pat
     shutil.rmtree(cache.cache_dir)
 
     assert cache._prune_temporary_files() == 0
+
+
+def test_set_enforces_the_cap_during_a_run(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """The cap runs on every write, not only at startup."""
+    monkeypatch.setattr(f"{_CACHE_PATH}.MAX_LOOKUP_CACHE_ENTRIES", 2)
+    cache = FileLookupCache(tmp_path, write_through=True)
+
+    for name in ("A", "B", "C", "D"):
+        cache.set("code", name, "draft", base_dir=tmp_path, ext=".s")
+
+    present = [name for name in ("A", "B", "C", "D") if cache.get("code", name, "draft") is not None]
+    assert present == ["C", "D"]
+    payload = json.loads((tmp_path / "file_lookup_cache.json").read_text(encoding="utf-8"))
+    assert len(payload["entries"]) == 2
+
+
+def test_set_honours_a_zero_cap(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(f"{_CACHE_PATH}.MAX_LOOKUP_CACHE_ENTRIES", 0)
+    cache = FileLookupCache(tmp_path, flush_interval=None)
+
+    cache.set("code", "A", "draft", base_dir=tmp_path, ext=".s")
+
+    assert cache.get("code", "A", "draft") is None

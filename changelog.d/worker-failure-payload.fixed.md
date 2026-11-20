@@ -1,0 +1,1 @@
+- **A worker's decode failure no longer copies the source buffer.** The failure record keeps the encoding, reason, and position but only the first 64 bytes of the buffer, so a failure on a large file crosses the process pipe as a small record instead of the whole file. The failure's source excerpt is also bounded.

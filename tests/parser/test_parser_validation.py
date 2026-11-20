@@ -102,6 +102,13 @@ _INVALID_VALIDATION_FIXTURES: dict[str, str] = {
     "SubSequenceDefinition": "SL-V033",
     "TerminalSeqStep": "SL-V033",
     "DuplicateSiblingSubmodules": "SL-V004",
+    "DuplicateSiblingCrossType": "SL-V004",
+    "DuplicateSiblingFrameModules": "SL-V004",
+    "DuplicateSiblingFrameAndModule": "SL-V004",
+    "EmptyRecordFieldAccess": "SL-V019",
+    "FrameModuleParameterMappings": "SL-V027",
+    "OldOnMappingSource": "SL-V005",
+    "ProcedureAsValue": "SL-V060",
     "OldNewOnNonState": "SL-V005",
     "OldNewOnNonStateRecordField": "SL-V006",
     "WriteToConstVariable": "SL-V007",
@@ -111,6 +118,9 @@ _INVALID_VALIDATION_FIXTURES: dict[str, str] = {
     "ConsecutiveSeqSteps": "SL-V016",
     "SeqForkUnknownTarget": "SL-V017",
     "BuiltinDatatypeTypo": "SL-V018",
+    "AmbiguousDatatypeTypo": "SL-V020",
+    "DirectStringAssignment": "SL-V045",
+    "StaleMappingTarget": "SL-V048",
     "UndefinedVariableRef": "SL-V019",
     "UnknownDatatypeName": "SL-V020",
     "DuplicateSFCElementNames": "SL-V021",
@@ -1007,6 +1017,17 @@ def _transfer(
     )
 
 
+def _mapping_with_state(target: str, source: str, state: str) -> ParameterMapping:
+    """A mapping whose source carries a ``:Old`` or ``:New`` suffix."""
+    return ParameterMapping(
+        target=VarRef(target),
+        source_type=MappingSource.VARIABLE,
+        is_duration=False,
+        is_source_global=False,
+        source=VarRef(source, state=state),
+    )
+
+
 def test_param_transfer_type_mismatch_flagged():
     moduletype = ModuleTypeDef(
         name="ChildType",
@@ -1115,8 +1136,12 @@ def test_single_module_undefined_mapping_source_is_reported():
     assert [d.code.value for d in validate_basepicture(bp)] == ["SL-V019"]
 
 
-def test_mapping_source_stays_silent_when_the_formals_are_not_loaded():
-    """Without formals the target side is unproven, so the source is not judged."""
+def test_mapping_source_is_checked_when_the_target_type_is_unknown():
+    """The source resolves in the invoking scope, so it is judged without the formals.
+
+    Only the target side needs the formals: a duplicate target or an absent
+    formal stays unproven, while an undefined source is a local defect.
+    """
     bp = _base_picture()
     bp.submodules = [
         ModuleTypeInstance(
@@ -1128,8 +1153,8 @@ def test_mapping_source_stays_silent_when_the_formals_are_not_loaded():
 
     diagnostics = validate_basepicture(bp)
 
-    # The unknown module type is still the one finding.
-    assert [d.code.value for d in diagnostics] == ["SL-V058"]
+    # The unknown module type and the undefined source are both provable.
+    assert [d.code.value for d in diagnostics] == ["SL-V058", "SL-V019"]
 
 
 def test_dotted_mapping_target_compares_the_field_datatype():
@@ -1216,10 +1241,8 @@ def test_param_transfer_skips_a_dotted_target_the_type_graph_cannot_resolve():
 
 def test_mapping_source_is_checked_even_when_the_target_field_is_opaque():
     """A typo in the source is independent of an unmodelled target shape."""
-    opaque = DataType(name="Opaque", description=None, datecode=None)
-    moduletype = ModuleTypeDef(name="T", moduleparameters=[_var("Settings", "Opaque")])
+    moduletype = ModuleTypeDef(name="T", moduleparameters=[_var("Settings", "ComliMessage")])
     bp = _base_picture()
-    bp.datatype_defs = [opaque]
     bp.moduletype_defs = [moduletype]
     bp.submodules = [
         ModuleTypeInstance(
@@ -1364,6 +1387,18 @@ def test_local_datatype_wins_over_an_external_definition_of_the_same_name():
         datatypes=[external_boolean],
     )
     assert [d.code.value for d in validate_basepicture(file_boolean, external_datatypes=[local_integer])] == ["SL-V029"]
+
+
+def test_builtin_record_wins_over_local_and_external_datatypes():
+    local = DataType(name="BooleanSignal", description=None, datecode=1, var_list=[_var("Value", "integer")])
+    external = DataType(name="BooleanSignal", description=None, datecode=2, var_list=[_var("Value", "real")])
+    bp = _typed_bp(
+        [_var("Signal", "BooleanSignal")],
+        Assignment(VarRef("Signal.Value"), True),
+        datatypes=[local],
+    )
+
+    assert validate_basepicture(bp, external_datatypes=[external]) == ()
 
 
 def test_parse_and_validate_accepts_external_definitions():
@@ -1796,6 +1831,19 @@ def test_coordinate_tail_rule_skips_reference_names():
         clipping=ClippingClause(((-1.0, -1.0), (1.0, 1.0)), (VarTail("in", "ClipX"),)),
     )
     bp = _base_picture()
+    bp.moduledef = module_def
+    assert [d.code.value for d in validate_basepicture(bp)] == []
+
+
+def test_coordinate_tail_rule_exempts_anytype():
+    """``AnyType`` proves nothing about a coordinate value, so the rule is silent.
+
+    Whether the language accepts such a tail is an open question, so the rule
+    reports only a value it can prove is not real.
+    """
+    module_def = ModuleDef(clipping=ClippingClause(((-1.0, -1.0), (1.0, 1.0)), (VarRef("Raw"),)))
+    bp = _base_picture()
+    bp.localvariables = [_var("Raw", "AnyType")]
     bp.moduledef = module_def
     assert [d.code.value for d in validate_basepicture(bp)] == []
 
@@ -2328,6 +2376,40 @@ def test_frame_modules_inherit_the_enclosing_scope():
     assert [parameter.name for parameter in picture.moduleparameters] == ["ParentParam"]
     assert isinstance(picture.submodules[0], FrameModule)
 
+    ordinary_source = source.replace("DateCode_ 3 ( Frame_Module )", "DateCode_ 3")
+    _, ordinary_diagnostics = parse_and_validate(ordinary_source)
+    assert [diagnostic.code.value for diagnostic in ordinary_diagnostics] == ["SL-V019"] * 4
+    assert sum("ParentFlag" in diagnostic.message for diagnostic in ordinary_diagnostics) == 2
+    assert sum("ParentParam" in diagnostic.message for diagnostic in ordinary_diagnostics) == 2
+
+
+def test_ordinary_modules_bound_variable_scope_and_frames_are_transparent():
+    parent_assignment = Assignment(VarRef("ParentOutput"), VarRef("ParentInput"))
+    frame = FrameModule(
+        header=_module_header("Frame"),
+        localvariables=[_var("ParentInput", "integer")],
+        modulecode=ModuleCode(equationblocks=[_equation(parent_assignment)]),
+    )
+    nested_frame = FrameModule(
+        header=_module_header("NestedFrame"),
+        modulecode=ModuleCode(equationblocks=[_equation(Assignment(VarRef("Own"), VarRef("ParentInput")))]),
+    )
+    ordinary = SingleModule(
+        header=_module_header("Ordinary"),
+        localvariables=[_var("Own", "boolean")],
+        submodules=[nested_frame],
+        modulecode=ModuleCode(equationblocks=[_equation(parent_assignment)]),
+    )
+    bp = _base_picture()
+    bp.localvariables = [_var("ParentInput", "boolean"), _var("ParentOutput", "boolean")]
+    bp.submodules = [frame, ordinary]
+
+    diagnostics = validate_basepicture(bp)
+
+    assert [d.code.value for d in diagnostics] == ["SL-V019", "SL-V019", "SL-V019"]
+    assert "ParentOutput" in diagnostics[0].message
+    assert all("ParentInput" in d.message for d in diagnostics[1:])
+
 
 def test_sfc_element_names_resolve_across_module_bounds():
     """A dotted SFC accessor may name an element from another module block.
@@ -2478,3 +2560,150 @@ def test_on_off_runtime_constants_are_boolean_expressions():
     assert "SL-V029" in codes("Num = On;")
     # ...and numeric comparison against them is rejected (error 0x17)
     assert "SL-V028" in codes("Flag = Num > Off;")
+
+
+def test_equation_and_sequence_name_findings_carry_a_span() -> None:
+    source = (
+        '"Syntax version 2.23, date: 2026-10-26-12:00:00.000 N"\n'
+        '"Original file date: ---"\n'
+        '"Program date: 2026-10-26-12:00:00.000, name: NameSpans"\n'
+        "BasePicture Invocation (0.0,0.0,0.0,1.0,1.0) : MODULEDEFINITION DateCode_ 1\n"
+        "ModuleDef\n"
+        "ClippingBounds = ( -1.0 , -1.0 ) ( 1.0 , 1.0 )\n"
+        "ModuleCode\n"
+        "   EQUATIONBLOCK VeryLongEquationName1 COORD 0.0,0.0 OBJSIZE 1.0,1.0 :\n"
+        "   SEQUENCE VeryLongSequenceName12 COORD 0.0,0.0 OBJSIZE 1.0,1.0\n"
+        "      SEQINITSTEP Init\n"
+        "      SEQTRANSITION Done WAIT_FOR True\n"
+        "   ENDSEQUENCE\n"
+        "ENDDEF (*BasePicture*);\n"
+    )
+
+    diagnostics = [d for d in parse_and_validate(source)[1] if d.code.value == "SL-V038"]
+
+    assert {d.message.split()[0] for d in diagnostics} == {"Equation", "Sequence"}
+    assert all(d.span is not None for d in diagnostics)
+
+
+def test_out_of_range_numeric_literals_are_reported() -> None:
+    source = (
+        '"Syntax version 2.23, date: 2026-10-26-12:00:00.000 N"\n'
+        '"Original file date: ---"\n'
+        '"Program date: 2026-10-26-12:00:00.000, name: ClampedLiterals"\n'
+        "BasePicture Invocation (0.0,0.0,0.0,1.0,1.0) : MODULEDEFINITION DateCode_ 1\n"
+        "LOCALVARIABLES\n"
+        "   Big: integer := 2147483648;\n"
+        "   Huge: real := 1.0E39;\n"
+        "ModuleDef\n"
+        "ClippingBounds = ( -1.0 , -1.0 ) ( 1.0 , 1.0 )\n"
+        "ENDDEF (*BasePicture*);\n"
+    )
+
+    diagnostics = [d for d in parse_and_validate(source)[1] if d.code.value == "SL-V059"]
+
+    assert len(diagnostics) == 2
+    assert all(d.span is not None for d in diagnostics)
+    # The node holds the clamped value, so the sentence quotes the text the
+    # source wrote: a written 2147483648 is not 2147483647.
+    messages = " ".join(d.message for d in diagnostics)
+    assert "2147483648" in messages
+    assert "1.0E39" in messages
+    assert "2147483647" not in messages
+    assert all("outside the supported" in d.message for d in diagnostics)
+
+
+def test_procedure_call_in_a_value_position_is_reported():
+    """A known procedure returns no value; an unknown callee stays unproven."""
+    bp = _typed_bp(
+        [_var("Text", "string"), _var("Sink", "integer")],
+        Assignment(VarRef("Sink"), FuncCall("ClearString", [VarRef("Text")])),
+        Assignment(VarRef("Sink"), FuncCall("StringLength", [VarRef("Text")])),
+        Assignment(VarRef("Sink"), FuncCall("UserProcedure", [VarRef("Text")])),
+    )
+
+    diagnostics = [d for d in validate_basepicture(bp) if d.code is DiagnosticCode.PROCEDURE_IN_VALUE_POSITION]
+
+    assert [d.code.value for d in diagnostics] == ["SL-V060"]
+    assert "clearstring" in diagnostics[0].message
+    assert diagnostics[0].span is None
+
+
+def test_a_procedure_statement_call_is_not_a_value_position():
+    """The statement form is the legal way to call a procedure."""
+    bp = _typed_bp(
+        [_var("Text", "string")],
+        FuncCallStmt(FuncCall("ClearString", [VarRef("Text")])),
+    )
+
+    assert validate_basepicture(bp) == ()
+
+
+def test_setioattribute_const_argument_is_exempt_from_the_caller_write_rule():
+    """The argument is the value written into the addressed I/O object."""
+    bp = _typed_bp(
+        [_var("Fixed", "integer", const=True)],
+        FuncCallStmt(FuncCall("SetIoAttribute", [4, 0, 0, 0, 1120, VarRef("Fixed")])),
+    )
+
+    assert DiagnosticCode.WRITE_TO_CONST_VARIABLE not in {d.code for d in validate_basepicture(bp)}
+
+
+def test_another_builtin_output_argument_keeps_the_const_write_rule():
+    """The exemption is per builtin parameter, not a blanket ``inout`` rule."""
+    bp = _typed_bp(
+        [_var("Source", "string"), _var("Limit", "integer", const=True)],
+        FuncCallStmt(FuncCall("CopyString", [VarRef("Source"), VarRef("Source"), VarRef("Limit")])),
+    )
+
+    assert DiagnosticCode.WRITE_TO_CONST_VARIABLE in {d.code for d in validate_basepicture(bp)}
+
+
+def test_mapping_source_with_old_on_a_non_state_variable_is_reported():
+    """The mapping source resolves in the invoking scope, so :Old applies there."""
+    child = SingleModule(
+        header=_module_header("Child"),
+        moduleparameters=[_var("P", "integer")],
+        parametermappings=[_mapping_with_state("P", "Plain", "old")],
+    )
+    bp = _base_picture()
+    bp.localvariables = [_var("Plain", "integer")]
+    bp.submodules = [child]
+
+    diagnostics = validate_basepicture(bp)
+
+    assert [d.code.value for d in diagnostics] == ["SL-V005"]
+    assert "Plain" in diagnostics[0].message
+
+
+def test_mapping_source_old_on_a_non_state_field_is_reported():
+    """A dotted mapping source follows the field rule, not the variable rule."""
+    child = SingleModule(
+        header=_module_header("Child"),
+        moduleparameters=[_var("P", "integer")],
+        parametermappings=[_mapping_with_state("P", "Rec.Flag", "old")],
+    )
+    record = DataType(name="Rec", description=None, datecode=None, var_list=[_var("Flag", "integer")])
+
+    bp = _base_picture()
+    bp.datatype_defs = [record]
+    bp.localvariables = [_var("Rec", "Rec")]
+    bp.submodules = [child]
+
+    diagnostics = validate_basepicture(bp)
+
+    assert [d.code.value for d in diagnostics] == ["SL-V006"]
+
+
+def test_external_datatype_does_not_mark_the_file_record_duplicated():
+    """The file wins over a same-named dependency, so its field typo is judged."""
+    external = DataType(name="Rec", description=None, datecode=None, var_list=[_var("Value", "integer")])
+    own = DataType(name="Rec", description=None, datecode=None, var_list=[_var("Count", "integer")])
+    bp = _base_picture()
+    bp.datatype_defs = [own]
+    bp.localvariables = [_var("Holder", "Rec"), _var("Sink", "integer")]
+    bp.modulecode = ModuleCode(equationblocks=[_equation(Assignment(VarRef("Sink"), VarRef("Holder.Missing")))])
+
+    diagnostics = validate_basepicture(bp, external_datatypes=[external])
+
+    assert [d.code.value for d in diagnostics] == ["SL-V019"]
+    assert "Holder.Missing" in diagnostics[0].message

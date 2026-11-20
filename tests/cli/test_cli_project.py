@@ -46,6 +46,23 @@ def test_programs_artifacts_and_edges(tmp_path, capsys) -> None:
     assert "edges: 2" in out
 
 
+def test_a_later_library_with_the_same_name_is_not_discovered(tmp_path, capsys) -> None:
+    """The loading path holds one library per name; a shadowed root adds no targets."""
+    first = tmp_path / "one" / "libs"
+    second = tmp_path / "two" / "libs"
+    first.mkdir(parents=True)
+    second.mkdir(parents=True)
+    _program(first, "Alpha")
+    _program(second, "Beta")
+
+    assert main(["project", str(first), str(second)]) == ExitCode.OK
+
+    out = capsys.readouterr().out
+    assert "programs: 1" in out
+    assert "Alpha" in out
+    assert "Beta" not in out
+
+
 def test_graph_only_and_traversal(tmp_path, capsys) -> None:
     _program(tmp_path, "Base")
     _program(tmp_path, "Child", "Base")
@@ -281,13 +298,41 @@ def test_a_load_failure_logs_no_parser_trace_without_debug(tmp_path, capsys, cap
     assert caplog.records == []
 
 
-def test_debug_keeps_the_parser_trace_for_a_load_failure(tmp_path, caplog) -> None:
+def test_a_parse_failure_in_the_tree_carries_its_position(tmp_path, capsys) -> None:
+    """A load finding keeps the cause's parser sentence and location."""
+    write_source(tmp_path, "Broken.s", PARSE_ERROR_SOURCE)
+
+    assert main(["project", str(tmp_path), "--json", "--workers", "1"]) == ExitCode.FINDINGS
+
+    [finding] = json.loads(capsys.readouterr().out)["findings"]
+    assert finding["rule"] == "PROJECT_LOAD_ERROR"
+    assert (finding["line"], finding["column"]) == (7, 21)
+    assert "unexpected end of file; expected ';'" in finding["message"]
+    assert finding["hint"].startswith("the unit ends before a required ';'")
+
+
+@pytest.mark.parametrize("workers", ["1", "2"])
+def test_a_load_failure_names_the_broken_file_and_its_failing_line(tmp_path, capsys, workers) -> None:
+    """The finding carries the artifact path and the excerpt, not just a number."""
+    write_source(tmp_path, "Broken.s", PARSE_ERROR_SOURCE)
+
+    assert main(["project", str(tmp_path), "--json", "--no-cache", "--workers", workers]) == ExitCode.FINDINGS
+
+    [finding] = json.loads(capsys.readouterr().out)["findings"]
+    assert finding["file"] == str(tmp_path / "Broken.s")
+    assert finding["line"] == 7
+    assert finding["source_line"] == "ENDDEF (*BasePicture*)"
+
+
+def test_debug_keeps_the_parser_trace_for_a_load_failure(tmp_path, caplog, capsys) -> None:
     write_source(tmp_path, "Broken.s", PARSE_ERROR_SOURCE)
 
     with caplog.at_level(logging.ERROR, logger="sattline_parser"):
         assert main(["--debug", "project", str(tmp_path), "--json"]) == ExitCode.FINDINGS
     records = [record for record in caplog.records if record.name == "sattline_parser"]
     assert records and any(record.exc_info is not None for record in records)
+    # The log reaches stderr through the CLI's own handler, exactly once.
+    assert capsys.readouterr().err.count("Parser parse failure") == 1
 
 
 def test_cli_an_unreadable_root_is_an_input_error(tmp_path, capsys) -> None:

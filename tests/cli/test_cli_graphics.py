@@ -9,6 +9,7 @@ import sys
 
 from sattline_parser.cli import main
 from sattline_parser.cli._exit import ExitCode
+from sattline_parser.project.graphics_parsing import MAX_GRAPHICS_COMPANION_BYTES
 
 from ._cli_support import VALID_SOURCE, write_source
 
@@ -40,22 +41,29 @@ def test_graphics_json_payload(tmp_path, capsys) -> None:
 def test_graphics_reports_a_scan_warning_as_a_finding(tmp_path, capsys) -> None:
     companion = write_source(tmp_path, "M.y", " Expr  True  3 (((\r\n")
 
-    assert main(["graphics", str(companion)]) == ExitCode.OK
+    # A scan message means the companion was only partly understood, so it is a
+    # finding and the command exits 1 even when its severity is ``warning``.
+    assert main(["graphics", str(companion)]) == ExitCode.FINDINGS
 
     out = capsys.readouterr().out
     assert "bindings: 1" in out
-    assert "Could not parse graphics expression" in out
+    assert "Could not parse graphics expression '((('" in out
+    # The parser's token dump is never reproduced.
+    assert "Expected one of" not in out
+    assert "Token(" not in out
 
 
 def test_graphics_json_counts_keep_the_warning_bucket(tmp_path, capsys) -> None:
     companion = write_source(tmp_path, "M.y", " Expr  True  3 (((\r\n")
 
-    assert main(["graphics", str(companion), "--json"]) == ExitCode.OK
+    assert main(["graphics", str(companion), "--json"]) == ExitCode.FINDINGS
     payload = json.loads(capsys.readouterr().out)
     assert payload["counts"] == {"error": 0, "warning": 1}
-    assert payload["ok"] is True
+    assert payload["ok"] is False
+    [message] = payload["messages"]
+    assert message["message"] == "Could not parse graphics expression '((('"
 
-    assert main(["graphics", str(companion), "--jsonl"]) == ExitCode.OK
+    assert main(["graphics", str(companion), "--jsonl"]) == ExitCode.FINDINGS
     payload = json.loads(capsys.readouterr().out)
     assert payload["counts"] == {"error": 0, "warning": 1}
 
@@ -70,6 +78,19 @@ def test_non_companion_and_missing_files_are_refused(tmp_path, capsys) -> None:
     assert "cannot read" in capsys.readouterr().err
 
 
+def test_an_oversized_companion_is_refused_before_it_is_read(tmp_path, capsys) -> None:
+    """The CLI enforces the library's 4 MiB limit, not only the loader."""
+    companion = tmp_path / "Huge.y"
+    with companion.open("wb") as handle:
+        handle.truncate(MAX_GRAPHICS_COMPANION_BYTES + 1)
+
+    assert main(["graphics", str(companion)]) == ExitCode.USAGE
+
+    err = capsys.readouterr().err
+    assert "companion is" in err
+    assert f"over the {MAX_GRAPHICS_COMPANION_BYTES} byte limit" in err
+
+
 def test_stdin_is_accepted_as_a_companion() -> None:
     original = sys.stdin
     sys.stdin = type("_Stdin", (), {"buffer": io.BytesIO(_COMPANION.encode("cp1252"))})()  # type: ignore[assignment]
@@ -77,6 +98,18 @@ def test_stdin_is_accepted_as_a_companion() -> None:
         assert main(["graphics", "-", "--stdin-name", "Companion.y"]) == ExitCode.OK
     finally:
         sys.stdin = original
+
+
+def test_stdin_requires_a_name_like_every_source_command(capsys) -> None:
+    assert main(["graphics", "-"]) == ExitCode.USAGE
+    assert "requires --stdin-name" in capsys.readouterr().err
+
+
+def test_a_stdin_name_that_is_source_is_refused(capsys) -> None:
+    # The shared naming rule applies: a piped source is refused exactly like a
+    # ``.s`` path, before any content is read.
+    assert main(["graphics", "-", "--stdin-name", "Companion.s"]) == ExitCode.USAGE
+    assert "Companion.s is not a graphics companion (.g/.y)" in capsys.readouterr().err
 
 
 def test_paths_absolute_applies_to_the_document_file(tmp_path, capsys, monkeypatch) -> None:

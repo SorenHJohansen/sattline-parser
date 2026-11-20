@@ -45,6 +45,12 @@ there is nothing to map. Each entry is either:
 - a real original offset (`>= 0`), or
 - `GENERATED`, the first-class sentinel `Generated(-1)`.
 
+The constructor validates the map: every real entry must be an offset inside
+`original_text`, and the real entries must strictly increase, because that is
+the order a forward decoding walk produces. A map that breaks either rule would
+make a span inverted or zero-width, so it raises `ValueError` rather than
+letting a diagnostic point at the wrong text.
+
 `GENERATED` is a subclass of `int` with value `-1`. The type is distinct on
 purpose: code that builds or rewrites a map can tell "this character was
 inserted by the preprocessor" apart from a real offset, and a generated
@@ -61,7 +67,10 @@ skipped. For an identity document:
 - `map_position(i)` returns `min(i, len(original_text))`;
 - `map_range(start, end)` returns the range clamped to the original text, and a
   zero-width range at the mapped boundary when `start >= end`;
-- `remap_tree_to_original` is a no-op;
+- `remap_tree_to_original` is a no-op unless the text contains a lone CR. A
+  CR-only text rewrites each span's line and column through `line_col`, because
+  the language treats a lone CR as a line break while the Lark position index
+  counts LF, so its token lines would otherwise all stay on line 1;
 - `is_decoded_range` is always `False`.
 
 Most sources are identity documents. The expensive path only runs for coded or
@@ -87,8 +96,19 @@ deleted region includes that region in its original result, because the range
 is the smallest contiguous original range that covers the real characters of
 the normalized range.
 
+The anchors are indexed once per document: the real characters of the map, in
+normalized order, are also in original order, so a bisect finds the nearest one
+for any offset. Remapping a marker-dense compressed source is therefore linear
+in its length rather than quadratic in the length of a generated run.
+
 All spans are half-open `[start, end)` in both coordinate systems. An end
 offset equal to the text length is a valid boundary.
+
+A line ends at CRLF, LF, or a lone CR, the same definition the grammar's string
+terminals and the compressed scanner use. `line_col` and the source excerpt a
+diagnostic renders therefore agree on a CR-only document: a position on its
+third physical line reports line 3 and quotes that line. A form feed, a
+vertical tab, and the other `str.splitlines` separators are ordinary content.
 
 ### `is_decoded_range`
 
@@ -162,7 +182,8 @@ with their ASCII counterparts. Only `0x93` and `0x94` (curly quotes) can be
 repaired unambiguously, because they surface as the control characters `DC3`
 and `DC4`, which never occur in legitimate source. Every other non-ASCII
 character decodes lossily by construction of the format. This is a property of
-the on-disk format, not a parser gap.
+the on-disk format, not a parser gap: a coded stream is an ASCII format, and the
+decoder never guesses which character the lost bit belonged to.
 
 `decode_coded_stream` raises `PreprocessError` for a missing header, a header
 without its CRLF terminator, a payload that is not a whole number of
@@ -176,11 +197,16 @@ Compressed source is text with `#NN` codes. Decoding is lexically aware:
 flowchart LR
     A["source text"] --> B["scan_opaque_regions"]
     B --> C["strings S and comments C"]
-    C --> D["replace regions with placeholders"]
-    D --> E["substitute #NN markers"]
-    E --> F["restore strings and comments"]
-    F --> G["decoded text and char_map"]
+    C --> D["marker substitution on<br/>the text between regions"]
+    D --> E["decoded text and char_map"]
 ```
+
+The region boundaries never leave the decoder. Marker substitution runs only on
+the runs of text between them, and the pieces are joined with their original
+offsets already attached, so no placeholder character is ever spliced into the
+text being decoded. A source that contains a sequence resembling an internal
+marker is therefore ordinary text: it is neither restored nor rejected, and the
+decoded text stays linear in the size of the input.
 
 `scan_opaque_regions` understands:
 
@@ -189,19 +215,39 @@ flowchart LR
 - `(*` or `*)` inside a string as text, not a delimiter;
 - a `"` inside a comment as text, not a string start;
 - a description that ends at a line break, because the grammar accepts an
-  unterminated description (`STRING_CRLF`) and no string spans lines;
+  unterminated description (`STRING_CRLF`) and no string spans a line. A line
+  break here is CRLF, LF, or a lone CR, the one definition the grammar, the
+  compressed scanner, the coded decoder, and `render_ide_text` use;
 - a single-quoted identifier such as `'#84'`, whose body is literal text rather
   than a marker.
 
+The scanner shares the lexer's name boundary rule rather than approximating it.
+It consumes a whole unquoted name run, so an apostrophe inside a name such as
+`Pump'A` is name text, and it recognises a quoted identifier only where the
+`NAME` terminal does: at a name start character, with at least one body
+character, no apostrophe inside, and no line break. Two quoted names written
+back to back are therefore two regions, a quoted name may follow a number
+(`1'A'`), and a multi-line quoted spelling is not a quoted name for either
+component. `grammar/constants.py` holds the pattern and the character classes
+both use.
+
 The scanner never rewrites text inside an opaque region. An unknown marker
-raises `PreprocessError` with its character offset instead of being replaced by
-whitespace.
+raises `PreprocessError` with its character offset in the **original** source,
+not in any rewritten intermediate text.
 
 `preprocessing/scanner_tokens.json` is the scanner enum: the ordinal `n` is
 encoded as `'#' + chr(48 + n // 16) + chr(48 + n % 16)` and the row `id` is
 `n + 8`. The table covers keywords and operators; literal source text is
 emitted unencoded. A code is added only with a fixture that decodes it, because
 the ordinal alone does not prove which word an export used.
+
+Three grammar keywords have no row: `EQUATIONS`, `IntObjPickButton`, and
+`NewWindow`. No encoded form of them has been observed, and the ordinal alone
+would not prove the word, so none is invented. A compressed document therefore
+cannot spell them, and both failure paths are clean: a raw spelling is an
+identifier in coded mode and the parse rejects it, while an unknown code raises
+`PreprocessError`. The set is pinned by a test, so adding a row or a keyword
+terminal keeps this paragraph and the table in step.
 
 Replacement text is aligned to the matched source region by longest common
 subsequence. A replacement character gets a real source mapping only when it
@@ -221,16 +267,18 @@ when it re-reads a saved file:
 - no line longer than `MAX_IDE_LINE_LENGTH` (135 characters).
 
 Long lines break at the last space within the limit. The scan never splits a
-double-quoted string literal, and a line without a usable break space is
-emitted unchanged rather than cut mid-token. The function is safe on text that
-is already formatted, and it is not part of the parse path.
+string literal or a quoted identifier, so a break point inside `'a name'` is
+not used, and it reuses the scanner's own region rule rather than a second
+approximation. A line without a usable break space is emitted unchanged rather
+than cut mid-token. The function is safe on text that is already formatted, and
+it is not part of the parse path.
 
 ## Tests that pin provenance
 
 | Test | What it protects |
 | --- | --- |
 | `tests/parser/test_parser_core_provenance.py` | Position mapping, generated characters, deleted regions |
-| `tests/parser/test_parser_core_preprocessing.py` | Marker decoding, opaque regions, unknown markers |
+| `tests/parser/test_parser_core_preprocessing.py` | Marker decoding, opaque regions, unknown markers, forged placeholder-shaped text |
 | `tests/parser/test_coded_stream.py` | Coded framing, XOR key, sync bytes, CRLF repair |
 | `tests/parser/test_ide_text.py` | CRLF and line-length layout |
 | `tests/parser/test_parser_decode.py` | CLI and library decode agreement |

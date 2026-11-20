@@ -1,3 +1,4 @@
+from sattline_parser.api import parse_source_text
 from sattline_parser.preprocessing import MAX_IDE_LINE_LENGTH, render_ide_text
 
 
@@ -42,3 +43,36 @@ def test_render_ide_text_reproduces_batchlib_roundtrip_split():
     assert len(first) <= MAX_IDE_LINE_LENGTH
     assert first.endswith("ComBut_ (")
     assert second.startswith("5.96046E-08")
+
+
+def test_render_ide_text_never_splits_a_quoted_identifier():
+    # The only space within the limit after the assignment is inside the quoted
+    # name. Breaking there would cut one token into two.
+    quoted = "'" + "a" * 10 + " " + "b" * 140 + "'"
+    raw = "X := " + quoted + " + 1"
+
+    rendered = render_ide_text(raw)
+
+    assert quoted in rendered
+    assert rendered.split("\r\n") == ["X :=", quoted + " + 1"]
+
+
+def test_rendered_text_with_an_overlong_quoted_identifier_still_parses():
+    quoted = "'" + "a" * 10 + " " + "b" * 140 + "'"
+    program = (
+        '"SyntaxVersion"\n"OriginalFileDate"\n"ProgramDate"\n'
+        "BasePicture Invocation (0.0,0.0,0.0,1.0,1.0) : MODULEDEFINITION DateCode_ 1\n"
+        "LOCALVARIABLES\n"
+        f"    {quoted}: integer;\n"
+        "ModuleDef\n"
+        "ClippingBounds = ( -1.0 , -1.0 ) ( 1.0 , 1.0 )\n"
+        "ModuleCode\n"
+        "    EQUATIONBLOCK Main COORD 0.0, 0.0 OBJSIZE 1.0, 1.0 :\n"
+        f"        {quoted} = 1;\n"
+        "ENDDEF (*BasePicture*);\n"
+    )
+
+    rendered = render_ide_text(program)
+
+    assert quoted in rendered
+    assert parse_source_text(rendered, log_failures=False).name == "BasePicture"

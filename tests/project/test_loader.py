@@ -3,19 +3,23 @@
 
 from __future__ import annotations
 
+import logging
 import os
+import pickle
 from collections.abc import Callable, Generator, Iterator
 from concurrent.futures import ProcessPoolExecutor
 from concurrent.futures.process import BrokenProcessPool
 from contextlib import contextmanager
 from pathlib import Path
 from types import SimpleNamespace
+from typing import NoReturn
 from unittest.mock import patch
 
 import pytest
-from lark.exceptions import UnexpectedCharacters, UnexpectedEOF, UnexpectedInput
+from lark.exceptions import UnexpectedCharacters, UnexpectedEOF, UnexpectedInput, VisitError
 
 from sattline_parser.api import parse_source_bytes, parse_source_file
+from sattline_parser.cli.cmds.project import _discover_targets
 from sattline_parser.errors import SourceTooDeepError
 from sattline_parser.models.ast_model import (
     BasePicture,
@@ -39,10 +43,19 @@ from sattline_parser.project import parallel as project_loader_parallel
 from sattline_parser.project import plan as plan_module
 from sattline_parser.project.assembler import ProjectAssembler
 from sattline_parser.project.ast_cache import FileASTCache, SourceSnapshot, source_snapshot
-from sattline_parser.project.executor import ParseFailure, parse_code_file, rebuild_parse_failure
+from sattline_parser.project.executor import (
+    MAX_FAILURE_SOURCE_LINE,
+    MAX_UNICODE_ERROR_BYTES,
+    MAX_WORKER_DEBUG_MESSAGES,
+    ParseFailure,
+    parse_code_file,
+    rebuild_parse_failure,
+)
+from sattline_parser.project.formats import CompanionIndex
 from sattline_parser.project.models import LoadDiagnosticKind, SidecarState
-from sattline_parser.project.parallel import start_method
+from sattline_parser.project.parallel import load_in_progress, loads_in_progress, pool_allowed, start_method
 from sattline_parser.project.planner import ProjectPlanner
+from sattline_parser.transformer.sl_transformer import SLTransformer
 
 from ._support import write_file
 
@@ -61,6 +74,13 @@ ENDDEF (*BasePicture*);
 """
 
 _BROKEN = "this is not a SattLine program at all $$$"
+
+#: ``_CODE`` with two ``Layer_`` arguments in its module header. The transformer
+#: rejects the second one as a duplicate singular clause.
+_DUPLICATE_CLAUSE_CODE = _CODE.replace(
+    "1.0 , 1.0\n    ) : MODULEDEFINITION",
+    "1.0 , 1.0 Layer_ = 1 Layer_ = 2\n    ) : MODULEDEFINITION",
+)
 
 _GFX = """" Syntax version 2.23, date: 2026-06-19-12:41:09.218 N "
 
@@ -318,12 +338,17 @@ def test_worker_and_in_process_failures_have_the_same_cause(tmp_path: Path) -> N
     write_file(tmp_path, "Broken.s", _BROKEN)
 
     causes: dict[int, BaseException] = {}
+    artifacts: dict[int, tuple[Path | None, str | None]] = {}
     for workers in (1, 2):
         with pytest.raises(DependencyParseError) as exc_info:
             _load(tmp_path, workers=workers)
         cause = exc_info.value.__cause__
         assert cause is not None
         causes[workers] = cause
+        artifacts[workers] = (exc_info.value.path, exc_info.value.source_line)
+
+    assert artifacts[1] == (tmp_path / "Broken.s", _BROKEN.rstrip("\n"))
+    assert artifacts[2] == (tmp_path / "Broken.s", _BROKEN.rstrip("\n"))
 
     in_process = causes[1]
     worker = causes[2]
@@ -345,6 +370,12 @@ def test_worker_and_in_process_failures_have_the_same_cause(tmp_path: Path) -> N
         ("UnicodeError", UnicodeError),
         ("ValueError", ValueError),
         ("OSError", OSError),
+        ("PermissionError", PermissionError),
+        ("FileNotFoundError", FileNotFoundError),
+        ("IsADirectoryError", IsADirectoryError),
+        ("NotADirectoryError", NotADirectoryError),
+        ("FileExistsError", FileExistsError),
+        ("TimeoutError", TimeoutError),
         ("RuntimeError", RuntimeError),
     ],
 )
@@ -414,12 +445,45 @@ def test_load_unreadable_body_in_a_worker_is_a_project_error(tmp_path: Path) -> 
 
 
 @pytest.mark.skipif(os.name == "nt" or os.geteuid() == 0, reason="needs POSIX permissions as a non-root user")
+def test_a_worker_read_error_keeps_its_oserror_subclass_as_the_cause(tmp_path: Path) -> None:
+    """The parent must not rebuild a PermissionError as a plain RuntimeError."""
+    write_file(tmp_path, "Main.s", _CODE)
+    write_file(tmp_path, "Main.l", "Broken\n")
+    write_file(tmp_path, "Broken.s", _CODE)
+    (tmp_path / "Broken.s").chmod(0)
+
+    with pytest.raises(DependencyParseError) as exc_info:
+        _load(tmp_path, workers=2)
+
+    assert isinstance(exc_info.value.__cause__, PermissionError)
+
+
+def test_a_transformer_rejection_fails_a_project_load_as_a_parse_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A rejected duplicate clause is a parse failure, not an internal error."""
+    write_file(tmp_path, "Main.s", _DUPLICATE_CLAUSE_CODE)
+
+    def reject(self: SLTransformer, items: list[object]) -> NoReturn:
+        raise ValueError("module header has more than one Layer_ argument")
+
+    monkeypatch.setattr(SLTransformer, "argument", reject)
+
+    with pytest.raises(ArtifactLoadError) as exc_info:
+        _load(tmp_path)
+
+    cause = exc_info.value.__cause__
+    assert isinstance(cause, ValueError)
+    assert isinstance(cause.__cause__, VisitError)
+
+
+@pytest.mark.skipif(os.name == "nt" or os.geteuid() == 0, reason="needs POSIX permissions as a non-root user")
 def test_parse_code_file_reports_an_unreadable_body(tmp_path: Path) -> None:
     write_file(tmp_path, "Main.s", _CODE)
     code_path = tmp_path / "Main.s"
     code_path.chmod(0)
 
-    outcome = parse_code_file((str(code_path), "draft", None, False))
+    outcome = parse_code_file((str(code_path), "draft", None, False, False))
 
     assert outcome.ast is None
     assert outcome.failure_record is not None
@@ -437,13 +501,17 @@ def test_load_unreadable_dependency_body_is_a_dependency_error(tmp_path: Path) -
         _load(tmp_path)
 
 
-def test_load_unreadable_deps_file_raises(tmp_path: Path) -> None:
+def test_a_directory_named_like_a_deps_file_is_not_a_sidecar(tmp_path: Path) -> None:
+    """Only a regular file pairs; a directory at the sidecar prefix is absent."""
     write_file(tmp_path, "Main.s", _CODE)
     (tmp_path / "Main.l").mkdir(exist_ok=True)
-    with pytest.raises(DependencyParseError) as exc_info:
-        _load(tmp_path)
-    assert exc_info.value.program == "Main"
-    assert exc_info.value.dependency is None
+
+    project = _load(tmp_path)
+
+    program = project.get("Main")
+    assert program.deps_path is None
+    assert program.sidecar is SidecarState.ABSENT
+    assert [d.kind for d in project.diagnostics()] == [LoadDiagnosticKind.SIDECAR_MISSING]
 
 
 def test_load_draft_fallback_extensions(tmp_path: Path) -> None:
@@ -523,6 +591,7 @@ def test_load_without_cache_dir_reparses(tmp_path: Path) -> None:
 def test_load_fails_closed_when_the_cache_root_is_foreign(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     write_file(tmp_path, "Main.s", _CODE)
     cache_dir = tmp_path / "cache"
+    monkeypatch.setattr("sattline_parser.source_io._IS_WINDOWS", False)
     monkeypatch.setattr("sattline_parser.source_io._getuid", lambda: -1)
 
     project = _load(tmp_path, cache_dir=cache_dir)
@@ -746,6 +815,7 @@ def test_load_distribution_decode_failure_raises(tmp_path: Path) -> None:
         _load(tmp_path)
 
     assert exc_info.value.program == "Main"
+    assert exc_info.value.path == tmp_path / "Main.p"
 
 
 def test_load_malformed_distribution_raises(tmp_path: Path) -> None:
@@ -942,14 +1012,17 @@ def test_load_dependency_sidecar_decode_failure_raises(tmp_path: Path) -> None:
 
     assert exc_info.value.program == "Main"
     assert exc_info.value.dependency is None
+    assert exc_info.value.path == tmp_path / "Main.l"
 
 
 def test_load_graphics_decode_failure_raises(tmp_path: Path) -> None:
     write_file(tmp_path, "Main.s", _CODE)
     (tmp_path / "Main.g").write_bytes(b"\x81 graphics\n")
 
-    with pytest.raises(ArtifactLoadError):
+    with pytest.raises(ArtifactLoadError) as exc_info:
         _load(tmp_path)
+
+    assert exc_info.value.path == tmp_path / "Main.g"
 
 
 def test_load_dependency_graphics_decode_failure_raises_dependency_parse_error(tmp_path: Path) -> None:
@@ -1114,6 +1187,23 @@ def test_load_parses_bodies_in_parallel_with_identical_results(tmp_path: Path, m
     assert serial.diagnostics() == parallel.diagnostics()
 
 
+def test_a_parallel_debug_load_replays_each_files_parser_messages(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A worker sends its bounded messages and the parent replays them in order."""
+    write_file(tmp_path, "Main.s", _CODE)
+    write_file(tmp_path, "Broken.s", _BROKEN)
+    events: list[str] = []
+    dispatched = _record_dispatched(monkeypatch)
+
+    with pytest.raises(ArtifactLoadError):
+        _load(tmp_path, targets=("Main", "Broken"), workers=2, debug=events)
+
+    assert sorted(Path(path).name for path in dispatched) == ["Broken.s", "Main.s"]
+    parsing = [event for event in events if event.startswith("Parsing:")]
+    assert parsing == [f"Parsing: {tmp_path / 'Main.s'}", f"Parsing: {tmp_path / 'Broken.s'}"]
+
+
 @pytest.mark.parametrize(
     ("broken_is_target", "expected"),
     [(True, ArtifactLoadError), (False, DependencyParseError)],
@@ -1135,7 +1225,7 @@ def test_a_broken_body_fails_the_same_way_in_parallel(
 
 
 def test_parallel_parse_falls_back_when_a_pool_cannot_be_created(
-    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
 ) -> None:
     write_file(tmp_path, "Lib.s", _CODE)
     write_file(tmp_path, "Main.s", _CODE)
@@ -1145,16 +1235,18 @@ def test_parallel_parse_falls_back_when_a_pool_cannot_be_created(
         raise OSError(f"cannot start {max_workers} workers here")
 
     monkeypatch.setattr(project_loader_parallel, "process_pool", unavailable)
-    project = _load(tmp_path, workers=2)
+    with caplog.at_level("WARNING", logger="sattline_parser.project.executor"):
+        project = _load(tmp_path, workers=2)
 
     assert tuple(project.programs()) == ("lib", "main")
+    assert any("worker pool unavailable" in record.message for record in caplog.records)
 
 
 def test_parse_code_file_reads_but_never_writes_the_ast_cache(tmp_path: Path) -> None:
     """A worker reads the cache and leaves every write to the parent."""
     code = write_file(tmp_path, "Cached.s", _CODE)
     cache_dir = tmp_path / "cache"
-    task = (str(code), LoadMode.DRAFT.value, str(cache_dir), True)
+    task = (str(code), LoadMode.DRAFT.value, str(cache_dir), True, False)
 
     first = parse_code_file(task)
     second = parse_code_file(task)
@@ -1165,15 +1257,131 @@ def test_parse_code_file_reads_but_never_writes_the_ast_cache(tmp_path: Path) ->
     assert not second.cached
     assert second.ast == first.ast
     assert list((cache_dir / "file_ast").glob("*.pickle")) == []
+    assert not (cache_dir / "file_ast" / ".parser-identity").exists()
+
+
+def test_the_worker_cache_handle_is_read_only(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(executor_module, "_WORKER_CACHES", {})
+    parent = project_loader.FileASTCache(tmp_path / "cache")  # the parent creates and maintains the layout
+    marker = parent.cache_dir / ".parser-identity"
+    stamp = marker.stat().st_mtime_ns
+
+    handle = executor_module._worker_cache(str(tmp_path / "cache"))
+
+    assert handle.enabled
+    assert handle.read_only
+    assert marker.stat().st_mtime_ns == stamp
+
+
+def _ast_cache_snapshot(root: Path) -> dict[str, tuple[bytes | None, int]]:
+    """Every path under *root* with its bytes (``None`` for a directory) and mtime."""
+    snapshot: dict[str, tuple[bytes | None, int]] = {}
+    for path in sorted(root.rglob("*")):
+        relative = path.relative_to(root).as_posix()
+        if path.is_file():
+            snapshot[relative] = (path.read_bytes(), path.stat().st_mtime_ns)
+        else:
+            snapshot[relative] = (None, path.stat().st_mtime_ns)
+    return snapshot
+
+
+def test_a_warm_parallel_load_leaves_the_ast_cache_untouched(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Workers must not prune, rewrite the marker, or move an entry's mtime."""
+    write_file(tmp_path, "Lib.s", _CODE)
+    write_file(tmp_path, "Main.s", _CODE)
+    write_file(tmp_path, "Main.l", "Lib\n")
+    cache_dir = tmp_path / "cache"
+    _load(tmp_path, cache_dir=cache_dir)
+    ast_dir = cache_dir / "file_ast"
+    assert len(list(ast_dir.glob("*.pickle"))) == 2
+    before = _ast_cache_snapshot(ast_dir)
+
+    dispatched = _record_dispatched(monkeypatch)
+    project = _load(tmp_path, workers=2, cache_dir=cache_dir)
+
+    assert tuple(project.programs()) == ("lib", "main")
+    # The parallel load must really use the pool, so the workers read the cache.
+    assert sorted(Path(path).name for path in dispatched) == ["Lib.s", "Main.s"]
+    assert _ast_cache_snapshot(ast_dir) == before
 
 
 def test_parse_code_file_reports_a_parse_failure_as_text(tmp_path: Path) -> None:
     code = write_file(tmp_path, "Broken.s", _BROKEN)
 
-    outcome = parse_code_file((str(code), LoadMode.DRAFT.value, None, True))
+    outcome = parse_code_file((str(code), LoadMode.DRAFT.value, None, True, False))
 
     assert outcome.ast is None
     assert outcome.failure
+
+
+def test_a_worker_returns_one_parser_message_per_file_under_debug(tmp_path: Path) -> None:
+    code = write_file(tmp_path, "Main.s", _CODE)
+
+    outcome = parse_code_file((str(code), LoadMode.DRAFT.value, None, True, True))
+
+    assert outcome.debug[0] == f"Parsing: {code}"
+    assert "Parse OK, transforming with SLTransformer" in outcome.debug
+    assert len(outcome.debug) <= MAX_WORKER_DEBUG_MESSAGES
+
+
+def test_worker_debug_messages_are_bounded_per_file() -> None:
+    messages: list[str] = []
+    for index in range(MAX_WORKER_DEBUG_MESSAGES + 5):
+        executor_module._append_bounded_debug(messages, f"message {index}")
+
+    assert len(messages) == MAX_WORKER_DEBUG_MESSAGES
+    assert messages[-1] == f"message {MAX_WORKER_DEBUG_MESSAGES - 1}"
+
+
+def test_a_decode_failure_record_keeps_a_bounded_buffer(tmp_path: Path) -> None:
+    """A worker must not send the whole source buffer through the pipe."""
+    code = tmp_path / "Huge.s"
+    raw = b"a" * (256 * 1024) + b"\x81"
+    code.write_bytes(raw)
+
+    outcome = parse_code_file((str(code), LoadMode.DRAFT.value, None, False, False))
+
+    record = outcome.failure_record
+    assert record is not None
+    assert record.unicode_error is not None
+    encoding, excerpt, start, end, _reason = record.unicode_error
+    assert encoding == "cp1252"
+    assert len(excerpt) <= MAX_UNICODE_ERROR_BYTES
+    assert (start, end) == (len(raw) - 1, len(raw))
+    rebuilt = rebuild_parse_failure(record)
+    assert isinstance(rebuilt, UnicodeDecodeError)
+    assert (rebuilt.start, rebuilt.end) == (start, end)
+    assert len(pickle.dumps(record)) < 4096
+
+
+def test_a_failure_source_line_is_bounded(tmp_path: Path) -> None:
+    code = write_file(tmp_path, "Long.s", "x" * (MAX_FAILURE_SOURCE_LINE * 4))
+
+    outcome = parse_code_file((str(code), LoadMode.DRAFT.value, None, False, False))
+
+    assert outcome.failure_record is not None
+    assert outcome.failure_record.line == 1
+    assert outcome.source_line is not None
+    assert len(outcome.source_line) == MAX_FAILURE_SOURCE_LINE + len("...")
+    assert outcome.source_line.endswith("...")
+
+
+def test_a_failure_excerpt_is_absent_when_the_source_cannot_be_decoded() -> None:
+    assert executor_module.failure_source_line(b"\x81", 1) is None
+    # A line past the end of the text has no excerpt either.
+    assert executor_module.failure_source_line(b"one line", 9) is None
+    assert executor_module.failure_source_line(b"one line", None) is None
+
+
+def test_a_worker_cache_hit_reports_its_debug_message(tmp_path: Path) -> None:
+    code = write_file(tmp_path, "Cached.s", _CODE)
+    cache_dir = tmp_path / "cache"
+    project_loader.FileASTCache(cache_dir).save(code, LoadMode.DRAFT.value, parse_source_file(code))
+
+    outcome = parse_code_file((str(code), LoadMode.DRAFT.value, str(cache_dir), True, True))
+
+    assert outcome.cached
+    assert outcome.debug == (f"Using cached AST for: {code}",)
 
 
 def test_parse_code_file_serves_a_warm_entry_without_reparsing(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
@@ -1185,7 +1393,7 @@ def test_parse_code_file_serves_a_warm_entry_without_reparsing(tmp_path: Path, m
         raise AssertionError("a warm entry must not be reparsed")
 
     monkeypatch.setattr(executor_module, "parse_source_bytes", refuse)
-    outcome = parse_code_file((str(code), LoadMode.DRAFT.value, str(cache_dir), True))
+    outcome = parse_code_file((str(code), LoadMode.DRAFT.value, str(cache_dir), True, False))
 
     assert outcome.ast is not None
     assert outcome.cached
@@ -1268,7 +1476,7 @@ def test_parse_code_file_returns_a_cached_body_without_parsing(tmp_path: Path, m
         raise AssertionError("a cached body must not be parsed again")
 
     monkeypatch.setattr(executor_module, "parse_source_bytes", no_parse)
-    outcome = parse_code_file((str(code), LoadMode.DRAFT.value, str(cache_dir), True))
+    outcome = parse_code_file((str(code), LoadMode.DRAFT.value, str(cache_dir), True, False))
 
     assert outcome.ast is not None and outcome.failure is None
 
@@ -1642,7 +1850,505 @@ def test_a_debug_load_reports_companion_parsing(tmp_path: Path) -> None:
 def test_the_worker_entry_point_defaults_to_the_package_parser(tmp_path: Path) -> None:
     code = write_file(tmp_path, "Main.s", _CODE)
 
-    outcome = executor_module.parse_code_file((str(code), LoadMode.DRAFT.value, None, False))
+    outcome = executor_module.parse_code_file((str(code), LoadMode.DRAFT.value, None, False, False))
 
     assert outcome.ast is not None
     assert outcome.failure is None
+
+
+# --- unit identity, aliases, and planning scale -------------------------------
+
+
+def test_a_twenty_one_character_target_name_loads(tmp_path: Path) -> None:
+    """The length of a name is ``SL-V038`` at the declaration, not a load failure."""
+    name = "ABCDEFGHIJKLMNOPQRSTU"
+    assert len(name) == 21
+    write_file(tmp_path, f"{name}.s", _source(name))
+
+    project = _load(tmp_path, targets=(name,))
+
+    assert project.get(name).source_path == tmp_path / f"{name}.s"
+
+
+def test_a_dependency_spelling_resolves_by_language_identity(tmp_path: Path) -> None:
+    """``STRASSE`` is not ``Straße`` even though ``str.casefold`` equates them."""
+    write_file(tmp_path, "Main.s", _source("Main"))
+    write_file(tmp_path, "Main.l", "STRASSE\n")
+    write_file(tmp_path, "Straße.s", _source("Sharp"))
+    write_file(tmp_path, "STRASSE.s", _source("Upper"))
+
+    project = _load(tmp_path)
+
+    assert project.get("STRASSE").source_path == tmp_path / "STRASSE.s"
+    assert "Straße" not in project
+
+
+def test_a_casefold_only_lookup_does_not_designate_a_loaded_unit(tmp_path: Path) -> None:
+    write_file(tmp_path, "Straße.s", _source("Sharp"))
+
+    project = _load(tmp_path, targets=("Straße",))
+
+    assert project.get("Straße").name == "Straße"
+    assert project.get("straße").name == "Straße"
+    # Every view key round-trips, even one the language fold would not produce.
+    for key in project.programs():
+        assert project.get(key).name == "Straße"
+    with pytest.raises(KeyError, match="no loaded program"):
+        project.get("STRASSE")
+    assert "STRASSE" not in project
+
+
+def test_dependents_of_accepts_a_view_key_and_rejects_a_casefold_only_name(tmp_path: Path) -> None:
+    write_file(tmp_path, "Straße.s", _source("Sharp"))
+    write_file(tmp_path, "Main.s", _source("Main"))
+    (tmp_path / "Main.l").write_text("Straße\n", encoding="cp1252")
+
+    project = _load(tmp_path)
+
+    assert set(project.programs()) == {"main", "strasse"}
+    assert project.dependents_of("Straße") == ("Main",)
+    # ``strasse`` is the view key ``programs()`` reports for ``Straße``.
+    assert project.dependents_of("strasse") == ("Main",)
+    # ``STRASSE`` is a different unit, so nothing depends on it.
+    assert project.dependents_of("STRASSE") == ()
+
+
+def test_a_folded_name_collision_is_reported_and_one_unit_wins(tmp_path: Path, case_sensitive_fs: None) -> None:
+    """Two files the language considers one unit are reported, not dropped."""
+    write_file(tmp_path, "Util.s", _source("Util"))
+    write_file(tmp_path, "UTIL.s", _source("UTIL"))
+
+    project = _load(tmp_path, targets=("Util",))
+
+    collisions = [d for d in project.diagnostics() if d.kind is LoadDiagnosticKind.FOLDED_NAME_COLLISION]
+    assert len(collisions) == 1
+    assert "UTIL.s" in collisions[0].detail
+    assert "Util.s" in collisions[0].detail
+    assert collisions[0].path == tmp_path / "UTIL.s"
+    assert project.get("Util").source_path == tmp_path / "UTIL.s"
+
+
+def test_two_units_that_casefold_together_both_stay_in_the_view(tmp_path: Path) -> None:
+    """A shared casefold key names no unit; both use their language identity."""
+    write_file(tmp_path, "Straße.s", _source("Sharp"))
+    write_file(tmp_path, "STRASSE.s", _source("Upper"))
+
+    project = _load(tmp_path, targets=("Straße", "STRASSE"))
+
+    collisions = [d for d in project.diagnostics() if d.kind is LoadDiagnosticKind.FOLDED_NAME_COLLISION]
+    assert len(collisions) == 1
+    assert "Straße" in collisions[0].detail
+    assert "STRASSE" in collisions[0].detail
+    assert list(project.programs()) == ["STRAßE", "STRASSE"]
+    assert project.get("Straße").source_path == tmp_path / "Straße.s"
+    assert project.get("STRAßE").source_path == tmp_path / "Straße.s"
+    # ``strasse`` is the language identity of the lowercase spelling, not a view key.
+    assert project.get("strasse").source_path == tmp_path / "STRASSE.s"
+    assert project.get("STRASSE").source_path == tmp_path / "STRASSE.s"
+
+
+def test_a_folded_name_collision_round_trips_and_never_retargets_an_edge(tmp_path: Path) -> None:
+    """A dependency on either unit of a shared casefold key names that unit."""
+    write_file(tmp_path, "Straße.s", _source("Sharp"))
+    write_file(tmp_path, "STRASSE.s", _source("Upper"))
+    write_file(tmp_path, "Main.s", _source("Main"))
+    (tmp_path / "Main.l").write_text("STRASSE\n", encoding="cp1252")
+
+    project = _load(tmp_path, targets=("Straße", "STRASSE", "Main"))
+
+    assert project.get("STRASSE").source_path == tmp_path / "STRASSE.s"
+    # ``dependencies_of`` returns a declared name ``get`` resolves to the same unit.
+    (dependency,) = project.dependencies_of("Main")
+    assert dependency == "STRASSE"
+    assert project.get(dependency).source_path == tmp_path / "STRASSE.s"
+    assert project.dependents_of("STRASSE") == ("Main",)
+    assert project.dependents_of("strasse") == ("Main",)
+    # The graph points at the unit the declaration named, not at the other one.
+    graph = project.graph()
+    assert set(graph.nodes) == {"STRAßE", "STRASSE", "main"}
+    assert graph.edges == (("main", "STRASSE"),)
+    assert graph.dependencies_of("Main") == ("STRASSE",)
+    assert graph.dependents_of("STRASSE") == ("main",)
+    assert graph.dependents_of("Straße") == ()
+
+
+def test_a_lowercase_spelling_of_the_shared_key_round_trips(tmp_path: Path) -> None:
+    """``strasse`` is the language name of ``strasse.s``, not a view-key alias."""
+    write_file(tmp_path, "Straße.s", _source("Sharp"))
+    write_file(tmp_path, "strasse.s", _source("Lower"))
+    write_file(tmp_path, "Main.s", _source("Main"))
+    (tmp_path / "Main.l").write_text("strasse\n", encoding="cp1252")
+
+    project = _load(tmp_path, targets=("Straße", "strasse", "Main"))
+
+    assert project.get("strasse").source_path == tmp_path / "strasse.s"
+    (dependency,) = project.dependencies_of("Main")
+    assert dependency == "strasse"
+    assert project.get(dependency).source_path == tmp_path / "strasse.s"
+    assert project.dependents_of("strasse") == ("Main",)
+    assert project.graph().edges == (("main", "STRASSE"),)
+
+
+def test_an_alias_spelling_does_not_answer_for_a_casefold_only_name(tmp_path: Path) -> None:
+    """An alias resolves under the spelling that reached it, not under casefold."""
+    write_file(tmp_path, "Base.s", _source("Base"))
+    try:
+        (tmp_path / "Straße.s").symlink_to(tmp_path / "Base.s")
+    except (OSError, NotImplementedError):
+        pytest.skip("this filesystem cannot create a symlink")
+    write_file(tmp_path, "Main.s", _source("Main"))
+    # Sidecars are CP1252, so a sharp s must be written in the file's encoding.
+    (tmp_path / "Main.l").write_text("Base\nStraße\n", encoding="cp1252")
+
+    project = _load(tmp_path)
+
+    assert project.get("Straße").name == "Base"
+    assert project.get("straße").name == "Base"
+    with pytest.raises(KeyError, match="no loaded program"):
+        project.get("STRASSE")
+    assert "STRASSE" not in project
+
+
+def test_an_alias_dependency_name_resolves_to_the_unit_it_reached(tmp_path: Path) -> None:
+    """One body named twice keeps both names, and the graph stays closed."""
+    write_file(tmp_path, "Base.s", _source("Base"))
+    try:
+        (tmp_path / "AliasBase.s").symlink_to(tmp_path / "Base.s")
+    except (OSError, NotImplementedError):
+        pytest.skip("this filesystem cannot create a symlink")
+    write_file(tmp_path, "Main.s", _source("Main"))
+    write_file(tmp_path, "Main.l", "Base\nAliasBase\n")
+
+    project = _load(tmp_path)
+
+    assert project.dependencies_of("Main") == ("Base", "AliasBase")
+    for name in project.dependencies_of("Main"):
+        assert project.get(name).name == "Base"
+    # Both spellings name the same unit, so both answer for its dependents.
+    assert project.dependents_of("Base") == ("Main",)
+    assert project.dependents_of("AliasBase") == ("Main",)
+    graph = project.graph()
+    assert set(graph.nodes) == {"base", "main"}
+    assert set(graph.edges) == {("main", "base")}
+    assert graph.dependents_of("AliasBase") == ()
+
+
+def test_a_second_visit_to_the_same_body_does_not_report_an_unused_sidecar(tmp_path: Path) -> None:
+    """A diamond and two targets sharing a dependency are not aliases.
+
+    The shared body's sidecar is read on the first visit. Every later visit
+    resolves the same prefix, so nothing was left unread and the load must not
+    claim otherwise.
+    """
+    write_file(tmp_path, "Leaf.s", _source("Leaf"))
+    write_file(tmp_path, "Base.s", _source("Base"))
+    write_file(tmp_path, "Base.l", "Leaf\n")
+    for name, dependencies in (("Left", "Base\n"), ("Right", "Base\n"), ("Top", "Left\nRight\n")):
+        write_file(tmp_path, f"{name}.s", _source(name))
+        write_file(tmp_path, f"{name}.l", dependencies)
+
+    project = _load(tmp_path, targets=("Top", "Left", "Right"))
+
+    assert project.dependencies_of("Base") == ("Leaf",)
+    assert project.dependents_of("Base") == ("Left", "Right")
+    kinds = [diagnostic.kind for diagnostic in project.diagnostics()]
+    assert LoadDiagnosticKind.ALIAS_DECLARATIONS_UNUSED not in kinds
+
+
+def test_an_alias_sidecar_declaration_is_reported_and_not_loaded(tmp_path: Path) -> None:
+    """A spelling that reaches a planned body never contributes dependencies."""
+    write_file(tmp_path, "Util.s", _source("Util"))
+    write_file(tmp_path, "Extra.s", _source("Extra"))
+    try:
+        (tmp_path / "Helper.s").symlink_to(tmp_path / "Util.s")
+    except (OSError, NotImplementedError):
+        pytest.skip("this filesystem cannot create a symlink")
+    write_file(tmp_path, "Helper.l", "Extra\n")
+
+    project = _load(tmp_path, targets=("Util", "Helper"))
+
+    assert "Extra" not in project
+    assert [program.name for program in project.programs().values()] == ["Util"]
+    unused = [d for d in project.diagnostics() if d.kind is LoadDiagnosticKind.ALIAS_DECLARATIONS_UNUSED]
+    assert len(unused) == 1
+    assert unused[0].program == "Helper"
+    assert unused[0].path == tmp_path / "Helper.l"
+
+
+@pytest.mark.skipif(os.name == "nt" or os.geteuid() == 0, reason="needs POSIX permissions as a non-root user")
+def test_an_unreadable_alias_sidecar_does_not_fail_the_load(tmp_path: Path) -> None:
+    """The alias prefix's sidecar is resolved but never read."""
+    write_file(tmp_path, "Util.s", _source("Util"))
+    try:
+        (tmp_path / "Helper.s").symlink_to(tmp_path / "Util.s")
+    except (OSError, NotImplementedError):
+        pytest.skip("this filesystem cannot create a symlink")
+    sidecar = write_file(tmp_path, "Helper.l", "Extra\n")
+    sidecar.chmod(0)
+    try:
+        project = _load(tmp_path, targets=("Util", "Helper"))
+    finally:
+        sidecar.chmod(0o644)
+
+    assert [program.name for program in project.programs().values()] == ["Util"]
+    kinds = {d.kind for d in project.diagnostics()}
+    assert LoadDiagnosticKind.ALIAS_DECLARATIONS_UNUSED in kinds
+
+
+def _write_chain(root: Path, length: int, *, close: bool) -> None:
+    """Write ``Unit0`` .. ``Unit{length-1}``, each depending on the next."""
+    for index in range(length):
+        name = f"Unit{index}"
+        write_file(root, f"{name}.s", _source(name))
+        if index + 1 < length:
+            write_file(root, f"{name}.l", f"Unit{index + 1}\n")
+        elif close:
+            write_file(root, f"{name}.l", "Unit0\n")
+
+
+def test_a_four_hundred_unit_cycle_is_a_cycle_not_a_recursion_error(tmp_path: Path) -> None:
+    _write_chain(tmp_path, 400, close=True)
+
+    with pytest.raises(DependencyCycleError) as excinfo:
+        _load(tmp_path, targets=("Unit0",))
+
+    cycle = excinfo.value.cycle
+    assert cycle[0] == cycle[-1]
+    assert len(cycle) == 401
+
+
+def test_a_four_hundred_unit_chain_loads(tmp_path: Path) -> None:
+    _write_chain(tmp_path, 400, close=False)
+
+    project = _load(tmp_path, targets=("Unit0",))
+
+    assert len(project.programs()) == 400
+    assert project.dependencies_of("Unit0") == ("Unit1",)
+    assert project.dependencies_of("Unit399") == ()
+
+
+# --- companion resolution, skipped files, roots, and nested pools --------------
+
+
+def test_companion_resolution_scans_each_directory_once_per_load(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Graphics, distribution, and the sidecar probe share one directory scan."""
+    targets = tuple(f"Unit{index}" for index in range(24))
+    for name in targets:
+        write_file(tmp_path, f"{name}.s", _source(name))
+    scans: list[Path] = []
+    original = CompanionIndex._scan
+
+    def counting(self: CompanionIndex, base: Path) -> dict[tuple[str, str], tuple[Path, ...]]:
+        if base not in self._entries:
+            scans.append(base)
+        return original(self, base)
+
+    monkeypatch.setattr(CompanionIndex, "_scan", counting)
+
+    first = _load(tmp_path, targets=targets)
+
+    assert len(first.programs()) == 24
+    assert scans == [tmp_path.resolve()]
+
+    scans.clear()
+    _load(tmp_path, targets=targets)
+
+    # A second load owns a fresh index: the cache never crosses a load.
+    assert scans == [tmp_path.resolve()]
+
+
+def test_a_companion_in_the_other_family_is_reported_and_not_paired(tmp_path: Path) -> None:
+    """A ``.y`` beside a ``.s`` body explains why the graphics answer is missing."""
+    write_file(tmp_path, "Main.s", _source("Main"))
+    write_file(tmp_path, "Main.y", "")
+    write_file(tmp_path, "Main.q", "")
+
+    project = _load(tmp_path)
+
+    program = project.get("Main")
+    assert program.graphics is None
+    assert program.distribution is None
+    assert program.has_executing_system is None
+    mismatches = [d for d in project.diagnostics() if d.kind is LoadDiagnosticKind.COMPANION_FAMILY_MISMATCH]
+    assert {diagnostic.path for diagnostic in mismatches} == {tmp_path / "Main.y", tmp_path / "Main.q"}
+    assert {diagnostic.program for diagnostic in mismatches} == {"Main"}
+
+
+def test_a_paired_companion_does_not_report_the_other_family(tmp_path: Path) -> None:
+    write_file(tmp_path, "Main.s", _source("Main"))
+    write_file(tmp_path, "Main.g", _GFX)
+    write_file(tmp_path, "Main.y", "")
+    write_file(tmp_path, "Main.p", _DISTRIBUTION_EMPTY)
+    write_file(tmp_path, "Main.q", "")
+
+    project = _load(tmp_path)
+
+    assert project.get("Main").graphics is not None
+    assert project.get("Main").has_executing_system is False
+    assert not [d for d in project.diagnostics() if d.kind is LoadDiagnosticKind.COMPANION_FAMILY_MISMATCH]
+
+
+def test_a_companion_name_collision_is_reported_with_its_winner(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, case_sensitive_fs: None
+) -> None:
+    """The alphabetically first case variant pairs, whatever order the directory lists."""
+    write_file(tmp_path, "main.s", _source("Main"))
+    winner = write_file(tmp_path, "MAIN.G", _GFX)
+    loser = write_file(tmp_path, "Main.g", _GFX_UNTERMINATED)
+    original = Path.iterdir
+
+    def reversed_entries(self: Path) -> list[Path]:
+        return sorted(original(self), key=lambda entry: entry.name, reverse=True)
+
+    monkeypatch.setattr(Path, "iterdir", reversed_entries)
+
+    project = _load(tmp_path)
+
+    assert project.get("Main").graphics is not None
+    collisions = [d for d in project.diagnostics() if d.kind is LoadDiagnosticKind.FOLDED_NAME_COLLISION]
+    assert len(collisions) == 1
+    assert collisions[0].path == winner
+    assert "MAIN.G" in collisions[0].detail
+    assert loser.name in collisions[0].detail
+
+
+def test_a_sidecar_that_matches_only_under_casefold_is_not_a_family_mismatch(tmp_path: Path) -> None:
+    """The other-family probe uses language identity, not ``str.casefold``."""
+    write_file(tmp_path, "Straße.s", _source("Sharp"))
+    write_file(tmp_path, "STRASSE.z", "")
+
+    project = _load(tmp_path, targets=("Straße",))
+
+    kinds = {diagnostic.kind for diagnostic in project.diagnostics()}
+    assert LoadDiagnosticKind.SIDECAR_FAMILY_MISMATCH not in kinds
+    assert LoadDiagnosticKind.SIDECAR_MISSING in kinds
+
+
+def test_a_code_file_whose_stem_is_not_a_unit_name_is_reported_and_skipped(tmp_path: Path) -> None:
+    """A dotted stem cannot be a target; the load names it and carries on."""
+    write_file(tmp_path, "Main.s", _source("Main"))
+    write_file(tmp_path, "Pump.v2.s", _source("Pump"))
+
+    project = _load(tmp_path, targets=("Main",))
+
+    assert set(project.programs()) == {"main"}
+    skipped = [d for d in project.diagnostics() if d.kind is LoadDiagnosticKind.SKIPPED_FILE]
+    assert len(skipped) == 1
+    assert skipped[0].program == "Pump.v2"
+    assert skipped[0].path == tmp_path / "Pump.v2.s"
+    assert "Pump.v2.s" in skipped[0].detail
+
+
+def test_a_code_file_with_a_dotted_stem_is_not_a_discovered_target(tmp_path: Path) -> None:
+    """The default discovery rule and the resolver share one name predicate."""
+    write_file(tmp_path, "Main.s", _source("Main"))
+    write_file(tmp_path, "Pump.v2.s", _source("Pump"))
+
+    assert _discover_targets([tmp_path], mode=LoadMode.DRAFT) == ("Main",)
+
+
+def test_a_skipped_candidate_outside_the_requested_mode_is_not_reported(tmp_path: Path) -> None:
+    """Official mode does not consider a draft body, so it is not a skipped target."""
+    write_file(tmp_path, "Main.x", _source("Main"))
+    write_file(tmp_path, "Pump.v2.s", _source("Pump"))
+
+    project = _load(tmp_path, targets=("Main",), mode=LoadMode.OFFICIAL)
+
+    assert not [d for d in project.diagnostics() if d.kind is LoadDiagnosticKind.SKIPPED_FILE]
+
+
+def test_a_root_that_is_a_file_is_a_load_error_naming_it(tmp_path: Path) -> None:
+    """A file root is not an empty root: the load names the root and stops."""
+    root = write_file(tmp_path, "notes.txt", "not a library")
+
+    with pytest.raises(ProjectLoadError, match="not a readable directory") as excinfo:
+        SattLineProject.load([root], LoadMode.DRAFT, ["Main"])
+
+    assert str(root) in str(excinfo.value)
+
+
+def test_a_missing_root_is_a_load_error_naming_it(tmp_path: Path) -> None:
+    missing = tmp_path / "absent"
+
+    with pytest.raises(ProjectLoadError, match="not a readable directory") as excinfo:
+        SattLineProject.load([missing], LoadMode.DRAFT, ["Main"])
+
+    assert str(missing) in str(excinfo.value)
+
+
+@pytest.mark.skipif(
+    os.name != "posix" or os.geteuid() == 0,
+    reason="mode bits deny reads on POSIX, and root bypasses them",
+)
+def test_a_root_under_a_denied_ancestor_is_a_load_error(tmp_path: Path) -> None:
+    closed = tmp_path / "closed"
+    root = closed / "libs"
+    root.mkdir(parents=True)
+    closed.chmod(0o000)
+    try:
+        with pytest.raises(ProjectLoadError, match="not a readable directory") as excinfo:
+            SattLineProject.load([root], LoadMode.DRAFT, ["Main"])
+    finally:
+        closed.chmod(0o755)
+
+    assert str(root) in str(excinfo.value)
+
+
+def test_pool_allowed_rejects_a_process_that_belongs_to_an_outer_pool(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(project_loader_parallel.multiprocessing, "parent_process", lambda: object())
+
+    assert pool_allowed() is False
+
+
+def test_pool_allowed_rejects_a_marked_pool_worker(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv(project_loader_parallel.POOL_WORKER_ENV, "1")
+
+    assert pool_allowed() is False
+
+
+def test_a_pool_worker_marks_itself_before_it_runs_a_task(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv(project_loader_parallel.POOL_WORKER_ENV, raising=False)
+
+    project_loader_parallel._mark_pool_worker()  # pyright: ignore[reportPrivateUsage]
+
+    try:
+        assert pool_allowed() is False
+    finally:
+        # ``_mark_pool_worker`` writes the environment directly, so the marker
+        # would otherwise leak into every later test in this process.
+        os.environ.pop(project_loader_parallel.POOL_WORKER_ENV, None)
+
+
+def test_a_nested_load_parses_in_this_process_and_says_so_once(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    for index in range(3):
+        write_file(tmp_path, f"Unit{index}.s", _source(f"Unit{index}"))
+    calls: list[int] = []
+
+    def forbidden(max_workers: int) -> NoReturn:
+        calls.append(max_workers)
+        raise AssertionError("a nested load must not start a worker pool")
+
+    monkeypatch.setattr(project_loader_parallel, "process_pool", forbidden)
+
+    with caplog.at_level(logging.WARNING), load_in_progress():
+        assert loads_in_progress() == 1
+        loader = project_loader.ProjectLoader(
+            roots=[tmp_path],
+            mode=LoadMode.DRAFT,
+            debug=None,
+            cache_dir=None,
+            workers=4,
+        )
+        registry = loader.resolve(("Unit0", "Unit1", "Unit2"))
+
+    assert calls == []
+    assert len(registry) == 3
+    warnings = [record for record in caplog.records if "worker pool not started" in record.getMessage()]
+    assert len(warnings) == 1
+    assert loads_in_progress() == 0

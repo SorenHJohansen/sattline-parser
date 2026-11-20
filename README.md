@@ -72,7 +72,7 @@ This package owns the Lark grammar, the strict single-file syntax behavior, the 
 - Lexically aware decoding: string literals and comments are protected, so syntax-looking text inside them is never rewritten
 - Parse errors described as sentences about the source, with a location, the
   expected spellings and an actionable hint (`describe_parse_error`)
-- AST models in `sattline_parser.models`
+- AST models in `sattline_parser.ast`
 - `SLTransformer` tree transformer in `sattline_parser.transformer`
 - `sattline` command line over the parser, project and graphics layers
   (`check`, `parse`, `query`, `project`, `graphics`, `decode`, `diff`, `corpus`,
@@ -81,7 +81,8 @@ This package owns the Lark grammar, the strict single-file syntax behavior, the 
 - PEP 561 typed: `py.typed` ships, so downstream type checkers use the inline
   annotations
 - Standalone fuzz harness with hard subprocess timeouts and corpus regression
-- Zero runtime dependencies beyond `lark` and `regex`
+- Three runtime dependencies: `lark` (with the `interegular` extra it pulls in)
+  and `regex`
 
 ## Install
 
@@ -108,9 +109,9 @@ sattline version --json           # tool and JSON schema versions
 ```
 
 Findings are sentences with a location, an optional `help:` line and a
-machine-only rule id; exit codes are `0` clean, `1` findings, `2` usage/input,
-`3` internal. Run `sattline <command> --help` for the full option list of any
-command.
+machine-only rule id; exit codes are `0` clean, `1` findings, `2` usage, input,
+or output problem, `3` internal, `130` interrupted. Run
+`sattline <command> --help` for the full option list of any command.
 
 ### Parse a source file
 
@@ -154,7 +155,7 @@ if is_compressed(source):
     decoded, mapping = preprocess_sl_text(source)
     # ... or, when you need original-source provenance:
     doc = preprocess_source(source)
-    doc.original_text, doc.normalized_text  # preprocessed vs original
+    doc.original_text, doc.normalized_text  # original vs preprocessed
 ```
 
 `is_compressed` answers whether the text uses the compressed encoding.
@@ -405,11 +406,14 @@ from the transformer is treated as a crash, not as ordinary invalid input.
 ## Dependencies
 
 The declared runtime dependencies are `lark[interegular]>=1.3.1,<1.4` and
-`regex>=2023.12.25`. The parser does not call `regex` directly; Lark's `regex`
-engine does. The floor is the first release with the Python 3.12 wheels used by
-CI, not a feature requirement. CI tests both the locked minimum (lark 1.3.1)
-and the latest lark that satisfies the range, so the supported range is
-actually exercised. Installs use `uv.lock` for reproducibility.
+`regex>=2023.12.25`. The `interegular` extra pulls in `interegular` itself, so
+an install has three runtime distributions: `lark`, `interegular`, and `regex`.
+The parser does not call `regex` or `interegular` directly; Lark's `regex`
+engine and its grammar checks do. The floor is the first release with the Python
+3.12 wheels used by CI, not a feature requirement. CI tests both the locked
+minimum (lark 1.3.1) and the latest lark that satisfies the range, so the
+supported range is actually exercised. Installs use `uv.lock` for
+reproducibility.
 
 ## Project layout
 

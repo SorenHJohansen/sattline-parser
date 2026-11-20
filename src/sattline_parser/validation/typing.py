@@ -43,7 +43,7 @@ from sattline_parser.models.expressions import (
     VarRef,
 )
 from sattline_parser.names import fold_identifier
-from sattline_parser.validation.symbols import Scope, resolve_var
+from sattline_parser.validation.symbols import Scope
 from sattline_parser.validation.type_graph import TypeGraph
 
 
@@ -169,6 +169,9 @@ class FieldSpec(Protocol):
     @property
     def datatype(self) -> ScalarDatatype | str: ...
 
+    @property
+    def state(self) -> bool | None: ...
+
 
 class FieldGraph(Protocol):
     """Structural view of a record field graph."""
@@ -238,6 +241,39 @@ def unresolved_reference_is_a_defect(ref: VarRef, scope: Scope, type_graph: Type
             return True
         current = field.datatype
     return False
+
+
+def resolve_ref_state(
+    ref: VarRef,
+    scope: Scope,
+    type_graph: FieldGraph,
+) -> bool | None:
+    """Whether a reference resolves to a ``State`` declaration.
+
+    ``True`` for a State variable or State field, ``False`` for a resolved
+    non-State declaration, and ``None`` when the reference or one of its fields
+    does not resolve, so the caller stays silent instead of guessing. Only the
+    leaf is read, matching the declaration the write target names.
+    """
+    base_name, field_path = split_dotted_name(ref.name)
+    if not base_name:
+        return None
+    variable = scope.lookup(base_name)
+    if variable is None:
+        return None
+    if not field_path:
+        return bool(variable.state)
+    current: ScalarDatatype | str = variable.datatype
+    state = False
+    for field_name in field_path:
+        if isinstance(current, ScalarDatatype):
+            return None
+        field = type_graph.field(str(current), field_name)
+        if field is None:
+            return None
+        state = bool(field.state)
+        current = field.datatype
+    return state
 
 
 def is_valid_duration_literal(value: object) -> bool:
@@ -338,7 +374,10 @@ def builtin_type_matches(
 ) -> bool:
     normalized_actual = _normalize(actual)
     normalized_expected = _normalize(expected)
-    if is_anytype_datatype(normalized_expected):
+    # ``AnyType`` proves nothing about the value on either side: the parameter
+    # may accept anything, and an actual of that type may be anything. The
+    # documented exemption is symmetrical, so both sides are waved through.
+    if is_anytype_datatype(normalized_expected) or is_anytype_datatype(normalized_actual):
         return True
     expected_name = fold_identifier(format_datatype(normalized_expected))
     if expected_name == "TOBJECT":
@@ -501,10 +540,18 @@ def assignment_types(
     records: dict[str, DataType],
     type_graph: TypeGraph | None = None,
 ) -> tuple[str | None, str | None]:
-    """(target type, source type) for an assignment, either side may be ``None``."""
-    target = resolve_var(assignment.target, scope, records)
-    source = infer_expr_type(assignment.value, scope, records, type_graph)
-    return (None if target is None else target.datatype_text), source
+    """(target type, source type) for an assignment, either side may be ``None``.
+
+    The target resolves through the type graph rather than the flat record table,
+    so a field of a datatype name declared twice is unproven and the comparison
+    stays silent instead of reading whichever definition happened to win.
+    """
+    graph = type_graph if type_graph is not None else TypeGraph.from_datatypes(records.values())
+    base_name, field_path = split_dotted_name(assignment.target.name)
+    variable = scope.lookup(base_name)
+    target = None if variable is None else resolve_variable_field_datatype(variable, field_path, graph)
+    source = infer_expr_type(assignment.value, scope, records, graph)
+    return (None if target is None else format_datatype(target)), source
 
 
 def _bounded_levenshtein(left: str, right: str, *, max_distance: int = _TYPO_SUGGESTION_MAX_DISTANCE) -> int | None:
@@ -543,9 +590,14 @@ def suggest_datatype_name(name: str, known_datatypes: AbcSequence[str]) -> str |
     Candidates that are a strict prefix of the unknown name are skipped: such
     names extend the candidate (``Timer`` extends ``time``) rather than
     misspelling it.
+
+    Two candidates at the same closest distance are a tie, and a tie returns
+    ``None``. The winner would otherwise be the first candidate the caller
+    happened to pass in, so the suggestion would depend on iteration order
+    rather than on evidence.
     """
-    best_match: str | None = None
     best_distance: int | None = None
+    matches: list[str] = []
     name_folded = fold_identifier(name)
     for candidate in known_datatypes:
         distance = _bounded_levenshtein(name, candidate, max_distance=_TYPO_SUGGESTION_MAX_DISTANCE)
@@ -555,9 +607,13 @@ def suggest_datatype_name(name: str, known_datatypes: AbcSequence[str]) -> str |
         if name_folded.startswith(candidate_folded):
             continue
         if best_distance is None or distance < best_distance:
-            best_match = candidate
             best_distance = distance
-    return best_match
+            matches = [candidate]
+        elif distance == best_distance:
+            folded_matches = {fold_identifier(match) for match in matches}
+            if candidate_folded not in folded_matches:
+                matches.append(candidate)
+    return matches[0] if len(matches) == 1 else None
 
 
 __all__ = [
@@ -590,6 +646,7 @@ __all__ = [
     "normalize_builtin_datatype",
     "operand_types",
     "resolve_ref_datatype",
+    "resolve_ref_state",
     "resolve_variable_field_datatype",
     "split_dotted_name",
     "suggest_datatype_name",

@@ -2,9 +2,13 @@
 
 Persists ``(kind, name, mode) -> (base_dir, ext)`` resolutions so consecutive
 project loads skip filesystem scans for stable layouts. The namespace and
-version belong to this package. A resolution whose base directory is gone is
-dropped at startup, abandoned temporary siblings are pruned, and the entry count
-is capped so a long-lived cache directory stays bounded.
+version belong to this package. A resolution is never trusted because it is in
+the cache: resolution validates the recorded base against the configured roots
+before it is used, and forgets the entry on any mismatch. Startup pruning drops
+entries the file cannot use (wrong version, wrong shape), abandoned temporary
+siblings, and the surplus past the entry cap. It never stats a recorded base: a
+recorded base is untrusted data, and on Windows a planted UNC path would turn a
+startup prune into an outbound SMB connection.
 """
 
 from __future__ import annotations
@@ -14,10 +18,12 @@ import os
 from pathlib import Path
 from typing import cast
 
+from sattline_parser.names import fold_identifier
+
 from ._atomic import TEMP_SUFFIX, temp_file_is_abandoned
 from ._atomic import temp_path_for as _temp_path_for
 
-LOOKUP_CACHE_VERSION = 2
+LOOKUP_CACHE_VERSION = 3
 
 DEFAULT_LOOKUP_CACHE_FLUSH_INTERVAL = 25
 
@@ -79,14 +85,6 @@ def _remove_file(path: Path) -> bool:
     return True
 
 
-def _base_dir_is_gone(entry: dict[str, str]) -> bool:
-    """Whether the base directory a resolution was recorded against is gone."""
-    try:
-        return not Path(entry["base_dir"]).is_dir()
-    except OSError:
-        return True
-
-
 class FileLookupCache:
     """File-lookup resolution cache with atomic, interval-flushed persistence."""
 
@@ -133,8 +131,10 @@ class FileLookupCache:
         Runs at construction, before the in-memory table is loaded, so the
         survivors are what a later ``_load`` sees. Returns the number of entries
         and files removed. An unusable cache file counts as one removal, because
-        the whole file is discarded. A stale entry is one whose recorded base
-        directory no longer exists, so it can never resolve again.
+        the whole file is discarded. An entry is kept when its shape is usable:
+        a recorded base directory is *not* stat-ed here. It is untrusted data
+        until resolution compares it with the configured roots, so a foreign or
+        planted path is never touched by a prune.
         """
         removed = self._prune_temporary_files()
         if not self.path.exists():
@@ -149,7 +149,7 @@ class FileLookupCache:
         entries = _load_file_lookup_entries(data.get("entries"))
         if entries is None:
             return removed + (1 if _remove_file(self.path) else 0)
-        survivors = {key: entry for key, entry in entries.items() if not _base_dir_is_gone(entry)}
+        survivors = dict(entries)
         surplus = len(survivors) - MAX_LOOKUP_CACHE_ENTRIES
         if surplus > 0:
             for key in sorted(survivors)[:surplus]:
@@ -205,13 +205,31 @@ class FileLookupCache:
             self.flush()
 
     def _key(self, kind: str, name: str, mode: str) -> str:
-        return f"{kind}:{mode}:{name.casefold()}"
+        # Language identity, not Unicode case folding: ``Straße`` and ``STRASSE``
+        # are different units, so they must not share one resolution.
+        return f"{kind}:{mode}:{fold_identifier(name)}"
 
     def _entries_map(self) -> dict[object, object] | None:
         entries = self._data.get("entries")
         if not isinstance(entries, dict):
             return None
         return cast(dict[object, object], entries)
+
+    def _enforce_entry_cap(self, entries: dict[object, object], keep: str) -> None:
+        """Drop the surplus entries in key order, never the one just written.
+
+        The cap runs on every insert, not only at construction, so a single long
+        run cannot grow the file past ``MAX_LOOKUP_CACHE_ENTRIES``. Eviction is
+        by key order, matching the startup prune, and the newest resolution is
+        always kept so a ``set`` is never immediately undone.
+        """
+        surplus = len(entries) - MAX_LOOKUP_CACHE_ENTRIES
+        if surplus <= 0:
+            return
+        victims = sorted(key for key in entries if isinstance(key, str) and key != keep)
+        victims.append(keep)
+        for key in victims[:surplus]:
+            entries.pop(key, None)
 
     def get(self, kind: str, name: str, mode: str) -> dict[str, str] | None:
         entries = self._entries_map()
@@ -224,9 +242,11 @@ class FileLookupCache:
         if entries is None:
             return
         payload: dict[str, str] = {"base_dir": _normalize_base_dir(base_dir), "ext": ext}
-        if entries.get(self._key(kind, name, mode)) == payload:
+        key = self._key(kind, name, mode)
+        if entries.get(key) == payload:
             return
-        entries[self._key(kind, name, mode)] = payload
+        entries[key] = payload
+        self._enforce_entry_cap(entries, key)
         self._record_mutation()
 
     def forget(self, kind: str, name: str, mode: str) -> None:

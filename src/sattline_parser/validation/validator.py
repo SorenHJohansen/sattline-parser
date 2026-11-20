@@ -11,15 +11,21 @@ point in :mod:`sattline_parser.api`.
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+import dataclasses
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from functools import lru_cache
+from typing import cast
 
 from sattline_parser.builtins.records import BUILTIN_RECORD_SPECS
+from sattline_parser.errors import SourceTooDeepError
+from sattline_parser.models import walk
 from sattline_parser.models.ast_model import (
     BasePicture,
     DataType,
+    FloatLiteral,
     FrameModule,
+    IntLiteral,
     ModuleDef,
     ModuleHeader,
     ModuleTypeDef,
@@ -37,6 +43,7 @@ from sattline_parser.validation.code import (
 )
 from sattline_parser.validation.declarations import (
     check_identifiers,
+    check_moduletype_identifiers,
     check_record_fields,
     check_sibling_submodules,
     check_variable_declarations,
@@ -48,6 +55,17 @@ from sattline_parser.validation.transfers import check_parameter_transfers
 from sattline_parser.validation.type_graph import TypeGraph
 
 Submodule = SingleModule | FrameModule | ModuleTypeInstance
+
+#: Deepest AST node nesting :func:`validate_basepicture` accepts.
+#:
+#: The expression and statement rules of this pass are recursive, and a
+#: hand-built tree can be deeper than the Python call stack allows. Parsed input
+#: is already capped by ``source_io.MAX_SOURCE_DEPTH`` (256), so the same bound
+#: is used here: anything the parser accepts validates, and a manual tree past
+#: the bound is rejected with the documented nesting error instead of raising a
+#: bare ``RecursionError``. ``tests/parser/test_validation_depth.py`` pins the
+#: equality with the parser bound.
+MAX_VALIDATED_DEPTH = 256
 
 
 @lru_cache(maxsize=1)
@@ -118,6 +136,75 @@ def _check_parameter_contract(
     check_parameter_mappings(mappings, expected, scope, context.type_graph, errors)
 
 
+def _check_numeric_literal_ranges(root: object, errors: list[Diagnostic]) -> None:
+    """Report a literal the transformer had to clamp to the language range."""
+    stack: list[object] = [root]
+    seen: set[int] = set()
+    while stack:
+        value = stack.pop()
+        if isinstance(value, (IntLiteral, FloatLiteral)) and value.clamped:
+            # ``value`` holds the clamped number, so the sentence quotes the text
+            # the source wrote instead. A hand-built literal may carry no written
+            # text; then the stored value is the only spelling there is.
+            written = value.written if value.written is not None else str(value)
+            errors.append(
+                Diagnostic(
+                    code=DiagnosticCode.NUMERIC_LITERAL_OUT_OF_RANGE,
+                    message=(
+                        f"The numeric literal {written} is outside the supported "
+                        "32-bit integer or real range and was clamped"
+                    ),
+                    span=value.span,
+                )
+            )
+            continue
+        if dataclasses.is_dataclass(value) and not isinstance(value, type):
+            identity = id(value)
+            if identity in seen:
+                continue
+            seen.add(identity)
+            stack.extend(getattr(value, field.name) for field in dataclasses.fields(value))
+        elif isinstance(value, Mapping):
+            mapping = cast("Mapping[object, object]", value)
+            stack.extend(mapping.values())
+        elif isinstance(value, (list, tuple)):
+            sequence = cast("Sequence[object]", value)
+            stack.extend(sequence)
+
+
+def _reject_over_deep_tree(bp: BasePicture) -> None:
+    """Refuse a tree the recursive expression rules cannot visit.
+
+    ``walk`` is iterative and exposes the ancestor chain length, so the check
+    itself cannot exhaust the call stack and costs one linear pass.
+    """
+    depth = max((len(event.parents) + 1 for event in walk(bp)), default=0)
+    if depth > MAX_VALIDATED_DEPTH:
+        raise SourceTooDeepError(MAX_VALIDATED_DEPTH)
+
+
+def _validation_context(
+    bp: BasePicture,
+    external_datatypes: Sequence[DataType],
+    external_moduletype_defs: Sequence[ModuleTypeDef],
+    allow_unresolved_external_datatypes: bool,
+    *,
+    sfc_names: frozenset[str],
+) -> _ValidationContext:
+    available_datatypes = [*external_datatypes, *bp.datatype_defs]
+    available_moduletypes = [*external_moduletype_defs, *bp.moduletype_defs]
+    records = {fold_identifier(datatype.name): datatype for datatype in available_datatypes}
+    for builtin in _builtin_record_datatypes():
+        records[fold_identifier(builtin.name)] = builtin
+    return _ValidationContext(
+        records=records,
+        moduletypes={fold_identifier(moduletype.name): moduletype for moduletype in available_moduletypes},
+        type_graph=TypeGraph.from_datatypes(bp.datatype_defs, fallback=external_datatypes),
+        allow_unresolved_external_datatypes=allow_unresolved_external_datatypes,
+        sfc_names=sfc_names,
+    )
+
+
 def validate_basepicture(
     bp: BasePicture,
     *,
@@ -134,25 +221,26 @@ def validate_basepicture(
     it suppresses only the unknown-name findings, not typo suggestions or local
     rules.
 
-    The tables are built external-first, so a definition in this file wins over a
-    same-named definition from a dependency, and a builtin name is only a
-    fallback. Resolution order is therefore file, dependency, builtin.
+    Builtin records take precedence over file definitions, which take precedence
+    over same-named dependency definitions.
+
+    Raises :class:`~sattline_parser.errors.SourceTooDeepError` when the node
+    nesting is deeper than :data:`MAX_VALIDATED_DEPTH`. Parsed input never
+    reaches that bound, because the parser rejects it first; a hand-built tree
+    does, and the recursive expression rules cannot visit it safely.
     """
+    _reject_over_deep_tree(bp)
     errors: list[Diagnostic] = []
-    available_datatypes = [*external_datatypes, *bp.datatype_defs]
-    available_moduletypes = [*external_moduletype_defs, *bp.moduletype_defs]
-    records = {fold_identifier(datatype.name): datatype for datatype in available_datatypes}
-    for builtin in _builtin_record_datatypes():
-        records.setdefault(fold_identifier(builtin.name), builtin)
-    context = _ValidationContext(
-        records=records,
-        moduletypes={fold_identifier(moduletype.name): moduletype for moduletype in available_moduletypes},
-        type_graph=TypeGraph.from_datatypes(available_datatypes),
-        allow_unresolved_external_datatypes=allow_unresolved_external_datatypes,
+    context = _validation_context(
+        bp,
+        external_datatypes,
+        external_moduletype_defs,
+        allow_unresolved_external_datatypes,
         sfc_names=collect_program_sfc_names(bp),
     )
 
     check_identifiers(bp, errors)
+    _check_numeric_literal_ranges(bp, errors)
     base_scope = build_scope(None, [*bp.moduleparameters, *bp.localvariables])
     check_variable_declarations(
         [*bp.moduleparameters, *bp.localvariables],
@@ -182,6 +270,31 @@ def validate_basepicture(
     for moduletype in bp.moduletype_defs:
         _walk_moduletype_def(moduletype, context, errors)
 
+    return tuple(errors)
+
+
+def validate_moduletype_definitions(
+    bp: BasePicture,
+    selected: BasePicture,
+    *,
+    external_datatypes: Sequence[DataType] = (),
+    external_moduletype_defs: Sequence[ModuleTypeDef] = (),
+) -> tuple[Diagnostic, ...]:
+    """Validate selected module types using the containing picture's type shapes."""
+    _reject_over_deep_tree(bp)
+    context = _validation_context(
+        bp,
+        external_datatypes,
+        external_moduletype_defs,
+        False,
+        sfc_names=collect_program_sfc_names(selected),
+    )
+    errors: list[Diagnostic] = []
+    for moduletype in selected.moduletype_defs:
+        check_moduletype_identifiers(moduletype, errors)
+    _check_numeric_literal_ranges(selected.moduletype_defs, errors)
+    for moduletype in selected.moduletype_defs:
+        _walk_moduletype_def(moduletype, context, errors)
     return tuple(errors)
 
 
@@ -220,15 +333,16 @@ def _walk_submodule(
         )
         return
     scope = _child_scope(child, parent)
-    if isinstance(child, SingleModule):
-        _check_parameter_contract(
-            child.parametermappings,
-            child.moduleparameters,
-            f"Submodule {child.header.name}",
-            parent,
-            context,
-            errors,
-        )
+    # A single module and a frame module both declare formals and carry a
+    # mapping tail, so both get the transfer and mapping contract.
+    _check_parameter_contract(
+        child.parametermappings,
+        child.moduleparameters,
+        f"Submodule {child.header.name}",
+        parent,
+        context,
+        errors,
+    )
     _walk_definition(child, scope, context, errors)
 
 
@@ -261,7 +375,9 @@ def _walk_moduletype_def(
 
 
 def _child_scope(child: SingleModule | FrameModule, parent: Scope) -> Scope:
-    return build_scope(parent, [*_module_parameters(child), *_local_variables(child)])
+    if isinstance(child, FrameModule):
+        return parent
+    return build_scope(None, [*_module_parameters(child), *_local_variables(child)])
 
 
 def _module_parameters(child: SingleModule | FrameModule) -> list[Variable]:

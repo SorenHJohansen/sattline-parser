@@ -87,18 +87,19 @@ def test_a_multi_key_time_payload_raises() -> None:
         fmt._init_value_text(_variable(init_value={"A": "1", "B": "2"}))
 
 
-def test_named_sequence_layers_raise() -> None:
-    with pytest.raises(UnsupportedFormattingError, match="named sequence layers"):
-        format_module(ModuleDef(seq_layers={"A": 1.0}))
+def test_a_layer_limit_is_written_as_two_layers() -> None:
+    assert "Two_Layers_ LayerLimit_ = 3.0" in format_module(ModuleDef(layer_limit=3.0))
 
 
-def test_an_empty_equation_gets_a_placeholder_comment() -> None:
+def test_an_empty_equation_is_written_as_a_bare_header() -> None:
     module = ModuleDef()
     code = ModuleCode(equationblocks=[Equation(name=None, position=None, size=None, code=[])])
 
     text = _render(module, code)
 
-    assert "(* empty *)" in text
+    assert "EQUATIONBLOCK :\n" in text
+    # An invented ``(* empty *)`` became a real comment node on reparse.
+    assert "(* empty *)" not in text
 
 
 def test_a_comment_in_a_sequence_body_is_written_once() -> None:
@@ -240,14 +241,14 @@ def test_a_procedure_tail_argument_keeps_its_colon() -> None:
 
 def test_coordinate_helpers_reject_unknown_shapes() -> None:
     with pytest.raises(UnsupportedFormattingError, match="coordinate shape"):
-        fmt._tailed_coords_text((1.0,), (), 0)
+        fmt._tailed_coords_text((1.0,), (), (), 0)
     with pytest.raises(UnsupportedFormattingError, match="coordinate number"):
         fmt._as_float("nope")
     assert fmt._is_pair(1) is False
 
 
 def test_a_single_coordinate_pair_is_written_as_one_pair() -> None:
-    assert fmt._tailed_coords_text((1.0, 2.0), (), 0) == "( 1.0 , 2.0 )"
+    assert fmt._tailed_coords_text((1.0, 2.0), (), (), 0) == "( 1.0 , 2.0 )"
 
 
 def test_a_bare_connection_node_is_written_without_coordinates() -> None:
@@ -340,7 +341,7 @@ def test_an_interactor_whose_orders_disagree_raises() -> None:
 
 def test_tailed_coordinates_reject_an_unknown_shape() -> None:
     with pytest.raises(UnsupportedFormattingError, match="coordinate shape"):
-        fmt._tailed_coords_text("nope", (), 0)
+        fmt._tailed_coords_text("nope", (), (), 0)
 
 
 def test_a_graph_object_tail_without_an_owning_clause_raises() -> None:
@@ -398,3 +399,15 @@ def test_a_clipping_clause_with_a_partially_grouped_tail_raises() -> None:
         format_module(
             ModuleDef(clipping=ClippingClause(((-1.0, -1.0), (1.0, 1.0)), (tail,), corner_tails=((), (), (), ())))
         )
+
+
+def test_more_than_two_header_description_comments_raise() -> None:
+    picture = _picture()
+    picture.header.description_comments = [
+        CodeComment("(* one *)"),
+        CodeComment("(* two *)"),
+        CodeComment("(* three *)"),
+    ]
+
+    with pytest.raises(UnsupportedFormattingError, match="one comment position"):
+        format_source(picture)

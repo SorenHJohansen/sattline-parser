@@ -108,6 +108,12 @@ interpreter bytecode, so gating every leg triples the most expensive job and can
 make the same source pass on one version and fail on another. The 3.12 and 3.14
 legs run a plain `pytest`, which still exercises the whole suite.
 
+On Windows, CI runs `python scripts/windows_pytest.py`. The wrapper sets the
+test process token's default owner to the current user before starting pytest;
+child processes inherit that owner. This keeps private-cache tests usable with
+an elevated token whose default owner would otherwise be Administrators, without
+changing the cache's owner or DACL checks. API failures fail the job.
+
 ## Fuzzing
 
 ```mermaid

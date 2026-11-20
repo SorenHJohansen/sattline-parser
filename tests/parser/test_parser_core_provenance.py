@@ -7,7 +7,7 @@ ORIGINAL source, including for compressed input. Each end-to-end test checks
 """
 
 from pathlib import Path
-from typing import LiteralString
+from typing import Any, LiteralString, cast
 
 import pytest
 from lark.exceptions import UnexpectedEOF, UnexpectedInput
@@ -498,3 +498,86 @@ def test_is_decoded_range_separates_codes_from_raw_text():
     assert document.is_decoded_range(-1, 4) is False
     assert document.is_decoded_range(5, 5) is False
     assert document.is_decoded_range(0, len(document.normalized_text) + 1) is False
+
+
+# ---------------------------------------------------------------------------
+# Anchoring cost: one index, logarithmic lookups
+# ---------------------------------------------------------------------------
+
+
+class _CountingCharMap(tuple[int, ...]):
+    """A character map that counts how often a mapping reads a position."""
+
+    reads = 0
+
+    def __getitem__(self, index: Any) -> Any:
+        type(self).reads += 1
+        return super().__getitem__(index)
+
+
+def _generated_run_document(length: int) -> SourceDocument:
+    """A document whose normalized text is one long generated run."""
+    return SourceDocument("X", "G" * length, cast(tuple[int, ...], _CountingCharMap([-1] * length)))
+
+
+def test_map_position_does_not_rescan_a_generated_run():
+    # Regression: anchoring used to walk the map one entry at a time, so mapping
+    # every offset of an N-character generated run cost O(N^2). The anchor index
+    # is built once and each lookup reads a constant number of entries.
+    document = _generated_run_document(2000)
+    assert document.map_position(1999) == 0  # builds the anchor index
+    _CountingCharMap.reads = 0
+
+    for offset in range(2000):
+        assert document.map_position(offset) == 0
+
+    assert _CountingCharMap.reads <= 2000
+
+
+def test_map_range_does_not_rescan_a_generated_run():
+    document = _generated_run_document(2000)
+    assert document.map_range(0, 2000) == (0, 1)  # builds the anchor index
+    _CountingCharMap.reads = 0
+
+    for end in range(1, 2001):
+        assert document.map_range(0, end) == (0, 1)
+
+    assert _CountingCharMap.reads <= 2000
+
+
+def test_identity_documents_never_build_the_anchor_index():
+    document = SourceDocument.identity(_PROGRAM)
+
+    assert document.map_position(3) == 3
+    assert document.map_range(0, 4) == (0, 4)
+    assert document.is_decoded_range(0, 4) is False
+    assert document._anchor_index is None  # type: ignore[attr-defined]
+
+
+def test_compressed_adjacent_markers_decode_and_remap_to_the_original():
+    # Markers written back to back (no separator) produce one long generated run.
+    # Every span must still slice the original compact source.
+    adjacent = _COMPRESSED.replace(
+        "Counter = Counter + 1",
+        "Counter = " + "#01" * 8 + " Counter + 1" + ")" * 8,
+    )
+
+    document = preprocess_source(adjacent)
+
+    assert document.normalized_text.count("((((((((") == 1
+    assert "Counter = " + "(" * 8 + " Counter + 1" + ")" * 8 in document.normalized_text
+    # A generated character anchors to the nearest preceding real character.
+    first_paren = document.normalized_text.index("(" * 8)
+    anchor = document.map_position(first_paren)
+    assert anchor is not None
+    assert anchor == adjacent.index("#01") - 1
+    assert adjacent[anchor] == " "
+
+    picture = parser_core_parse_source_text(adjacent)
+    assert picture.modulecode is not None
+    assignment = picture.modulecode.equationblocks[0].code[0]
+    assert isinstance(assignment, Assignment)
+    assert assignment.span is not None
+    assert adjacent[assignment.span.start : assignment.span.end] == (
+        "Counter = " + "#01" * 8 + " Counter + 1" + ")" * 8
+    )

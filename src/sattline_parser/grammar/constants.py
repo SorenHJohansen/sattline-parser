@@ -43,7 +43,6 @@ TREE_TAG_DATATYPE_LIST: Final = "datatype_list"
 TREE_TAG_MODULETYPE_LIST: Final = "moduletype_list"
 TREE_TAG_VAR_LIST: Final = "var_list"
 TREE_TAG_MODULETYPE_PAR_LIST: Final = "moduletype_par_list"
-TREE_TAG_MODULEDEF_BLOCK: Final = "moduledef_block"
 TREE_TAG_BASE_MODULE_BODY: Final = "base_module_body"
 TREE_TAG_MODULE_BODY: Final = "module_body"
 TREE_TAG_SUBMODULES: Final = "submodules"
@@ -69,6 +68,8 @@ KEY_SEQ_CONTROL_OPS: Final = "seq_control_opt"
 KEY_COORDS: Final = "coords"
 #: Per-value groups for the coordinate run: one tuple of tails per REAL.
 KEY_COORD_TAILS: Final = "coord_tails"
+#: Per-value groups for a coordinate run: nested ``ClippingBounds`` annotations.
+KEY_COORD_CLIPPINGS: Final = "coord_clippings"
 KEY_SEGMENT_POINT: Final = "segment_point"
 KEY_POLYGON_TYPE: Final = "polygon_type"
 KEY_POINTS: Final = "points"
@@ -242,9 +243,17 @@ GRAMMAR_VALUE_OLD: Final = "Old"
 #: The string literals. They do not spell a keyword, so they are written
 #: directly. The numeric literals are defined after ``GRAMMAR_CHARSET_NAME``
 #: because their sign guard reuses it.
-GRAMMAR_REGEX_STRING: Final = r"/\"([^\n\"]|\"\")*\"/"
-GRAMMAR_REGEX_STRING_NOTAIL: Final = r"/\"([^\n\"]|\"\")*\"(?![ \t\r\n]*:)/"
-GRAMMAR_REGEX_STRING_CRLF: Final = r"/\"([^\"\n]|\"\")*\n/"
+#:
+#: A string holds no line break: CRLF, LF, and a lone CR each end it. That is the
+#: same line-terminator definition the compressed-source scanner, the coded
+#: decoder, and ``render_ide_text`` use, so a CR can never be string content for
+#: one component and a line break for another. Line and column numbers are a
+#: separate rule and count LF; see ``docs/grammar.md``.
+GRAMMAR_REGEX_STRING: Final = r"/\"([^\r\n\"]|\"\")*\"/"
+GRAMMAR_REGEX_STRING_NOTAIL: Final = r"/\"([^\r\n\"]|\"\")*\"(?![ \t\r\n]*:)/"
+#: An unterminated description (``STRING_CRLF``) ends at the first line break and
+#: consumes the terminator, which may be CRLF, LF, or a lone CR.
+GRAMMAR_REGEX_STRING_CRLF: Final = r"/\"([^\"\r\n]|\"\")*(?:\r\n?|\n)/"
 GRAMMAR_REGEX_COMMENT_TEXT: Final = r"/(?:[^(*]|\((?!\*)|\*(?!\)))+/"
 GRAMMAR_REGEX_SL_DATECODE: Final = r"/\d+/"
 
@@ -285,6 +294,15 @@ def _cp1252_name_characters() -> str:
 
 
 GRAMMAR_CHARSET_NAME: Final = r"\p{L}\p{Nl}\p{M}\p{Nd}_'" + _cp1252_name_characters() + r"\uFFFD"
+#: Characters that may begin an unquoted identifier: the name class without the
+#: decimal digits. A leading digit would be read as a numeric literal wherever a
+#: literal may start, so ``1E5`` is the number ``100000.0`` rather than a name
+#: and a name may not begin with a digit. The quoted form spells such a name.
+GRAMMAR_CHARSET_NAME_START: Final = r"\p{L}\p{Nl}\p{M}_'" + _cp1252_name_characters() + r"\uFFFD"
+#: A quoted identifier. Its body is literal text, so it holds no apostrophe and
+#: never spans a line break. The lexer and the compressed-source scanner share
+#: this pattern, so both find the same opener and closer.
+GRAMMAR_PATTERN_QUOTED_NAME: Final = r"'[^'\r\n]+'"
 _NAME_EXCLUDED_KEYWORDS: Final = (
     GRAMMAR_VALUE_IF,
     GRAMMAR_VALUE_THEN,
@@ -301,12 +319,12 @@ _NAME_EXCLUDED_KEYWORDS: Final = (
 _NAME_EXCLUDED: Final = "|".join(_NAME_EXCLUDED_KEYWORDS)
 
 GRAMMAR_REGEX_NAME: Final = (
-    r"/(?i:'[^']+'|"
+    rf"/(?i:{GRAMMAR_PATTERN_QUOTED_NAME}|"
     r"(?!"
     rf"(?:{_NAME_EXCLUDED})"
     rf"(?![{GRAMMAR_CHARSET_NAME}])"
     r")"
-    rf"[{GRAMMAR_CHARSET_NAME}]+"
+    rf"[{GRAMMAR_CHARSET_NAME_START}][{GRAMMAR_CHARSET_NAME}]*"
     rf"(?![{GRAMMAR_CHARSET_NAME}]))/"
 )
 
@@ -344,6 +362,7 @@ TOKEN_COMMENT_START: Final = "COMMENT_START"  # nosec B105 - token type name
 TOKEN_COMMENT_END: Final = "COMMENT_END"  # nosec B105 - token type name
 TOKEN_COMMENT_TEXT: Final = "COMMENT_TEXT"  # nosec B105 - token type name
 TOKEN_NAME: Final = "NAME"
+TOKEN_DATECODE_PREFIX: Final = "DATECODE_PREFIX"
 
 COMMENT_TERMINALS: Final = frozenset({TOKEN_COMMENT_START, TOKEN_COMMENT_END, TOKEN_COMMENT_TEXT})
 

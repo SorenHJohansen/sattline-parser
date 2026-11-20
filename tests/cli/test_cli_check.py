@@ -95,6 +95,30 @@ def test_jsonl_streams_findings_then_a_summary(tmp_path, capsys) -> None:
     }
 
 
+def test_json_files_names_match_the_findings(tmp_path, capsys, monkeypatch) -> None:
+    """``files`` carries the display names the findings carry."""
+    write_source(tmp_path, "Steps.s", CONSECUTIVE_STEPS_SOURCE)
+    monkeypatch.chdir(tmp_path)
+
+    assert main(["check", "Steps.s", "--json", "--paths", "absolute"]) == ExitCode.FINDINGS
+
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["files"] == [str((tmp_path / "Steps.s").resolve())]
+    assert payload["findings"][0]["file"] == payload["files"][0]
+
+
+def test_json_files_names_stdin_by_its_given_name(capsys, monkeypatch) -> None:
+    monkeypatch.setattr(
+        sys, "stdin", type("_Stdin", (), {"buffer": io.BytesIO(CONSECUTIVE_STEPS_SOURCE.encode("cp1252"))})()
+    )
+
+    assert main(["check", "-", "--stdin-name", "Piped.s", "--json"]) == ExitCode.FINDINGS
+
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["files"] == ["Piped.s"]
+    assert payload["findings"][0]["file"] == "Piped.s"
+
+
 def test_rule_filter(tmp_path, capsys) -> None:
     source = write_source(tmp_path, "Steps.s", CONSECUTIVE_STEPS_SOURCE)
 
@@ -116,8 +140,23 @@ def test_max_findings_limits_output_but_not_the_exit_code(tmp_path, capsys) -> N
     assert captured.out == ""
     assert "1 more finding(s) not shown" in captured.err
 
-    assert main(["check", str(source), "--max-findings", "-1"]) == ExitCode.FINDINGS
-    assert "Consecutive SFC steps" in capsys.readouterr().out
+    assert main(["check", str(source), "--max-findings", "-1"]) == ExitCode.USAGE
+    assert "must be 0 or greater" in capsys.readouterr().err
+
+    assert main(["check", str(source), "--max-findings", "two"]) == ExitCode.USAGE
+    assert "expected an integer" in capsys.readouterr().err
+
+
+def test_max_findings_note_is_printed_once_in_a_json_document(tmp_path, capsys) -> None:
+    source = write_source(tmp_path, "Steps.s", CONSECUTIVE_STEPS_SOURCE)
+
+    assert main(["check", str(source), "--max-findings", "0", "--json"]) == ExitCode.FINDINGS
+
+    captured = capsys.readouterr()
+    assert captured.err.count("more finding(s) not shown") == 1
+    payload = json.loads(captured.out)
+    assert payload["findings"] == []
+    assert payload["counts"] == {"error": 1}
 
 
 def test_fail_on_policy(tmp_path, capsys) -> None:

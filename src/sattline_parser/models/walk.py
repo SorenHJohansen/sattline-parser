@@ -47,7 +47,7 @@ stack.
 
 from __future__ import annotations
 
-from collections.abc import Callable, Iterator, Sequence
+from collections.abc import Callable, Iterator, Mapping, Sequence
 from dataclasses import dataclass, is_dataclass
 from dataclasses import fields as dataclass_fields
 from enum import Enum
@@ -172,6 +172,7 @@ _FIELD_SPECS: _FieldSpecs = {
         "origin_lib": "leaf",
         "trailing_comments": "node",
         "datecode": "leaf",
+        "is_frame_module": "leaf",
     },
     m.CodeComment: {"text": "leaf", "span": "leaf"},
     HeaderInfo: {
@@ -197,6 +198,7 @@ _FIELD_SPECS: _FieldSpecs = {
         "size": "leaf",
         "code": "node",
         "layer_info": "leaf",
+        "declaration_span": "leaf",
     },
     m.FrameModule: {
         "header": "node",
@@ -206,6 +208,7 @@ _FIELD_SPECS: _FieldSpecs = {
         "submodules": "node",
         "moduledef": "node",
         "modulecode": "node",
+        "parametermappings": "node",
         "trailing_comments": "node",
     },
     m.GraphObject: {"type": "leaf", "properties": "properties", "span": "leaf"},
@@ -214,7 +217,7 @@ _FIELD_SPECS: _FieldSpecs = {
     m.ModuleDef: {
         "clipping": "node",
         "zoom_limits": "leaf",
-        "seq_layers": "leaf",
+        "layer_limit": "leaf",
         "grid": "leaf",
         "zoomable": "leaf",
         "graph_objects": "node",
@@ -231,6 +234,7 @@ _FIELD_SPECS: _FieldSpecs = {
         "groupconn_global": "leaf",
         "description_comments": "node",
         "coordinate_tails": "leaf",
+        "coordinate_clippings": "leaf",
     },
     m.ModuleTypeDef: {
         "name": "leaf",
@@ -286,6 +290,7 @@ _FIELD_SPECS: _FieldSpecs = {
         "seqtimer": "leaf",
         "code": "node",
         "layer_info": "leaf",
+        "declaration_span": "leaf",
     },
     m.SingleModule: {
         "header": "node",
@@ -318,7 +323,13 @@ _FIELD_SPECS: _FieldSpecs = {
     Assignment: {"target": "node", "value": "value", "span": "leaf"},
     BinOp: {"left": "value", "op": "leaf", "right": "value", "span": "leaf"},
     BoolOp: {"op": "leaf", "operands": "value", "span": "leaf"},
-    ClippingClause: {"bounds": "leaf", "tails": "value", "span": "leaf", "corner_tails": "leaf"},
+    ClippingClause: {
+        "bounds": "leaf",
+        "tails": "value",
+        "span": "leaf",
+        "corner_tails": "leaf",
+        "corner_clippings": "leaf",
+    },
     ColourSpec: {
         "kind": "leaf",
         "width": "node",
@@ -347,7 +358,15 @@ _FIELD_SPECS: _FieldSpecs = {
     ModuleMarker: {"kind": "leaf", "span": "leaf"},
     NotOp: {"operand": "value", "span": "leaf"},
     PickButton: {"value": "leaf", "reference": "node", "span": "leaf"},
-    PolygonPoint: {"x": "leaf", "y": "leaf", "x_tails": "value", "y_tails": "value", "span": "leaf"},
+    PolygonPoint: {
+        "x": "leaf",
+        "y": "leaf",
+        "x_tails": "value",
+        "y_tails": "value",
+        "x_clippings": "leaf",
+        "y_clippings": "leaf",
+        "span": "leaf",
+    },
     ProcedureCall: {"name": "leaf", "args": "value", "span": "leaf"},
     ScaleSelector: {"mode": "leaf", "span": "leaf"},
     TailedClause: {"key": "leaf", "value": "value", "tail": "value", "span": "leaf"},
@@ -363,6 +382,7 @@ _FIELD_SPECS: _FieldSpecs = {
 #: forces a decision here; a test compares the tuple with the annotation keys.
 _GRAPH_PROPERTY_ORDER: tuple[str, ...] = (
     "coord_tails",
+    "coord_clippings",
     "colours",
     "enable_tail",
     "width",
@@ -383,6 +403,7 @@ _GRAPH_PROPERTY_ORDER: tuple[str, ...] = (
 #: Node-bearing keys of ``InteractProperties`` in walk order.
 _INTERACT_PROPERTY_ORDER: tuple[str, ...] = (
     "coord_tails",
+    "coord_clippings",
     "procedure",
     "assigns",
     "enables",
@@ -585,11 +606,21 @@ def _literal_scalar(value: object) -> bool | int | float | str | None:
 
 
 def _literal_leaves(field: str, value: object, relation: str, indices: tuple[int, ...]) -> Iterator[LiteralLeaf]:
-    """Yield the literal values reachable through one ``value`` field."""
+    """Yield the literal values reachable through one ``value`` field.
+
+    A mapping payload is read through its values, because the key is the
+    written keyword (``Time_Value``) and the value is the literal text. The key
+    appears in the relation instead of in ``indices``, which are numeric.
+    """
     if isinstance(value, _NODE_TYPES):
         return
     if isinstance(value, (bool, int, float, str)):
         yield LiteralLeaf(relation, field, indices, value)
+        return
+    if isinstance(value, Mapping):
+        payload = cast("Mapping[object, object]", value)
+        for key, item in payload.items():
+            yield from _literal_leaves(field, item, f"{relation}[{key}]", indices)
         return
     if isinstance(value, (list, tuple)):
         for index, item in enumerate(cast("Sequence[object]", value)):
@@ -625,10 +656,12 @@ def _property_entries(node: m.GraphObject | m.InteractObject) -> Iterator[_Child
         value = properties.get(key)
         if value is None:
             continue
-        if key in {"tails", "coord_tails"}:
+        if key in {"tails", "coord_tails", "coord_clippings"}:
             # Both are views of tails that another key or the flat list owns.
             # ``coord_tails`` is grouped, so it yields no nodes itself; the flat
-            # ``tails`` list emits each tail once.
+            # ``tails`` list emits each tail once. ``coord_clippings`` groups the
+            # same tail objects under their annotation, so reading it here would
+            # hide them from the flat list without emitting them anywhere.
             if key == "tails":
                 yield from _unowned_tail_entries(value, owned)
             continue
@@ -677,11 +710,13 @@ def iter_child_nodes(node: object) -> Iterator[tuple[str, object]]:
 def iter_literal_leaves(node: object) -> Iterator[LiteralLeaf]:
     """Yield the literal values a node holds directly.
 
-    ``value`` fields may hold a node or a literal, so nested sequences are
-    traversed and node values are skipped. ``leaf`` fields hold literal scalars,
-    and a typed property map contributes its scalar entries. Containers,
-    ``None``, spans, and enum members are not literal leaves. Use :func:`walk`
-    to reach the nodes.
+    ``value`` fields may hold a node or a literal, so nested sequences and
+    mapping payloads are traversed and node values are skipped. A mapping
+    contributes its values, so a ``Time_Value`` payload's text is a leaf; the
+    key is the written keyword and appears in the relation. ``leaf`` fields hold
+    literal scalars, and a typed property map contributes its scalar entries.
+    Containers, ``None``, spans, and enum members are not literal leaves. Use
+    :func:`walk` to reach the nodes.
     """
     if isinstance(node, (list, tuple)):
         for item in cast("Sequence[object]", node):

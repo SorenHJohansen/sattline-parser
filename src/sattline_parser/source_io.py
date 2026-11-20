@@ -13,8 +13,8 @@ import getpass
 import os
 import stat
 import sys
-from collections.abc import Callable, Collection, Generator, Sequence
-from contextlib import contextmanager
+from collections.abc import Callable, Collection, Generator
+from contextlib import contextmanager, suppress
 from functools import lru_cache
 from hashlib import sha256
 from pathlib import Path
@@ -23,9 +23,9 @@ from typing import NoReturn, Protocol, cast
 
 from lark import Lark, Token, Tree
 from lark import __version__ as lark_version
-from lark.exceptions import VisitError
+from lark.exceptions import UnexpectedInput, VisitError
 
-from sattline_parser.models.ast_model import BasePicture, DataType, ModuleTypeDef
+from sattline_parser.models.ast_model import BasePicture
 from sattline_parser.source_document import (
     SourceDocument,
     mark_remapped,
@@ -33,8 +33,8 @@ from sattline_parser.source_document import (
     remap_tree_to_original,
 )
 from sattline_parser.transformer.sl_transformer import SLTransformer
-from sattline_parser.validation import Diagnostic, validate_basepicture
 
+from ._cache_security import windows_directory_is_private
 from .errors import (
     SourceTooDeepError,
     _log_parser_failure,  # pyright: ignore[reportPrivateUsage]  # imported for internal use
@@ -48,6 +48,7 @@ from .preprocessing.compressed import closed_comment_spans
 
 _CACHE_DIR_MODE = 0o700
 _CACHE_DIR_NAME = "sattline-parser"
+_LARK_STAGING_SUFFIX = ".tmp"
 
 #: Maximum number of structural levels accepted from one source.
 #:
@@ -161,8 +162,11 @@ def _source_too_deep_error(node: object | None = None) -> SourceTooDeepError:
 
 
 # ``os.getuid`` is POSIX-only. Resolving it once keeps the platform probe out of
-# the hot path and lets the tests drive both cases on any platform.
+# the hot path and lets the tests drive both cases on any platform. Windows has
+# no POSIX owner check at all, so it is dispatched to the security-descriptor
+# reader instead; the flag is resolved once for the same reason.
 _getuid: Callable[[], int] | None = getattr(os, "getuid", None)
+_IS_WINDOWS = os.name == "nt"
 
 
 def _cache_owner_token() -> str:
@@ -172,58 +176,139 @@ def _cache_owner_token() -> str:
     return str(_getuid())
 
 
-def _private_directory(path: Path) -> Path | None:
-    """Create or validate one cache directory level ``0700``.
+def _ancestor_is_private(info: os.stat_result) -> bool:
+    """Whether one ancestor directory cannot be changed by another user.
+
+    A cache level is only as private as the directories above it: whoever can
+    write a parent can rename the whole cache tree and put a forged copy in its
+    place. This user's own directory (no group or world write bit) and a
+    root-owned directory (no group or world write bit) both qualify. A
+    root-owned sticky directory qualifies too, because another user cannot
+    rename or delete an entry they do not own there, which is what makes a
+    shared temporary root usable without making it a place to plant a cache.
+
+    A group-writable directory owned by this user is refused even though it
+    belongs to this user: another member of the group can replace the tree.
+    """
+    uid = _getuid
+    if uid is None:
+        return False
+    if info.st_uid not in (uid(), 0):
+        return False
+    if not info.st_mode & 0o022:
+        return True
+    return info.st_uid == 0 and bool(info.st_mode & stat.S_ISVTX)
+
+
+def _ancestor_chain_is_private(path: Path) -> bool:
+    """Whether every directory above *path* is private enough to hold it.
+
+    The walk stops at the filesystem root, so a cache root whose parent chain
+    cannot be proven private is refused rather than trusted. This runs after the
+    level itself is created, because creating ``~/.cache/x`` requires ``.cache``
+    to exist first: the created level is left in place and the cache is
+    disabled.
+    """
+    if _IS_WINDOWS:
+        # Windows proves privacy through the security descriptor of the level
+        # itself; its inherited ACEs already describe the parent chain, and
+        # there is no portable owner/mode walk.
+        return True
+    current = path.parent
+    while True:
+        try:
+            info = current.lstat()
+        except OSError:
+            return False
+        if not stat.S_ISDIR(info.st_mode) or not _ancestor_is_private(info):
+            return False
+        parent = current.parent
+        if parent == current:
+            return True
+        current = parent
+
+
+def _private_directory(path: Path, *, create: bool = True) -> Path | None:
+    """Create or validate one cache directory level as private.
 
     ``lstat`` is deliberate: a symlink is never followed, so a planted link
     cannot redirect a cache write into a directory this user did not create. A
-    level that exists with the wrong owner, or that cannot be tightened to
-    ``0700``, disables the cache (fail closed).
+    level that exists with the wrong owner, that cannot be tightened to
+    ``0700``, or whose Windows security descriptor cannot be proven private
+    disables the cache (fail closed). A platform with no privacy check at all
+    is refused rather than trusted. ``create=False`` is the read-only form: the
+    directory must already exist and is never created or tightened.
     """
-    try:
-        path.mkdir(mode=_CACHE_DIR_MODE)
-    except FileExistsError:
-        pass
-    except OSError:
-        return None
+    if create:
+        try:
+            path.mkdir(mode=_CACHE_DIR_MODE)
+        except FileExistsError:
+            pass
+        except OSError:
+            return None
     try:
         info = path.lstat()
     except OSError:
         return None
     if not stat.S_ISDIR(info.st_mode):
         return None
-    # Ownership and POSIX permission bits are the only check available here.
-    # Windows reports ``0o777`` for every directory and only toggles the
-    # read-only attribute through ``chmod``, so the mode rule stays POSIX-only.
-    if _getuid is not None:
-        if info.st_uid != _getuid():
+    if _IS_WINDOWS:
+        # Windows reports ``0o777`` for every directory and only toggles the
+        # read-only attribute through ``chmod``, so the owner and DACL are the
+        # only real check: mode bits say nothing there.
+        return path if windows_directory_is_private(path) else None
+    if _getuid is None:
+        # No POSIX owner check exists on this platform, so privacy cannot be
+        # established. The cache is an optimisation and is disabled instead.
+        return None
+    if info.st_uid != _getuid():
+        return None
+    if info.st_mode & 0o077:
+        if not create:
+            return None
+        try:
+            path.chmod(_CACHE_DIR_MODE)
+            info = path.lstat()
+        except OSError:
             return None
         if info.st_mode & 0o077:
-            try:
-                path.chmod(_CACHE_DIR_MODE)
-                info = path.lstat()
-            except OSError:
-                return None
-            if info.st_mode & 0o077:
-                return None
+            return None
     return path
 
 
-def private_cache_dir(path: Path) -> Path | None:
+def private_cache_dir(path: Path, *, create: bool = True) -> Path | None:
     """Create ``path`` as a private directory, or return ``None``.
 
     Parents are created with the process umask (so a missing ``.cache`` level
     stays usable), and the final directory is created ``0700``. It is reused
-    only when ``lstat`` shows a real directory owned by this user with no group
-    or world bits set. Anything else (a read-only temp directory, a symlink, a
-    directory planted by another user) disables the cache instead of following
-    or tightening a path this process does not own.
+    only when the platform proves that this user owns it privately: on POSIX a
+    real directory owned by this user with no group or world bits, and on
+    Windows a real directory, not a reparse point, whose owner is this user and
+    whose DACL grants write access to nobody else. Anything else (a read-only
+    temp directory, a symlink, a directory planted by another user, a failed
+    security-descriptor read) disables the cache instead of following or
+    tightening a path this process does not own.
+
+    Every directory above the level is checked too: whoever can write a parent
+    can rename the whole cache tree and replace it, so a root under a
+    group-writable or foreign-owned parent is refused even when the leaf itself
+    looks private. A root-owned sticky parent such as the shared temporary
+    directory is accepted, because another user cannot rename an entry they do
+    not own there.
+
+    ``create=False`` is for a reader such as a worker process: the directory
+    must already exist and be private, and this call never creates or changes
+    it.
     """
-    try:
-        path.parent.mkdir(parents=True, exist_ok=True)
-    except OSError:
+    if create:
+        try:
+            path.parent.mkdir(parents=True, exist_ok=True)
+        except OSError:
+            return None
+    validated = _private_directory(path, create=create)
+    if validated is None or not _ancestor_chain_is_private(validated):
         return None
-    return _private_directory(path)
+    return validated
 
 
 def _parser_cache_dir() -> Path | None:
@@ -234,11 +319,14 @@ def _parser_cache_dir() -> Path | None:
     directory has a predictable name under a shared temporary directory, which
     is exactly what another user can pre-create, and owning that parent would
     let them replace the ``lark-cache`` entry after it passed its own check.
+    :func:`private_cache_dir` adds the ancestor walk, so a temporary root that
+    only this user can change is required as well.
     """
     root = Path(gettempdir()) / f"{_CACHE_DIR_NAME}-{_cache_owner_token()}"
-    if _private_directory(root) is None:
+    secure_root = private_cache_dir(root)
+    if secure_root is None:
         return None
-    return _private_directory(root / "lark-cache")
+    return private_cache_dir(root / "lark-cache")
 
 
 class _ParserProtocol(Protocol):
@@ -267,6 +355,117 @@ def _parser_cache_path(
     return str(directory / f"{cache_key.hexdigest()}.lark")
 
 
+def _lark_staging_path(cache_path: Path) -> Path:
+    """A unique sibling path the cache is built in before it is published."""
+    return cache_path.with_name(f"{cache_path.name}.{os.getpid()}.{os.urandom(8).hex()}{_LARK_STAGING_SUFFIX}")
+
+
+def _discard(path: Path) -> None:
+    with suppress(OSError):
+        path.unlink()
+
+
+_LARK_CACHE_MAGIC = b"SATTLINE-LARK-CACHE-V1 "
+
+
+def _lark_cache_header(*, start: str, propagate_positions: bool) -> bytes:
+    """The header line that identifies the parser a cache file holds.
+
+    The file name already isolates the grammar, start rule, position mode, Lark
+    version, and interpreter version. The header repeats the same inputs inside
+    the file, so a file copied to the wrong name, written by an older format, or
+    cut short is discarded instead of loaded.
+    """
+    digest = sha256()
+    digest.update(grammar_fingerprint().encode("ascii"))
+    digest.update(start.encode("utf-8"))
+    digest.update(str(propagate_positions).encode("ascii"))
+    digest.update(lark_version.encode("utf-8"))
+    digest.update(f"py-{sys.version_info[0]}.{sys.version_info[1]}".encode("ascii"))
+    return _LARK_CACHE_MAGIC + digest.hexdigest().encode("ascii") + b"\n"
+
+
+def _load_cached_lark_parser(
+    cache_path: Path,
+    *,
+    start: str,
+    propagate_positions: bool,
+) -> Lark | None:
+    """Load the saved parser, or return ``None`` when the file is unusable.
+
+    Every failure is a cold cache: a truncated header, a partial pickle from an
+    interrupted writer, an incompatible saved shape, or a file an older format
+    wrote. The caller rebuilds and publishes a complete file, so a bad cache
+    costs one rebuild and never a failed parse.
+    """
+    expected = _lark_cache_header(start=start, propagate_positions=propagate_positions)
+    try:
+        with cache_path.open("rb") as handle:
+            if handle.readline() != expected:
+                return None
+            # ``Lark.load`` restores the parser and the options the writer
+            # saved, including the contextual-lexer plugin.
+            return Lark.load(handle)  # pyright: ignore[reportUnknownMemberType]
+    except Exception:  # noqa: BLE001 - any unusable cache file is a miss
+        return None
+
+
+def _publish_lark_parser(cache_path: Path, parser: Lark, *, start: str, propagate_positions: bool) -> None:
+    """Serialize *parser* to a staging file and publish it atomically.
+
+    The cache file is an unsigned pickle in a directory whose privacy is the
+    security boundary; a reader never trusts its contents beyond what
+    ``Lark.load`` deserializes. Publishing through ``os.replace`` means a reader
+    in another process sees either the previous complete file or the new
+    complete file, never a partial pickle.
+    """
+    staging = _lark_staging_path(cache_path)
+    try:
+        with staging.open("wb") as handle:
+            handle.write(_lark_cache_header(start=start, propagate_positions=propagate_positions))
+            parser.save(handle)  # pyright: ignore[reportUnknownMemberType]
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(staging, cache_path)
+    except Exception:  # noqa: BLE001 - a cache write failure must not fail a parse
+        return
+    finally:
+        _discard(staging)
+
+
+def _build_cached_lark_parser(cache_path: str, *, start: str, propagate_positions: bool) -> Lark:
+    """Load the saved parser when it is usable, otherwise build and publish one."""
+    shared = Path(cache_path)
+    cached = _load_cached_lark_parser(shared, start=start, propagate_positions=propagate_positions)
+    if cached is not None:
+        return cached
+    parser = _make_lark_parser(
+        cache=None,
+        start=start,
+        propagate_positions=propagate_positions,
+    )
+    _publish_lark_parser(shared, parser, start=start, propagate_positions=propagate_positions)
+    return parser
+
+
+def _make_lark_parser(*, cache: str | None, start: str, propagate_positions: bool) -> Lark:
+    return Lark(
+        _resolved_grammar(),
+        start=start,
+        parser="lalr",
+        lexer="contextual",
+        propagate_positions=propagate_positions,
+        regex=True,
+        cache=cache,
+        # Lark rejects cache_grammar when no cache path is available.
+        cache_grammar=cache is not None,
+        # Lark's contextual-lexer plugin hook is private. The `<1.4` pin plus the
+        # "Lark Compatibility" CI job that builds against the newest 1.3.x is what
+        # keeps that dependency explicit instead of silently drifting.
+        _plugins={"ContextualLexer": SattLineLexer},
+    )
+
+
 def build_lark_parser(
     *,
     start: str = "start",
@@ -276,24 +475,19 @@ def build_lark_parser(
 
     Every build uses :func:`_resolved_grammar` (comments legal exactly where
     ``sattline.lark`` places them) and the :class:`SattLineLexer` (structural,
-    context-aware ``(* ... *)`` comment handling).
+    context-aware ``(* ... *)`` comment handling). The on-disk parser cache is
+    read directly and written through a staging file published with
+    ``os.replace``, so a reader in another process never sees a partial pickle;
+    an unusable file is discarded and rebuilt.
     """
     cache_path = _parser_cache_path(start=start, propagate_positions=propagate_positions)
-    return Lark(
-        _resolved_grammar(),
-        start=start,
-        parser="lalr",
-        lexer="contextual",
-        propagate_positions=propagate_positions,
-        regex=True,
-        cache=cache_path,
-        # Lark rejects cache_grammar when no cache path is available.
-        cache_grammar=cache_path is not None,
-        # Lark's contextual-lexer plugin hook is private. The `<1.4` pin plus the
-        # "Lark Compatibility" CI job that builds against the newest 1.3.x is what
-        # keeps that dependency explicit instead of silently drifting.
-        _plugins={"ContextualLexer": SattLineLexer},
-    )
+    if cache_path is None:
+        return _make_lark_parser(
+            cache=None,
+            start=start,
+            propagate_positions=propagate_positions,
+        )
+    return _build_cached_lark_parser(cache_path, start=start, propagate_positions=propagate_positions)
 
 
 def create_parser() -> Lark:
@@ -503,7 +697,10 @@ def load_source_text(
     if debug is not None:
         debug(f"Parsing file: {source_path}")
 
-    raw_bytes = source_path.read_bytes()
+    # The byte-order mark is removed before classification, exactly as
+    # ``decode_source_bytes`` does. Otherwise three cp1252 characters would hide
+    # the coded-stream header and the stream would decode as garbage.
+    raw_bytes = _strip_utf8_bom(source_path.read_bytes())
     if is_coded(raw_bytes):
         src = _decode_coded_file_bytes(raw_bytes, debug=debug, source_path=source_path)
     else:
@@ -535,6 +732,28 @@ def _raise_source_too_deep(
     if log_failures:
         _log_parser_failure(stage=stage, exc=deep_error, source_text=src, source_path=source_path)
     raise deep_error from exc
+
+
+def _transform_tree(transformer: SLTransformer, tree: Tree[Token]) -> object:
+    """Transform *tree*, reporting a transformer rejection as its own error.
+
+    Lark wraps every exception raised inside a rule callback in
+    :class:`~lark.exceptions.VisitError`, which is neither a ``ValueError`` nor
+    an ``UnexpectedInput`` and would therefore escape as a parser crash. A
+    rejection of the source, such as a duplicate singular clause or a second
+    module block, is a statement about the source, so the original exception is
+    re-raised from the wrapper and the rest of the pipeline classifies it as a
+    parse failure. A ``RuntimeError`` stays wrapped: it marks a parser defect,
+    and a defect must surface as a traceback instead of being reported as a
+    broken source.
+    """
+    try:
+        return transformer.transform(tree)
+    except VisitError as exc:
+        original = exc.orig_exc
+        if isinstance(original, (ValueError, UnexpectedInput)):
+            raise original from exc
+        raise
 
 
 @contextmanager
@@ -616,7 +835,8 @@ def parse_source_text(
     stage failure with its source location before the exception propagates.
 
     This is a pure parse and transform entry point. Use
-    :func:`parse_and_validate` to also run strict single-source validation.
+    :func:`sattline_parser.api.parse_and_validate` to also run strict
+    single-source validation.
     """
     with _stage("decode", src=src, source_path=source_path, log_failures=log_failures):
         source_doc = preprocess_source(src)
@@ -648,7 +868,7 @@ def parse_source_text(
         debug("Parse OK, transforming with SLTransformer")
 
     with _stage("transform", src=src, source_path=source_path, log_failures=log_failures):
-        transformed = active_transformer.transform(tree)
+        transformed = _transform_tree(active_transformer, tree)
         if not isinstance(transformed, BasePicture):
             raise RuntimeError("Transform result is not BasePicture; check transformer.start()")
 
@@ -658,49 +878,6 @@ def parse_source_text(
         debug(f"Transform result type: {type(transformed).__name__}")
 
     return transformed
-
-
-def parse_and_validate(
-    src: str,
-    *,
-    parser: Lark | None = None,
-    transformer: SLTransformer | None = None,
-    debug: Callable[[str], None] | None = None,
-    source_path: Path | None = None,
-    log_failures: bool = True,
-    external_datatypes: Sequence[DataType] = (),
-    external_moduletype_defs: Sequence[ModuleTypeDef] = (),
-    allow_unresolved_external_datatypes: bool = False,
-) -> tuple[BasePicture, tuple[Diagnostic, ...]]:
-    """Parse a SattLine source and run strict single-source validation.
-
-    Returns ``(basepicture, diagnostics)``; ``diagnostics`` is empty for a
-    source that fully validates. ``parse_source_text`` itself stays a pure
-    parse/transform pipeline — callers opt into validation by using this entry
-    point.
-
-    ``external_datatypes`` and ``external_moduletype_defs`` are the definitions
-    visible from units this one depends on, and are the same arguments
-    :func:`validate_basepicture` takes. Pass them when the caller already holds
-    the dependency definitions, so a reference to a record or module type from
-    a dependency resolves instead of dropping to the validator. A caller that
-    has not loaded those definitions, and only wants the unknown-name findings
-    suppressed, sets ``allow_unresolved_external_datatypes`` instead.
-    """
-    basepic = parse_source_text(
-        src,
-        parser=parser,
-        transformer=transformer,
-        debug=debug,
-        source_path=source_path,
-        log_failures=log_failures,
-    )
-    return basepic, validate_basepicture(
-        basepic,
-        external_datatypes=external_datatypes,
-        external_moduletype_defs=external_moduletype_defs,
-        allow_unresolved_external_datatypes=allow_unresolved_external_datatypes,
-    )
 
 
 def parse_source_bytes(

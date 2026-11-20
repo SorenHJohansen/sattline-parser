@@ -130,6 +130,15 @@ def test_from_programs_rejects_two_keys_that_fold_together() -> None:
         SattLineProject.from_programs({"Util": first, "UTIL": second})
 
 
+def test_from_programs_rejects_two_names_that_casefold_together() -> None:
+    """``Straße`` and ``STRASSE`` share a view key, so the mapping cannot hold both."""
+    sharp = SattLineProgram(name="Straße", code=_code())
+    upper = SattLineProgram(name="STRASSE", code=_code())
+
+    with pytest.raises(ValueError, match="fold to"):
+        SattLineProject.from_programs({"Straße": sharp, "STRASSE": upper})
+
+
 def test_project_get_missing_raises_key_error() -> None:
     project = SattLineProject()
     with pytest.raises(KeyError, match="no loaded program"):
@@ -160,11 +169,33 @@ def test_project_graph_derives_nodes_and_edges() -> None:
     assert graph.dependents_of("A") == ()
 
 
+def test_a_declared_dependency_that_is_not_loaded_keeps_its_own_edge() -> None:
+    """``from_programs`` describes declared structure, not just the closure."""
+    a = SattLineProgram(name="A", code=_code(), dependencies=("Ghost",))
+    project = SattLineProject.from_programs({"A": a})
+
+    graph = project.graph()
+
+    assert graph.nodes == ("a",)
+    assert graph.edges == (("a", "ghost"),)
+
+
 def test_dependency_graph_standalone() -> None:
     graph = DependencyGraph(nodes=("a", "b"), edges=(("a", "b"),))
     assert graph.nodes == ("a", "b")
     assert graph.dependencies_of("other") == ()
     assert graph.dependents_of("other") == ()
+
+
+def test_dependency_graph_resolves_an_exact_node_before_a_casefolded_one() -> None:
+    """Units of a shared casefold key are keyed by language identity."""
+    graph = DependencyGraph(nodes=("STRASSE", "STRAßE", "main"), edges=(("main", "STRASSE"),))
+
+    assert graph.dependencies_of("Main") == ("STRASSE",)
+    assert graph.dependencies_of("MAIN") == ("STRASSE",)
+    assert graph.dependents_of("STRASSE") == ("main",)
+    assert graph.dependents_of("strasse") == ("main",)
+    assert graph.dependents_of("Straße") == ()
 
 
 def test_project_load_wires_discovery_and_dependencies(tmp_path: Path) -> None:

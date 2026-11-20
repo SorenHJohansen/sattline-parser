@@ -16,6 +16,7 @@ from sattline_parser.models.clauses import (
     ModuleArguments,
     ModuleInViewClause,
     ModuleMarker,
+    NestedClipping,
     ZoomLimits,
 )
 from sattline_parser.models.tails import Tail
@@ -53,7 +54,13 @@ class ModuleHeaderMixin:
 
     @v_args(meta=True)
     def arguments(self, meta: Any, items: list[TransformerItem]) -> ModuleArguments:
-        """Grammar arguments -> the typed content of the invocation argument list."""
+        """Grammar arguments -> the typed content of the invocation argument list.
+
+        The rule repeats, but ``Layer_``, ``Enable_``, ``Module_In_View`` and
+        ``ZoomLimits`` are singular properties. A second one is ambiguous, so it
+        is rejected rather than silently overwriting the first; the marker and
+        assignment lists keep every entry.
+        """
         layer: int | None = None
         enable: EnableClause | None = None
         module_in_view: ModuleInViewClause | None = None
@@ -63,10 +70,16 @@ class ModuleHeaderMixin:
         assigns: list[AssignClause] = []
         for it in items:
             if isinstance(it, EnableClause):
+                if enable is not None:
+                    raise ValueError("module header has more than one Enable_ argument")
                 enable = it
             elif isinstance(it, ModuleInViewClause):
+                if module_in_view is not None:
+                    raise ValueError("module header has more than one Module_In_View argument")
                 module_in_view = it
             elif isinstance(it, ZoomLimits):
+                if zoom_limits is not None:
+                    raise ValueError("module header has more than one ZoomLimits argument")
                 zoom_limits = it
             elif isinstance(it, Zoomable):
                 zoomable = True
@@ -75,6 +88,8 @@ class ModuleHeaderMixin:
             elif isinstance(it, AssignClause):
                 assigns.append(it)
             elif isinstance(it, int) and not isinstance(it, bool):
+                if layer is not None:
+                    raise ValueError("module header has more than one Layer_ argument")
                 layer = it
         return ModuleArguments(
             layer=layer,
@@ -94,6 +109,7 @@ class ModuleHeaderMixin:
         coords5: tuple[float, float, float, float, float] | None = None
         coord_tails: list[Tail] = []
         coordinate_tails: tuple[tuple[Tail, ...], ...] = ()
+        coordinate_clippings: tuple[tuple[NestedClipping, ...], ...] = ()
         arguments = ModuleArguments()
         description_comments: list[CodeComment] = []
 
@@ -109,6 +125,7 @@ class ModuleHeaderMixin:
                     coords5 = cast(tuple[float, float, float, float, float], coords)
                     coord_tails.extend(it.tails or ())
                     coordinate_tails = it.coord_tails or ()
+                    coordinate_clippings = it.coord_clippings or ()
             elif isinstance(it, ModuleArguments):
                 arguments = it
 
@@ -123,6 +140,7 @@ class ModuleHeaderMixin:
             invoke_coord_tails=coord_tails,
             description_comments=description_comments,
             coordinate_tails=coordinate_tails,
+            coordinate_clippings=coordinate_clippings,
         )
 
 

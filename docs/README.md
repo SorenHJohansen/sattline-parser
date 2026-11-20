@@ -186,10 +186,10 @@ flowchart TB
    `PreprocessError`. A source that does not parse raises. A project load
    failure raises, so a project is either complete or not returned. Nothing is
    silently dropped.
-2. **Positions always refer to the original source.** Even when a file is
-   decoded from a coded stream or expanded from compressed markers, every
-   `SourceSpan`, diagnostic, and parse error points into the bytes the user
-   supplied.
+2. **Positions refer to the original text.** Marker-compressed text keeps a
+   per-character map, so every `SourceSpan`, diagnostic, and parse error points
+   into the text the user supplied. A binary coded stream is decoded before a
+   source document exists, so its positions refer to the decoded text.
 3. **One grammar is canonical.** `src/sattline_parser/grammar/sattline.lark` is
    the single grammar. `constants.py` supplies its placeholders, and
    `keywords.py` applies case-insensitive keyword matching. The parser cache

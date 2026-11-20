@@ -134,6 +134,13 @@ RULES: tuple[Rule, ...] = (
         DiagnosticCode.DUPLICATE_SIBLING_SUBMODULE,
         "Two sibling submodule instances may not share a name.",
         scope=RuleScope.DECLARATIONS,
+        details=(
+            "A module instance name is unique within its container regardless of the module kind, "
+            "so two inline modules, two frame modules, two module-type instances, or any mix that "
+            "fold to one label are the same duplicate. `tests/fixtures/corpus/invalid/"
+            "DuplicateSiblingCrossType.s` and `DuplicateSiblingFrameModules.s` prove the cross-kind "
+            "and frame-module cases. The label is an instance name, not a resolvable symbol."
+        ),
     ),
     _rule(
         DiagnosticCode.OLD_NEW_ON_NON_STATE_VARIABLE,
@@ -149,6 +156,14 @@ RULES: tuple[Rule, ...] = (
         DiagnosticCode.WRITE_TO_CONST_VARIABLE,
         "A Const variable may not be assigned or written through an output argument.",
         scope=RuleScope.CODE,
+        details=(
+            "The caller-write rule covers a direct assignment and a builtin output argument. "
+            "`setioattribute`'s `Variable` parameter is exempt: it names the object member the "
+            "call writes, so the argument is a value written into the addressed object rather than "
+            "a caller variable the callee assigns. `tests/fixtures/corpus/edge_cases/"
+            "SetIoAttributeConstArgument.s` proves the exemption; every other output argument is "
+            "still checked."
+        ),
     ),
     _rule(
         DiagnosticCode.INIT_VALUE_TYPE_MISMATCH,
@@ -446,6 +461,23 @@ RULES: tuple[Rule, ...] = (
         DiagnosticCode.UNKNOWN_MODULETYPE_NAME,
         "A module-type instance must name a declared type or one visible from a loaded dependency.",
         scope=RuleScope.MAPPINGS,
+    ),
+    _rule(
+        DiagnosticCode.NUMERIC_LITERAL_OUT_OF_RANGE,
+        "A numeric literal must fit the declared 32-bit integer or real range.",
+        scope=RuleScope.CODE,
+    ),
+    _rule(
+        DiagnosticCode.PROCEDURE_IN_VALUE_POSITION,
+        "A procedure call returns no value and cannot be used where a value is required.",
+        scope=RuleScope.CODE,
+        details=(
+            "The builtin catalogue records each call as a function or a procedure; a procedure "
+            "carries no return type. `tests/fixtures/corpus/invalid/ProcedureAsValue.s` writes "
+            "`I = CopyString(S1, S2, I);`, an IF sentence, an arithmetic operand, and a ternary "
+            "branch, all of which the catalogue marks as a procedure called for a value. Only a "
+            "resolved procedure is reported; an unknown callee stays unproven."
+        ),
     ),
 )
 

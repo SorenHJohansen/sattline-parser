@@ -214,27 +214,71 @@ def test_source_line_needs_a_usable_line_number():
     assert parser_errors._source_line("a", 9) is None
 
 
-def test_source_line_splits_on_newline_only_and_drops_one_trailing_cr():
-    # A lone CR is legal inside a string literal, so it must not start a new
-    # line here: the parser's line numbers come from "\n" only.
-    source = '"a\rb"\nsecond\nthird\n'
-    assert parser_errors._source_line(source, 1) == '"a\rb"'
-    assert parser_errors._source_line(source, 2) == "second"
-    assert parser_errors._source_line(source, 3) == "third"
-    # A CRLF file keeps its content and loses the line terminator.
-    assert parser_errors._source_line("first\r\nsecond\r\n", 1) == "first"
-    assert parser_errors._source_line("first\r\nsecond\r\n", 2) == "second"
+def test_source_line_splits_on_every_line_terminator():
+    # CRLF, LF, and a lone CR each end a line, the same rule the grammar's
+    # string terminals and SourceDocument.line_col use.
+    source = "a\rb\nsecond\r\nthird\n"
+    assert parser_errors._source_line(source, 1) == "a"
+    assert parser_errors._source_line(source, 2) == "b"
+    assert parser_errors._source_line(source, 3) == "second"
+    assert parser_errors._source_line(source, 4) == "third"
+    # A trailing terminator leaves the boundary line empty, exactly like a
+    # trailing "\n" split.
+    assert parser_errors._source_line(source, 5) == ""
     # Form feed and vertical tab are content, not line separators.
     assert parser_errors._source_line("a\vb\fc", 1) == "a\vb\fc"
 
 
-def test_describe_parse_error_source_line_agrees_with_a_lone_cr_in_a_string():
-    source = '"a\rb"\nsecond\nthird\n'
+def test_describe_parse_error_source_line_uses_the_same_splitting():
+    source = '"a"\rsecond\rthird\r'
     failure = _parse_failure({"SEMICOLON"}, token=Token("$END", ""), line=2)
 
     details = describe_parse_error(failure, source)
 
     assert details.source_line == "second"
+
+
+def test_a_remapped_context_window_splits_lines_on_a_lone_cr():
+    """The excerpt and the caret follow the reported line, not an LF count.
+
+    A CR-only document is three physical lines here. Lark's ``get_context``
+    ends a line at LF only, so it would return the whole document as one window
+    and put the caret at the wrong place.
+    """
+    from sattline_parser.source_document import SourceDocument, remap_parse_error  # noqa: PLC0415
+
+    source = "first\rsecond\rbad line\rfourth\r"
+    position = source.index("line")
+    failure = UnexpectedCharacters(source, position, 3, 5, allowed=cast(Any, {"NAME"}))
+    remap_parse_error(failure, SourceDocument.identity(source))
+
+    details = describe_parse_error(failure, source)
+
+    assert details.line == 3
+    assert details.column == 5
+    assert details.source_line == "bad line"
+    context = details.message.splitlines()[-2]
+    assert context == "bad line"
+    assert details.message.splitlines()[-1] == "    ^"
+
+
+def test_a_mapped_context_window_splits_lines_on_a_lone_cr():
+    """Mapping an offset back keeps the window on the original physical line."""
+    from sattline_parser.source_document import SourceDocument  # noqa: PLC0415
+
+    # One deleted character; the surviving text still has lone CR terminators.
+    original = "a\rXb\rc"
+    normalized = "a\rb\rc"
+    document = SourceDocument(original, normalized, (0, 1, 3, 4, 5))
+    failure = UnexpectedCharacters(normalized, 2, 2, 1, allowed=cast(Any, {"NAME"}))
+
+    details = describe_parse_error(failure, original, source_document=document)
+
+    assert details.line == 2
+    assert details.column == 2
+    assert details.source_line == "Xb"
+    assert details.message.splitlines()[-2] == "Xb"
+    assert details.message.splitlines()[-1] == " ^"
 
 
 def test_sampled_pattern_terminals_have_friendly_display_names():

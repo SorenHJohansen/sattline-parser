@@ -19,9 +19,12 @@ lexer instance is shared by the cached parser across parses, so the depth must
 never be stored on ``self``: concurrent parses would otherwise corrupt each
 other's nested-comment state.
 
-To keep the merged LALR states safe, ``COMMENT_END`` and ``COMMENT_TEXT`` are
-removed from every per-state accepted-terminal set (``COMMENT_START`` stays,
-since that is how a comment begins in code context).
+To keep the merged LALR states safe, ``COMMENT_TEXT`` is removed from every
+per-state accepted-terminal set. ``COMMENT_START`` is accepted in every state,
+so a comment opener in a position the grammar does not allow reaches the parser
+as ``(*`` and the diagnostic names it. The fallback root lexer keeps both
+delimiters, so a rejected ``*)`` is reported as the comment end rather than as
+the ``*`` that MULTIPLY matches on its own.
 """
 
 from __future__ import annotations
@@ -31,10 +34,11 @@ from collections.abc import Callable, Collection, Generator, Iterator
 from contextlib import contextmanager
 from contextvars import ContextVar
 from copy import copy
-from typing import Any
+from typing import Any, cast
 
 from lark.exceptions import UnexpectedCharacters, UnexpectedToken
 from lark.lexer import BasicLexer, ContextualLexer, LexerState, Token
+from lark.utils import TextSlice
 
 from sattline_parser.grammar.constants import (
     BOOL_SPELLINGS,
@@ -43,6 +47,7 @@ from sattline_parser.grammar.constants import (
     TOKEN_COMMENT_END,
     TOKEN_COMMENT_START,
     TOKEN_COMMENT_TEXT,
+    TOKEN_DATECODE_PREFIX,
     TOKEN_NAME,
 )
 
@@ -53,6 +58,10 @@ __all__ = ["SattLineLexer", "compact_provenance"]
 _RAW_LITERAL_WORDS = frozenset(spelling.casefold() for spelling in BOOL_SPELLINGS) | {GRAMMAR_VALUE_DEFAULT.casefold()}
 
 _WORD_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*\Z")
+#: What may follow a raw ``DateCode_`` prefix and still make it the keyword half
+#: of the ``DATECODE_PREFIX SL_DATECODE`` pair. The datecode rule starts with a
+#: number, and the ignored whitespace between two tokens may sit in between.
+_DATECODE_FOLLOW_RE = re.compile(r"[ \t\r\n]*\d")
 
 #: ``predicate(start, end)`` -> True when the normalized span came from a decoded
 #: compact code. Set per parse by :func:`compact_provenance`.
@@ -80,7 +89,17 @@ def compact_provenance(predicate: _Provenance | None) -> Generator[None]:
 _COMMENT_BODY_TERMINALS = frozenset({TOKEN_COMMENT_END, TOKEN_COMMENT_TEXT})
 
 
-def _retype_raw_keyword(token: Token, token_type: str) -> str:
+def _lexer_source_text(lexer_state: LexerState) -> str:
+    """Return the text the lexer is scanning.
+
+    Lark types ``LexerState.text`` as ``TextSlice[Unknown]``; the contextual
+    lexer is only ever built from a ``str`` grammar, so the slice is a str one.
+    """
+    text_slice = cast("TextSlice[str]", lexer_state.text)  # pyright: ignore[reportUnknownMemberType]
+    return text_slice.text
+
+
+def _retype_raw_keyword(token: Token, token_type: str, text: str, position: int) -> str:
     """Retype a keyword token that the source spelled raw in a coded file to NAME.
 
     Coded mode decodes fixed-width ``#NN`` codes as keywords and never
@@ -88,18 +107,29 @@ def _retype_raw_keyword(token: Token, token_type: str) -> str:
     keyword when the decoder produced its characters. Raw literal
     spellings (``True``/``False``/``On``/``Off``/``Default``) are values the
     compressor always writes unencoded, so they stay as they are.
+
+    A raw ``DateCode_`` is the one exception among keywords: its grammar rule is
+    ``DATECODE_PREFIX SL_DATECODE``, so the prefix is the keyword half of a pair
+    whose other half is a number. When a digit follows *position* in *text*, the
+    pair is kept and the prefix stays a keyword; otherwise the prefix is an
+    ordinary identifier. The question is asked of the text rather than of a
+    lexed-ahead token, so the parser stays in charge of the lexer state, and the
+    match starts at an offset instead of a copy, so the cost stays independent
+    of the remaining text.
     """
     predicate = _PROVENANCE.get()
     if predicate is None or token_type == TOKEN_NAME:
         return token_type
-    text = str(token)
-    if _WORD_RE.match(text) is None or text.casefold() in _RAW_LITERAL_WORDS:
+    spelling = str(token)
+    if _WORD_RE.match(spelling) is None or spelling.casefold() in _RAW_LITERAL_WORDS:
         return token_type
     start = token.start_pos
     end = token.end_pos
     if not isinstance(start, int) or not isinstance(end, int):
         return token_type
     if predicate(start, end):
+        return token_type
+    if token_type == TOKEN_DATECODE_PREFIX and _DATECODE_FOLLOW_RE.match(text, position):
         return token_type
     token.type = TOKEN_NAME
     return TOKEN_NAME
@@ -118,14 +148,21 @@ class SattLineLexer(ContextualLexer):
             state: [term for term in accepts if term not in _COMMENT_BODY_TERMINALS]
             for state, accepts in states.items()
         }
-        self._stripped_conf = copy(conf)
-        self._stripped_conf.terminals = [term for term in conf.terminals if term.name not in _COMMENT_BODY_TERMINALS]
+        # The fallback root lexer keeps both delimiters so a rejected ``*)`` is
+        # reported as the comment end it spells rather than as the ``*`` that
+        # MULTIPLY matches on its own. Comment text stays out: text without an
+        # opener is not a token in code context.
+        self._root_conf = copy(conf)
+        self._root_conf.terminals = [term for term in conf.terminals if term.name != TOKEN_COMMENT_TEXT]
+        # ``COMMENT_START`` is accepted in every code state, so a comment opener
+        # the grammar rejects reaches the parser as ``(*`` and the diagnostic
+        # names it, instead of reporting the ``*`` that MULTIPLY would match.
         super().__init__(
             conf,
             {state: list(accepts) for state, accepts in stripped_states.items()},
-            always_accept=always_accept,
+            always_accept=[*always_accept, TOKEN_COMMENT_START],
         )
-        self.root_lexer = self.BasicLexer(self._stripped_conf)
+        self.root_lexer = self.BasicLexer(self._root_conf)
 
         comment_conf = copy(conf)
         comment_conf.terminals = [conf.terminals_by_name[name] for name in sorted(COMMENT_TERMINALS)]
@@ -145,6 +182,10 @@ class SattLineLexer(ContextualLexer):
         # the predicate again for each candidate token, because the predicate is
         # context-local and a nested parse may have replaced it.
         retype = _PROVENANCE.get() is not None
+        # The lexer's text slice is fixed for the whole run; only the line
+        # counter advances, so the text is read once and the datecode lookahead
+        # starts at the current offset instead of copying the remainder.
+        source_text = _lexer_source_text(lexer_state) if retype else ""
         try:
             while True:
                 if comment_depth > 0:
@@ -153,7 +194,7 @@ class SattLineLexer(ContextualLexer):
                     token = self.lexers[parser_state.position].next_token(lexer_state, parser_state)
                 token_type = token.type
                 if retype and comment_depth == 0:
-                    token_type = _retype_raw_keyword(token, token_type)
+                    token_type = _retype_raw_keyword(token, token_type, source_text, lexer_state.line_ctr.char_pos)
                 if token_type == TOKEN_COMMENT_START:
                     comment_depth += 1
                 elif token_type == TOKEN_COMMENT_END:

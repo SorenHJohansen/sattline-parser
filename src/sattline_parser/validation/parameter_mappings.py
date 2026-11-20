@@ -8,16 +8,20 @@ and a module-type definition.
 
 An absent mapping target is reported when the formal parameter list is known.
 ``None`` means the formals come from a definition that is not loaded, so the
-target stays unproven and silent. Module types and datatypes visible from loaded
-dependencies are passed in by the project layer, so a mapping that targets an
-external typedef resolves the same way as a local one. An instance may omit
-mappings entirely; only the mappings that are present are checked.
+target stays unproven and silent. The mapping source is different: it resolves
+in the invoking scope, so an undefined source and an ``:Old``/``:New`` suffix on
+a non-State source are checked even when the formals are unknown. Module types
+and datatypes visible from loaded dependencies are passed in by the project
+layer, so a mapping that targets an external typedef resolves the same way as a
+local one. An instance may omit mappings entirely; only the mappings that are
+present are checked.
 """
 
 from __future__ import annotations
 
 from sattline_parser.models.ast_model import ParameterMapping, ScalarDatatype, Variable
 from sattline_parser.names import fold_identifier
+from sattline_parser.validation.code import check_old_new
 from sattline_parser.validation.diagnostics import Diagnostic, DiagnosticCode
 from sattline_parser.validation.symbols import Scope
 from sattline_parser.validation.type_graph import TypeGraph
@@ -30,6 +34,7 @@ from sattline_parser.validation.typing import (
     is_valid_time_literal,
     literal_matches_expected_datatype,
     resolve_ref_datatype,
+    resolve_ref_state,
     resolve_variable_field_datatype,
     split_dotted_name,
     unresolved_reference_is_a_defect,
@@ -43,7 +48,15 @@ def check_parameter_mappings(
     type_graph: TypeGraph,
     errors: list[Diagnostic],
 ) -> None:
-    """Check duplicate targets, field access, and value datatypes."""
+    """Check duplicate targets, field access, and value datatypes.
+
+    The mapping source resolves in the invoking scope independently of the
+    target: a source typo or an ``:Old``/``:New`` suffix on a non-State source is
+    a local defect even when the target module type is not loaded and its
+    formals are unknown. Only the target-side checks need the formals, so
+    ``expected_parameters=None`` leaves those checks silent without suppressing
+    the source checks.
+    """
     seen: dict[str, str] = {}
     for mapping in mappings:
         target_name = mapping.target.name
@@ -59,12 +72,9 @@ def check_parameter_mappings(
             continue
         seen[target_key] = target_name
 
-        if expected_parameters is None:
-            continue
-
-        # The formals are known, so the source must resolve even when the target
-        # field itself is opaque. The check runs before the target rules so a
-        # typo is not hidden behind an unproven target shape.
+        # The source resolves in the invoking scope, so it is checked even when
+        # the target type is unknown. The check runs before the target rules so
+        # a typo is not hidden behind an unproven target shape.
         source_datatype: ScalarDatatype | str | None = None
         if mapping.source is not None and not mapping.is_source_global:
             source_datatype = resolve_ref_datatype(mapping.source, scope, type_graph)
@@ -76,6 +86,10 @@ def check_parameter_mappings(
                         span=mapping.span,
                     )
                 )
+            check_old_new(mapping.source, resolve_ref_state(mapping.source, scope, type_graph), errors)
+
+        if expected_parameters is None:
+            continue
 
         base_name, field_path = split_dotted_name(target_name)
         target_variable = expected_parameters.get(fold_identifier(base_name))
@@ -83,7 +97,11 @@ def check_parameter_mappings(
             errors.append(
                 Diagnostic(
                     code=DiagnosticCode.PARAMETER_MAPPING_TARGET_UNKNOWN,
-                    message=f"Parameter mapping target {target_name!r} is not a parameter of the target module",
+                    message=(
+                        f"Parameter mapping target {target_name!r} is not a formal parameter in the "
+                        "resolved definition of the target module; a formal removed from that "
+                        "definition leaves this mapping stale"
+                    ),
                     span=mapping.span,
                 )
             )
@@ -106,7 +124,10 @@ def check_parameter_mappings(
                 errors.append(
                     Diagnostic(
                         code=DiagnosticCode.PARAMETER_MAPPING_TARGET_UNKNOWN,
-                        message=f"Parameter mapping target {target_name!r} does not exist",
+                        message=(
+                            f"Parameter mapping target {target_name!r} is not a field in the resolved "
+                            f"definition of parameter {target_variable.name!r}"
+                        ),
                         span=mapping.span,
                     )
                 )

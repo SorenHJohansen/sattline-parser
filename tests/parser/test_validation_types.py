@@ -15,6 +15,7 @@ from sattline_parser.models.ast_model import (
     Variable,
 )
 from sattline_parser.models.expressions import (
+    Assignment,
     BinOp,
     BoolOp,
     Compare,
@@ -31,6 +32,7 @@ from sattline_parser.validation.symbols import build_scope
 from sattline_parser.validation.type_graph import TypeGraph
 from sattline_parser.validation.typing import (
     assignment_type_matches,
+    assignment_types,
     builtin_type_matches,
     expression_is_zero_literal,
     extract_time_literal,
@@ -49,6 +51,7 @@ from sattline_parser.validation.typing import (
     merge_numeric_types,
     normalize_builtin_datatype,
     resolve_ref_datatype,
+    resolve_ref_state,
     resolve_variable_field_datatype,
     split_dotted_name,
     suggest_datatype_name,
@@ -131,6 +134,95 @@ def test_type_graph_field_state_is_preserved() -> None:
     graph = _graph()
     field = graph.field("Inner", "Flag")
     assert field is not None and field.state is True
+
+
+def test_a_duplicated_datatype_name_leaves_its_field_type_unproven() -> None:
+    """Two shapes are two readings, so neither field type wins."""
+    first = _record("Rec", _var("Value", "integer"))
+    second = _record("Rec", _var("Value", "boolean"))
+    graph = TypeGraph.from_datatypes([first, second])
+
+    assert graph.has_known_fields("Rec") is False
+    assert graph.field("Rec", "Value") is None
+    assert graph.field_type("Rec", "Value") is None
+    assert graph.record("Rec") is not None
+
+
+def test_a_declared_empty_record_has_a_known_shape() -> None:
+    """A record declared with no fields omits every field; that is not opacity."""
+    graph = TypeGraph.from_datatypes([_record("Empty")])
+
+    assert graph.has_known_fields("Empty") is True
+    assert graph.field("Empty", "Any") is None
+
+
+def test_an_empty_builtin_record_spec_stays_unmodelled() -> None:
+    graph = TypeGraph.from_datatypes([])
+
+    assert graph.has_known_fields("ComliMessage") is False
+    assert graph.has_known_fields("BooleanSignal") is True
+
+
+def test_a_fallback_datatype_does_not_shadow_the_primary_one() -> None:
+    """A dependency definition is replaced by the file's own, not duplicated."""
+    external = _record("Rec", _var("Value", "integer"))
+    own = _record("Rec", _var("Count", "real"))
+    graph = TypeGraph.from_datatypes([own], fallback=[external])
+
+    assert graph.has_known_fields("Rec") is True
+    field = graph.field("Rec", "Count")
+    assert field is not None and field.datatype == ScalarDatatype.REAL
+    assert graph.field("Rec", "Value") is None
+
+
+def test_builtin_record_wins_over_local_and_fallback_collisions() -> None:
+    local = _record("BooleanSignal", _var("Value", "integer"))
+    external = _record("BooleanSignal", _var("Value", "real"))
+    graph = TypeGraph.from_datatypes([local, local], fallback=[external])
+
+    assert graph.has_known_fields("BooleanSignal")
+    assert graph.field_type("BooleanSignal", "Value") == ScalarDatatype.BOOLEAN
+
+
+def test_a_fallback_datatype_has_a_known_shape_on_its_own() -> None:
+    graph = TypeGraph.from_datatypes([], fallback=[_record("Loaded")])
+
+    assert graph.has_known_fields("Loaded") is True
+
+
+def test_resolve_ref_state_reads_the_leaf_declaration() -> None:
+    graph = _graph()
+    scope = build_scope(
+        None,
+        [
+            _var("Root", "Outer"),
+            _var("Stable", "integer", state=True),
+            _var("Plain", "integer"),
+            _var("Rate", "real"),
+        ],
+    )
+
+    assert resolve_ref_state(VarRef("Stable"), scope, graph) is True
+    assert resolve_ref_state(VarRef("Plain"), scope, graph) is False
+    assert resolve_ref_state(VarRef("Root.Part.Flag"), scope, graph) is True
+    assert resolve_ref_state(VarRef("Root.Part.Value"), scope, graph) is False
+    assert resolve_ref_state(VarRef("Root.Count"), scope, graph) is False
+    assert resolve_ref_state(VarRef("Rate.Field"), scope, graph) is None
+    assert resolve_ref_state(VarRef("Root.Missing"), scope, graph) is None
+    assert resolve_ref_state(VarRef("Missing"), scope, graph) is None
+    assert resolve_ref_state(VarRef(""), scope, graph) is None
+
+
+def test_assignment_types_leaves_a_duplicated_field_unproven() -> None:
+    first = _record("Rec", _var("Value", "integer"))
+    second = _record("Rec", _var("Value", "boolean"))
+    graph = TypeGraph.from_datatypes([first, second])
+    scope = build_scope(None, [_var("Holder", "Rec")])
+
+    target, source = assignment_types(Assignment(VarRef("Holder.Value"), 5), scope, {}, graph)
+
+    assert target is None
+    assert source == ScalarDatatype.INTEGER.value
 
 
 # --- datatype predicates ------------------------------------------------------
@@ -281,6 +373,14 @@ def test_builtin_type_matches() -> None:
     assert builtin_type_matches("real", "AsyncOperation", direction="inout") is False
 
 
+def test_builtin_type_matches_exempts_an_anytype_actual() -> None:
+    """``AnyType`` proves nothing about the value, so every parameter accepts it."""
+    assert builtin_type_matches("AnyType", ScalarDatatype.INTEGER, direction="in") is True
+    assert builtin_type_matches("anytype", "MyRecord", direction="in") is True
+    assert builtin_type_matches("AnyType", "tObject", direction="in") is True
+    assert builtin_type_matches("AnyType", ScalarDatatype.STRING, direction="out") is True
+
+
 def test_assignment_type_matches() -> None:
     assert assignment_type_matches(None, "integer") is True
     assert assignment_type_matches("integer", None) is True
@@ -373,6 +473,27 @@ def test_suggest_datatype_name() -> None:
     assert suggest_datatype_name("intege", []) is None
 
 
+def test_suggest_datatype_name_returns_none_when_two_candidates_tie() -> None:
+    """A tie has no single answer, so no suggestion is offered.
+
+    The winner would otherwise be whichever candidate the caller passed first,
+    which is iteration order rather than evidence.
+    """
+    assert suggest_datatype_name("ab", ["abc", "abd"]) is None
+    assert suggest_datatype_name("magstring", ["maxstring", "tagstring"]) is None
+    assert suggest_datatype_name("integ", ["integer", "real"]) == "integer"
+
+
+def test_suggest_datatype_name_keeps_the_closest_of_three_candidates() -> None:
+    """A later, farther candidate neither replaces the best nor makes a tie."""
+    assert suggest_datatype_name("ab", ["abc", "abcd", "abce"]) == "abc"
+
+
+def test_suggest_datatype_name_counts_one_candidate_spelled_twice() -> None:
+    """Two spellings of the same folded candidate are not a tie."""
+    assert suggest_datatype_name("ab", ["abc", "ABC"]) == "abc"
+
+
 # --- parameter mappings -------------------------------------------------------
 
 
@@ -420,6 +541,7 @@ def test_parameter_mapping_unknown_field_on_record() -> None:
     errors: list[Diagnostic] = []
     check_parameter_mappings([_mapping("Root.Missing")], expected, build_scope(None, []), graph, errors)
     assert _codes(errors) == ["SL-V048"]
+    assert "resolved definition" in errors[0].message
 
 
 def test_parameter_mapping_unknown_field_on_external_record_is_silent() -> None:
@@ -438,6 +560,10 @@ def test_parameter_mapping_unknown_target_is_reported_when_formals_are_known() -
     )
     assert _codes(errors) == ["SL-V048"]
     assert "Missing" in errors[0].message
+    # The sentence names the resolved definition and the stale-mapping cause, so
+    # a deleted formal is distinguishable from an unrelated local problem.
+    assert "resolved definition" in errors[0].message
+    assert "stale" in errors[0].message
 
 
 def test_parameter_mapping_unknown_target_is_silent_when_formals_are_unknown() -> None:

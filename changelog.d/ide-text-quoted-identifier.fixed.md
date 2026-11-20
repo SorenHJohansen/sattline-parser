@@ -1,0 +1,1 @@
+- **IDE layout never splits a quoted identifier.** The line-breaking scan reuses the compressed-source region rule, so a space inside `'a name'` is not a break point and a rendered line is not cut into two tokens.

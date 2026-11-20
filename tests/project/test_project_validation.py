@@ -11,6 +11,7 @@ import pytest
 from sattline_parser.api import parse_source_text
 from sattline_parser.project import (
     DependencyCycleError,
+    DependencyNotFoundError,
     LoadMode,
     LoadValidation,
     ModuleTypeCycleError,
@@ -71,6 +72,40 @@ def test_load_populates_library_resolved_base_and_origin(tmp_path: Path) -> None
     assert project.libraries() == ("libs",)
 
 
+def test_load_shadows_a_later_library_with_the_same_name(tmp_path: Path) -> None:
+    """One library per name: a later root of the same name is not in the path."""
+    first = tmp_path / "one" / "libs"
+    second = tmp_path / "two" / "libs"
+    write_file(first, "Alpha.s", _source("Alpha"))
+    write_file(second, "Beta.s", _source("Beta"))
+
+    project = SattLineProject.load(
+        [first, second],
+        mode=LoadMode.DRAFT,
+        targets=("Alpha",),
+        cache_dir=None,
+    )
+
+    assert project.libraries() == ("libs",)
+    assert project.get("Alpha").library == "libs"
+    assert "Beta" not in project
+
+
+def test_a_target_from_a_shadowed_library_is_not_found(tmp_path: Path) -> None:
+    first = tmp_path / "one" / "libs"
+    second = tmp_path / "two" / "libs"
+    write_file(first, "Alpha.s", _source("Alpha"))
+    write_file(second, "Beta.s", _source("Beta"))
+
+    with pytest.raises(DependencyNotFoundError, match="missing code file for 'Beta'"):
+        SattLineProject.load(
+            [first, second],
+            mode=LoadMode.DRAFT,
+            targets=("Beta",),
+            cache_dir=None,
+        )
+
+
 def test_load_reports_local_validation_findings(tmp_path: Path) -> None:
     root = tmp_path / "libs"
     root.mkdir()
@@ -79,12 +114,12 @@ def test_load_reports_local_validation_findings(tmp_path: Path) -> None:
     assert [diagnostic.code.value for diagnostic in program.diagnostics] == ["SL-V020"]
 
 
-def test_load_with_validation_none_reports_nothing(tmp_path: Path) -> None:
+def test_load_with_validation_none_reports_type_bindings(tmp_path: Path) -> None:
     root = tmp_path / "libs"
     root.mkdir()
     write_file(root, "Main.s", _source("Main", locals_block="LOCALVARIABLES\n   Bad: NotAType;\n"))
     program = _load(root, "Main", validate=LoadValidation.NONE).get("Main")
-    assert program.diagnostics == ()
+    assert [diagnostic.code.value for diagnostic in program.diagnostics] == ["SL-V020"]
 
 
 def test_external_datatypes_are_visible_to_dependents(tmp_path: Path) -> None:
@@ -167,16 +202,12 @@ def test_external_record_fields_belong_to_the_defining_program(tmp_path: Path) -
     write_file(root, "Dep.s", _source("Dep", typedefs=broken_record))
     write_file(root, "Main.s", _source("Main", locals_block="LOCALVARIABLES\n   Sensor: BrokenRecord;\n"))
     write_file(root, "Main.l", "Dep\n")
-    # Ownership of an external field finding is a FULL-mode property: INVOKED
-    # limits a dependency to its invoked module types, and Dep contributes a
-    # record datatype only.
-    project = _load(root, "Main", validate=LoadValidation.FULL)
-    assert project.get("Main").diagnostics == ()
-    assert "MissingFieldType" in " ".join(d.message for d in project.get("Dep").diagnostics)
-
-    invoked = _load(root, "Main", validate=LoadValidation.INVOKED)
-    assert invoked.get("Main").diagnostics == ()
-    assert invoked.get("Dep").diagnostics == ()
+    for scope in LoadValidation:
+        project = _load(root, "Main", validate=scope)
+        assert project.get("Main").diagnostics == ()
+        diagnostics = project.get("Dep").diagnostics
+        assert len(diagnostics) == 1
+        assert "MissingFieldType" in diagnostics[0].message
 
 
 def test_visible_definitions_come_from_the_dependency_closure(tmp_path: Path) -> None:
@@ -257,9 +288,218 @@ def test_invoked_validation_limits_dependencies_to_used_moduletypes(tmp_path: Pa
     invoked_library = " ".join(d.message for d in invoked.get("Lib").diagnostics)
     assert "MissingUsedType" in invoked_library
     assert "MissingDeepType" in invoked_library
-    assert "MissingUnusedType" not in invoked_library
-    assert invoked.get("Other").diagnostics == ()
+    assert "MissingUnusedType" in invoked_library
+    assert "MissingOtherType" in " ".join(d.message for d in invoked.get("Other").diagnostics)
+    assert len(invoked.get("Lib").diagnostics) == 3
     assert "MissingOwnType" in " ".join(d.message for d in invoked.get("Main").diagnostics)
+
+
+@pytest.mark.parametrize("scope", list(LoadValidation))
+def test_all_scopes_bind_unused_declarations_in_their_own_closure(tmp_path: Path, scope: LoadValidation) -> None:
+    root = tmp_path / "libs"
+    root.mkdir()
+    types = (
+        "TYPEDEFINITIONS\n"
+        "   BrokenRecord = RECORD DateCode_ 1\n"
+        "      Field: MissingRecord;\n"
+        "   ENDDEF (*BrokenRecord*);\n"
+        "TYPEDEFINITIONS\n"
+        "   UnusedType = MODULEDEFINITION DateCode_ 1\n"
+        "   MODULEPARAMETERS\n"
+        "      Param: MissingParam;\n"
+        "   LOCALVARIABLES\n"
+        "      Local: MissingLocal;\n"
+        "   SUBMODULES\n"
+        "      Child Invocation ( 0.1 , 0.1 , 0.0 , 0.4 , 0.4 ) : MissingModule;\n"
+        "      Nested Invocation ( 0.1 , 0.1 , 0.0 , 0.4 , 0.4 ) : MODULEDEFINITION DateCode_ 1 (Frame_Module)\n"
+        "      LOCALVARIABLES\n"
+        "         NestedLocal: MissingNested;\n"
+        "         Typo: intege;\n"
+        "      ModuleDef\n"
+        "      ClippingBounds = ( -1.0 , -1.0 ) ( 1.0 , 1.0 )\n"
+        "      ENDDEF (*Nested*);\n"
+        "   ModuleDef\n"
+        "   ClippingBounds = ( -1.0 , -1.0 ) ( 1.0 , 1.0 )\n"
+        "   ENDDEF (*UnusedType*);\n"
+    )
+    # Main owns a matching type, but dependencies cannot see their consumer.
+    main_types = (
+        "TYPEDEFINITIONS\n   MissingLocal = RECORD DateCode_ 1\n      Field: integer;\n   ENDDEF (*MissingLocal*);\n"
+    )
+    write_file(root, "Lib.s", _source("Lib", typedefs=types))
+    write_file(root, "Main.s", _source("Main", typedefs=main_types))
+    write_file(root, "Main.l", "Lib\n")
+
+    project = _load(root, "Main", validate=scope)
+    assert project.get("Main").diagnostics == ()
+    findings = project.get("Lib").diagnostics
+    assert sorted(d.code.value for d in findings) == [
+        "SL-V018",
+        "SL-V020",
+        "SL-V020",
+        "SL-V020",
+        "SL-V020",
+        "SL-V058",
+    ]
+    assert all(
+        any(name in d.message for d in findings)
+        for name in ("MissingRecord", "MissingParam", "MissingLocal", "MissingModule", "MissingNested", "intege")
+    )
+    assert all(d.span is not None for d in findings)
+
+
+@pytest.mark.parametrize(
+    ("scope", "expected"),
+    [
+        (LoadValidation.NONE, set[str]()),
+        (LoadValidation.INVOKED, {"Used", "Deep"}),
+        (LoadValidation.FULL, {"Used", "Deep", "Unused"}),
+    ],
+)
+def test_executable_findings_follow_invocation_scope(tmp_path: Path, scope: LoadValidation, expected: set[str]) -> None:
+    root = tmp_path / "libs"
+    root.mkdir()
+
+    def definition(name: str, child: str = "") -> str:
+        nested = f"   SUBMODULES\n      Next Invocation ( 0.1 , 0.1 , 0.0 , 0.4 , 0.4 ) : {child};\n" if child else ""
+        return (
+            f"   {name}Type = MODULEDEFINITION DateCode_ 1\n"
+            "   LOCALVARIABLES\n      Value: integer;\n"
+            f"{nested}   ModuleDef\n"
+            "   ClippingBounds = ( -1.0 , -1.0 ) ( 1.0 , 1.0 )\n"
+            "   ModuleCode\n"
+            "   EQUATIONBLOCK Eq COORD 0.0, 0.0 OBJSIZE 1.0, 1.0 :\n"
+            f"      Value = Missing{name};\n"
+            f"   ENDDEF (*{name}Type*);\n"
+        )
+
+    typedefs = "TYPEDEFINITIONS\n" + definition("Used", "DeepType") + definition("Deep") + definition("Unused")
+    body = "SUBMODULES\n   Child Invocation ( 0.1 , 0.1 , 0.0 , 0.4 , 0.4 ) : UsedType;\n"
+    write_file(root, "Lib.s", _source("Lib", typedefs=typedefs))
+    write_file(root, "Main.s", _source("Main", body=body))
+    write_file(root, "Main.l", "Lib\n")
+
+    project = _load(root, "Main", validate=scope)
+    findings = project.get("Lib").diagnostics
+    assert {
+        name for name in ("Used", "Deep", "Unused") if any(f"Missing{name}" in d.message for d in findings)
+    } == expected
+
+
+@pytest.mark.parametrize("scope", list(LoadValidation))
+def test_only_type_bindings_are_unconditional(tmp_path: Path, scope: LoadValidation) -> None:
+    root = tmp_path / "libs"
+    root.mkdir()
+    typedefs = (
+        "TYPEDEFINITIONS\n"
+        "   ChildType = MODULEDEFINITION DateCode_ 1\n"
+        "   MODULEPARAMETERS\n      P: integer;\n"
+        "   ModuleDef\n"
+        "   ClippingBounds = ( -1.0 , -1.0 ) ( 1.0 , 1.0 )\n"
+        "   ENDDEF (*ChildType*);\n"
+    )
+    body = "SUBMODULES\n   Child Invocation ( 0.1 , 0.1 , 0.0 , 0.4 , 0.4 ) : ChildType (P => 0, P => 1);\n"
+    write_file(
+        root,
+        "Lib.s",
+        _source(
+            "Lib", typedefs=typedefs, locals_block="LOCALVARIABLES\n   Saved: integer OpSave State := 0;\n", body=body
+        ),
+    )
+    write_file(root, "Main.s", _source("Main"))
+    write_file(root, "Main.l", "Lib\n")
+
+    project = _load(root, "Main", validate=scope)
+    codes = {d.code.value for d in project.get("Lib").diagnostics}
+    if scope is LoadValidation.FULL:
+        assert "SL-V031" in codes
+        assert len(codes) >= 2
+    else:
+        assert codes == set()
+
+
+def test_invoked_module_does_not_validate_dependency_records_or_base_parameters(tmp_path: Path) -> None:
+    root = tmp_path / "libs"
+    root.mkdir()
+    typedefs = (
+        "TYPEDEFINITIONS\n"
+        "   Rec = RECORD DateCode_ 1\n"
+        "      BadField: integer OpSave State := 2147483648;\n"
+        "      ExtraLongRecordFieldName: integer;\n"
+        "   ENDDEF (*Rec*);\n"
+        "TYPEDEFINITIONS\n"
+        "   UsedType = MODULEDEFINITION DateCode_ 1\n"
+        "   LOCALVARIABLES\n"
+        "      BadUsed: integer OpSave State;\n"
+        "   ModuleDef\n"
+        "   ClippingBounds = ( -1.0 , -1.0 ) ( 1.0 , 1.0 )\n"
+        "   ENDDEF (*UsedType*);\n"
+    )
+    lib = _source("Lib", typedefs=typedefs).replace(
+        "ModuleDef\nClippingBounds",
+        "MODULEPARAMETERS\n   BadParam: integer OpSave State;\n"
+        "   ExtraLongParameterName: integer;\nModuleDef\nClippingBounds",
+    )
+    write_file(root, "Lib.s", lib)
+    write_file(
+        root,
+        "Main.s",
+        _source("Main", body="SUBMODULES\n   Child Invocation (0.1, 0.1, 0.0, 0.4, 0.4) : UsedType;\n"),
+    )
+    write_file(root, "Main.l", "Lib\n")
+
+    invoked = _load(root, "Main", validate=LoadValidation.INVOKED)
+    invoked_findings = invoked.get("Lib").diagnostics
+    assert [d.code.value for d in invoked_findings] == ["SL-V031"]
+    assert "BadUsed" in invoked_findings[0].message
+    full = _load(root, "Main", validate=LoadValidation.FULL)
+    findings = [d for d in full.get("Lib").diagnostics if d.code.value == "SL-V031"]
+    assert len(findings) == 3
+    assert all(any(name in d.message for d in findings) for name in ("BadField", "BadParam", "BadUsed"))
+    assert sum(d.code.value == "SL-V038" for d in full.get("Lib").diagnostics) == 2
+    assert sum(d.code.value == "SL-V059" for d in full.get("Lib").diagnostics) == 1
+
+
+@pytest.mark.parametrize("scope", [LoadValidation.INVOKED, LoadValidation.FULL])
+def test_invoked_module_keeps_local_record_shapes_and_duplicate_ambiguity(
+    tmp_path: Path, scope: LoadValidation
+) -> None:
+    root = tmp_path / "libs"
+    root.mkdir()
+    fallback = "TYPEDEFINITIONS\n   Rec = RECORD DateCode_ 1\n      Value: integer;\n   ENDDEF (*Rec*);\n"
+    records = (
+        "TYPEDEFINITIONS\n"
+        "   Rec = RECORD DateCode_ 1\n      Value: boolean;\n   ENDDEF (*Rec*);\n"
+        "   BooleanSignal = RECORD DateCode_ 1\n      Value: integer;\n   ENDDEF (*BooleanSignal*);\n"
+        "   Ambiguous = RECORD DateCode_ 1\n      Value: boolean;\n   ENDDEF (*Ambiguous*);\n"
+        "   Ambiguous = RECORD DateCode_ 1\n      Value: integer;\n   ENDDEF (*Ambiguous*);\n"
+        "TYPEDEFINITIONS\n"
+        "   UsedType = MODULEDEFINITION DateCode_ 1\n"
+        "   LOCALVARIABLES\n      Local: Rec;\n      Unknown: Ambiguous;\n      Builtin: BooleanSignal;\n"
+        "   ModuleDef\n"
+        "   ClippingBounds = ( -1.0 , -1.0 ) ( 1.0 , 1.0 )\n"
+        "   ModuleCode\n"
+        "   EQUATIONBLOCK Eq COORD 0.0, 0.0 OBJSIZE 1.0, 1.0 :\n"
+        "      Local.Value = 1;\n"
+        "      Builtin.Value = 1;\n"
+        "      Unknown.Value = 1;\n"
+        "      Unknown.Missing = 1;\n"
+        "   ENDDEF (*UsedType*);\n"
+    )
+    write_file(root, "Fallback.s", _source("Fallback", typedefs=fallback))
+    write_file(root, "Lib.s", _source("Lib", typedefs=records))
+    write_file(root, "Lib.l", "Fallback\n")
+    write_file(
+        root,
+        "Main.s",
+        _source("Main", body="SUBMODULES\n   Child Invocation (0.1, 0.1, 0.0, 0.4, 0.4) : UsedType;\n"),
+    )
+    write_file(root, "Main.l", "Lib\n")
+
+    findings = _load(root, "Main", validate=scope).get("Lib").diagnostics
+    assert [d.code.value for d in findings] == ["SL-V029", "SL-V029"]
+    assert "Local.Value" in findings[0].message
+    assert "Builtin.Value" in findings[1].message
 
 
 def test_datecode_conflict_is_reported_on_the_later_program(tmp_path: Path) -> None:
@@ -314,6 +554,29 @@ def test_datecode_conflict_names_only_the_differing_version(tmp_path: Path) -> N
     assert "1 in libs/First.s" not in conflicts[0].message
 
 
+@pytest.mark.parametrize(
+    ("scope", "expected"),
+    [(LoadValidation.NONE, set[str]()), (LoadValidation.INVOKED, {"Main"}), (LoadValidation.FULL, {"Middle", "Main"})],
+)
+def test_datecode_scope_is_unchanged(tmp_path: Path, scope: LoadValidation, expected: set[str]) -> None:
+    root = tmp_path / "libs"
+    root.mkdir()
+    datatype = (
+        "TYPEDEFINITIONS\n   Shared = RECORD DateCode_ {datecode}\n      Field: integer;\n   ENDDEF (*Shared*);\n"
+    )
+    for name, datecode in (("Leaf", 1), ("Middle", 2), ("Main", 3)):
+        write_file(root, f"{name}.s", _source(name, typedefs=datatype.format(datecode=datecode)))
+    write_file(root, "Main.l", "Middle\n")
+    write_file(root, "Middle.l", "Leaf\n")
+
+    project = _load(root, "Main", validate=scope)
+    assert {
+        name
+        for name in ("Leaf", "Middle", "Main")
+        if any(d.code.value == "SL-V057" for d in project.get(name).diagnostics)
+    } == expected
+
+
 def test_a_duplicate_datecode_is_not_a_conflict(tmp_path: Path) -> None:
     """Copies of a declaration at the same datecode are the same revision."""
     root = tmp_path / "libs"
@@ -335,7 +598,7 @@ def test_a_duplicate_datecode_is_not_a_conflict(tmp_path: Path) -> None:
 
 
 def test_invoked_validation_stays_inside_the_referencing_closure(tmp_path: Path) -> None:
-    """A same-named module type in an unrelated closure is not validated.
+    """Bindings in an unrelated dependency still belong to that dependency.
 
     ``Main`` depends on ``A`` and invokes ``SharedType``. ``B`` also defines
     ``SharedType`` but is loaded only through ``Other``, which invokes nothing.
@@ -369,7 +632,7 @@ def test_invoked_validation_stays_inside_the_referencing_closure(tmp_path: Path)
 
     assert project.get("Main").diagnostics == ()
     assert "MissingType" in " ".join(d.message for d in project.get("A").diagnostics)
-    assert project.get("B").diagnostics == ()
+    assert "MissingType" in " ".join(d.message for d in project.get("B").diagnostics)
 
 
 def test_datecode_conflicts_only_cover_the_program_closure(tmp_path: Path) -> None:
@@ -512,7 +775,16 @@ def test_mutually_recursive_moduletypes_are_rejected(tmp_path: Path) -> None:
     assert excinfo.value.cycle == ("AType", "BType", "AType")
 
 
-def test_moduletype_cycle_across_programs_is_rejected(tmp_path: Path) -> None:
+def test_a_reference_outside_the_referencing_unit_closure_is_not_a_cycle(tmp_path: Path) -> None:
+    """Each definition binds inside its own closure, so B cannot reach A's type.
+
+    ``A`` declares ``AType`` instantiating ``BType`` and depends on ``B``, which
+    declares ``BType`` instantiating ``AType``. ``B`` cannot see ``A``, so its
+    reference resolves to nothing and is a missing name to validation, not a
+    recursion: only the checked unit's closure is searched, and B is the only
+    unit in B's closure. A genuine cycle needs both definitions to see each
+    other, which the dependency planner would already reject as a cycle.
+    """
     root = tmp_path / "libs"
     root.mkdir()
     write_file(
@@ -526,10 +798,42 @@ def test_moduletype_cycle_across_programs_is_rejected(tmp_path: Path) -> None:
         _source("B", typedefs=_typedefinitions(_moduletype("BType", instantiates="AType"))),
     )
     write_file(root, "A.l", "B\n")
-    with pytest.raises(ModuleTypeCycleError) as excinfo:
-        _load(root, "A")
-    assert excinfo.value.cycle == ("AType", "BType", "AType")
-    assert str(excinfo.value).startswith("A: ")
+
+    project = _load(root, "A")
+
+    assert set(project.programs()) == {"a", "b"}
+
+
+def test_a_wrapper_may_reuse_a_dependency_type_name_from_another_library(tmp_path: Path) -> None:
+    """Base's ``Motor`` reference binds in Base's closure, never the wrapper's.
+
+    ``Wrapper`` defines its own ``Motor`` around ``Base.Valve``. ``Base``
+    instantiates ``Motor`` from ``MotorLib``. Resolving Base's reference against
+    the checked unit's closure would bind it to Wrapper's ``Motor`` and report a
+    cycle that no file declares; resolving it against Base's own closure binds it
+    to ``MotorLib.Motor`` and the wrapper loads.
+    """
+    root = tmp_path / "libs"
+    root.mkdir()
+    write_file(
+        root,
+        "Wrapper.s",
+        _source("Wrapper", typedefs=_typedefinitions(_moduletype("Motor", instantiates="Valve"))),
+    )
+    write_file(root, "Wrapper.l", "Base\n")
+    write_file(
+        root,
+        "Base.s",
+        _source("Base", typedefs=_typedefinitions(_moduletype("Valve", instantiates="Motor"))),
+    )
+    write_file(root, "Base.l", "MotorLib\n")
+    write_file(root, "MotorLib.s", _source("MotorLib", typedefs=_typedefinitions(_moduletype("Motor"))))
+
+    project = _load(root, "Wrapper")
+
+    assert set(project.programs()) == {"wrapper", "base", "motorlib"}
+    assert project.dependencies_of("Wrapper") == ("Base",)
+    assert project.dependencies_of("Base") == ("MotorLib",)
 
 
 def test_moduletype_cycle_is_structural(tmp_path: Path) -> None:

@@ -107,9 +107,19 @@ def _check_coordinate_real(
     type_graph: TypeGraph,
     errors: list[Diagnostic],
 ) -> None:
-    """A coordinate position must be real, never integer (SL-V032)."""
+    """A coordinate position must be real, never integer (SL-V032).
+
+    ``AnyType`` is exempt, matching every other type rule that sees it: it
+    proves nothing about the value, so a coordinate tail of that type is
+    unproven rather than wrong. Whether the language accepts such a tail at all
+    is an open question, so the rule stays silent instead of guessing.
+    """
     inferred = infer_expr_type(tail, scope, records, type_graph)
-    if inferred is not None and fold_identifier(inferred) != fold_identifier(m.ScalarDatatype.REAL.value):
+    if (
+        inferred is not None
+        and not is_anytype_datatype(inferred)
+        and fold_identifier(inferred) != fold_identifier(m.ScalarDatatype.REAL.value)
+    ):
         errors.append(
             Diagnostic(
                 code=DiagnosticCode.COORDINATE_NOT_REAL,

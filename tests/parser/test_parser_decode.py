@@ -203,6 +203,40 @@ def test_raw_keyword_inside_a_string_or_comment_is_left_alone() -> None:
     assert "SeqControl" in document.normalized_text
 
 
+def test_coded_document_parses_a_raw_datecode_prefix_with_its_digit() -> None:
+    """The compact twin of a datecode is the raw prefix followed by its digit.
+
+    Every other keyword on the header line is a decoded code, so the prefix is
+    the only word the lexer may retype. Keeping the prefix plus digit as the
+    keyword pair is what makes the twin parse exactly like the plain form.
+    """
+    plain = (
+        '"Syntax version 2.23, date: 2026-10-27-12:00:00.000 N"\n'
+        '"Original file date: 2026-01-01"\n'
+        '"Program date: 2026-01-01"\n'
+        "BasePicture Invocation ( 0.0 , 0.0 , 0.0 , 1.0 , 1.0 ) : MODULEDEFINITION DateCode_1\n"
+        "ModuleDef\n"
+        "ClippingBounds = ( -1.0 , -1.0 ) ( 1.0 , 1.0 )\n"
+        "ENDDEF (*BasePicture*);\n"
+    )
+    compact = (
+        '"Syntax version 2.23, date: 2026-10-27-12:00:00.000 C"\n'
+        '"Original file date: 2026-01-01"\n'
+        '"Program date: 2026-01-01"\n'
+        "BasePicture #6? ( 0.0 , 0.0 , 0.0 , 1.0 , 1.0 ) : #71 DateCode_1\n"
+        "#6>\n"
+        "#65 = ( -1.0 , -1.0 ) ( 1.0 , 1.0 )\n"
+        "#85 (*BasePicture*);\n"
+    )
+
+    plain_picture = parser_core_parse_source_text(plain)
+    compact_picture = parser_core_parse_source_text(compact)
+
+    assert plain_picture.datecode == 1
+    assert compact_picture.datecode == plain_picture.datecode
+    assert compact_picture.moduledef is not None
+
+
 def test_coded_golden_with_raw_identifiers_still_decodes() -> None:
     """Editor output never spells keywords raw, so real compact files stay valid."""
     compressed = (_CORPUS / "CompressedFullGrammar.s").read_text(encoding="cp1252")

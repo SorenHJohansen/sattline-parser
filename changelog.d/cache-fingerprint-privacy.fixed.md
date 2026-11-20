@@ -1,0 +1,1 @@
+- **AST cache identity and directory safety.** The cache key now covers every shipped package file, including grammar sources and `scanner_tokens.json`. Every write revalidates the cache directory, entry files are created `0600`, and an unreadable key or payload is a miss rather than a load failure.

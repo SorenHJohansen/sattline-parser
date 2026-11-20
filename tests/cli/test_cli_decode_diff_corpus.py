@@ -33,7 +33,8 @@ def test_decode_reports_and_embeds_json(tmp_path, capsys) -> None:
     assert main(["decode", str(source), "--report"]) == ExitCode.OK
     report = json.loads(capsys.readouterr().out)
     assert report["schema"] == "sattline.v1.decode"
-    assert report["coded"] is True
+    assert report["encoding"] == "compressed"
+    assert "coded" not in report
     assert (
         report["decoded_length"]
         == len("SEQUENCE Tail\n") + len(source.read_bytes().decode("cp1252").splitlines()[0]) + 1
@@ -42,6 +43,14 @@ def test_decode_reports_and_embeds_json(tmp_path, capsys) -> None:
     assert main(["decode", str(source), "--json"]) == ExitCode.OK
     payload = json.loads(capsys.readouterr().out)
     assert "SEQUENCE" in payload["decoded"]
+
+
+def test_decode_report_names_a_plain_source(tmp_path, capsys) -> None:
+    source = write_source(tmp_path, "M.s", VALID_SOURCE)
+
+    assert main(["decode", str(source), "--report"]) == ExitCode.OK
+
+    assert json.loads(capsys.readouterr().out)["encoding"] == "plain"
 
 
 def test_decode_refuses_undecodable_input(tmp_path, capsys) -> None:
@@ -164,6 +173,23 @@ def test_diff_reports_a_source_that_stops_parsing(tmp_path, capsys) -> None:
 
     out = capsys.readouterr().out
     assert "does not parse" in out
+
+
+def test_diff_reports_no_count_changes_when_a_side_does_not_parse(tmp_path, capsys) -> None:
+    old = write_source(tmp_path, "Old.s", VALID_SOURCE)
+    new = write_source(tmp_path, "New.s", '"only one header"\n')
+
+    assert main(["diff", str(old), str(new), "--json"]) == ExitCode.FINDINGS
+
+    payload = json.loads(capsys.readouterr().out)
+    assert payload["old"]["parsed"] is True
+    assert payload["new"]["parsed"] is False
+    # A missing summary is not a set of zero counts, so no count is reported as
+    # changed from null.
+    assert payload["counts"]["changed"] == {}
+
+    assert main(["diff", str(old), str(new)]) == ExitCode.FINDINGS
+    assert "~" not in capsys.readouterr().out
 
 
 def test_diff_reports_removed_findings_and_an_unparseable_old(tmp_path, capsys) -> None:

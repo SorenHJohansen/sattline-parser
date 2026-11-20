@@ -9,6 +9,7 @@ from collections.abc import Mapping, Sequence
 from pathlib import Path
 
 from sattline_parser.__version__ import __version__
+from sattline_parser.api import PARSE_FAILURES, describe_parse_error
 from sattline_parser.project import (
     DistributionTarget,
     LoadDiagnostic,
@@ -18,8 +19,10 @@ from sattline_parser.project import (
     SattLineProgram,
     SattLineProject,
     code_ext_candidates,
+    ordered_lookup_bases,
     parse_search_path,
 )
+from sattline_parser.project.discovery import is_unit_name
 
 from .._errors import CliError
 from .._exit import ExitCode
@@ -128,8 +131,8 @@ def register(subparsers: argparse._SubParsersAction[argparse.ArgumentParser]) ->
         choices=("invoked", "full", "none"),
         default="invoked",
         help=(
-            "what to validate: the selected programs plus the module types they invoke "
-            "(default), every loaded program, or nothing"
+            "always bind type references in all loaded files; also validate the selected programs "
+            "and invoked module types (default), all loaded programs, or no additional code"
         ),
     )
     add_fail_on(parser)
@@ -151,7 +154,7 @@ def run(args: argparse.Namespace) -> int:
     except ProjectLoadError as exc:
         # A tree that cannot be loaded is a finding about the tree. Anything
         # else is a bug in this tool and must reach main()'s internal-error path.
-        finding = Finding(severity="error", message=f"cannot load project: {exc}", rule=PROJECT_LOAD_RULE)
+        finding = _load_failure_finding(exc)
         _report_findings(
             [finding],
             args=args,
@@ -190,6 +193,32 @@ def _report_findings(findings: Sequence[Finding], *, args: argparse.Namespace, e
         emit_sarif(findings, version=__version__)
         return
     emit_findings(findings, args=args, schema="project", extra=extra)
+
+
+def _load_failure_finding(exc: ProjectLoadError) -> Finding:
+    """Describe a load failure, keeping the artifact and the cause's position.
+
+    A body that does not parse is wrapped in a load error that names the program
+    and the artifact. The wrapper carries the artifact path and the failing
+    source line; the cause is the parse failure, so its sentence, line, column,
+    and hint describe what is wrong in the source.
+    """
+    message = f"cannot load project: {exc}"
+    file = str(exc.path) if exc.path is not None else None
+    cause = exc.__cause__
+    if not isinstance(cause, PARSE_FAILURES):
+        return Finding(severity="error", message=message, rule=PROJECT_LOAD_RULE, file=file)
+    details = describe_parse_error(cause)
+    return Finding(
+        severity="error",
+        message=f"{message}: {details.sentence}" if details.sentence else message,
+        rule=PROJECT_LOAD_RULE,
+        file=file,
+        line=details.line,
+        column=details.column,
+        hint=details.hint,
+        source_line=exc.source_line,
+    )
 
 
 def _sarif_findings(programs: Mapping[str, SattLineProgram]) -> list[Finding]:
@@ -312,16 +341,27 @@ def _default_workers() -> int:
 
 
 def _discover_targets(roots: Sequence[Path], *, mode: LoadMode) -> tuple[str, ...]:
-    """Every program name declared *in* the roots, in extension precedence.
+    """Every program name declared *in* the effective roots.
 
     A root is a library directory: the loader indexes the artifacts directly
     inside it, so discovery looks at the same level rather than walking nested
-    directories it could never resolve.
+    directories it could never resolve. A root shadowed by an earlier library of
+    the same name contributes no targets, because the load cannot resolve them.
+
+    Only a stem the resolver would accept becomes a target. The resolver refuses
+    a name outside the SattLine identifier charset, so offering one here would
+    turn a whole-tree load into an unresolvable target and a fatal failure. A
+    file that fails the rule is left out and the loader reports it as a skipped
+    file, which keeps the load alive and names it once.
     """
     extensions = {extension.lower() for extension in code_ext_candidates(mode)}
     names: set[str] = set()
-    for root in roots:
-        names.update(path.stem for path in _root_entries(root) if path.is_file() and path.suffix.lower() in extensions)
+    for root in ordered_lookup_bases(roots):
+        names.update(
+            path.stem
+            for path in _root_entries(root)
+            if path.is_file() and path.suffix.lower() in extensions and is_unit_name(path.stem)
+        )
     return tuple(sorted(names))
 
 

@@ -1,0 +1,1 @@
+- **Parameter-mapping findings.** `SL-V048` now says that the target is not a formal parameter in the resolved definition and that a formal removed from that definition leaves the mapping stale, so a deleted formal is not presented as a local typo.

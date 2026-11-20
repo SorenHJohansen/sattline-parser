@@ -1,0 +1,1 @@
+- **`load_source_text` strips the byte-order mark before classifying.** A leading UTF-8 byte-order mark no longer hides a coded-stream header, so `load_source_text` and `parse_source_file` agree on the same file.

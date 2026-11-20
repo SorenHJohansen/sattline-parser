@@ -8,9 +8,9 @@ from typing import Any
 from sattline_parser.api import parse_and_validate
 from sattline_parser.ast import BasePicture, FrameModule, ModuleTypeDef, SingleModule
 from sattline_parser.errors import PARSE_FAILURES
-from sattline_parser.preprocessing import is_compressed
 
 from ._findings import Finding, finding_from_diagnostic, finding_from_parse_error
+from ._io import encoding_name
 
 __all__ = ["Analysis", "analyse", "summarise"]
 
@@ -64,14 +64,16 @@ def summarise(name: str, text: str, picture: BasePicture, *, coded: bool = False
 
     The counts cover the whole module tree: nested submodules and module-type
     bodies contribute their declarations, sequences, equation blocks, and
-    objects, so the summary agrees with a walk over the picture.
+    objects, so the summary agrees with a walk over the picture. ``encoding``
+    names the on-disk flavor: a byte-coded stream is ``coded``, marker-compressed
+    text is ``compressed``, and everything else is ``plain``.
     """
     module_nodes = _module_nodes(picture)
     return {
         "file": name,
         "program": picture.program_name,
         "name": picture.name,
-        "encoding": "coded" if coded or is_compressed(text) else "plain",
+        "encoding": encoding_name(text, coded=coded),
         "counts": {
             "module_types": sum(isinstance(node, ModuleTypeDef) for node in module_nodes),
             "submodules": sum(len(node.submodules) for node in module_nodes),

@@ -1,0 +1,1 @@
+- **The graphics refusal is documented on the public surface.** `GraphicsParseError` and `MAX_GRAPHICS_COMPANION_BYTES` appear in the project surface table together with the rule that an oversized graphics companion raises the error and a smaller one reports `GraphicsMessage` values.

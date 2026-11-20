@@ -23,6 +23,7 @@ from sattline_parser.models.ast_model import (
     FrameModule,
     ModuleCode,
     ModuleHeader,
+    ModuleTypeDef,
     ModuleTypeInstance,
     ScalarDatatype,
     SFCAlternative,
@@ -128,18 +129,23 @@ def check_identifiers(bp: BasePicture, errors: list[Diagnostic]) -> None:
         for variable in datatype.var_list:
             check_identifier(variable.name, "Variable", variable.declaration_span, errors)
     for moduletype in bp.moduletype_defs:
-        check_identifier(moduletype.name, "Moduletype", moduletype.declaration_span, errors)
-        _check_variable_names(moduletype.moduleparameters, errors)
-        _check_variable_names(moduletype.localvariables, errors)
-        if moduletype.modulecode is not None:
-            _check_modulecode_identifiers(moduletype.modulecode, errors)
-        for submodule in moduletype.submodules:
-            _check_submodule_identifiers(submodule, errors)
+        check_moduletype_identifiers(moduletype, errors)
     _check_variable_names(bp.moduleparameters, errors)
     _check_variable_names(bp.localvariables, errors)
     if bp.modulecode is not None:
         _check_modulecode_identifiers(bp.modulecode, errors)
     for submodule in bp.submodules:
+        _check_submodule_identifiers(submodule, errors)
+
+
+def check_moduletype_identifiers(moduletype: ModuleTypeDef, errors: list[Diagnostic]) -> None:
+    """Check identifiers belonging to one module type."""
+    check_identifier(moduletype.name, "Moduletype", moduletype.declaration_span, errors)
+    _check_variable_names(moduletype.moduleparameters, errors)
+    _check_variable_names(moduletype.localvariables, errors)
+    if moduletype.modulecode is not None:
+        _check_modulecode_identifiers(moduletype.modulecode, errors)
+    for submodule in moduletype.submodules:
         _check_submodule_identifiers(submodule, errors)
 
 
@@ -165,9 +171,9 @@ def _check_submodule_identifiers(submodule: Submodule, errors: list[Diagnostic])
 
 def _check_modulecode_identifiers(modulecode: ModuleCode, errors: list[Diagnostic]) -> None:
     for equation in modulecode.equationblocks or ():
-        check_identifier(equation.name, "Equation", None, errors)
+        check_identifier(equation.name, "Equation", equation.declaration_span, errors)
     for sequence in modulecode.sequences or ():
-        check_identifier(sequence.name, "Sequence", None, errors)
+        check_identifier(sequence.name, "Sequence", sequence.declaration_span, errors)
         _check_sequence_identifiers(sequence.code, errors)
 
 
@@ -247,6 +253,52 @@ def check_record_fields(
             errors,
             allow_unresolved_external_datatypes=allow_unresolved_external_datatypes,
         )
+
+
+def check_type_references(
+    bp: BasePicture,
+    errors: list[Diagnostic],
+    *,
+    external_datatypes: Sequence[DataType] = (),
+    external_moduletype_defs: Sequence[ModuleTypeDef] = (),
+) -> None:
+    """Check only declaration type bindings owned by this picture."""
+    records = {fold_identifier(record.name): record for record in (*external_datatypes, *bp.datatype_defs)}
+    moduletypes = {fold_identifier(item.name) for item in (*external_moduletype_defs, *bp.moduletype_defs)}
+
+    def variables(items: list[Variable]) -> None:
+        for variable in items:
+            _check_datatype_reference(variable, records, errors)
+
+    for record in bp.datatype_defs:
+        variables(record.var_list)
+    variables(bp.moduleparameters)
+    variables(bp.localvariables)
+    for definition in bp.moduletype_defs:
+        variables(definition.moduleparameters)
+        variables(definition.localvariables)
+
+    pending: list[Submodule] = list(reversed(bp.submodules))
+    for definition in reversed(bp.moduletype_defs):
+        pending.extend(reversed(definition.submodules))
+    while pending:
+        child = pending.pop()
+        if isinstance(child, ModuleTypeInstance):
+            if fold_identifier(child.moduletype_name) not in moduletypes:
+                errors.append(
+                    Diagnostic(
+                        code=DiagnosticCode.UNKNOWN_MODULETYPE_NAME,
+                        message=(
+                            f"Module type {child.moduletype_name!r} is neither declared in this file "
+                            "nor visible from a loaded dependency"
+                        ),
+                        span=child.header.declaration_span,
+                    )
+                )
+        else:
+            variables(child.moduleparameters)
+            variables(child.localvariables)
+            pending.extend(reversed(child.submodules))
 
 
 # The OpSave rule is order-sensitive rather than a symmetric pair:

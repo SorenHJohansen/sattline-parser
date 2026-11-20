@@ -19,9 +19,11 @@ so an agent needs neither Python glue nor a lookup table:
 * ``sattline version`` — tool and JSON schema versions.
 
 Exit codes are the contract: ``0`` clean, ``1`` findings, ``2`` usage/input,
-``3`` internal error, ``130`` interrupted. Output is plain text unless
-``--json``, ``--jsonl``, or ``--sarif`` is given, and a traceback is only printed
-under ``--debug``. No command edits a
+``3`` internal error, ``130`` interrupted. A consumer that closes the output
+pipe early (``sattline check ... | head``) stops the report and exits ``2``:
+the stream that would carry an explanation is the one that closed. Output is
+plain text unless ``--json``, ``--jsonl``, or ``--sarif`` is given, and a
+traceback is only printed under ``--debug``. No command edits a
 source tree: there is no ``--fix``, no network access and no watch mode. The
 ``project`` command does write its parser cache unless ``--no-cache`` is given.
 """
@@ -29,6 +31,10 @@ source tree: there is no ``--fix``, no network access and no watch mode. The
 from __future__ import annotations
 
 import argparse
+import contextlib
+import errno
+import logging
+import os
 import sys
 import traceback
 from collections.abc import Sequence
@@ -42,6 +48,8 @@ __all__ = ["build_parser", "main"]
 
 _PROGRAM = "sattline"
 _DESCRIPTION = "Parse, validate and inspect SattLine sources (JSON-first)."
+_LIBRARY_LOGGER = "sattline_parser"
+_DEBUG_LOG_FORMAT = "debug: %(message)s"
 
 
 class _UsageError(Exception):
@@ -69,6 +77,54 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv: Sequence[str] | None = None) -> int:
     """Run the CLI and return the process exit code."""
+    _make_output_encoding_safe()
+    return _dispatch(argv)
+
+
+def _is_closed_stream_error(exc: BaseException) -> bool:
+    """Whether *exc* means the reader closed the output stream.
+
+    POSIX reports a closed pipe as ``BrokenPipeError``. Windows reports the
+    same condition as a generic ``OSError`` with ``EINVAL`` when the handle was
+    closed between the write and the flush, so the errno is checked too.
+    """
+    if isinstance(exc, BrokenPipeError):
+        return True
+    return isinstance(exc, OSError) and exc.errno in {errno.EPIPE, errno.EINVAL}
+
+
+def _make_output_encoding_safe() -> None:
+    """Stop a character the stream cannot encode from becoming an internal error.
+
+    The library represents an undefined byte inside a comment as U+FFFD, which
+    a cp1252 stream cannot encode. ``backslashreplace`` keeps the report intact:
+    for JSON a replaced character is written as ``\\ufffd``, which parses back to
+    the same character, and for text it stays readable instead of raising.
+    """
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if reconfigure is None:
+            # A caller that embeds the CLI may pass a stream without a codec.
+            continue
+        with contextlib.suppress(OSError, ValueError):
+            reconfigure(errors="backslashreplace")
+
+
+def _install_parser_log_handler() -> logging.Handler:
+    """Send the library's parser-failure log to stderr, for ``--debug`` only.
+
+    Without a handler the package logger falls back to ``logging.lastResort``,
+    which writes the same record (and its traceback) whether or not the caller
+    asked for it. The CLI owns logging, so it installs a handler under
+    ``--debug`` and removes it afterwards.
+    """
+    handler = logging.StreamHandler(sys.stderr)
+    handler.setFormatter(logging.Formatter(_DEBUG_LOG_FORMAT))
+    logging.getLogger(_LIBRARY_LOGGER).addHandler(handler)
+    return handler
+
+
+def _dispatch(argv: Sequence[str] | None) -> int:
     parser = build_parser()
     arguments = list(sys.argv[1:] if argv is None else argv)
     try:
@@ -77,6 +133,7 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(f"{_PROGRAM}: {exc}", file=sys.stderr)
         print(f"try '{_PROGRAM} --help'", file=sys.stderr)
         return int(ExitCode.USAGE)
+    handler = _install_parser_log_handler() if args.debug else None
     try:
         return int(args.handler(args))
     except CliError as exc:
@@ -86,7 +143,30 @@ def main(argv: Sequence[str] | None = None) -> int:
         print(f"{_PROGRAM}: interrupted", file=sys.stderr)
         return int(ExitCode.INTERRUPTED)
     except Exception as exc:  # noqa: BLE001 - the CLI must never leak a traceback by default
+        if _is_closed_stream_error(exc):
+            # The consumer closed the pipe. Point stdout at the null device so
+            # the interpreter's exit flush cannot fail a second time and turn a
+            # stopped report into exit 120.
+            _discard_stdout()
+            return int(ExitCode.USAGE)
         if args.debug:
             traceback.print_exc()
         print(f"{_PROGRAM}: internal error: {type(exc).__name__}: {exc}", file=sys.stderr)
         return int(ExitCode.INTERNAL)
+    finally:
+        if handler is not None:
+            logging.getLogger(_LIBRARY_LOGGER).removeHandler(handler)
+
+
+def _discard_stdout() -> None:
+    """Point the process stdout at the null device, ignoring a stream without a descriptor."""
+    try:
+        devnull = os.open(os.devnull, os.O_WRONLY)
+    except OSError:  # pragma: no cover - the null device is always available
+        return
+    try:
+        os.dup2(devnull, sys.stdout.fileno())
+    except (AttributeError, OSError, ValueError):
+        pass
+    finally:
+        os.close(devnull)

@@ -30,6 +30,7 @@ flowchart TB
     E -->|3| I["exit 3 internal"]
     D -->|CliError| U
     D -->|KeyboardInterrupt| K["print interrupted<br/>exit 130"]
+    D -->|BrokenPipeError| P["discard stdout<br/>exit 2"]
     D -->|other exception| X{"--debug?"}
     X -->|yes| T["traceback"]
     X -->|no| O["one-line internal error"]
@@ -41,7 +42,7 @@ flowchart TB
 | --- | --- |
 | `0` | Clean |
 | `1` | Findings (or a diff that changed, or a query with no rows) |
-| `2` | Usage or input problem |
+| `2` | Usage, input, or output problem (including a closed stdout) |
 | `3` | Internal error (a bug) |
 | `130` | Interrupted (Ctrl-C), following the shell convention of 128 + SIGINT |
 
@@ -49,6 +50,12 @@ Agents branch on exit codes, not on prose. A traceback is printed only under
 `--debug`. `--debug` is a top-level flag, so it comes before the command:
 `sattline --debug check program.s`. After the command name it is an unknown
 option and exits `2`.
+
+A consumer that closes the output pipe early, as `sattline check SR/*.s | head`
+does, stops the report and exits `2`. No explanation is printed, because the
+stream that would carry it is the one that closed, and the process does not fall
+through to the interpreter's exit flush, which would otherwise report a second
+failure and exit `120`.
 
 ## Commands
 
@@ -84,6 +91,10 @@ another command's synthetic id (such as `READ_ERROR`, which only `corpus`
 reports) is a usage error (exit `2`), never a silently empty report. See
 [`rules`](#rules) for the registry.
 
+`--json` carries `files`: the display name of every input, in the order read,
+rendered by the same `--paths` rule as the `file` field of a finding. Stdin
+appears under its `--stdin-name`, so `files` always agrees with the findings.
+
 ### `parse`
 
 ```bash
@@ -98,10 +109,20 @@ of module types, submodules, local variables, sequences, equation blocks (the
 `equationblocks` key), graph objects, and interact objects. The counts cover the
 whole module tree, so a nested submodule's declarations and code blocks are
 included, and the summary agrees with a `walk` over the picture. `diff` compares
-the same counts. `--tree` emits the AST as JSON, bounded by `--depth` (default
-5). At the limit a composite value is replaced by a placeholder such as
-`<ModuleDef>` or `<12 items>`, so nothing silently disappears. `--compact`
-prints JSON on one line instead of indented.
+the same counts. `encoding` names the on-disk flavor and is `plain`,
+`compressed` (marker-compressed text), or `coded` (a byte-coded stream). A coded
+stream stays `coded` even when its decoded text is still marker-compressed. A
+leading UTF-8 byte-order mark is removed before the flavor is decided, so a
+marked coded file reports `coded`, exactly as the decoder reads it.
+`--tree` emits the AST as JSON, bounded by `--depth` (default 5). At the limit a
+composite value is replaced by a placeholder such as `<ModuleDef>` or
+`<12 items>`, so nothing silently disappears. `--compact` prints JSON on one
+line instead of indented.
+
+Every `--json` parse document carries `ok` and `findings`. A successful unit has
+`ok: true` and an empty `findings`; a parse failure has `ok: false` and the
+parse finding. A summary document also carries the structural `counts`; a
+`--tree` document carries `tree` instead.
 
 ### `query`
 
@@ -117,9 +138,16 @@ types, submodules, module instances, variables, parameters, datatypes, and
 record fields. Variable, parameter, datatype, and record-field rows carry the
 declaration span in `line`, `column`, `start`, and `end`; a record-field row
 uses its datatype name as the `module` value. Filters are case-insensitive:
-`--name` matches a row name, `--module` matches a slash-separated module path,
-and `--limit N` stops after `N` rows. A query with no rows exits `1`, because
-"nothing found" is a finding for a caller that expected a hit.
+`--name` folds with the language name table, so `Straße` and `STRASSE` stay two
+names, `--module` matches a slash-separated module path, and `--limit N` stops
+after `N` rows. A query with no rows exits `1`, because "nothing found" is a
+finding for a caller that expected a hit.
+
+`--json` emits one document with `file`, `ok`, `counts`, `findings`, and `rows`,
+so a success and a parse failure are read the same way. A successful query has
+`ok: true`, `counts: {"error": 0}`, and an empty `findings`. `--jsonl` streams
+the rows only on success; on a parse failure it streams the finding and then the
+summary object, like `parse`.
 
 `references` includes variable uses in header, graphics, interact, and
 module-layout annotation tails. A bare bound `InVar_`/`OutVar_` name is reported
@@ -159,12 +187,18 @@ sattline project programs/ libs/ --validate full --fail-on error
 ```
 
 A root is a library directory: the loader indexes artifacts directly inside it.
-Roots are searched in the order written, and an earlier root wins: when two
-roots hold a unit with the same name, only the earlier body is loaded. When
-`--targets` is omitted, every source directly under each root is a target.
+Roots are searched in the order written, and an earlier root wins. The path
+holds one library per name, so a root whose directory name repeats an earlier
+root is shadowed entirely and contributes no units or targets. When two roots
+with different names hold a unit with the same name, only the earlier body is
+loaded. When `--targets` is omitted, every source directly under each effective
+root is a target.
 A missing or unparseable artifact is a load failure: the command reports
 `cannot load project` with the underlying error and exits `1`, whatever
-`--fail-on` says. A recursive `.l`/`.z` dependency
+`--fail-on` says. When the failure is a body that does not parse, the finding
+keeps the parser's sentence, `line`, `column`, and `hint` from the cause, so the
+report points at the source rather than only naming the artifact. A recursive
+`.l`/`.z` dependency
 (`DependencyCycleError`) and a module type that instantiates itself
 (`ModuleTypeCycleError`) are load failures too, reported the same way. There is
 no partial project: `--fail-on` governs validation findings only.
@@ -184,7 +218,7 @@ empty list. See [project.md](project.md#distribution-companion).
 | `--workers N` | Parse bodies in `N` processes, 1 to 32. Default `min(8, cpu_count)`; `1` parses in this process |
 | `--cache-dir DIR` | Parser cache directory |
 | `--no-cache` | Bypass the project caches |
-| `--validate invoked\|full\|none` | What to validate. Default `invoked` |
+| `--validate invoked\|full\|none` | Additional validation scope. Type references in all loaded files are checked even for `none`. Default `invoked`; see [validation scopes](project.md#validation-scopes) |
 | `--fail-on none\|error` | Whether a validation finding fails the run. Default `error` |
 
 The project caches live under `$XDG_CACHE_HOME/sattline-parser/project` (or
@@ -194,9 +228,10 @@ disables the cache. `--no-cache` makes the load hermetic: the project caches
 neither read nor write. The compiled grammar cache under the temporary directory
 is independent of this flag. A first load in an empty directory writes the
 cache; every later load of an unchanged tree skips parsing. The directory holds
-parsed ASTs of the loaded sources, so keep it private. On Windows the cache
-cannot check a POSIX owner or mode, so keep `--cache-dir` under the user
-profile; a shared path is not protected against a planted pickle.
+parsed ASTs of the loaded sources, so keep it private. On Windows the cache is
+used only when the directory's security descriptor proves that this user owns it
+and that no other trustee can write it; otherwise the caches stay disabled, so a
+shared `--cache-dir` never serves a planted pickle.
 
 `--cycles` is gone, and the JSON payload no longer carries a `cycles` key: a
 recursive dependency chain or a self-instantiating module type is a structural
@@ -215,7 +250,19 @@ Refuses a `.s`/`.x` source. Conversely, `check`, `parse`, `query`, `decode`, and
 companion, so a companion is never reported as broken source. The refusal uses
 the name that identifies the input: the path itself, or `--stdin-name` when the
 input is `-`, so `sattline check --stdin-name x.g -` is refused exactly like a
-`.g` path.
+`.g` path, and `sattline graphics --stdin-name x.s -` is refused exactly like a
+`.s` path. Stdin requires `--stdin-name`, as for every source command.
+
+A companion larger than the library's 4 MiB limit is refused as an input
+problem (exit `2`) from its size, before its bytes are read. Stdin cannot be
+stat'ed, so its length is checked after it has been read.
+
+A scan message is a finding, whether its severity is `warning` (an expression the
+grammar could not parse) or `error` (a malformed record), so any scan message
+exits `1`: the companion was only partly understood. The message is reduced to
+one sentence; the expression parser's expected-token dump and token names are
+not reproduced, because the finding already carries the file position and the
+raw expression.
 
 ### `decode`
 
@@ -227,6 +274,11 @@ sattline decode coded.x --json
 
 Prints the decoded text by default, a JSON report with `--report`, or the text
 inside a JSON document with `--json`.
+
+The report carries `file`, `encoding`, `original_length`, and `decoded_length`.
+`encoding` is the same three-way value as `parse`: `plain`, `compressed`
+(marker-compressed text), or `coded` (a byte-coded stream). A coded stream stays
+`coded` even when the text it decodes to is still marker-compressed.
 
 ### `diff`
 
@@ -242,7 +294,9 @@ official `.x` code body of a unit with its draft `.s` code body. In a unit the
 two versions are the official `.x` and the draft `.s`, never two `.s` files;
 the command itself accepts any two code sources. It compares findings by
 `(rule, message)` and compares structural counts. It is a regression aid, not a
-semantic diff. Exit `1` when anything changed.
+semantic diff. Exit `1` when anything changed. When either side does not parse,
+`counts.changed` is empty: there is no comparable summary, and the parse failure
+is already reported as a finding rather than as every count moving from `null`.
 
 ### `corpus`
 
@@ -280,6 +334,12 @@ compatibility before parsing output.
 `--json` and `--jsonl` are mutually exclusive. Findings are never printed as a
 second document alongside a JSON payload: they ride inside the same object.
 
+Output never fails on a character the stream cannot encode. A source character
+that is outside the stream's encoding (the library maps an undefined
+Windows-1252 byte inside a comment to U+FFFD) is escaped with a backslash, so a
+cp1252 terminal still prints the report and a JSON escape parses back to the
+same character.
+
 `--jsonl` does not mean the same thing in every command, because a command that
 reports one unit has nothing to stream:
 
@@ -287,14 +347,17 @@ reports one unit has nothing to stream:
 | --- | --- |
 | `check` | One finding object per line, then a summary object |
 | `rules` | One rule object per line, then a summary object |
-| `query` | One row object per line, with no summary object |
-| `parse` | One compact summary document |
+| `query` | One row object per line on success; the finding then a summary object on failure |
+| `parse` | One compact summary document on success; the finding then a summary object on failure |
 | `project` | One compact document |
 | `graphics` | One compact document |
 | `diff` | One compact document |
 | `corpus` | One compact document |
 | `decode` | Not accepted; use `--report` or `--json` |
 | `version` | Not accepted; use `--json` |
+
+The finding-reporting commands stream the same shape on failure: one finding
+object per line, then one summary object with `summary: true`.
 
 ## The finding shape
 
@@ -329,13 +392,18 @@ reports one unit has nothing to stream:
 A rule id is never printed as prose. It exists for baselines, filters, and
 diffs.
 
+The document-level `ok` field is present in every `check`, `parse`, and `query`
+JSON document, and is `true` only when the document carries no finding of any
+severity. A `graphics` warning therefore makes `ok` `false` and the exit
+code `1`, exactly like an error.
+
 `sattline project --json` does not use `Finding`. Its payload carries:
 
 | Key | Shape |
 | --- | --- |
 | `programs` | One row per loaded artifact: `name`, `code`, `graphics`, `deps`, `distribution`, `sidecar`, `dependencies`, `source`, `library`, `resolved_base`, `has_executing_system`, `executing_systems` |
 | `edges` | `{"from": dependent, "to": dependency}` over casefolded names |
-| `diagnostics` | One row per non-fatal load condition: `kind` (`sidecar-missing`, `sidecar-elsewhere`, `sidecar-empty`, or `sidecar-family-mismatch`), `program`, `detail`, `path` |
+| `diagnostics` | One row per non-fatal load condition: `kind` (`sidecar-missing`, `sidecar-elsewhere`, `sidecar-empty`, `sidecar-family-mismatch`, `folded-name-collision`, `alias-declarations-unused`, `skipped-file`, or `companion-family-mismatch`), `program`, `detail`, `path` |
 | `validation` | One row per diagnostic: `program`, `code` (`SL-V###`), `message`, `line`, `column` |
 | `findings` | Present only when the tree could not be loaded at all: one `Finding` with rule `PROJECT_LOAD_ERROR`, or when `--of` names a program outside the graph: one `Finding` with rule `PROJECT_QUERY_ERROR` |
 
@@ -363,7 +431,7 @@ for a code-scanning service. The mapping is fixed:
 | `results[].ruleId` | the `SL-V###` id for a validation finding, or the synthetic finding id |
 | `results[].level` | the finding severity, `error` or `warning` |
 | `results[].message` | the finding message, with `hint` folded into a `markdown` variant when present |
-| `results[].locations[]` | the finding file as a repository-relative, percent-encoded artifact URI when it is under the working directory, otherwise an absolute file URI; `startLine` and `startColumn` when known |
+| `results[].locations[]` | the finding file as a repository-relative, percent-encoded artifact URI when its resolved path is under the working directory, otherwise an absolute file URI; `startLine` and `startColumn` when known |
 
 A result without a location still appears, so a project-load failure is not
 dropped. `--sarif` is exclusive with `--json` and `--jsonl`, and on `project` it
@@ -379,7 +447,7 @@ apply to it, and the exit code is the same as for text output.
 | `--stdin-name PATH` | source commands | Required when reading `-`, so findings are attributable; a companion suffix here is refused like a companion path |
 | `--paths given\|absolute` | source commands | How to render paths, in findings and in the document-level `file` key. Default `given` |
 | `--rule RULE` | `check` | Filter by rule id or enum name, repeatable; only this command's own synthetic ids (`PARSE_ERROR`, `DECODE_ERROR`) are accepted |
-| `--max-findings N` | `check` | Limit printed findings; the exit code still reflects all of them |
+| `--max-findings N` | `check` | Limit printed findings; `0` prints none, a negative value is a usage error, the exit code still reflects all of them, and the withheld count is noted once on stderr |
 | `--limit N` | `query` | Stop after `N` rows |
 | `--fail-on none\|error` | `check`, `project`, `corpus` | Which findings make the exit code `1` |
 | `--compact` | `parse` | Emit JSON on one line |

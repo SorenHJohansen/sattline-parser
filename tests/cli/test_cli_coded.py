@@ -34,6 +34,20 @@ def test_parse_reports_the_coded_flavor(tmp_path, capsys) -> None:
     assert payload["counts"]["sequences"] == 1
 
 
+def test_a_coded_source_behind_a_byte_order_mark_is_still_coded(tmp_path, capsys) -> None:
+    """The decoder strips the mark before classifying, so the CLI must too."""
+    source = tmp_path / "Marked.x"
+    source.write_bytes(b"\xef\xbb\xbf" + encode_coded(VALID_SOURCE))
+
+    assert main(["parse", str(source), "--json"]) == ExitCode.OK
+    assert json.loads(capsys.readouterr().out)["encoding"] == "coded"
+
+    assert main(["decode", str(source), "--report"]) == ExitCode.OK
+    report = json.loads(capsys.readouterr().out)
+    assert report["encoding"] == "coded"
+    assert report["original_length"] == len(source.read_bytes())
+
+
 def test_query_walks_a_coded_source(tmp_path, capsys) -> None:
     source = write_coded(tmp_path, "Coded.x", VALID_SOURCE)
 
@@ -50,7 +64,7 @@ def test_decode_prints_and_reports_coded_input(tmp_path, capsys) -> None:
 
     assert main(["decode", str(source), "--report"]) == ExitCode.OK
     report = json.loads(capsys.readouterr().out)
-    assert report["coded"] is True
+    assert report["encoding"] == "coded"
     assert report["original_length"] == len(source.read_bytes())
     assert report["decoded_length"] == len(VALID_SOURCE)
 

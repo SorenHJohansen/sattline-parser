@@ -1,26 +1,29 @@
 """The discovery phase: resolve a target set into an ordered plan.
 
-The planner resolves names to files, reads dependency sidecars, and recurses
-into each dependency. It never parses a body, so the whole closure is known
-before any parse work starts. Plans are appended after their dependencies,
-which makes the plan list post-order.
+The planner resolves names to files, reads dependency sidecars, and walks into
+each dependency on an explicit stack. It never parses a body, so the whole
+closure is known before any parse work starts. Plans are appended when a unit
+finishes, which makes the plan list post-order, and no chain length can exhaust
+the Python call stack.
 
 Identity is explicit here. A plan is keyed by the resolved artifact, and the
-active recursion stack holds artifacts, not names. Cycle detection therefore
-follows physical files: a name that resolves to a different file is not a
-cycle, and two different names that resolve to one file cannot hide one. The
-diagnostic still reports the logical names that formed the loop, because that
-is what a reader can act on.
+active stack holds artifacts, not names. Cycle detection therefore follows
+physical files: a name that resolves to a different file is not a cycle, and two
+different names that resolve to one file cannot hide one. The diagnostic still
+reports the logical names that formed the loop, because that is what a reader can
+act on.
 
 A dependency is resolved through the caller's ordered roots, so one name reaches
 one body in a load. The stack is keyed by artifact, not name, because two
 different names can resolve to one file (an alias or a symlink), which a name
-key would miss.
+key would miss. Every name that reached a body is recorded, so the loader can
+keep an alias as a name for the same unit.
 """
 
 from __future__ import annotations
 
 from collections.abc import Callable, Sequence
+from dataclasses import dataclass
 from pathlib import Path
 
 from sattline_parser.source_io import read_text_cp1252
@@ -28,7 +31,7 @@ from sattline_parser.source_io import read_text_cp1252
 from ._cycles import canonical_cycle
 from .discovery import ProjectLookup
 from .errors import DependencyCycleError, DependencyNotFoundError, DependencyParseError
-from .formats import ALL_DEPS_EXTENSIONS, find_companion_beside
+from .formats import ALL_DEPS_EXTENSIONS, CompanionIndex, code_ext_candidates, find_companion_beside
 from .identity import ArtifactIdentity
 from .models import LoadDiagnosticKind, LoadMode, SidecarState
 from .plan import Plan, ResolvedArtifact
@@ -46,6 +49,24 @@ def read_dependency_names(deps_path: Path) -> tuple[str, ...]:
     return tuple(line.strip() for line in text.splitlines() if line.strip())
 
 
+@dataclass(slots=True)
+class _Pending:
+    """One unit being planned: its artifact and the work still outstanding.
+
+    ``pending`` holds the dependency names not yet visited and ``resolved`` the
+    plan keys of the dependencies already planned, in declaration order. A
+    stack of these replaces recursion, so a long chain cannot exhaust the Python
+    stack.
+    """
+
+    name: str
+    declared_by: str | None
+    artifact: ResolvedArtifact
+    identity: ArtifactIdentity
+    pending: list[str]
+    resolved: list[str]
+
+
 class ProjectPlanner:
     """Resolve a target set into post-order plans without parsing anything."""
 
@@ -57,21 +78,36 @@ class ProjectPlanner:
         debug: Callable[[str], None] | None,
         diagnose: Callable[..., None],
         artifact_resolver: ArtifactResolver | None = None,
+        companions: CompanionIndex | None = None,
     ) -> None:
         self._lookup = lookup
         self._mode = mode
         self._debug = debug
         self._diagnose = diagnose
         self._artifact_resolver = artifact_resolver or self.resolve_artifact
+        #: The per-load companion directory index, shared with the assembler so
+        #: the sidecar family probe and the two companion roles cost one scan per
+        #: directory.
+        self._companions = companions if companions is not None else CompanionIndex()
         #: Post-order plans: every dependency precedes its consumer.
         self.plans: list[Plan] = []
         #: Plan key -> the plan keys of its resolved dependencies.
         self.resolved_dependencies: dict[str, tuple[str, ...]] = {}
         #: The plan keys of the explicitly requested units.
         self.target_plan_keys: set[str] = set()
+        #: Every spelling that reached a plan, folded view key -> (spelling, plan
+        #: key). One body can be reached under several names (an alias or a
+        #: symlink), and every spelling is kept so a declared dependency name can
+        #: be resolved back to the unit it named.
+        self.resolved_names: dict[str, tuple[str, str]] = {}
         self._planned: set[ArtifactIdentity] = set()
-        #: The active recursion stack: artifact identity -> the name that
-        #: entered it. Insertion order is the dependency chain.
+        #: Plan key -> the dependency sidecar the plan actually read. A later
+        #: visit to the same body is an alias only when its prefix resolves a
+        #: different sidecar; a second visit under the same prefix read the same
+        #: file and has nothing unused to report.
+        self._read_sidecars: dict[str, Path | None] = {}
+        #: The active plan stack: artifact identity -> the name that entered it.
+        #: Insertion order is the dependency chain.
         self._loading: dict[ArtifactIdentity, str] = {}
 
     def _dbg(self, message: str) -> None:
@@ -80,65 +116,77 @@ class ProjectPlanner:
 
     def resolve(self, targets: Sequence[str]) -> None:
         """Plan every target and its transitive dependencies, in post-order."""
+        self._report_unusable_names()
         for target in targets:
-            self.target_plan_keys.add(self._visit(target, declared_by=None))
+            self.target_plan_keys.add(self._plan(target, declared_by=None))
 
-    def _visit(self, name: str, *, declared_by: str | None) -> str:
-        """Plan one unit and return its plan key."""
-        return self._discover(name, declared_by=declared_by)
+    def _report_unusable_names(self) -> None:
+        """Report a code file whose stem can never be a unit name.
 
-    def _discover(self, name: str, *, declared_by: str | None) -> str:
-        """Resolve one unit's artifacts and recurse into its dependencies.
+        The resolver refuses a name outside the identifier charset, so a file
+        such as ``Pump.v2.s`` cannot load as a unit however the target was
+        chosen. Reporting it as a load diagnostic keeps a whole-tree load alive
+        and names the file once, instead of failing the load on a target the
+        resolver could only refuse.
+        """
+        candidates = code_ext_candidates(self._mode)
+        for path in self._lookup.unusable_code_files():
+            if path.suffix.lower() not in candidates:
+                continue
+            self._diagnose(
+                LoadDiagnosticKind.SKIPPED_FILE,
+                path.stem,
+                f"{path.name!r} is not a unit name; not loaded as a target",
+                path,
+            )
 
-        The plan is appended after the recursion, which makes :attr:`plans` the
-        post-order sequence the assembly phase needs. A name that resolves to a
-        body this load already planned reuses that plan.
+    def _plan(self, name: str, *, declared_by: str | None) -> str:
+        """Plan one unit and its closure and return its plan key.
+
+        The walk is iterative: each unit is a frame on an explicit stack, so a
+        dependency chain of any legal length is planned without growing the
+        Python call stack. Plans are appended when a frame finishes, which keeps
+        :attr:`plans` post-order.
+        """
+        root = self._open(name, declared_by=declared_by)
+        if isinstance(root, str):
+            return root
+        stack = [root]
+        try:
+            while True:
+                frame = stack[-1]
+                if frame.pending:
+                    dependency = frame.pending.pop(0)
+                    child = self._open(dependency, declared_by=frame.name)
+                    if isinstance(child, str):
+                        frame.resolved.append(child)
+                    else:
+                        stack.append(child)
+                    continue
+                stack.pop()
+                key = self._close(frame)
+                if not stack:
+                    return key
+                stack[-1].resolved.append(key)
+        finally:
+            # A failed load leaves no active chain behind, so the cycle report of
+            # a later visit starts from that visit's own root.
+            self._loading.clear()
+
+    def _open(self, name: str, *, declared_by: str | None) -> _Pending | str:
+        """Resolve *name* and start its frame, or return an existing plan key.
+
+        The body is resolved before the sidecar, so a spelling that reaches a
+        body this load already planned is an alias: its declarations are never
+        read, and an unreadable alias sidecar cannot fail a load that the body
+        alone survives. A spelling that reaches the same prefix the plan read is
+        the same library seen twice, not an alias. The cycle check follows
+        physical files, because a name that resolves to a file already on the
+        active stack is a cycle.
         """
         program_name = declared_by if declared_by is not None else name
         dependency = None if declared_by is None else name
         self._dbg(f"Visiting: {name}")
-        artifact = self._artifact_resolver(
-            name,
-            program_name=program_name,
-            dependency=dependency,
-        )
-        identity = ArtifactIdentity.of(artifact.code_path)
-        if identity in self._loading:
-            # The dependency loop returns to a file already being planned, so it
-            # has no finite load order. Report the logical names that formed it.
-            stack = list(self._loading.items())
-            start = next(index for index, entry in enumerate(stack) if entry[0] == identity)
-            cycle = (*tuple(spelling for _, spelling in stack[start:]), name.casefold())
-            raise DependencyCycleError(canonical_cycle(cycle))
-        if identity in self._planned:
-            return identity.key
-        self._planned.add(identity)
-        self._loading[identity] = name.casefold()
-        try:
-            resolved = tuple(self._visit(declared, declared_by=name) for declared in artifact.dependencies)
-        finally:
-            del self._loading[identity]
-        key = identity.key
-        self.plans.append(
-            Plan(
-                key=key,
-                name=name,
-                declared_by=declared_by,
-                artifact=artifact,
-                dependencies=resolved,
-            )
-        )
-        self.resolved_dependencies[key] = resolved
-        return key
-
-    def resolve_artifact(
-        self,
-        name: str,
-        *,
-        program_name: str,
-        dependency: str | None,
-    ) -> ResolvedArtifact:
-        """Find the body, its sidecar, and the declared dependencies."""
         resolved = self._lookup.find_code_with_base(name)
         if resolved is None:
             raise DependencyNotFoundError(
@@ -147,7 +195,123 @@ class ProjectPlanner:
                 dependency=dependency,
             )
         code_path, resolved_base = resolved
+        identity = ArtifactIdentity.of(code_path)
+        if identity in self._loading:
+            # The dependency loop returns to a file already being planned, so it
+            # has no finite load order. Report the logical names that formed it.
+            chain = list(self._loading.items())
+            start = next(index for index, entry in enumerate(chain) if entry[0] == identity)
+            cycle = (*tuple(spelling for _, spelling in chain[start:]), name.casefold())
+            raise DependencyCycleError(canonical_cycle(cycle))
+        if identity in self._planned:
+            self._record_name(name, identity.key, code_path)
+            self._report_unused_alias(name, identity.key, code_path)
+            return identity.key
+        artifact = self._artifact_resolver(
+            name,
+            program_name=program_name,
+            dependency=dependency,
+            code_path=code_path,
+            resolved_base=resolved_base,
+        )
+        self._planned.add(identity)
+        self._read_sidecars[identity.key] = artifact.deps_path
+        self._loading[identity] = name.casefold()
+        return _Pending(
+            name=name,
+            declared_by=declared_by,
+            artifact=artifact,
+            identity=identity,
+            pending=list(artifact.dependencies),
+            resolved=[],
+        )
+
+    def _report_unused_alias(self, name: str, plan_key: str, code_path: Path) -> None:
+        """Report a sidecar at an alias prefix whose declarations are not read.
+
+        The body is planned once, under the spelling that reached it first, so a
+        sidecar at a *different* prefix has no plan to attach to. The sidecar
+        path is resolved but never read: a broken file at the alias prefix must
+        not fail a load that the body alone survives, and the operator should
+        still learn why a declared name is absent from the registry.
+
+        A second visit under the prefix the plan already read is not an alias:
+        it is the same library reached twice, which a diamond or two targets
+        sharing a dependency both produce. Its declarations were read on the
+        first visit, so nothing is reported.
+        """
+        sidecar = self._lookup.find_deps_beside(code_path, name)
+        if sidecar is None:
+            return
+        read = self._read_sidecars.get(plan_key)
+        if read is not None and ArtifactIdentity.of(read) == ArtifactIdentity.of(sidecar):
+            return
+        self._diagnose(
+            LoadDiagnosticKind.ALIAS_DECLARATIONS_UNUSED,
+            name,
+            f"{name!r} resolves to already planned body {code_path.name!r}; "
+            f"declarations in {sidecar.name!r} are not used",
+            sidecar,
+        )
+
+    def _close(self, frame: _Pending) -> str:
+        """Finish *frame*: append its plan and return its plan key."""
+        key = frame.identity.key
+        dependencies = tuple(frame.resolved)
+        self.plans.append(
+            Plan(
+                key=key,
+                name=frame.name,
+                declared_by=frame.declared_by,
+                artifact=frame.artifact,
+                dependencies=dependencies,
+            )
+        )
+        self.resolved_dependencies[key] = dependencies
+        self._record_name(frame.name, key, frame.artifact.code_path)
+        del self._loading[frame.identity]
+        return key
+
+    def _record_name(self, spelling: str, plan_key: str, code_path: Path) -> None:
+        """Remember that *spelling* reached *plan_key*.
+
+        Two spellings that share a project view key but reach different artifacts
+        are an ambiguity the casefolded view cannot represent. The first
+        resolution is kept and the pair is reported, because the alternative is
+        a unit that disappears without a finding.
+        """
+        key = spelling.casefold()
+        existing = self.resolved_names.get(key)
+        if existing is None:
+            self.resolved_names[key] = (spelling, plan_key)
+            return
+        if existing[1] == plan_key:
+            return
+        self._diagnose(
+            LoadDiagnosticKind.FOLDED_NAME_COLLISION,
+            spelling,
+            f"{existing[0]!r} and {spelling!r} fold to one project key but resolve to different "
+            f"artifacts; keeping {existing[0]!r}",
+            code_path,
+        )
+
+    def resolve_artifact(
+        self,
+        name: str,
+        *,
+        program_name: str,
+        dependency: str | None,
+        code_path: Path,
+        resolved_base: Path,
+    ) -> ResolvedArtifact:
+        """Find the sidecar and declared dependencies of an already resolved body.
+
+        The planner resolves the code body first, so it can recognise a spelling
+        that reaches an already planned artifact before any sidecar is read.
+        Everything else about the artifact is resolved here.
+        """
         library = resolved_base.name
+        self._report_collisions(name, program_name, resolved_base)
         # The sidecar belongs to the selected body's prefix; see
         # ProjectLookup.find_deps_beside.
         deps_path = self._lookup.find_deps_beside(code_path, name)
@@ -156,12 +320,12 @@ class ProjectPlanner:
             # A sidecar in the other family sits at the body's own prefix. Probe
             # for it directly, because a mode-filtered root-ordered search never
             # sees the other family and official mode would report a plain miss.
-            same_prefix = find_companion_beside(code_path, sorted(ALL_DEPS_EXTENSIONS))
+            same_prefix = find_companion_beside(code_path, sorted(ALL_DEPS_EXTENSIONS), index=self._companions)
             stray = self._lookup.find_deps(name)
             if same_prefix is not None:
                 self._diagnose(
                     LoadDiagnosticKind.SIDECAR_FAMILY_MISMATCH,
-                    program_name,
+                    name,
                     f"sidecar {same_prefix.name!r} does not match the artifact family of body "
                     f"{code_path.name!r}; not paired",
                     same_prefix,
@@ -169,14 +333,14 @@ class ProjectPlanner:
             elif stray is not None:
                 self._diagnose(
                     LoadDiagnosticKind.SIDECAR_ELSEWHERE,
-                    program_name,
+                    name,
                     f"sidecar {stray.name!r} is not beside body {code_path.name!r}; not paired",
                     stray,
                 )
             else:
                 self._diagnose(
                     LoadDiagnosticKind.SIDECAR_MISSING,
-                    program_name,
+                    name,
                     f"no dependency sidecar beside {code_path.name!r}",
                     code_path,
                 )
@@ -186,7 +350,7 @@ class ProjectPlanner:
             if sidecar is SidecarState.EMPTY:
                 self._diagnose(
                     LoadDiagnosticKind.SIDECAR_EMPTY,
-                    program_name,
+                    name,
                     f"sidecar {deps_path.name!r} declares no dependencies",
                     deps_path,
                 )
@@ -198,6 +362,17 @@ class ProjectPlanner:
             sidecar=sidecar,
             dependencies=dependencies,
         )
+
+    def _report_collisions(self, name: str, program_name: str, base: Path) -> None:
+        """Report files in *base* whose stems fold to *name*'s unit identity."""
+        for collision in self._lookup.collisions_for(name, base):
+            names = ", ".join(repr(path.name) for path in collision.paths)
+            self._diagnose(
+                LoadDiagnosticKind.FOLDED_NAME_COLLISION,
+                program_name,
+                f"{names} fold to one unit name; using {collision.winner.name!r}",
+                collision.winner,
+            )
 
     def _read_deps(
         self,
@@ -215,8 +390,11 @@ class ProjectPlanner:
                 program_name,
                 f"unable to read dependency file {deps_path.name} for {name!r}",
                 dependency=dependency,
+                path=deps_path,
             ) from exc
 
 
 #: The artifact resolver the planner uses: the loader's own method by default.
+#: It receives the code path and base the planner already resolved, so a
+#: spelling that reaches a planned body never causes a sidecar read.
 ArtifactResolver = Callable[..., ResolvedArtifact]

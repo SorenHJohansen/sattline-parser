@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from sattline_parser.models.ast_model import GraphObject
 from sattline_parser.models.clauses import ColourSpec, EnableClause, ZoomLimits
 from sattline_parser.models.tails import Tail
 
@@ -19,7 +20,6 @@ __all__ = [
     "CoordinateClipping",
     "Grid",
     "ModuleOptions",
-    "SeqLayers",
     "TwoLayers",
     "Zoomable",
 ]
@@ -27,11 +27,17 @@ __all__ = [
 
 @dataclass(frozen=True)
 class CommonProperties:
-    """The ``common_properties`` run shared by graphics objects."""
+    """The ``common_properties`` run shared by graphics objects.
+
+    ``connection_node`` holds the bare ``ConnectionNode`` marker the run allows.
+    It has no coordinates, unlike a text object's ``ConnectionNode (x, y)``
+    clause, so the formatter writes it back as the bare keyword.
+    """
 
     layer: int | None = None
     enable: EnableClause | None = None
     colours: tuple[ColourSpec, ...] = ()
+    connection_node: GraphObject | None = None
 
     @property
     def tails(self) -> tuple[Tail, ...]:
@@ -51,7 +57,7 @@ class Zoomable:
 
 @dataclass(frozen=True)
 class TwoLayers:
-    """``Two_Layers_ LayerLimit_ = <real>``."""
+    """``Two_Layers_ LayerLimit_ = <real>``, the zoom level that switches to layer 2."""
 
     layer_limit: float
 
@@ -61,13 +67,6 @@ class Grid:
     """``Grid = <real>``."""
 
     spacing: float
-
-
-@dataclass(frozen=True)
-class SeqLayers:
-    """A ``seq_layers`` payload: one real or a layer mapping."""
-
-    value: float | dict[str, float]
 
 
 @dataclass(frozen=True)
@@ -95,7 +94,19 @@ class ModuleOptions:
         return cls()
 
     def merge(self, other: ModuleOptions) -> ModuleOptions:
-        """Return the combination, letting ``other`` win where it sets a field."""
+        """Return the combination, letting ``other`` win where it sets a field.
+
+        ``layer_limit``, ``zoom_limits``, and ``grid`` are singular options, so
+        two written values for one of them are ambiguous. The merge rejects the
+        pair instead of letting the later clause win silently. ``zoomable`` is a
+        marker, so a repeat is idempotent.
+        """
+        if other.layer_limit is not None and self.layer_limit is not None:
+            raise ValueError("module definition has more than one Two_Layers_/LayerLimit_ option")
+        if other.zoom_limits is not None and self.zoom_limits is not None:
+            raise ValueError("module definition has more than one ZoomLimits option")
+        if other.grid is not None and self.grid is not None:
+            raise ValueError("module definition has more than one Grid option")
         return ModuleOptions(
             layer_limit=other.layer_limit if other.layer_limit is not None else self.layer_limit,
             zoom_limits=other.zoom_limits if other.zoom_limits is not None else self.zoom_limits,
@@ -116,8 +127,10 @@ class ClipValue:
 class CoordinateClipping:
     """A nested ``ClippingBounds = <values>`` annotation on a coordinate.
 
-    The form still belongs to the coordinate position; its per-value tails are
-    folded into the coordinate's flat tail list.
+    The form still belongs to the coordinate position: its per-value tails are
+    folded into the coordinate's flat tail list, and the values themselves become
+    a :class:`~sattline_parser.models.clauses.NestedClipping` on the coordinate
+    they follow, so a formatter can write them back.
     """
 
     values: tuple[ClipValue, ...]

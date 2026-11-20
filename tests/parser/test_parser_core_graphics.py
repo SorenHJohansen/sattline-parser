@@ -7,6 +7,9 @@ from lark.exceptions import UnexpectedInput
 from lark.tree import Meta
 
 from sattline_parser import parse_source_text as parser_core_parse_source_text
+from sattline_parser.api import parse_source_text
+from sattline_parser.ast import walk
+from sattline_parser.formatting import format_source
 from sattline_parser.grammar import constants as parser_const
 from sattline_parser.models.ast_model import CodeComment, GraphObject, InteractObject
 from sattline_parser.models.clauses import (
@@ -23,8 +26,10 @@ from sattline_parser.models.clauses import (
     TailedClause,
 )
 from sattline_parser.models.expressions import Compare, VarRef
+from sattline_parser.models.properties import GraphProperties
 from sattline_parser.models.tails import VarTail
-from sattline_parser.transformer._module_shared import InterimCoords, TextContent
+from sattline_parser.serialization import to_jsonable
+from sattline_parser.transformer._module_shared import InterimCoords, TextContent, TransformerItem
 from sattline_parser.transformer._payloads import CommonProperties
 
 from ._parser_core_test_support import _GraphicsHarness, _repo_path
@@ -72,11 +77,15 @@ def test_graphics_interact_mixin_builds_graph_objects_and_lists():
         ]
     )
 
-    assert skipped_empty_text.properties["text_vars"] == [VarRef("Caption")]
+    # The marker binds the text written immediately before it, even when that
+    # text is empty; it must not reach back to an earlier caption.
+    assert skipped_empty_text.properties["text_vars"] == [VarRef("")]
     assert mixin.text_content(Meta(), ["Visible text"]) == TextContent("Visible text")
 
-    with pytest.raises(ValueError, match="expected a TextContent"):
-        mixin.text_object([0, Token(parser_const.TOKEN_VARNAME, "Broken")])
+    # A marker with no text before it is grammar-legal: it is kept as an empty
+    # label instead of raising or misbinding.
+    bare_marker = mixin.text_object([InterimCoords(coords=coords), Token(parser_const.TOKEN_VARNAME, "Broken")])
+    assert bare_marker.properties["text_vars"] == [VarRef("")]
 
     for method_name, expected_type, keeps_coords in (
         ("rectangle_object", parser_const.GRAMMAR_VALUE_RECTANGLEOBJECT, True),
@@ -100,7 +109,10 @@ def test_graphics_interact_mixin_builds_graph_objects_and_lists():
     wrapped = mixin.graph_object(Meta(), [text_object, 7])
     interact_child = InteractObject(type="Button_", properties={})
 
-    assert wrapped.properties["layer"] == 7
+    # A ``Layer_`` arrives on the object through ``common_properties``, never as
+    # a child of the ``graph_object`` rule, so a stray child is not applied.
+    assert "layer" not in wrapped.properties
+    assert wrapped is text_object
     assert mixin.graph_objects([text_object, "ignored", GraphObject(type="Rect", properties={})]) == [
         text_object,
         GraphObject(type="Rect", properties={}),
@@ -116,24 +128,19 @@ def test_graphics_interact_mixin_builds_graph_objects_and_lists():
         mixin.text_content(Meta(), [1, 2])
 
 
-def test_graph_objects_propagates_section_level_layer_to_objects():
+def test_graph_objects_collects_objects_and_takes_no_section_layer():
     mixin = _GraphicsHarness()
     rect = mixin.rectangle_object([InterimCoords(coords=((0.0, 0.0), (1.0, 1.0)))])
     text = mixin.text_object(["Caption"])
     explicit = mixin.rectangle_object([InterimCoords(coords=((0.0, 0.0), (1.0, 1.0))), CommonProperties(layer=9)])
 
-    # A section-level Layer_ = 2 applies to every object lacking an explicit one.
-    result = mixin.graph_objects([2, rect, text, explicit])
+    # ``graph_objects`` has no section-level layer production, so only the
+    # objects are collected and each keeps its own layer.
+    result = mixin.graph_objects([rect, text, explicit])
     assert result == [rect, text, explicit]
-    assert rect.properties["layer"] == 2
-    assert text.properties["layer"] == 2
+    assert "layer" not in rect.properties
+    assert "layer" not in text.properties
     assert explicit.properties["layer"] == 9
-
-    # Without a section layer, objects are untouched.
-    fresh_rect = mixin.rectangle_object([InterimCoords(coords=((0.0, 0.0), (1.0, 1.0)))])
-    untouched = mixin.graph_objects([fresh_rect, "ignored"])
-    assert untouched == [fresh_rect]
-    assert "layer" not in fresh_rect.properties
 
 
 def test_graph_object_layer_is_per_object_not_section_level():
@@ -248,8 +255,13 @@ def test_graph_object_handles_standalone_and_attached_connection_nodes():
             ColourSpec("outline"),
         ]
     )
+    # The bare marker used to be dropped here; it is modelled now, so the
+    # payload keeps it instead of losing the written construct.
     assert merged == CommonProperties(
-        layer=3, enable=EnableClause(False, VarTail("in", "Enabled")), colours=(ColourSpec("outline"),)
+        layer=3,
+        enable=EnableClause(False, VarTail("in", "Enabled")),
+        colours=(ColourSpec("outline"),),
+        connection_node=GraphObject(parser_const.GRAMMAR_VALUE_CONNECTIONNODE),
     )
     assert merged.layer == 3
 
@@ -535,6 +547,89 @@ def test_text_object_keeps_its_typed_clauses_and_connection_node():
     assert properties[parser_const.KEY_TEXT_VARS] == [VarRef("LabelValue")]
 
 
+def test_common_properties_keeps_a_bare_connection_node():
+    """The bare marker is modelled, not skipped, so its presence survives."""
+    mixin = _GraphicsHarness()
+    bare = mixin.connection_node_bare([])
+
+    payload = mixin.common_properties([bare, CommonProperties(connection_node=bare)])
+
+    assert payload.connection_node is bare
+    rectangle = mixin.rectangle_object([InterimCoords(coords=((0.0, 0.0), (1.0, 1.0))), payload])
+    assert rectangle.properties[parser_const.KEY_CONNECTION_NODE] is bare
+    assert parser_const.KEY_COORDS not in bare.properties
+
+
+def test_a_second_bare_connection_node_marker_is_rejected():
+    mixin = _GraphicsHarness()
+
+    with pytest.raises(ValueError, match="more than one bare ConnectionNode"):
+        mixin.common_properties([mixin.connection_node_bare([]), mixin.connection_node_bare([])])
+
+
+def test_a_text_object_with_both_connection_node_forms_is_rejected():
+    """One property key holds both shapes, so the ambiguous pair is refused."""
+    mixin = _GraphicsHarness()
+    positioned = GraphObject("ConnectionNode", {"coords": (0.5, 0.5)})
+    bare = mixin.connection_node_bare([])
+
+    with pytest.raises(ValueError, match="more than one ConnectionNode"):
+        mixin.text_object(
+            [
+                InterimCoords(coords=((0.0, 0.0), (1.0, 1.0))),
+                positioned,
+                CommonProperties(connection_node=bare),
+            ]
+        )
+
+
+def test_applying_a_bare_connection_node_twice_is_rejected():
+    """The property key is singular, so a second application refuses to overwrite."""
+    mixin = _GraphicsHarness()
+    properties = GraphProperties()
+    payload = mixin.common_properties([mixin.connection_node_bare([])])
+    mixin._apply_common_properties(properties, [payload])
+
+    with pytest.raises(ValueError, match="more than one ConnectionNode"):
+        mixin._apply_common_properties(properties, [payload])
+
+
+def test_a_bare_connection_node_survives_parse_walk_and_format():
+    source = (
+        '"Syntax version 2.23"\n'
+        '"Original file date: ---"\n'
+        '"Program date: ---, name: BareNode"\n'
+        "BasePicture Invocation ( 0.0 , 0.0 , 0.0 , 1.0 , 1.0 ) : MODULEDEFINITION DateCode_ 1\n"
+        "ModuleDef\n"
+        "ClippingBounds = ( -1.0 , -1.0 ) ( 1.0 , 1.0 )\n"
+        "GraphObjects :\n"
+        "   RectangleObject ( 0.0 , 0.0 ) ( 1.0 , 1.0 ) ConnectionNode\n"
+        "ENDDEF (*BasePicture*);\n"
+    )
+    bp = parser_core_parse_source_text(source)
+    assert bp.moduledef is not None
+    rectangle = bp.moduledef.graph_objects[0]
+    node = rectangle.properties[parser_const.KEY_CONNECTION_NODE]
+    assert isinstance(node, GraphObject)
+    assert node.type == parser_const.GRAMMAR_VALUE_CONNECTIONNODE
+    assert node.properties == {}
+    assert any(event.node is node for event in walk(bp))
+
+    # The serializer is structural, so the modelled marker appears in the data
+    # view without a serializer change.
+    payload = cast("dict[str, object]", to_jsonable(bp))
+    module_def = cast("dict[str, object]", payload["moduledef"])
+    objects = cast("list[object]", module_def["graph_objects"])
+    first = cast("dict[str, object]", objects[0])
+    properties = cast("dict[str, object]", first["properties"])
+    assert properties["connection_node"] == {"type": "ConnectionNode", "properties": {}, "span": None}
+
+    formed = format_source(bp)
+
+    assert formed.count("ConnectionNode") == 1
+    assert parse_source_text(formed) == bp
+
+
 def test_graph_object_geometry_fixture_keeps_every_property_it_spells():
     """End to end: a polygon's points and a text object's clauses reach the AST."""
     source = _repo_path("tests", "fixtures", "corpus", "valid", "GraphObjectGeometry.s").read_text(encoding="utf-8")
@@ -647,7 +742,8 @@ def test_moduledef_options_fixture_preserves_grid_zoom_and_layers():
     assert bp.moduledef.zoom_limits == (0.5, 2.0)
     assert bp.moduledef.zoomable is True
     assert bp.moduledef.grid == 10.0
-    assert bp.moduledef.seq_layers == 3.0
+    # 3.0 is the zoom level at which the module switches to layer 2.
+    assert bp.moduledef.layer_limit == 3.0
 
 
 def test_graphics_interact_mixin_cover_interact_helpers_and_validation_errors():
@@ -732,3 +828,108 @@ def test_graphics_interact_mixin_cover_interact_helpers_and_validation_errors():
         mixin.codeblock_coord([1])
     with pytest.raises(ValueError, match="objsizedef expected 2 size values"):
         mixin.objsizedef([1])
+
+
+def test_a_repeated_singular_graph_clause_is_rejected():
+    mixin = _GraphicsHarness()
+
+    with pytest.raises(ValueError, match="Layer_"):
+        mixin.common_properties([1, 2])
+    with pytest.raises(ValueError, match="Enable_"):
+        mixin.common_properties([EnableClause(True), EnableClause(False)])
+
+
+def test_colour_clause_keys_are_compared_through_the_identifier_fold():
+    mixin = _GraphicsHarness()
+
+    colour = mixin._colour_spec(
+        "outline",
+        [
+            TailedClause("WIDTH_", 2),
+            (TailedClause("COLOUR0", 1),),
+            TailedClause("COLOURSTYLE", 1.0),
+        ],
+    )
+
+    assert colour.width is not None and colour.width.key == "WIDTH_"
+    assert colour.style is not None and colour.style.key == "COLOURSTYLE"
+    assert [assignment.key for assignment in colour.assignments] == ["COLOUR0"]
+
+    with pytest.raises(ValueError, match="Width_"):
+        mixin._colour_spec("outline", [TailedClause("Width_", 1), TailedClause("WIDTH_", 2)])
+    with pytest.raises(ValueError, match="ColourStyle"):
+        mixin._colour_spec("outline", [TailedClause("ColourStyle", 1.0), TailedClause("COLOURSTYLE", 2.0)])
+
+
+def test_a_procedure_interactor_keeps_the_written_keyword_and_exposes_a_folded_kind():
+    mixin = _GraphicsHarness()
+    coords = ((0.0, 0.0), (1.0, 1.0))
+    proc = ProcedureCall("ToggleWindow")
+
+    procedure_interact = mixin.combutproc_item(
+        Meta(), [Token("PROCEDUREINTERACT", "ProcedureInteract"), InterimCoords(coords=coords), proc]
+    )
+    combutproc = mixin.combutproc_item(Meta(), [Token("COMBUTPROC", "ComButProc_"), InterimCoords(coords=coords), proc])
+
+    assert procedure_interact.type == "ProcedureInteract"
+    assert procedure_interact.kind == "PROCEDUREINTERACT"
+    assert combutproc.type == "ComButProc_"
+    assert combutproc.kind == "COMBUTPROC_"
+    # Hand-built items without the keyword keep the historical default.
+    assert mixin.combutproc_item(Meta(), [InterimCoords(coords=coords), proc]).type == (
+        parser_const.GRAMMAR_VALUE_COMBUTPROC
+    )
+
+
+def test_a_var_name_marker_does_not_reach_past_another_marker():
+    mixin = _GraphicsHarness()
+    coords = ((0.0, 0.0), (1.0, 1.0))
+
+    graph_object = mixin.text_object(
+        [
+            TextContent("Caption"),
+            Token(parser_const.TOKEN_VARNAME, "First"),
+            Token(parser_const.TOKEN_VARNAME, "Second"),
+            InterimCoords(coords=coords),
+        ]
+    )
+
+    # The first marker takes the caption; the second has no text of its own.
+    assert graph_object.properties["text_vars"] == [VarRef("Caption"), VarRef("")]
+
+
+def test_a_repeated_singular_text_object_clause_is_rejected():
+    mixin = _GraphicsHarness()
+
+    cases: list[tuple[list[TransformerItem], str]] = [
+        ([TailedClause("Width_", 6), TailedClause("Width_", 7)], "Width_"),
+        ([TailedClause("ValueFraction", 2), TailedClause("ValueFraction", 3)], "ValueFraction"),
+        ([TailedClause("Format_String_", "%g"), TailedClause("Format_String_", "%f")], "Format_String_"),
+        (
+            [GraphObject("ConnectionNode", {"coords": (0.0, 0.0)}), GraphObject("ConnectionNode", {})],
+            "ConnectionNode",
+        ),
+    ]
+    for items, label in cases:
+        with pytest.raises(ValueError, match=label):
+            mixin.text_object(items)
+
+
+def test_text_object_clause_keys_are_compared_through_the_identifier_fold():
+    mixin = _GraphicsHarness()
+
+    text = mixin.text_object(
+        [
+            TailedClause("WIDTH_", 6),
+            TailedClause("VALUEFRACTION", 2),
+            TailedClause("FORMAT_STRING_", "%g"),
+        ]
+    )
+
+    assert text.properties[parser_const.KEY_WIDTH].key == "WIDTH_"
+    assert text.properties[parser_const.KEY_VALUE_FRACTION].key == "VALUEFRACTION"
+    assert text.properties[parser_const.KEY_FORMAT_STRING].key == "FORMAT_STRING_"
+
+    # A mixed-case repeat is the same clause, so it is rejected too.
+    with pytest.raises(ValueError, match="Width_"):
+        mixin.text_object([TailedClause("Width_", 6), TailedClause("WIDTH_", 7)])

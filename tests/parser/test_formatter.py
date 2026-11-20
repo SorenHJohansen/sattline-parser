@@ -197,6 +197,35 @@ def test_format_expr_handles_new_typed_expression_nodes():
     assert "IF Cond" in rendered_if and "THEN" in rendered_if and "ELSE" in rendered_if
 
 
+def test_formatted_precedence_round_trips() -> None:
+    expressions = (
+        BoolOp("AND", (BoolOp("OR", (VarRef("A"), VarRef("B"))), VarRef("C"))),
+        Compare(VarRef("A"), "==", BoolOp("AND", (VarRef("B"), VarRef("C")))),
+        BinOp(BoolOp("OR", (VarRef("A"), VarRef("B"))), "+", 1),
+        UnaryOp("-", Compare(VarRef("A"), "==", VarRef("B"))),
+        UnaryOp("-", UnaryOp("-", VarRef("A"))),
+        Compare(NotOp(VarRef("A")), "==", VarRef("B")),
+        BoolOp("AND", (VarRef("A"), BoolOp("AND", (VarRef("B"), VarRef("C"))))),
+        BoolOp(
+            "AND",
+            (
+                TernaryOp(branches=((VarRef("Cond"), VarRef("A")),), else_expr=VarRef("B")),
+                VarRef("C"),
+            ),
+        ),
+    )
+
+    for expression in expressions:
+        code = _round_trip([Assignment(VarRef("Result"), expression)])
+        assert code == [Assignment(VarRef("Result"), expression)]
+
+
+def test_format_expr_parenthesises_a_lower_precedence_boolean_child() -> None:
+    expression = BoolOp("AND", (BoolOp("OR", (VarRef("A"), VarRef("B"))), VarRef("C")))
+
+    assert formatter.format_expr(expression) == "(A OR \nB) AND \nC"
+
+
 def test_formatted_control_flow_parses_back_to_the_same_tree() -> None:
     picture = parse_source_file(_CORPUS / "ControlFlow.s")
     module_code = picture.modulecode

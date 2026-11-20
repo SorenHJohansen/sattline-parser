@@ -1,0 +1,1 @@
+- **The decode report names the encoding.** `decode --report` and `decode --json` carry `encoding` with the same `plain`, `compressed`, or `coded` values as `parse`, instead of the boolean `coded`, which collapsed marker-compressed text into `coded`.

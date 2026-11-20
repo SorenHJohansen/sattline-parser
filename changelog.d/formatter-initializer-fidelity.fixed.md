@@ -1,0 +1,1 @@
+- **Written initializer and description fidelity.** A bare `Time_Value` no longer stores its keyword as the payload text, a bare `Duration_Value` keeps its marker instead of vanishing, a quoted `"Duration_Value"` is read as a literal rather than the keyword, and an empty datatype description is written as `""` instead of being dropped.

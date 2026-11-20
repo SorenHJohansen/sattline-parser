@@ -8,7 +8,9 @@ from enum import Enum
 from pathlib import Path
 
 import pytest
+from lark.exceptions import UnexpectedInput
 
+from sattline_parser.api import PARSE_FAILURES, parse_source_text
 from sattline_parser.cli._findings import Finding, finding_from_diagnostic
 from sattline_parser.cli._io import display_path
 from sattline_parser.cli._json import to_jsonable
@@ -24,6 +26,7 @@ from sattline_parser.models.ast_model import (
     Sequence,
     SourceSpan,
 )
+from sattline_parser.preprocessing import PreprocessError
 from sattline_parser.project import LoadMode
 from sattline_parser.validation import Diagnostic, DiagnosticCode
 
@@ -82,6 +85,17 @@ def test_to_jsonable_falls_back_to_repr() -> None:
     assert to_jsonable(Opaque(), depth=3) == "opaque-value"
 
 
+def test_summarise_names_the_on_disk_flavor() -> None:
+    picture = BasePicture(
+        header=ModuleHeader(name="Program", invoke_coord=(0.0, 0.0, 0.0, 1.0, 1.0)),
+    )
+    compressed = '"Syntax version 2.23, date: 2026-10-28-00:00:00.000 C"\n'
+
+    assert summarise("M.s", "", picture)["encoding"] == "plain"
+    assert summarise("M.s", compressed, picture)["encoding"] == "compressed"
+    assert summarise("M.x", compressed, picture, coded=True)["encoding"] == "coded"
+
+
 def test_summarise_counts_the_module_layout() -> None:
     picture = BasePicture(
         header=ModuleHeader(name="Program", invoke_coord=(0.0, 0.0, 0.0, 1.0, 1.0)),
@@ -134,6 +148,35 @@ def test_finding_from_diagnostic_attaches_the_source_line() -> None:
     assert finding.source_line == "   SEQSTEP S2"
     assert (finding.start, finding.end) == (10, 20)
     assert finding.location() == "M.s:2:4: "
+
+
+def test_finding_source_line_agrees_with_a_line_number_after_a_lone_cr() -> None:
+    """A lone CR ends a line, so the excerpt and the line number agree.
+
+    The excerpt must use the same CRLF/LF/CR rule as the position index, or a
+    diagnostic on line 3 of a CR-only document would print the text of line 2.
+    """
+    diagnostic = Diagnostic(
+        code=DiagnosticCode.CONSECUTIVE_SEQUENCE_STEPS,
+        message="Consecutive SFC steps",
+        span=SourceSpan(start=12, end=20, line=3, column=1),
+    )
+    source = '"a"\rsecond\rModuleCode\r'
+
+    finding = finding_from_diagnostic(diagnostic, file="M.s", source_text=source, absolute_paths=False)
+
+    assert finding.line == 3
+    assert finding.source_line == "ModuleCode"
+
+
+def test_parse_failures_is_the_invalid_source_contract() -> None:
+    for invalid_input in (UnexpectedInput, PreprocessError, UnicodeError, OSError):
+        assert issubclass(invalid_input, PARSE_FAILURES)
+    for defect in (RuntimeError, TypeError, AssertionError):
+        assert not issubclass(defect, PARSE_FAILURES)
+
+    with pytest.raises(PARSE_FAILURES):
+        parse_source_text('"only one header"\n', log_failures=False)
 
 
 def test_finding_locations_degrade_gracefully() -> None:

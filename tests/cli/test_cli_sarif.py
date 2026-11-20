@@ -116,7 +116,9 @@ def test_project_sarif_reports_a_load_failure(tmp_path: Path, capsys) -> None:
 
     result = log["runs"][0]["results"][0]
     assert result["ruleId"] == "PROJECT_LOAD_ERROR"
-    assert "locations" not in result
+    physical = result["locations"][0]["physicalLocation"]
+    assert physical["artifactLocation"]["uri"].endswith("Broken.s")
+    assert physical["region"]["startLine"] == 1
 
 
 def test_sarif_uri_is_repository_relative_and_encoded(tmp_path: Path, capsys, monkeypatch) -> None:
@@ -157,3 +159,17 @@ def test_sarif_uri_makes_an_absolute_path_repository_relative(tmp_path: Path, ca
 
     uri = log["runs"][0]["results"][0]["locations"][0]["physicalLocation"]["artifactLocation"]["uri"]
     assert uri == "Steps.s"
+
+
+def test_sarif_uri_resolves_a_relative_path_outside_the_working_directory(tmp_path: Path, capsys, monkeypatch) -> None:
+    """A ``../`` path is not a repository reference; it becomes a file URI."""
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    source = write_source(tmp_path, "Outside.s", CONSECUTIVE_STEPS_SOURCE)
+    monkeypatch.chdir(workspace)
+
+    assert main(["check", "../Outside.s", "--sarif"]) == ExitCode.FINDINGS
+    log = _run_json(capsys)
+
+    uri = log["runs"][0]["results"][0]["locations"][0]["physicalLocation"]["artifactLocation"]["uri"]
+    assert uri == source.resolve().as_uri()

@@ -75,10 +75,15 @@ validator code.
 its parameter list. A `typed=False` entry must record `arity` explicitly: a
 non-negative integer, or `null` when the documented arity is not known. `null`
 means no arity, direction, or datatype check runs for a call to that name,
-because an untranscribed list must not be read as "takes no arguments". (The
-string-literal argument rule still applies.) The generator
-rejects an untyped entry that omits `arity`, and rejects an `arity` on a typed
-entry so the two copies cannot drift.
+because an untranscribed list must not be read as "takes no arguments". A
+string-literal argument stays rejected there, because no documented parameter
+accepts one. The generator rejects an untyped entry that omits `arity`, and
+rejects an `arity` on a typed entry so the two copies cannot drift.
+
+`kind` and `return_type` are separate facts. A procedure carries no return
+type, so validation reads `kind` to reject a known procedure used where a value
+is required (`SL-V060`). A `null` return type on a function is still only an
+unproven type, not a rejection.
 
 ### Name lookup
 
@@ -88,12 +93,19 @@ rest of the language. `BUILTIN_FUNCTIONS` is keyed by canonical name;
 that spelling; the catalogue carries `equalstrings` as the canonical key and
 `EqualString` as an alias.
 
+`BUILTIN_FUNCTIONS`, `BUILTIN_ALIASES`, and `CATALOGUE_META` are read-only
+`FrozenMapping` views built at import, not dicts. A caller cannot mutate the
+table validation is reading, and an item assignment or deletion raises
+`TypeError`. `FrozenMapping` is exported from `sattline_parser.ast`, and it is a
+`collections.abc.Mapping`, so a consumer can read the table through the abstract
+class and does not have to depend on the concrete type.
+
 ## Record field specifications
 
 `builtins/records.py` holds:
 
-- `BUILTIN_RECORD_SPECS`: an ordered `name -> tuple[(field, datatype), ...]`
-  for every builtin record datatype;
+- `BUILTIN_RECORD_SPECS`: an ordered, read-only `name -> tuple[(field, datatype), ...]`
+  mapping for every builtin record datatype;
 - `OPAQUE_BUILTIN_RECORD_NAMES`: native handles whose fields are not
   addressable;
 - `FIELDLESS_BUILTIN_RECORD_NAMES`: names with no fields at all;
@@ -120,6 +132,7 @@ flowchart TB
     V --> R1["arity check"]
     V --> R2["output argument must be writable"]
     V --> R3["argument type compatibility"]
+    V --> R6["a procedure used as a value"]
     REC["builtins/records.py<br/>field specs"] --> TG["validation/type_graph.py"]
     TG --> R4["dotted field resolution"]
     TG --> R5["leaf path expansion"]
@@ -130,16 +143,18 @@ The validator adapts the documented signature into:
 - `min_args`: the count of leading required parameters;
 - `max_args`: the total parameter count;
 - `parameters`: the documented direction and datatype, used by the argument
-  direction and argument type rules.
+  direction and argument type rules;
+- `kind`: `function` or `procedure`, read by the value-position rule.
 
 The adaptation is cached per documented signature. A written position is derived
 from the parameter direction, so the validator view keeps no second copy of it.
 
 An unknown call name has no signature, so the arity, argument-direction, and
 argument-datatype rules are skipped: the callee may be a user function defined
-elsewhere. One rule still applies to every call, known or unknown: a string
-literal in an argument position is rejected (`SL-V015`), because the parser does
-not evidence that the callee accepts a value there.
+elsewhere. A string literal in an argument position is rejected (`SL-V015`)
+unless the resolved signature documents an `in` parameter of a string datatype
+at that position, as `LoggedIn` does for its user name. An unknown callee
+documents no such parameter, so its literal stays rejected.
 
 `builtin_datatype_typo` suggests a builtin datatype name when a custom datatype
 string is within a bounded edit distance of exactly one builtin. It never fires
@@ -150,14 +165,14 @@ for an exact match, which is already normalized to `ScalarDatatype` by
 
 | Name | Meaning |
 | --- | --- |
-| `BUILTIN_FUNCTIONS` | Canonical name to signature |
-| `BUILTIN_ALIASES` | Alias to canonical name |
-| `CATALOGUE_META` | Generated header metadata |
+| `BUILTIN_FUNCTIONS` | Read-only mapping from canonical name to signature |
+| `BUILTIN_ALIASES` | Read-only mapping from alias to canonical name |
+| `CATALOGUE_META` | Read-only generated header metadata |
 | `BuiltinFunction` | Signature value object |
 | `BuiltinParameter` | Parameter value object |
 | `get_function_signature(name)` | Resolve a name or alias |
 | `is_builtin_function(name)` | Membership test |
-| `BUILTIN_RECORD_SPECS` | Record field tables |
+| `BUILTIN_RECORD_SPECS` | Read-only record field tables |
 | `BUILTIN_DECLARED_DATATYPE_NAMES` | Declared builtin datatype names |
 | `OPAQUE_BUILTIN_RECORD_NAMES` | Opaque handle names |
 | `FIELDLESS_BUILTIN_RECORD_NAMES` | Fieldless names |

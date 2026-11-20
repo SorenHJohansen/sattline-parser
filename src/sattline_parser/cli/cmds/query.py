@@ -15,7 +15,7 @@ from .._exit import ExitCode
 from .._findings import finding_from_parse_error
 from .._io import display_path, read_source
 from .._json import SCHEMA_PREFIX, dumps
-from ._common import add_output_flags, add_source_flags, emit_findings, positive_int, reject_companion
+from ._common import add_output_flags, add_source_flags, emit_findings, finding_fields, positive_int, reject_companion
 
 __all__ = ["KINDS", "register", "run"]
 
@@ -72,7 +72,13 @@ def _collect(picture: object, args: argparse.Namespace, *, name: str) -> list[Qu
 
 def _emit(rows: Sequence[QueryRow], *, args: argparse.Namespace, file: str) -> None:
     if args.json:
-        print(dumps({"schema": f"{SCHEMA_PREFIX}.query", "file": file, "rows": [row.to_json() for row in rows]}))
+        document = {
+            "schema": f"{SCHEMA_PREFIX}.query",
+            "file": file,
+            **finding_fields((), args=args),
+            "rows": [row.to_json() for row in rows],
+        }
+        print(dumps(document))
         return
     if args.jsonl:
         for row in rows:

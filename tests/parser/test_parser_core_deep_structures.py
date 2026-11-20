@@ -16,7 +16,7 @@ from fuzzing import fuzz_harness as parser_fuzz_harness
 from sattline_parser import MAX_SOURCE_DEPTH, SourceTooDeepError
 from sattline_parser import parse_source_text as parser_core_parse_source_text
 from sattline_parser import source_io as parser_api
-from sattline_parser.api import create_parser
+from sattline_parser.api import create_parser, parse_and_validate
 from sattline_parser.errors import describe_parse_error
 from sattline_parser.formatting.formatter import format_expr
 from sattline_parser.models.ast_model import CodeComment
@@ -146,7 +146,7 @@ def test_deeply_nested_comments_parse_without_recursion() -> None:
 
 def test_chain_below_the_limit_is_accepted_and_walkable() -> None:
     source = _program(_chain(MAX_SOURCE_DEPTH - 20))
-    bp, diagnostics = parser_api.parse_and_validate(source, log_failures=False)
+    bp, diagnostics = parse_and_validate(source, log_failures=False)
 
     assert diagnostics == ()
     assert repr(bp)

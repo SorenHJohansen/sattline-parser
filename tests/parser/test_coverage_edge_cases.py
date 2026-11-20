@@ -50,7 +50,7 @@ from sattline_parser.transformer._module_shared import (  # used below
     float_tuple,
     groupconn_value,
 )
-from sattline_parser.transformer._payloads import Grid, ModuleOptions, SeqLayers
+from sattline_parser.transformer._payloads import Grid, ModuleOptions
 from sattline_parser.transformer._sfc_mixin import SFCMixin
 from sattline_parser.transformer._tokens_mixin import TokensMixin
 
@@ -132,12 +132,11 @@ def test_module_layout_grid_and_def_tails() -> None:
             ClippingClause(((0.0, 0.0), (1.0, 1.0)), (tail_a,)),
             ClippingClause(((2.0, 2.0), (3.0, 3.0)), (tail_b,)),
             ModuleOptions(layer_limit=2.0),
-            SeqLayers({"top": 1.0}),
         ],
     )
     assert module_def.clipping_bounds == ((2.0, 2.0), (3.0, 3.0))
     assert module_def.clipping_tails == (tail_b,)
-    assert module_def.seq_layers == {"top": 1.0}
+    assert module_def.layer_limit == 2.0
 
 
 def test_module_shared_float_tuple_and_groupconn() -> None:
@@ -241,20 +240,21 @@ def test_sfc_sequence_body_extends_nested_lists() -> None:
 def test_sfc_equationblock_appends_code_comments() -> None:
     sfc = SFCMixin()
     comment = CodeComment("(* c *)")
-    equation = sfc.equationblock(["EqA", (1, 2), (3, 4), comment])
+    equation = sfc.equationblock(Meta(), ["EqA", (1, 2), (3, 4), comment])
     assert equation.code == [comment]
 
 
 def test_sequence_with_seq_control_tokens() -> None:
     step = SFCStep(kind="step", name="s", code=SFCCodeBlocks())
     seq = SFCMixin().sequence(
+        Meta(),
         [
             "myseq",
             (5.0, 6.0),
             (7.0, 8.0),
             Tree(const.KEY_SEQ_CONTROL_OPS, [Token(const.GRAMMAR_VALUE_SEQTIMER, "SEQTIMER"), 44]),
             Tree(const.KEY_SEQUENCE_BODY, [step]),
-        ]
+        ],
     )
     assert seq.name == "myseq"
 
@@ -262,24 +262,26 @@ def test_sequence_with_seq_control_tokens() -> None:
 def test_sequence_rejects_invalid_code_item() -> None:
     with pytest.raises(ValueError, match="sequence unexpected code item"):
         SFCMixin().sequence(
+            Meta(),
             [
                 "myseq",
                 (5.0, 6.0),
                 (7.0, 8.0),
                 Tree(const.KEY_SEQUENCE_BODY, ["not an SFC item"]),
-            ]
+            ],
         )
 
 
 def test_sequence_skips_tokens_inside_body() -> None:
     step = SFCStep(kind="step", name="s", code=SFCCodeBlocks())
     seq = SFCMixin().sequence(
+        Meta(),
         [
             "myseq",
             (5.0, 6.0),
             (7.0, 8.0),
             Tree(const.KEY_SEQUENCE_BODY, [Token("STRAY_TOKEN", "x"), step]),
-        ]
+        ],
     )
     assert seq.code == [step]
 
@@ -503,13 +505,17 @@ def test_remap_parse_error_updates_unexpected_characters_context() -> None:
 
     from sattline_parser.source_document import remap_parse_error  # noqa: PLC0415
 
-    # normalized "abXY", original "aXYb" (Y and b swapped).
-    doc = SourceDocument("aXYb", "abXY", (0, 3, 1, 2))
-    exc = UnexpectedCharacters("abXY", 2, 1, 3, allowed=cast(Any, {"NAME"}))
+    # Normalized "ab", original "aXYb": X and Y were deleted, so the surviving
+    # character at normalized offset 1 is original offset 3. A no-op remap
+    # would leave the offset and the character unchanged.
+    doc = SourceDocument("aXYb", "ab", (0, 3))
+    exc = UnexpectedCharacters("ab", 1, 1, 2, allowed=cast(Any, {"NAME"}))
     remap_parse_error(exc, doc)
-    assert exc.pos_in_stream == 1
-    assert exc.char == "X"
+    assert exc.pos_in_stream == 3
+    assert (exc.line, exc.column) == (1, 4)
+    assert exc.char == "b"
     assert exc._context is not None
+    assert exc._context.startswith("aXYb\n   ^")
 
 
 def test_remap_parse_error_does_not_shift_an_already_remapped_error() -> None:
@@ -517,10 +523,11 @@ def test_remap_parse_error_does_not_shift_an_already_remapped_error() -> None:
 
     from sattline_parser.source_document import remap_parse_error  # noqa: PLC0415
 
-    doc = SourceDocument("aXYb", "abXY", (0, 3, 1, 2))
-    exc = UnexpectedCharacters("abXY", 2, 1, 3, allowed=cast(Any, {"NAME"}))
+    doc = SourceDocument("aXYb", "ab", (0, 3))
+    exc = UnexpectedCharacters("ab", 1, 1, 2, allowed=cast(Any, {"NAME"}))
     remap_parse_error(exc, doc)
     first = exc.pos_in_stream
+    assert first == 3
     remap_parse_error(exc, doc)
     assert exc.pos_in_stream == first
 
@@ -566,7 +573,7 @@ def test_remap_tree_handles_negative_token_positions() -> None:
     from sattline_parser.source_document import remap_tree_to_original  # noqa: PLC0415
 
     # A token with a negative start_pos cannot be mapped; the walk must not crash.
-    doc = SourceDocument("abcdef", "Xbcdef!", (0, 0, 2, 3, 4, 5, -1))
+    doc = SourceDocument("abcdef", "Xbcdef!", (0, 1, 2, 3, 4, 5, -1))
     tree = cast(Any, Tree("wrapper", [Token("NAME", "x", start_pos=-5, end_pos=-4)]))
     remap_tree_to_original(tree, doc)
     assert tree.children[0].start_pos == -5
@@ -575,7 +582,7 @@ def test_remap_tree_handles_negative_token_positions() -> None:
 def test_remap_tree_skips_tokens_without_positions() -> None:
     from sattline_parser.source_document import remap_tree_to_original  # noqa: PLC0415
 
-    doc = SourceDocument("abcdef", "Xbcdef!", (0, 0, 2, 3, 4, 5, -1))
+    doc = SourceDocument("abcdef", "Xbcdef!", (0, 1, 2, 3, 4, 5, -1))
     tree = cast(Any, Tree("wrapper", [Token("NAME", "x")]))
     remap_tree_to_original(tree, doc)
     assert tree.children[0].line is None
@@ -584,7 +591,7 @@ def test_remap_tree_skips_tokens_without_positions() -> None:
 def test_remap_tree_handles_negative_meta_positions() -> None:
     from sattline_parser.source_document import remap_tree_to_original  # noqa: PLC0415
 
-    doc = SourceDocument("abcdef", "Xbcdef!", (0, 0, 2, 3, 4, 5, -1))
+    doc = SourceDocument("abcdef", "Xbcdef!", (0, 1, 2, 3, 4, 5, -1))
     tree = cast(Any, Tree("wrapper", [Token("NAME", "x", start_pos=0, end_pos=1)]))
     tree.meta.start_pos = -3
     tree.meta.end_pos = -2
@@ -656,22 +663,30 @@ def test_parse_source_text_log_failures_disabled_paths() -> None:
         )
 
 
-def test_opaque_registry_restore_rejects_unknown_placeholder() -> None:
-    from sattline_parser.preprocessing.compressed import PreprocessError, _OpaqueRegistry  # noqa: PLC0415
+def test_decode_reports_an_unknown_marker_at_its_original_offset() -> None:
+    # The reported offset is the character offset in the decoded caller text,
+    # even when an opaque region earlier in the source was skipped.
+    from sattline_parser.preprocessing.compressed import (  # noqa: PLC0415
+        PreprocessError,
+        _decode_with_map,
+    )
 
-    registry = _OpaqueRegistry('"a string"')
-    with pytest.raises(PreprocessError, match="unknown placeholder"):
-        registry.restore("\x00S9\x00", [-1, -1, -1, -1, -1, -1])
+    text = '"a string" #00'
+
+    with pytest.raises(PreprocessError, match="Unknown compressed marker '#00' at character offset 11"):
+        _decode_with_map(text, {})
 
 
-def test_opaque_registry_restore_keeps_a_literal_nul() -> None:
-    # A NUL is valid cp1252 source text; only a *placeholder* is an internal
-    # marker, so restore must not treat a stray NUL as an unrestored one.
-    from sattline_parser.preprocessing.compressed import _OpaqueRegistry  # noqa: PLC0415
+def test_decode_keeps_a_literal_nul_sequence_as_text() -> None:
+    # A NUL is valid cp1252 source text. The decoder carries opaque positions
+    # out of band, so a sequence that resembles an internal marker is ordinary
+    # text and is neither restored nor rejected.
+    from sattline_parser.preprocessing.compressed import _decode_with_map  # noqa: PLC0415
 
-    registry = _OpaqueRegistry('"a string"')
-    restored, _map = registry.restore("\x00leftover", [0, -1, -1, -1, -1, -1, -1, -1, -1])
-    assert restored == "\x00leftover"
+    decoded, char_map = _decode_with_map("\x00S9\x00 leftover", {})
+
+    assert decoded == "\x00S9\x00 leftover"
+    assert tuple(char_map) == tuple(range(len(decoded)))
 
 
 # ---- Golden file parse tests ----

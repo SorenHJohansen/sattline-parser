@@ -1,0 +1,4 @@
+- **Interactor layer lines keep their keyword.** A parsed `Layer_ = 2` body line is stored as a plain `int` rather than the span-carrying `IntLiteral` the token produces, so `format_source` writes `Layer_ = 2` instead of the bare literal `2`, which is a different construct.
+- **Reference state suffixes survive formatting.** `ModuleHeader.groupconn` and both sides of a `ParameterMapping` are rendered through the reference formatter, so `P:Old => Q:New` no longer loses its `:Old`/`:New` suffix and reparse no longer clears `VarRef.state`.
+- **Mixed colour blocks keep their written order.** A tailed `OutlineColour` written before an untailed `FillColour` is no longer reordered into an untailed group followed by a tailed one.
+- **Preserved comments and header lines keep their spelling.** A `CodeComment` continuation line is written verbatim instead of gaining the code indentation, and a header line's doubled inner quote is escaped again so the output reparses.

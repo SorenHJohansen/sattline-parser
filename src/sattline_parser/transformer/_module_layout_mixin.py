@@ -13,6 +13,8 @@ from sattline_parser.models.clauses import (
     ClippingClause,
     CoordBox,
     CoordPair,
+    NestedClipping,
+    NestedClippingValue,
     ZoomLimits,
 )
 from sattline_parser.models.tails import LitStringTail, Tail, VarTail
@@ -32,7 +34,6 @@ from ._payloads import (
     CoordinateClipping,
     Grid,
     ModuleOptions,
-    SeqLayers,
     TwoLayers,
     Zoomable,
 )
@@ -88,6 +89,24 @@ def _coordinate_tail_groups(items: list[TransformerItem]) -> tuple[tuple[Tail, .
     return tuple(tuple(group) for group in groups)
 
 
+def _coordinate_clipping_groups(items: list[TransformerItem]) -> tuple[tuple[NestedClipping, ...], ...]:
+    """The nested ``ClippingBounds`` annotations that follow each coordinate value.
+
+    Index-aligned with the REAL values the same way ``_coordinate_tail_groups``
+    is. An annotation keeps the values it carries, including each value's own
+    tail, so a formatter can write the annotation back instead of dropping it.
+    """
+    groups: list[list[NestedClipping]] = []
+    for item in items:
+        if isinstance(item, (int, float)) and not isinstance(item, bool):
+            groups.append([])
+        elif isinstance(item, CoordinateClipping) and groups:
+            groups[-1].append(
+                NestedClipping(tuple(NestedClippingValue(value.value, value.tail) for value in item.values))
+            )
+    return tuple(tuple(group) for group in groups)
+
+
 def _float_values(items: list[TransformerItem]) -> list[float]:
     return [float(item) for item in items if isinstance(item, (int, float))]
 
@@ -116,6 +135,7 @@ class ModuleLayoutMixin:
             (nums[0], nums[1]),
             tails or None,
             coord_tails=_coordinate_tail_groups(items)[:2],
+            coord_clippings=_coordinate_clipping_groups(items)[:2],
         )
 
     def origo_size_pair(self, items: list[TransformerItem]) -> InterimCoords:
@@ -127,6 +147,7 @@ class ModuleLayoutMixin:
         coords: list[CoordPair] = []
         tails: list[Tail] = []
         corner_groups: list[tuple[Tail, ...]] = []
+        clipping_groups: list[tuple[NestedClipping, ...]] = []
         complete = True
         for item in items:
             if not isinstance(item, InterimCoords):
@@ -136,16 +157,18 @@ class ModuleLayoutMixin:
                 coords.append(pair)
                 if item.tails:
                     tails.extend(item.tails)
-                if item.coord_tails is None:
+                if item.coord_tails is None or item.coord_clippings is None:
                     complete = False
                 else:
                     corner_groups.extend(item.coord_tails)
+                    clipping_groups.extend(item.coord_clippings)
         if len(coords) != 2:
             raise ValueError(f"origo_size_pair expected 2 coordinate pairs, found {len(coords)}")
         return InterimCoords(
             (coords[0], coords[1]),
             tails or None,
             coord_tails=tuple(corner_groups) if complete and len(corner_groups) == 4 else None,
+            coord_clippings=tuple(clipping_groups) if complete and len(clipping_groups) == 4 else None,
         )
 
     def invoke_coord(self, items: list[TransformerItem]) -> InterimCoords:
@@ -157,6 +180,7 @@ class ModuleLayoutMixin:
             cast(tuple[float, float, float, float, float], tuple(nums[:5])),
             tails or None,
             coord_tails=_coordinate_tail_groups(items),
+            coord_clippings=_coordinate_clipping_groups(items),
         )
 
     @v_args(meta=True)
@@ -225,17 +249,9 @@ class ModuleLayoutMixin:
                     tuple(item.tails or ()),
                     meta_span(meta),
                     corner_tails=item.coord_tails or (),
+                    corner_clippings=item.coord_clippings or (),
                 )
         raise ValueError("clippingbounds expected a payload; got no items")
-
-    def seq_layers(self, items: list[TransformerItem]) -> SeqLayers:
-        """Grammar seq_layers -> the sequence layer mapping."""
-        value = items[-1]
-        if isinstance(value, (int, float)):
-            return SeqLayers(float(value))
-        if isinstance(value, dict):
-            return SeqLayers(cast(dict[str, float], value))
-        raise ValueError(f"seq_layers expected a layer mapping or REAL; got: {value!r}")
 
     @v_args(meta=True)
     def zoomlimits(self, meta: Any, items: list[TransformerItem]) -> ZoomLimits:
@@ -270,10 +286,11 @@ class ModuleLayoutMixin:
         return Grid(nums[-1])
 
     def two_layers(self, items: list[TransformerItem]) -> TwoLayers:
-        """Grammar two_layers -> the layer limit value.
+        """Grammar two_layers -> the zoom level that switches to layer 2.
 
-        The rule is ``TWO_LAYERS LAYERLIMIT "=" REAL``; the numeric value must
-        never be dropped (it feeds ``ModuleDef.seq_layers``).
+        The rule is ``TWO_LAYERS LAYERLIMIT "=" REAL``; the value is the zoom
+        level at which the module switches from displaying layer 1 to layer 2.
+        It must never be dropped (it feeds ``ModuleDef.layer_limit``).
         """
         values = _float_values(items)
         if not values:
@@ -301,7 +318,7 @@ class ModuleLayoutMixin:
     @staticmethod
     def _apply_module_options(module_def: ModuleDef, options: ModuleOptions) -> None:
         if options.layer_limit is not None:
-            module_def.seq_layers = options.layer_limit
+            module_def.layer_limit = options.layer_limit
         if options.zoom_limits is not None:
             module_def.zoom_limits = (options.zoom_limits.minimum, options.zoom_limits.maximum)
         if options.zoomable:
@@ -319,8 +336,6 @@ class ModuleLayoutMixin:
                 self._apply_clipping_bounds(module_def, it)
             elif isinstance(it, ModuleOptions):
                 self._apply_module_options(module_def, it)
-            elif isinstance(it, SeqLayers):
-                module_def.seq_layers = it.value
             elif isinstance(it, list) and it:
                 if isinstance(it[0], GraphObject):
                     module_def.graph_objects = cast(list[GraphObject], it)

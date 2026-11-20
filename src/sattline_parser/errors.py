@@ -25,7 +25,7 @@ from typing import TYPE_CHECKING, cast
 
 from lark.exceptions import UnexpectedCharacters, UnexpectedEOF, UnexpectedInput, UnexpectedToken
 
-from sattline_parser.source_document import is_remapped
+from sattline_parser.source_document import is_remapped, split_source_lines
 
 if TYPE_CHECKING:
     from sattline_parser.source_document import SourceDocument
@@ -55,6 +55,7 @@ __all__ = [
     "SourceTooDeepError",
     "_log_parser_failure",  # imported by source_io as the internal failure logger
     "describe_parse_error",
+    "source_line_at",
 ]
 
 log = logging.getLogger("sattline_parser")
@@ -296,33 +297,55 @@ def _mapped_error_position(exc: UnexpectedInput, source_document: SourceDocument
 
 
 def _context_at(source_text: str, pos: int, span: int = 40) -> str:
-    before = source_text[max(pos - span, 0) : pos].rsplit("\n", 1)[-1]
-    after = source_text[pos : pos + span].split("\n", 1)[0]
+    """The source line around *pos*, with a caret under the reported character.
+
+    A line ends at CRLF, LF, or a lone CR, the rule
+    :meth:`~sattline_parser.source_document.SourceDocument.line_col` applies, so
+    the window and the caret agree with the reported line and excerpt. Lark's
+    own ``get_context`` ends a line at LF only, which would widen a lone-CR
+    document's window across several physical lines.
+    """
+    before = source_text[max(pos - span, 0) : pos]
+    before = before[max(before.rfind("\n"), before.rfind("\r")) + 1 :]
+    tail = source_text[pos : pos + span]
+    breaks = [index for index in (tail.find("\n"), tail.find("\r")) if index != -1]
+    after = tail[: min(breaks)] if breaks else tail
     return before + after + "\n" + " " * len(before.expandtabs()) + "^\n"
 
 
 def describe_parse_error(
     exc: Exception,
-    source_text: str,
+    source_text: str | None = None,
     *,
     source_document: SourceDocument | None = None,
 ) -> ParseErrorDetails:
     """Describe a parse failure, reporting positions in the *original* source.
 
-    ``source_text`` must be the original (un-preprocessed) source. When
-    ``source_document`` is supplied and the exception position is in normalized
-    (decoded) coordinates, the reported line/column are mapped back to the
-    original source.
+    ``source_text`` must be the original (un-preprocessed) source. It may be
+    ``None`` when only the exception's own position is available, as when a
+    project load error carries a parse failure as its cause: the details then
+    keep ``line`` and ``column`` but have no excerpt. When ``source_document``
+    is supplied and the exception position is in normalized (decoded)
+    coordinates, the reported line/column are mapped back to the original
+    source.
     """
     line = getattr(exc, "line", None)
     column = getattr(exc, "column", None)
     if isinstance(exc, UnexpectedInput):
+        position = getattr(exc, "pos_in_stream", None)
         mapped: int | None = None
         if source_document is not None:
             mapped = _mapped_error_position(exc, source_document)
-        if mapped is not None and source_document is not None:
+        if source_text is None:
+            context = ""
+        elif mapped is not None and source_document is not None:
             line, column = source_document.line_col(mapped)
             context = _context_at(source_text, mapped).rstrip()
+        elif isinstance(position, int):
+            # The position is already in ``source_text``'s coordinates: the
+            # error was remapped into the original source, or no document was
+            # supplied and the text is the parsed text.
+            context = _context_at(source_text, position).rstrip()
         else:
             context = exc.get_context(source_text, span=40).rstrip()
         if isinstance(exc, SourceTooDeepError):
@@ -347,7 +370,7 @@ def describe_parse_error(
             found=found,
             expected=expected,
             hint=hint,
-            source_line=_source_line(source_text, line),
+            source_line=_source_line(source_text, line) if source_text is not None else None,
         )
     return ParseErrorDetails(message=str(exc), line=line, column=column, sentence=str(exc))
 
@@ -355,19 +378,28 @@ def describe_parse_error(
 def _source_line(source_text: str, line: int | None) -> str | None:
     """The original source line at ``line`` (1-based), when it exists.
 
-    Lines are split on ``"\\n"`` only, exactly like the offsets that produce
-    ``line``. ``str.splitlines`` also splits on a lone ``\\r``, ``\\v``, ``\\f``
-    and ``\\x1c``-``\\x1e``, which are legal inside a string literal, so it would
-    disagree with the line numbers the parser reports. One trailing ``\\r`` is
-    removed so a CRLF file does not leave a stray CR on the reported line.
+    Lines end at CRLF, LF, or a lone CR, the line-break rule the grammar's
+    string terminals and the compressed scanner use, and the rule
+    :meth:`SourceDocument.line_col` applies to an original-source offset. Using
+    one definition keeps a reported line and its excerpt on the same text. A
+    form feed, a vertical tab, and the other ``str.splitlines`` separators are
+    ordinary content and never start a line.
     """
     if not isinstance(line, int) or line < 1:
         return None
-    lines = source_text.split("\n")
+    lines = split_source_lines(source_text)
     if line > len(lines):
         return None
-    text = lines[line - 1]
-    return text[:-1] if text.endswith("\r") else text
+    return lines[line - 1]
+
+
+def source_line_at(source_text: str, line: int | None) -> str | None:
+    """The original source line at ``line`` (1-based), when it exists.
+
+    This is the public spelling of the excerpt lookup every diagnostic uses.
+    See :func:`_source_line` for the line-splitting rule.
+    """
+    return _source_line(source_text, line)
 
 
 def _failure_details(
@@ -375,13 +407,7 @@ def _failure_details(
     source_text: str | None = None,
     source_document: SourceDocument | None = None,
 ) -> ParseErrorDetails:
-    if source_text is not None:
-        return describe_parse_error(exc, source_text, source_document=source_document)
-    return ParseErrorDetails(
-        message=str(exc),
-        line=getattr(exc, "line", None),
-        column=getattr(exc, "column", None),
-    )
+    return describe_parse_error(exc, source_text, source_document=source_document)
 
 
 def _log_parser_failure(

@@ -3,6 +3,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 from collections.abc import Sequence
 from pathlib import Path
@@ -10,6 +11,7 @@ from unittest.mock import patch
 
 import pytest
 
+from sattline_parser.names import fold_identifier
 from sattline_parser.project import (
     ArtifactKind,
     FileLookupCache,
@@ -23,9 +25,12 @@ from sattline_parser.project import (
 from sattline_parser.project.discovery import (
     _is_allowed_base,
     _is_relative_to,
-    _is_safe_name,
+    _lexical_path_key,
     _resolved,
+    is_unit_name,
 )
+from sattline_parser.project.identity import ArtifactIdentity
+from sattline_parser.project.lookup_cache import LOOKUP_CACHE_VERSION
 
 from ._support import write_file
 
@@ -54,6 +59,31 @@ def test_is_allowed_base(tmp_path: Path) -> None:
     root_b = write_file(tmp_path, "b/.keep")
     assert _is_allowed_base([root_a, root_b], root_a)
     assert not _is_allowed_base([root_a], tmp_path / "elsewhere")
+
+
+def test_lexical_path_key_normalizes_without_resolving(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The recorded side of a membership check is text, never a filesystem lookup."""
+
+    def _raise(_path: Path) -> Path:
+        raise AssertionError("a lexical key must not resolve its path")
+
+    monkeypatch.setattr(Path, "resolve", _raise)
+
+    raw = str(Path("/lib") / ".." / "lib")
+    assert _lexical_path_key(Path(raw)) == os.path.normcase(os.path.normpath(raw))
+
+
+def test_is_allowed_base_applies_the_platform_case_rule(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """Two roots that differ only by case name one root on a case-insensitive platform."""
+    root = tmp_path / "Lib"
+    root.mkdir()
+
+    def fold_case(text: str) -> str:
+        return text.lower()
+
+    monkeypatch.setattr(os.path, "normcase", fold_case)
+
+    assert _is_allowed_base([root], Path(str(root).upper()))
 
 
 def test_source_index_builds_and_finds(tmp_path: Path) -> None:
@@ -100,9 +130,11 @@ def test_source_index_rejects_missing_and_file_bases(tmp_path: Path) -> None:
 
 
 def test_ordered_lookup_bases_keeps_the_caller_order(tmp_path: Path) -> None:
-    first = write_file(tmp_path, "first/.keep")
-    second = write_file(tmp_path, "second/.keep")
-    third = write_file(tmp_path, "third/.keep")
+    first = tmp_path / "first"
+    second = tmp_path / "second"
+    third = tmp_path / "third"
+    for root in (first, second, third):
+        root.mkdir()
 
     assert ordered_lookup_bases([first, second, third]) == (
         first.resolve(),
@@ -117,8 +149,10 @@ def test_ordered_lookup_bases_keeps_the_caller_order(tmp_path: Path) -> None:
 
 
 def test_ordered_lookup_bases_drops_duplicates_keeping_the_first_position(tmp_path: Path) -> None:
-    first = write_file(tmp_path, "first/.keep")
-    second = write_file(tmp_path, "second/.keep")
+    first = tmp_path / "first"
+    second = tmp_path / "second"
+    first.mkdir()
+    second.mkdir()
 
     assert ordered_lookup_bases([first, second, first]) == (first.resolve(), second.resolve())
 
@@ -127,7 +161,26 @@ def test_ordered_lookup_bases_empty() -> None:
     assert ordered_lookup_bases([]) == ()
 
 
-def test_ordered_lookup_bases_keeps_case_distinct_roots_on_a_case_sensitive_filesystem(tmp_path: Path) -> None:
+def test_ordered_lookup_bases_compares_an_unnamed_root_by_path() -> None:
+    """A filesystem or drive root has no directory name to fold."""
+    root = Path("/")
+    assert root.name == ""
+
+    assert ordered_lookup_bases([root]) == (root.resolve(),)
+
+
+def test_ordered_lookup_bases_shadows_a_later_root_with_the_same_library_name(tmp_path: Path) -> None:
+    """One library per name: the first root of a name is the only one searched."""
+    first = tmp_path / "one" / "Libs"
+    second = tmp_path / "two" / "Libs"
+    first.mkdir(parents=True)
+    second.mkdir(parents=True)
+
+    assert ordered_lookup_bases([first, second]) == (first.resolve(),)
+    assert ordered_lookup_bases([second, first]) == (second.resolve(),)
+
+
+def test_ordered_lookup_bases_folds_library_names_like_identifiers(tmp_path: Path) -> None:
     upper = tmp_path / "Library"
     lower = tmp_path / "library"
     upper.mkdir()
@@ -135,17 +188,24 @@ def test_ordered_lookup_bases_keeps_case_distinct_roots_on_a_case_sensitive_file
         pytest.skip("filesystem is case-insensitive")
     lower.mkdir()
 
-    ordered = ordered_lookup_bases([upper, lower])
-
-    assert ordered == (upper.resolve(), lower.resolve())
+    assert ordered_lookup_bases([upper, lower]) == (upper.resolve(),)
+    assert ordered_lookup_bases([lower, upper]) == (lower.resolve(),)
 
 
 def test_parse_search_path_accepts_backslashes_and_whitespace(tmp_path: Path) -> None:
     base = tmp_path / "sattline"
 
-    roots = parse_search_path(r" LibA\UnitLib , LibB/UnitLib ,, ", base=base)
+    roots = parse_search_path(r" LibA\UnitLib , LibB\OtherLib ,, ", base=base)
 
-    assert roots == ((base / "LibA/UnitLib").resolve(), (base / "LibB/UnitLib").resolve())
+    assert roots == ((base / "LibA/UnitLib").resolve(), (base / "LibB/OtherLib").resolve())
+
+
+def test_parse_search_path_shadows_a_repeated_library_name(tmp_path: Path) -> None:
+    base = tmp_path / "sattline"
+
+    roots = parse_search_path(r"LibA\UnitLib,LibB\UnitLib", base=base)
+
+    assert roots == ((base / "LibA/UnitLib").resolve(),)
 
 
 def test_parse_search_path_resolves_relative_entries_under_a_base(tmp_path: Path) -> None:
@@ -170,6 +230,19 @@ def test_parse_search_path_drops_duplicates_and_rejects_an_empty_path(tmp_path: 
     assert parse_search_path(r"LibA\UnitLib,LibA/UnitLib", base=base) == ((base / "LibA/UnitLib").resolve(),)
     with pytest.raises(ValueError, match="no entries"):
         parse_search_path(" , ,, ", base=base)
+
+
+def test_a_shadowed_library_contributes_no_units(tmp_path: Path) -> None:
+    """A later root with an earlier root's library name is not searched at all."""
+    first = tmp_path / "one" / "UnitLib"
+    second = tmp_path / "two" / "UnitLib"
+    write_file(first, "Alpha.s")
+    write_file(second, "Beta.s")
+
+    lookup = ProjectLookup([first, second], LoadMode.DRAFT)
+
+    assert lookup.find_code("Alpha") == first / "Alpha.s"
+    assert lookup.find_code("Beta") is None
 
 
 def test_lookup_path_order_wins_over_a_later_root(tmp_path: Path) -> None:
@@ -403,6 +476,135 @@ def test_find_returns_cached_result_without_scanning(tmp_path: Path, monkeypatch
     assert fresh.find_code("Cached") == root / "Cached.s"
 
 
+def _plant_lookup_entry(
+    cache_dir: Path,
+    *,
+    name: str,
+    base_dir: str,
+    ext: str,
+    mode: LoadMode = LoadMode.DRAFT,
+) -> FileLookupCache:
+    """Write one entry exactly as a cache file could hold it, bypassing ``set``."""
+    cache_dir.mkdir(parents=True, exist_ok=True)
+    key = f"code:{mode.value}:{fold_identifier(name)}"
+    payload = {"version": LOOKUP_CACHE_VERSION, "entries": {key: {"base_dir": base_dir, "ext": ext}}}
+    (cache_dir / "file_lookup_cache.json").write_text(json.dumps(payload), encoding="utf-8")
+    return FileLookupCache(cache_dir)
+
+
+def _forbid_filesystem_access(monkeypatch: pytest.MonkeyPatch, forbidden: Path) -> None:
+    """Fail loudly if *forbidden* is resolved, stat-ed, identity-checked, or opened."""
+    forbidden_text = str(forbidden)
+
+    def _check(value: object) -> None:
+        if str(value) == forbidden_text:
+            raise AssertionError(f"a recorded base must not be touched: {forbidden_text}")
+
+    real_resolve = Path.resolve
+    real_path_stat = Path.stat
+    real_path_open = Path.open
+    real_os_stat = os.stat
+    real_identity = ArtifactIdentity.of
+
+    def resolve(path: Path, strict: bool = False) -> Path:
+        _check(path)
+        return real_resolve(path, strict)
+
+    def stat(path: Path, *, follow_symlinks: bool = True) -> os.stat_result:
+        _check(path)
+        return real_path_stat(path, follow_symlinks=follow_symlinks)
+
+    def open_path(
+        path: Path,
+        mode: str = "r",
+        buffering: int = -1,
+        encoding: str | None = None,
+        errors: str | None = None,
+        newline: str | None = None,
+    ) -> object:
+        _check(path)
+        return real_path_open(path, mode, buffering, encoding, errors, newline)
+
+    def os_stat(path: object, *args: object, **kwargs: object) -> os.stat_result:
+        _check(path)
+        return real_os_stat(path, *args, **kwargs)  # pyright: ignore[reportArgumentType]
+
+    def identity(path: Path) -> ArtifactIdentity:
+        _check(path)
+        return real_identity(path)
+
+    monkeypatch.setattr(Path, "resolve", resolve)
+    monkeypatch.setattr(Path, "stat", stat)
+    monkeypatch.setattr(Path, "open", open_path)
+    monkeypatch.setattr(os, "stat", os_stat)
+    monkeypatch.setattr(ArtifactIdentity, "of", identity)
+
+
+def test_a_planted_cached_base_is_rejected_without_being_touched(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A recorded base outside every root is text until it is discarded, not a path."""
+    root = tmp_path / "lib"
+    write_file(root, "A.s")
+    planted = Path(r"\\attacker\share\Lib")
+    cache = _plant_lookup_entry(tmp_path / "cache", name="A", base_dir=str(planted), ext=".s")
+    lookup = ProjectLookup([root], LoadMode.DRAFT, cache=cache)
+
+    _forbid_filesystem_access(monkeypatch, planted)
+
+    assert lookup.find_code("A") == root / "A.s"
+    assert cache.get("code", "A", LoadMode.DRAFT.value) == {
+        "base_dir": str(root.resolve()),
+        "ext": ".s",
+    }
+
+
+@pytest.mark.parametrize("suffix", ["", os.sep, f"{os.sep}.{os.sep}"])
+def test_a_cached_base_naming_a_configured_root_is_not_rescanned(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch, suffix: str
+) -> None:
+    root = tmp_path / "lib"
+    write_file(root, "A.s")
+    cache = _plant_lookup_entry(tmp_path / "cache", name="A", base_dir=str(root.resolve()) + suffix, ext=".s")
+    lookup = ProjectLookup([root], LoadMode.DRAFT, cache=cache)
+
+    monkeypatch.setattr(ProjectLookup, "_find_in_base", _raise_if_called)
+
+    assert lookup.find_code("A") == root / "A.s"
+
+
+@pytest.mark.skipif(os.name == "nt", reason="a directory symlink needs a privilege on Windows")
+def test_a_symlinked_configured_root_still_hits_the_cache(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    real = tmp_path / "real"
+    write_file(real, "A.s")
+    link = tmp_path / "link"
+    link.symlink_to(real, target_is_directory=True)
+    cache = FileLookupCache(tmp_path / "cache", write_through=True)
+
+    first = ProjectLookup([link], LoadMode.DRAFT, cache=cache)
+    assert first.find_code("A") == real / "A.s"
+    assert cache.get("code", "A", LoadMode.DRAFT.value) == {"base_dir": str(real.resolve()), "ext": ".s"}
+
+    monkeypatch.setattr(ProjectLookup, "_find_in_base", _raise_if_called)
+    fresh = ProjectLookup([link], LoadMode.DRAFT, cache=cache)
+    assert fresh.find_code("A") == real / "A.s"
+
+
+def test_a_relative_configured_root_still_hits_the_cache(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    root = tmp_path / "lib"
+    write_file(root, "A.s")
+    monkeypatch.chdir(tmp_path)
+    cache = FileLookupCache(tmp_path / "cache", write_through=True)
+    resolved_root = root.resolve()
+
+    first = ProjectLookup([Path("lib")], LoadMode.DRAFT, cache=cache)
+    assert first.find_code("A") == resolved_root / "A.s"
+
+    monkeypatch.setattr(ProjectLookup, "_find_in_base", _raise_if_called)
+    fresh = ProjectLookup([Path("lib")], LoadMode.DRAFT, cache=cache)
+    assert fresh.find_code("A") == resolved_root / "A.s"
+
+
 def test_find_full_scan_fallbacks(tmp_path: Path) -> None:
     root = tmp_path / "p"
     write_file(root, "A.s")
@@ -481,8 +683,7 @@ def test_lookup_refuses_an_absolute_dependency_name(tmp_path: Path) -> None:
     [
         ("Main", True),
         ("Main_2", True),
-        ("A" * 20, True),
-        ("A" * 21, False),
+        ("Straße", True),
         ("", False),
         ("../outside/Secret", False),
         ("..\\outside\\Secret", False),
@@ -494,21 +695,27 @@ def test_lookup_refuses_an_absolute_dependency_name(tmp_path: Path) -> None:
     ],
 )
 def test_unit_names_are_validated_as_sattline_identifiers(name: str, safe: bool) -> None:
-    assert _is_safe_name(name) is safe
+    assert is_unit_name(name) is safe
+
+
+@pytest.mark.parametrize("name", ["A" * 20, "A" * 21, "A" * 200])
+def test_a_unit_name_is_not_limited_to_twenty_characters(name: str) -> None:
+    """The 20-character rule is ``SL-V038`` at the declaration, not resolution."""
+    assert is_unit_name(name) is True
 
 
 @pytest.mark.parametrize("name", ["CON", "prn", "COM1", "lpt9"])
 def test_windows_reserved_device_names_are_safe_on_posix(name: str, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("sattline_parser.project.discovery._IS_WINDOWS", False)
 
-    assert _is_safe_name(name) is True
+    assert is_unit_name(name) is True
 
 
 @pytest.mark.parametrize("name", ["CON", "prn", "COM1", "lpt9"])
 def test_windows_reserved_device_names_are_refused_only_on_windows(name: str, monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr("sattline_parser.project.discovery._IS_WINDOWS", True)
 
-    assert _is_safe_name(name) is False
+    assert is_unit_name(name) is False
 
 
 def test_find_deps_beside_refuses_a_name_with_a_path(tmp_path: Path) -> None:
@@ -536,7 +743,7 @@ def test_find_in_base_requires_containment_for_the_stat_fallback(
         del name
         return True
 
-    monkeypatch.setattr(f"{_DISCOVERY_PATH}._is_safe_name", always_safe)
+    monkeypatch.setattr(f"{_DISCOVERY_PATH}.is_unit_name", always_safe)
 
     lookup = ProjectLookup([root], LoadMode.DRAFT)
 
@@ -564,6 +771,96 @@ def test_lookup_restats_an_index_hit_for_a_sidecar(tmp_path: Path) -> None:
 
     assert lookup.find_deps_beside(body, "Main") == sidecar
     sidecar.unlink()
+
+    assert lookup.find_deps_beside(body, "Main") is None
+
+
+def test_source_index_resolves_each_language_identity(tmp_path: Path) -> None:
+    """``Straße`` and ``STRASSE`` are two units, whatever ``str.casefold`` says."""
+    root = tmp_path / "p"
+    sharp = write_file(root, "Straße.s")
+    upper = write_file(root, "STRASSE.s")
+    index = SourceIndex([root])
+
+    assert index.find_in_index(base=root, name="Straße", extensions=(".s",)) == sharp
+    assert index.find_in_index(base=root, name="straße", extensions=(".s",)) == sharp
+    assert index.find_in_index(base=root, name="STRASSE", extensions=(".s",)) == upper
+    # ``Strasse`` is the same language identifier as ``STRASSE``; the sharp s is
+    # the only spelling the language keeps apart.
+    assert index.find_in_index(base=root, name="Strasse", extensions=(".s",)) == upper
+    assert index.collisions == ()
+
+
+def test_a_casefold_only_name_does_not_resolve(tmp_path: Path) -> None:
+    """A ``str.casefold`` match the language rejects is a miss, never a body."""
+    root = tmp_path / "p"
+    write_file(root, "Straße.s")
+    index = SourceIndex([root])
+
+    assert index.find_in_index(base=root, name="STRASSE", extensions=(".s",)) is None
+
+    lookup = ProjectLookup([root], LoadMode.DRAFT)
+    assert lookup.find_code("Straße") == root / "Straße.s"
+    assert lookup.find_code("STRASSE") is None
+
+
+def test_source_index_records_a_folded_name_collision(tmp_path: Path, case_sensitive_fs: None) -> None:
+    """Two files the language considers one unit are an ambiguity, not a winner."""
+    root = tmp_path / "p"
+    write_file(root, "Util.s")
+    write_file(root, "UTIL.s")
+    index = SourceIndex([root])
+
+    collisions = index.collisions_for_base(root, "util")
+
+    assert len(collisions) == 1
+    collision = collisions[0]
+    assert collision.folded == "UTIL"
+    assert collision.extension == ".s"
+    # Sorted name order decides, so the winner is stable across runs.
+    assert collision.paths == (root / "UTIL.s", root / "Util.s")
+    assert collision.winner == root / "UTIL.s"
+    assert index.find_in_index(base=root, name="Util", extensions=(".s",)) == root / "UTIL.s"
+
+
+def test_a_clean_root_records_no_collision(tmp_path: Path) -> None:
+    root = tmp_path / "p"
+    write_file(root, "Alpha.s")
+    write_file(root, "Beta.s")
+
+    assert SourceIndex([root]).collisions_for_base(root, "Alpha") == ()
+
+
+def test_the_stat_fallback_ignores_a_directory_named_like_a_body(tmp_path: Path) -> None:
+    """A directory in an earlier root must not shadow a real body in a later one."""
+    shadow = tmp_path / "first"
+    real = tmp_path / "second"
+    (shadow / "Util.s").mkdir(parents=True)
+    body = write_file(real, "Util.s")
+
+    lookup = ProjectLookup([shadow, real], LoadMode.DRAFT)
+
+    assert lookup.find_code("Util") == body
+
+
+def test_the_stat_fallback_ignores_a_fifo_named_like_a_body(tmp_path: Path) -> None:
+    if not hasattr(os, "mkfifo"):
+        pytest.skip("this platform has no FIFOs")
+    root = tmp_path / "p"
+    root.mkdir()
+    os.mkfifo(root / "Blocked.s")
+    lookup = ProjectLookup([root], LoadMode.DRAFT)
+
+    # The index and the fallback both stat the candidate, so this returns
+    # without opening the FIFO.
+    assert lookup.find_code("Blocked") is None
+
+
+def test_a_directory_named_like_a_sidecar_is_not_a_sidecar(tmp_path: Path) -> None:
+    root = tmp_path / "p"
+    body = write_file(root, "Main.s")
+    (root / "Main.l").mkdir()
+    lookup = ProjectLookup([root], LoadMode.DRAFT)
 
     assert lookup.find_deps_beside(body, "Main") is None
 

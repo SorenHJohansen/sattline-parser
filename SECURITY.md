@@ -34,6 +34,14 @@ The parser processes untrusted source text. In scope:
 - path traversal or unintended file access in the project layer and the CLI
 - weaknesses in the published package or its release workflow
 
+The parser-owned caches are an optimisation and are treated as private to one
+user. A cache directory that cannot be proven private (owner, mode, parent
+chain, or Windows security descriptor) is disabled instead of used, and a
+directory replaced after it was opened is refused. A cache in a location another
+user can write is outside this boundary, so do not point `cache_dir` at a shared
+location. Reports that require write access to the user's own private cache
+directory are out of scope.
+
 Out of scope:
 
 - parse or validation results that are merely wrong. These do not crash or

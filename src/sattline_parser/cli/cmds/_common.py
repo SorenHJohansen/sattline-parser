@@ -28,6 +28,7 @@ __all__ = [
     "fail_on_value",
     "fails_on",
     "finding_fields",
+    "non_negative_int",
     "positive_int",
     "reject_companion",
     "require_companion",
@@ -35,6 +36,15 @@ __all__ = [
     "resolve_rule_filters",
     "selected_findings",
 ]
+
+
+def _input_name(target: str, stdin_name: str | None) -> str:
+    """The name that decides the artifact family for one input.
+
+    A path names itself. Stdin is named by ``--stdin-name``, or stays ``-`` when
+    the caller has not supplied one; ``read_source`` reports the missing name.
+    """
+    return stdin_name if target == "-" and stdin_name is not None else target
 
 
 #: Companion extensions hold graphics records or distribution data, not SattLine source.
@@ -50,7 +60,9 @@ def reject_companion(target: str, *, stdin_name: str | None = None) -> None:
     ``--stdin-name`` when the input is stdin, so piped companion content is
     refused exactly like a companion path.
     """
-    name = stdin_name if target == "-" and stdin_name is not None else target
+    name = _input_name(target, stdin_name)
+    if name == "-":
+        return
     suffix = Path(name).suffix.lower()
     if suffix in ALL_DISTRIBUTION_EXTENSIONS:
         raise CliError(f"{name} is a distribution companion ({suffix}); this command reads SattLine source units")
@@ -58,13 +70,17 @@ def reject_companion(target: str, *, stdin_name: str | None = None) -> None:
         raise CliError(f"{name} is a graphics companion ({suffix}); this command reads SattLine source units")
 
 
-def require_companion(target: str) -> None:
-    """Refuse source input for a command that only reads graphics companions."""
-    if target == "-":
+def require_companion(target: str, *, stdin_name: str | None = None) -> None:
+    """Refuse source input for a command that only reads graphics companions.
+
+    The same naming rule applies as for :func:`reject_companion`, so
+    ``graphics --stdin-name x.s -`` is refused exactly like a ``.s`` path.
+    """
+    name = _input_name(target, stdin_name)
+    if name == "-":
         return
-    suffix = Path(target).suffix.lower()
-    if suffix not in ALL_GRAPHICS_EXTENSIONS:
-        raise CliError(f"{target} is not a graphics companion (.g/.y)")
+    if Path(name).suffix.lower() not in ALL_GRAPHICS_EXTENSIONS:
+        raise CliError(f"{name} is not a graphics companion (.g/.y)")
 
 
 def positive_int(value: str) -> int:
@@ -92,6 +108,21 @@ def bounded_positive_int(maximum: int) -> Callable[[str], int]:
         return number
 
     return parse
+
+
+def non_negative_int(value: str) -> int:
+    """argparse type for a count that may be zero but not negative.
+
+    ``--max-findings 0`` is the useful "report none, keep the exit code" case,
+    while a negative value used to switch the cap off silently.
+    """
+    try:
+        number = int(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError(f"expected an integer, got {value!r}") from exc
+    if number < 0:
+        raise argparse.ArgumentTypeError("must be 0 or greater")
+    return number
 
 
 #: Canonical values for ``--fail-on``, shared by every command that reports
@@ -181,7 +212,7 @@ def add_finding_filters(parser: argparse.ArgumentParser) -> None:
     )
     parser.add_argument(
         "--max-findings",
-        type=int,
+        type=non_negative_int,
         metavar="N",
         help="stop after printing N findings (the exit code still reflects them all)",
     )
@@ -237,7 +268,7 @@ def emit_findings(
     if args.json:
         payload: dict[str, object] = {
             "schema": f"{SCHEMA_PREFIX}.{schema}",
-            **finding_fields(findings, args=args, include_warnings=include_warnings),
+            **finding_fields(findings, args=args, include_warnings=include_warnings, limited=limited),
         }
         payload.update(extra or {})
         print(dumps(payload))
@@ -269,20 +300,28 @@ def emit_payload(
 
 
 def finding_fields(
-    findings: Sequence[Finding], *, args: argparse.Namespace, include_warnings: bool = False
+    findings: Sequence[Finding],
+    *,
+    args: argparse.Namespace,
+    include_warnings: bool = False,
+    limited: Sequence[Finding] | None = None,
 ) -> dict[str, object]:
-    """The JSON fields that report *findings* inside a larger document."""
-    limited = _limited(findings, args)
+    """The JSON fields that report *findings* inside a larger document.
+
+    ``limited`` lets a caller that already applied ``--max-findings`` reuse the
+    result, so the withheld-count note is written exactly once.
+    """
+    shown = _limited(findings, args) if limited is None else list(limited)
     return {
-        "ok": not any(finding.is_error for finding in findings),
+        "ok": not findings,
         "counts": _counts(findings, include_warnings=include_warnings),
-        "findings": [finding.to_json() for finding in limited],
+        "findings": [finding.to_json() for finding in shown],
     }
 
 
 def _limited(findings: Sequence[Finding], args: argparse.Namespace) -> list[Finding]:
     limit = getattr(args, "max_findings", None)
-    if limit is None or limit < 0 or limit >= len(findings):
+    if limit is None or limit >= len(findings):
         return list(findings)
     withheld = len(findings) - limit
     print(f"note: {withheld} more finding(s) not shown", file=sys.stderr)

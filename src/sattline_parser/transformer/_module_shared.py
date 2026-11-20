@@ -11,7 +11,7 @@ from lark.visitors import v_args as _lark_v_args  # pyright: ignore[reportUnknow
 
 from sattline_parser.grammar import constants as const
 from sattline_parser.models.ast_model import CodeItem, FrameModule, ModuleTypeInstance, SingleModule, SourceSpan, VarRef
-from sattline_parser.models.clauses import CoordBox, CoordPair
+from sattline_parser.models.clauses import CoordBox, CoordPair, NestedClipping
 from sattline_parser.models.tails import Tail
 
 TransformerTree = Tree[Any]
@@ -58,6 +58,9 @@ class InterimCoords:
     #: run spells one coordinate pair. ``None`` means the rule did not record the
     #: split, as for a five-value invocation coordinate.
     coord_tails: tuple[tuple[Tail, ...], ...] | None = None
+    #: Nested ``ClippingBounds`` annotations on each value, index-aligned with
+    #: ``coord_tails``. ``None`` mirrors an unrecorded split.
+    coord_clippings: tuple[tuple[NestedClipping, ...], ...] | None = None
 
 
 @dataclass(frozen=True)
@@ -190,7 +193,6 @@ def flatten_items(items: Iterable[TransformerItem]) -> Iterator[TransformerItem]
         elif isinstance(it, Tree) and it.data in (
             const.TREE_TAG_BASE_MODULE_BODY,
             const.TREE_TAG_MODULE_BODY,
-            const.TREE_TAG_MODULEDEF_BLOCK,
         ):
             tree = cast(TransformerTree, it)
             yield from flatten_items(cast(list[TransformerItem], tree.children))

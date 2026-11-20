@@ -132,7 +132,12 @@ assignment_statement:       variable_name "=" expression
 if_statement:               IF expression THEN (code_comment | statement)* (ELSIF expression THEN (code_comment | statement)*)* (ELSE (code_comment | statement)*)? ENDIF
 
 //Sequences
-sequence:                   (SEQUENCE | OPENSEQUENCE) NAME? seq_control_opt? codeblock_coord objsizedef layer_info? sequence_body (ENDSEQUENCE | ENDOPENSEQUENCE)
+// The opener and the closer must match: SEQUENCE ends with ENDSEQUENCE and
+// OPENSEQUENCE ends with ENDOPENSEQUENCE. The shared tail is inlined, so the
+// transformer sees the same item order as before.
+sequence:                   SEQUENCE _sequence_tail ENDSEQUENCE
+                          | OPENSEQUENCE _sequence_tail ENDOPENSEQUENCE
+_sequence_tail:             NAME? seq_control_opt? codeblock_coord objsizedef layer_info? sequence_body
 // Every body element has a position: a step (SEQINITSTEP, SEQSTEP, SUBSEQSTEP,
 // PARALLELSEQ), a transition (SEQTRANSITION, SUBSEQTRANSITION, ALTERNATIVESEQ)
 // or a structural body (SUBSEQUENCE). SEQFORK is not an element: it is a

@@ -30,6 +30,8 @@ __all__ = [
     "ModuleArguments",
     "ModuleInViewClause",
     "ModuleMarker",
+    "NestedClipping",
+    "NestedClippingValue",
     "PickButton",
     "PolygonPoint",
     "ProcedureCall",
@@ -43,19 +45,56 @@ type CoordBox = tuple[CoordPair, CoordPair]
 
 
 @dataclass(frozen=True)
+class NestedClippingValue:
+    """One numeric value of a nested ``ClippingBounds = ...`` annotation.
+
+    ``value`` is the written real and ``tail`` the binding written after it, so
+    the pair is read together. The tail is the same object the owning
+    coordinate's flat tail view holds.
+    """
+
+    value: float
+    tail: Tail | None = None
+
+
+@dataclass(frozen=True)
+class NestedClipping:
+    """A nested ``ClippingBounds = <values>`` annotation on one coordinate.
+
+    The grammar attaches the annotation to a single coordinate value, so the
+    values it carries sit beside the tails written after that value rather than
+    replacing them. A parsed tree keeps the annotation here and the same tail
+    objects in the coordinate's flat tail view; the walker emits each tail once
+    from that view, which is also why this positional payload is not a walked
+    node.
+    """
+
+    values: tuple[NestedClippingValue, ...] = ()
+
+    @property
+    def tails(self) -> tuple[Tail, ...]:
+        """Every tail carried by the annotated values, in order."""
+        return tuple(value.tail for value in self.values if value.tail is not None)
+
+
+@dataclass(frozen=True)
 class PolygonPoint:
     """One ``(x, y)`` pair of a polygon, with the tails written after each value.
 
     A coordinate may carry its own ``: InVar_ "X"`` tail or a nested
     ``ClippingBounds`` annotation. Keeping the two positions apart is what lets a
     consumer map a tail back to the coordinate it belongs to; the object's flat
-    ``tails`` view still lists every tail once.
+    ``tails`` view still lists every tail once. ``x_clippings`` and
+    ``y_clippings`` hold the nested annotations written after each value, in
+    order, so the values they carry are not lost.
     """
 
     x: float
     y: float
     x_tails: tuple[Tail, ...] = ()
     y_tails: tuple[Tail, ...] = ()
+    x_clippings: tuple[NestedClipping, ...] = ()
+    y_clippings: tuple[NestedClipping, ...] = ()
     span: SourceSpan | None = field(default=None, compare=False, metadata={"layout": True})
 
 
@@ -142,6 +181,9 @@ class ClippingClause:
     #: each one can be placed where it was written. Empty for a clause assembled
     #: without position information.
     corner_tails: tuple[tuple[Tail, ...], ...] = ()
+    #: Nested ``ClippingBounds`` annotations on the corners, one group per corner
+    #: in ``bounds`` order, matching ``corner_tails``.
+    corner_clippings: tuple[tuple[NestedClipping, ...], ...] = ()
 
 
 @dataclass(frozen=True)

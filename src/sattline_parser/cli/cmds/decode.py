@@ -5,11 +5,11 @@ from __future__ import annotations
 import argparse
 import sys
 
-from sattline_parser.preprocessing import PreprocessError, is_compressed, preprocess_source
+from sattline_parser.preprocessing import PreprocessError, preprocess_source
 
 from .._errors import CliError
 from .._exit import ExitCode
-from .._io import display_path, read_source
+from .._io import display_path, encoding_name, read_source
 from .._json import SCHEMA_PREFIX, dumps
 from ._common import add_source_flags, reject_companion
 
@@ -38,7 +38,7 @@ def run(args: argparse.Namespace) -> int:
     report = {
         "schema": f"{SCHEMA_PREFIX}.decode",
         "file": display_path(source.name, absolute=args.path_style == "absolute"),
-        "coded": source.coded or (is_compressed(source.text) and not document.is_identity()),
+        "encoding": encoding_name(source.text, coded=source.coded),
         "original_length": source.original_length,
         "decoded_length": len(document.normalized_text),
     }

@@ -8,7 +8,7 @@ from enum import StrEnum
 from pathlib import Path
 
 from sattline_parser import parse_source_text, to_json, to_jsonable
-from sattline_parser.ast import BasePicture, SourceSpan
+from sattline_parser.ast import BasePicture, FloatLiteral, IntLiteral, SourceSpan
 
 
 class _Colour(StrEnum):
@@ -38,11 +38,29 @@ def test_serializer_is_unlimited_by_default_and_bounded_on_request() -> None:
     unlimited = to_jsonable(leaf)
     assert isinstance(unlimited, dict)
     assert unlimited["name"] == "X"
+    # A span is a leaf: it is emitted in full even at the depth limit.
     assert to_jsonable(leaf, depth=1) == {
         "name": "X",
         "colour": "red",
-        "span": "<SourceSpan>",
+        "span": {"start": 1, "end": 2, "line": 3, "column": 4},
     }
+    # A composite at the limit is a placeholder, never a dropped value.
+    assert to_jsonable(leaf, depth=0) == "<_Leaf>"
+
+
+def test_serializer_emits_a_str_enum_member_as_its_plain_value_at_any_depth() -> None:
+    # ``StrEnum`` members are ``str`` subclasses, so the enum branch must run
+    # before the scalar shortcut; otherwise the member object leaks through.
+    value = to_jsonable(_Colour.RED, depth=0)
+
+    assert value == "red"
+    assert type(value) is str
+
+
+def test_serializer_emits_leaves_in_full_at_the_depth_limit() -> None:
+    assert to_jsonable(SourceSpan(1, 2, 3, 4), depth=0) == {"start": 1, "end": 2, "line": 3, "column": 4}
+    assert to_jsonable(Path("/a/b"), depth=0) == str(Path("/a/b"))
+    assert to_jsonable(b"\x01\x02", depth=0) == "0102"
 
 
 def test_serializer_handles_paths_and_mappings() -> None:
@@ -121,3 +139,23 @@ def test_serializer_falls_back_to_repr_for_an_unknown_value() -> None:
             return "opaque"
 
     assert to_jsonable(Opaque()) == "opaque"
+
+
+def test_serializer_emits_a_literal_as_its_plain_value() -> None:
+    """The data view drops a literal's spelling metadata on purpose.
+
+    ``IntLiteral``/``FloatLiteral`` are ``int``/``float`` subclasses, so the
+    structural view emits the number. ``span``, ``clamped``, and ``written`` are
+    model attributes for source text and provenance, and a JSON consumer that
+    needs them reads the model. See docs/ast.md.
+    """
+    span = SourceSpan(0, 11, 1, 1)
+    integer = IntLiteral(2147483647, span=span, clamped=True, written="2147483648")
+    real = FloatLiteral(1.5, span=span)
+
+    assert to_jsonable(integer) == 2147483647
+    assert to_jsonable(real) == 1.5
+    payload = to_jsonable({"big": integer})
+    assert payload == {"big": 2147483647}
+    assert "clamped" not in json.dumps(payload)
+    assert "written" not in json.dumps(payload)

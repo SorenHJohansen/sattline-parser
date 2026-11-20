@@ -4,24 +4,44 @@ Each parsed ``BasePicture`` is stored in an HMAC-signed pickle envelope keyed by
 code path and source mode. The cache namespace and version belong to
 ``sattline-parser`` (``FILE_AST_CACHE_VERSION``, a distinct file-format magic),
 so a cache written by another tool never cross-reads. The key also includes the
-package version, the resolved grammar fingerprint, and a fingerprint of the
-sources that shape a parsed AST (the models, the transformer, and the decoding,
-provenance, and name-folding modules), so an upgrade that changes the AST shape,
-fixes a transformer, or changes decoding cannot serve an old entry. Path, mode,
-and the source revision are validated before a cached AST is trusted: a
-``mtime_ns`` + ``size`` stat snapshot is the cheap filter, and the SHA-256 of
-the source bytes decides, so an edit that preserves the size and lands inside
-the filesystem's mtime granularity is still a miss. Entries outside the parser
-namespace or built by another version, grammar, or model shape are pruned.
+package version, the resolved grammar fingerprint, the ``lark``, ``regex``, and
+interpreter versions, and a fingerprint of every regular file shipped in the
+package, so an upgrade that changes the AST shape, fixes a transformer, changes
+decoding, changes the parser stack, or edits a grammar resource cannot serve an
+old entry. Bytecode caches are excluded because they are generated output, not
+parse input. Path, mode, and the source revision are validated before a cached
+AST is trusted: a ``mtime_ns`` + ``size`` stat snapshot is the cheap filter, and
+the SHA-256 of the source bytes decides, so an edit that preserves the size and
+lands inside the filesystem's mtime granularity is still a miss. Entry names
+carry the cache identity as a prefix, so entries left by another identity are
+pruned by file name without reading a single pickle.
+
+The envelope carries a small signed JSON header in front of the pickle. The
+header repeats the entry metadata (source path, mode, stat snapshot, identity),
+so pruning can drop an entry whose recorded source path has vanished without
+unpickling a payload it cannot trust. The header is covered by its own HMAC and
+the payload signature covers both, so a header cannot be paired with a
+different payload.
 
 The HMAC key lives beside the entries, so the signature only proves that an
 entry was written by whoever could write that directory. It is not a defence
 against a user who can modify the cache directory, and it is not meant to be:
-ownership plus a private (mode ``0700``) directory is the real boundary. The
-cache is disabled (fail closed) when the root or the ``file_ast`` subdirectory
-is not owned by this user, rather than tightening a directory someone else can
-write. Treat a cache directory as private to one user, and never point
-``cache_dir`` at a shared location.
+a directory proven private is the real boundary. On POSIX that means ownership
+plus mode ``0700`` and every parent directory free of another user's write
+access; on Windows it means a security descriptor whose owner is this user and
+whose DACL grants write access to nobody else. The directory descriptor is
+opened once with ``O_DIRECTORY | O_NOFOLLOW``, its ``(st_dev, st_ino)`` is
+recorded, and every entry and key operation runs relative to it, so a directory
+that is renamed and replaced after construction is refused instead of written
+into. The cache is disabled (fail closed) when the root, its parent chain, or
+the ``file_ast`` subdirectory cannot be proven private, rather than tightening a
+directory someone else can write. Treat a cache directory as private to one
+user, and never point ``cache_dir`` at a shared location.
+
+A worker process constructs a **read-only** handle: it reads entries and never
+prunes, rewrites the identity marker, touches an entry's mtime, or writes one.
+The parent owns every mutation, so the key and the entry signatures stay
+single-process even when parsing is parallel.
 """
 
 from __future__ import annotations
@@ -29,102 +49,113 @@ from __future__ import annotations
 import contextlib
 import hashlib
 import hmac
+import json
 import os
 import pickle  # nosec B403 - HMAC-signed pickle envelope, key creation racy/excl guarded
 import secrets
 import stat
+import sys
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
 from typing import cast
 
+import regex
+from lark import __version__ as lark_version
+
 from sattline_parser.__version__ import __version__
 from sattline_parser.grammar.resolved import grammar_fingerprint
 from sattline_parser.models.ast_model import BasePicture
-from sattline_parser.source_io import private_cache_dir
 
-from ._atomic import TEMP_SUFFIX
+from ._atomic import TEMP_SUFFIX, PrivateDirectory
 from ._atomic import temp_file_is_abandoned as _temp_file_is_abandoned
-from ._atomic import temp_path_for as _temp_path_for
 
-FILE_AST_CACHE_VERSION = 13
+FILE_AST_CACHE_VERSION = 14
 
-_PICKLE_CACHE_MAGIC = b"SATTLINE-PARSER-PICKLE-V1\n"
+_PICKLE_CACHE_MAGIC = b"SATTLINE-PARSER-PICKLE-V2\n"
 _PICKLE_HMAC_KEY_NAME = ".pickle-hmac-key"
 _PICKLE_HMAC_SIZE = 32
 _PICKLE_KEY_DIR_NAME = "file_ast"
 _IDENTITY_MARKER_NAME = ".parser-identity"
 _PACKAGE_ROOT = Path(__file__).resolve().parents[1]
-#: Sources whose bytes shape a cached AST: the AST models and the transformer
-#: that builds them, the decoding pipeline that produces the source they are
-#: parsed from, and the identifier fold table every name goes through. A fix in
-#: any of them invalidates a cached body through the key, so no version bump is
-#: needed for a change that only touches these modules.
-_CODE_FINGERPRINT_SOURCES = (
-    "models",
-    "transformer",
-    "preprocessing",
-    "source_io.py",
-    "source_document.py",
-    "names.py",
-)
+#: Generated bytecode is not a parse input, and including it would make the
+#: fingerprint change as modules are imported.
+_FINGERPRINT_EXCLUDED_PARTS = frozenset({"__pycache__"})
+_FINGERPRINT_EXCLUDED_SUFFIXES = frozenset({".pyc", ".pyo"})
+
+#: A header larger than this is not one this package wrote. The header holds a
+#: handful of short strings and integers; refusing a larger one keeps a hostile
+#: length prefix from allocating an arbitrary buffer.
+_MAX_HEADER_BYTES = 4096
+_SIGNATURE_SIZE = 64
+_HEADER_LENGTH_WIDTH = 8
+_HEADER_READ_LIMIT = len(_PICKLE_CACHE_MAGIC) + 2 * _SIGNATURE_SIZE + 2 + _HEADER_LENGTH_WIDTH + _MAX_HEADER_BYTES
 
 #: The cache is an optimisation, not a store: past this many entries the least
 #: recently used are dropped so a long-lived cache directory stays bounded. A
 #: library caller can override it with ``FileASTCache(max_entries=...)``.
 MAX_AST_CACHE_ENTRIES = 1024
 
+#: The entry cap is also rechecked during a run, not only at startup. Eviction
+#: stats every entry, so it runs every ``max_entries // 8`` writes (at most 64,
+#: at least 1): a long run then overshoots the cap by at most that many entries.
+_MAX_CAP_CHECK_INTERVAL = 64
+
+#: Read once at import so the identity is stable even if the module attribute is
+#: monkeypatched later.
+_REGEX_VERSION = regex.__version__
+
 
 @lru_cache(maxsize=1)
 def _code_fingerprint() -> str:
-    """Digest the sources that shape a cached AST."""
+    """Digest every shipped parse input, including non-Python resources.
+
+    The package is the unit of identity. A hand-maintained list of source
+    directories has repeatedly missed an input, and a resource such as
+    ``preprocessing/scanner_tokens.json`` is as parse-relevant as a module.
+    Bytecode caches are generated output, so they are excluded.
+    """
     digest = hashlib.sha256()
-    for source_name in _CODE_FINGERPRINT_SOURCES:
-        source = _PACKAGE_ROOT / source_name
-        paths = sorted(source.rglob("*.py")) if source.is_dir() else [source]
-        for path in paths:
-            digest.update(path.relative_to(_PACKAGE_ROOT).as_posix().encode("utf-8"))
-            digest.update(b"\0")
-            digest.update(path.read_bytes())
-            digest.update(b"\0")
+    for path in sorted(_PACKAGE_ROOT.rglob("*")):
+        if not path.is_file():
+            continue
+        relative = path.relative_to(_PACKAGE_ROOT)
+        if any(part in _FINGERPRINT_EXCLUDED_PARTS for part in relative.parts):
+            continue
+        if path.suffix in _FINGERPRINT_EXCLUDED_SUFFIXES:
+            continue
+        digest.update(relative.as_posix().encode("utf-8"))
+        digest.update(b"\0")
+        digest.update(path.read_bytes())
+        digest.update(b"\0")
     return digest.hexdigest()
 
 
-#: Payload shapes a signed entry may fail to decode into. They are a miss, never
-#: an exception: a tampered or truncated entry must not fail a load.
-_ALLOWED_PICKLE_LOADER_ERRORS = (
-    pickle.UnpicklingError,
-    AttributeError,
-    EOFError,
-    ImportError,
-    IndexError,
-    TypeError,
-    ValueError,
-)
+def _interpreter_version() -> str:
+    """The interpreter version a pickle was written by."""
+    return f"{sys.version_info[0]}.{sys.version_info[1]}.{sys.version_info[2]}"
 
 
-def _remove_file(path: Path) -> bool:
-    try:
-        path.unlink()
-    except OSError:
-        return False
-    return True
+def _runtime_identity() -> str:
+    """The parser stack a cached AST depends on.
+
+    Lark and ``regex`` are upgradable inside their pins, and a patch release can
+    change how a grammar is compiled or how a terminal is matched. The
+    interpreter version decides the pickle protocol and some regex behaviour.
+    Recording all three makes an upgrade a cache miss instead of a body parsed
+    by one parser stack and read under another.
+    """
+    return f"lark={lark_version}\nregex={_REGEX_VERSION}\npython={_interpreter_version()}"
 
 
-def _safe_stat(path: Path) -> os.stat_result | None:
-    try:
-        return path.stat()
-    except OSError:
-        return None
+def _identity_digest(identity_text: str) -> str:
+    """The digest that prefixes every entry file name.
 
-
-def _is_regular_file(path: Path) -> bool:
-    """Whether *path* is a regular file, never following a symlink."""
-    try:
-        info = path.lstat()
-    except OSError:
-        return False
-    return stat.S_ISREG(info.st_mode)
+    Pruning compares this prefix, so an entry left by another package version,
+    grammar, parser stack, or code fingerprint is removed by name without
+    reading it.
+    """
+    return hashlib.sha256(identity_text.encode("utf-8")).hexdigest()
 
 
 def _as_data_dict(value: object) -> dict[object, object] | None:
@@ -152,17 +183,20 @@ def _matches_source_identity(path: Path, *, mtime_ns: object, size: object, dige
     return hmac.compare_digest(hashlib.sha256(raw_bytes).hexdigest(), digest)
 
 
-def _stored_source_exists(meta: dict[object, object]) -> bool:
-    """Whether the source path an entry was parsed from still exists.
+def _safe_stat(path: Path) -> os.stat_result | None:
+    try:
+        return path.stat()
+    except OSError:
+        return None
 
-    A rename, a branch switch, or a deleted temporary checkout leaves the entry
-    behind with a matching fingerprint, so existence is part of staleness: an
-    entry for a file nobody can reach can never be served again.
-    """
-    stored_path = meta.get("path")
-    if not isinstance(stored_path, str) or not stored_path:
+
+def _is_regular_file(path: Path) -> bool:
+    """Whether *path* is a regular file, never following a symlink."""
+    try:
+        info = path.lstat()
+    except OSError:
         return False
-    return Path(stored_path).exists()
+    return stat.S_ISREG(info.st_mode)
 
 
 @dataclass(frozen=True, slots=True)
@@ -214,163 +248,366 @@ def _code_path_key(code_path: Path) -> str:
         return str(code_path)
 
 
-def _pickle_hmac_key_path(directory: Path) -> Path:
-    return directory / _PICKLE_HMAC_KEY_NAME
+# ---------------------------------------------------------------------------
+# The signed envelope
+# ---------------------------------------------------------------------------
 
 
-def _read_pickle_hmac_key(path: Path) -> bytes | None:
-    try:
-        key = path.read_bytes()
-    except OSError:
+@dataclass(frozen=True, slots=True)
+class _SignedEntry:
+    """One parsed envelope: both signatures, the JSON header, and the pickle."""
+
+    header_signature: bytes
+    payload_signature: bytes
+    header: bytes
+    payload: bytes
+
+
+def _split_head(raw: bytes) -> tuple[bytes, bytes, bytes] | None:
+    """Split off both signatures and the JSON header, ignoring the payload."""
+    if not raw.startswith(_PICKLE_CACHE_MAGIC):
         return None
-    if len(key) != _PICKLE_HMAC_SIZE:
+    offset = len(_PICKLE_CACHE_MAGIC)
+    header_signature = raw[offset : offset + _SIGNATURE_SIZE]
+    offset += _SIGNATURE_SIZE
+    if len(header_signature) != _SIGNATURE_SIZE or raw[offset : offset + 1] != b"\n":
+        return None
+    offset += 1
+    payload_signature = raw[offset : offset + _SIGNATURE_SIZE]
+    offset += _SIGNATURE_SIZE
+    if len(payload_signature) != _SIGNATURE_SIZE or raw[offset : offset + 1] != b"\n":
+        return None
+    offset += 1
+    length_field = raw[offset : offset + _HEADER_LENGTH_WIDTH]
+    offset += _HEADER_LENGTH_WIDTH
+    if len(length_field) != _HEADER_LENGTH_WIDTH or not length_field.isdigit():
+        return None
+    header_length = int(length_field)
+    if header_length > _MAX_HEADER_BYTES:
+        return None
+    header = raw[offset : offset + header_length]
+    if len(header) != header_length:
+        return None
+    return header_signature, payload_signature, header
+
+
+def _split_entry(raw: bytes) -> _SignedEntry | None:
+    """Split one complete envelope, or return ``None`` when it is malformed."""
+    head = _split_head(raw)
+    if head is None:
+        return None
+    header_signature, payload_signature, header = head
+    offset = len(_PICKLE_CACHE_MAGIC) + _SIGNATURE_SIZE + 1 + _SIGNATURE_SIZE + 1 + _HEADER_LENGTH_WIDTH + len(header)
+    return _SignedEntry(
+        header_signature=header_signature,
+        payload_signature=payload_signature,
+        header=header,
+        payload=raw[offset:],
+    )
+
+
+def _entry_header(payload: object) -> bytes:
+    """The signed JSON metadata header for *payload*.
+
+    Only a string key and a string or integer value survive, so the header can
+    never carry an arbitrary pickle or a value that a JSON reader could not
+    round-trip.
+    """
+    data = _as_data_dict(payload)
+    raw_meta = data.get("meta") if data is not None else None
+    meta = _as_data_dict(raw_meta) or {}
+    safe = {
+        key: value
+        for key, value in meta.items()
+        if isinstance(key, str) and isinstance(value, (str, int)) and not isinstance(value, bool)
+    }
+    return json.dumps(safe, sort_keys=True, ensure_ascii=True, separators=(",", ":")).encode("ascii")
+
+
+def _encode_entry(payload: object, key: bytes) -> bytes:
+    """Encode *payload* into a signed envelope ready for one atomic write."""
+    header = _entry_header(payload)
+    pickled_payload = pickle.dumps(payload, protocol=pickle.HIGHEST_PROTOCOL)
+    header_signature = hmac.new(key, header, hashlib.sha256).hexdigest().encode("ascii")
+    payload_signature = hmac.new(key, header + b"\n" + pickled_payload, hashlib.sha256).hexdigest().encode("ascii")
+    length_field = f"{len(header):0{_HEADER_LENGTH_WIDTH}d}".encode("ascii")
+    return b"".join(
+        [
+            _PICKLE_CACHE_MAGIC,
+            header_signature,
+            b"\n",
+            payload_signature,
+            b"\n",
+            length_field,
+            header,
+            pickled_payload,
+        ]
+    )
+
+
+def _signature_matches(signature: bytes, key: bytes, data: bytes) -> bool:
+    expected = hmac.new(key, data, hashlib.sha256).hexdigest().encode("ascii")
+    return hmac.compare_digest(signature, expected)
+
+
+def _decode_entry(raw: bytes, key: bytes) -> _SignedEntry | None:
+    """Verify both signatures of *raw*, returning the entry or ``None``."""
+    entry = _split_entry(raw)
+    if entry is None:
+        return None
+    if not _signature_matches(entry.header_signature, key, entry.header):
+        return None
+    if not _signature_matches(entry.payload_signature, key, entry.header + b"\n" + entry.payload):
+        return None
+    return entry
+
+
+def _decode_header(raw: bytes, key: bytes) -> dict[str, object] | None:
+    """Verify *raw*'s header signature and decode its JSON metadata.
+
+    The header signature is independent of the payload, so pruning can trust
+    the recorded source path without reading, let alone unpickling, the body.
+    """
+    head = _split_head(raw)
+    if head is None:
+        return None
+    header_signature, _, header = head
+    if not _signature_matches(header_signature, key, header):
+        return None
+    try:
+        decoded = json.loads(header)
+    except ValueError:
+        return None
+    if not isinstance(decoded, dict):
+        return None
+    return cast(dict[str, object], decoded)
+
+
+def _read_key(directory: PrivateDirectory) -> bytes | None:
+    """Read the HMAC key through the validated directory handle."""
+    key = directory.read(_PICKLE_HMAC_KEY_NAME)
+    if key is None or len(key) != _PICKLE_HMAC_SIZE:
         return None
     return key
 
 
-def _load_or_create_pickle_hmac_key(directory: Path) -> bytes | None:
-    key_path = _pickle_hmac_key_path(directory)
-    existing_key = _read_pickle_hmac_key(key_path)
+def _load_or_create_key(directory: PrivateDirectory) -> bytes | None:
+    """Read the cache key, or install one in a directory proven private.
+
+    The directory is revalidated here, not only at construction: an existing
+    key is returned only after the handle still names the directory it
+    recorded. A key file that exists with the wrong length is left alone and
+    disables the cache, because deleting it could race a writer that has created
+    the file but not yet written its bytes.
+    """
+    if not directory.revalidate():
+        return None
+    existing_key = _read_key(directory)
     if existing_key is not None:
         return existing_key
-    if key_path.exists() and not _remove_file(key_path):
+    if directory.stat(_PICKLE_HMAC_KEY_NAME) is not None:
         return None
-    directory.mkdir(parents=True, exist_ok=True)
-    key = secrets.token_bytes(_PICKLE_HMAC_SIZE)
-    flags = os.O_WRONLY | os.O_CREAT | os.O_EXCL
+    return _install_key(directory, secrets.token_bytes(_PICKLE_HMAC_SIZE))
+
+
+def _install_key(directory: PrivateDirectory, key: bytes) -> bytes | None:
+    """Publish *key* without ever clobbering a key another writer installed.
+
+    The bytes are written to a unique temporary sibling and flushed to disk
+    before the name exists, then a hard link publishes the complete file. A
+    concurrent writer either wins the link or reads the winner's key, so no
+    reader ever sees a partial key and no writer deletes one it does not own.
+    A filesystem without hard links falls back to an exclusive create, which
+    keeps the no-clobber rule but not the complete-bytes guarantee.
+    """
+    temp_name = f"{_PICKLE_HMAC_KEY_NAME}.{os.getpid()}.{secrets.token_hex(8)}.tmp"
     try:
-        fd = os.open(key_path, flags, 0o600)
+        try:
+            created = directory.create_exclusive(temp_name, key)
+        except FileExistsError:
+            return None
+        if not created:
+            return None
+        try:
+            directory.link(temp_name, _PICKLE_HMAC_KEY_NAME)
+        except FileExistsError:
+            return _read_key(directory)
+        except OSError:
+            return _create_key_exclusively(directory, key)
+        return key
+    finally:
+        directory.unlink(temp_name)
+
+
+def _create_key_exclusively(directory: PrivateDirectory, key: bytes) -> bytes | None:
+    """Create the key with ``O_EXCL`` when the filesystem has no hard links."""
+    try:
+        created = directory.create_exclusive(_PICKLE_HMAC_KEY_NAME, key)
     except FileExistsError:
-        return _read_pickle_hmac_key(key_path)
-    except OSError:
-        return None
-    try:
-        with os.fdopen(fd, "wb") as handle:
-            handle.write(key)
-            handle.flush()
-            os.fsync(handle.fileno())
-    except OSError:
-        _remove_file(key_path)
+        return _read_key(directory)
+    if not created:
         return None
     return key
 
 
-def _read_signed_pickle_envelope(payload_bytes: bytes) -> tuple[str | None, bytes]:
-    if not payload_bytes.startswith(_PICKLE_CACHE_MAGIC):
-        return None, b""
-    remainder = payload_bytes[len(_PICKLE_CACHE_MAGIC) :]
-    signature, separator, pickled_payload = remainder.partition(b"\n")
-    digest_size = hashlib.sha256().digest_size * 2
-    if separator != b"\n" or len(signature) != digest_size:
-        return None, b""
-    try:
-        return signature.decode("ascii"), pickled_payload
-    except UnicodeDecodeError:
-        return None, b""
+def _read_entry(directory: PrivateDirectory, name: str) -> object | None:
+    """Read, verify, and unpickle one entry, or return ``None``.
 
-
-def _load_pickle_payload(path: Path) -> object | None:
-    try:
-        payload_bytes = path.read_bytes()
-    except OSError:
-        return None
-    signature, pickled_payload = _read_signed_pickle_envelope(payload_bytes)
-    if signature is None:
-        return None
-    # A read never creates the key. The documented invariant is that the key is
-    # created by the single writing process, so a missing key means the entry
-    # cannot be verified: a miss, not a reason to write a new key under a reader.
-    key = _read_pickle_hmac_key(_pickle_hmac_key_path(path.parent))
+    A read never creates the key. The documented invariant is that the key is
+    created by the single writing process, so a missing key means the entry
+    cannot be verified: a miss, not a reason to write a new key under a reader.
+    """
+    key = _read_key(directory)
     if key is None:
         return None
-    expected_signature = hmac.new(key, pickled_payload, hashlib.sha256).hexdigest()
-    if not hmac.compare_digest(signature, expected_signature):
+    raw = directory.read(name)
+    if raw is None:
+        return None
+    entry = _decode_entry(raw, key)
+    if entry is None:
         return None
     try:
-        return pickle.loads(pickled_payload)  # nosec B301 - payload HMAC-verified above
-    except _ALLOWED_PICKLE_LOADER_ERRORS:
+        return pickle.loads(entry.payload)  # nosec B301 - payload HMAC-verified above
+    except Exception:  # noqa: BLE001 - a bad cache entry is a miss, never a load failure
         return None
 
 
-def _save_pickle_payload(path: Path, payload: object) -> None:
-    key = _load_or_create_pickle_hmac_key(path.parent)
+def _write_entry(directory: PrivateDirectory, name: str, payload: object) -> None:
+    """Encode and publish one entry relative to the validated directory handle."""
+    key = _load_or_create_key(directory)
     if key is None:
-        raise OSError(f"Could not create pickle HMAC key for {path.parent}")
-    pickled_payload = pickle.dumps(payload, protocol=pickle.HIGHEST_PROTOCOL)
-    signature = hmac.new(key, pickled_payload, hashlib.sha256).hexdigest().encode("ascii")
-    temp_path = _temp_path_for(path)
-    try:
-        with temp_path.open("wb") as handle:
-            handle.write(_PICKLE_CACHE_MAGIC)
-            handle.write(signature)
-            handle.write(b"\n")
-            handle.write(pickled_payload)
-            handle.flush()
-            os.fsync(handle.fileno())
-        os.replace(temp_path, path)
-    except OSError:
-        _remove_file(temp_path)
-        raise
+        raise OSError(f"Could not create pickle HMAC key for {directory.path}")
+    directory.write_atomic(name, _encode_entry(payload, key))
+
+
+def _read_entry_header(directory: PrivateDirectory, name: str) -> dict[str, object] | None:
+    """Read only an entry's signed metadata header, without unpickling anything."""
+    key = _read_key(directory)
+    if key is None:
+        return None
+    prefix = directory.read_prefix(name, _HEADER_READ_LIMIT)
+    if prefix is None:
+        return None
+    return _decode_header(prefix, key)
 
 
 class FileASTCache:
     """Per-file AST cache keyed by code path and source mode.
 
     The backing store lives under ``<cache_dir>/file_ast`` so it never collides
-    with the file-lookup cache.
+    with the file-lookup cache. A ``read_only`` handle is for a worker process:
+    it reads entries and never prunes, rewrites the identity marker, touches an
+    entry, or writes one.
     """
 
-    def __init__(self, cache_dir: Path, *, max_entries: int = MAX_AST_CACHE_ENTRIES) -> None:
+    def __init__(
+        self,
+        cache_dir: Path,
+        *,
+        max_entries: int = MAX_AST_CACHE_ENTRIES,
+        read_only: bool = False,
+    ) -> None:
         self.cache_dir = cache_dir / _PICKLE_KEY_DIR_NAME
         self._enabled = False
+        self._read_only = read_only
         self._max_entries = max(0, max_entries)
         self._startup_pruned_entries = 0
+        self._fingerprint = ""
+        self._identity = ""
+        self._writes_since_cap = 0
+        self._root: PrivateDirectory | None = None
+        self._directory: PrivateDirectory | None = None
         # Validate the root before touching the subdirectory. A cache under a
         # directory owned by another user must never be read, since that user
-        # can plant both the HMAC key and a matching pickle.
-        secure_root = private_cache_dir(cache_dir)
-        if secure_root is None:
+        # can plant both the HMAC key and a matching pickle. A read-only handle
+        # never creates a level: the parent already did.
+        root = PrivateDirectory.open(cache_dir, create=not read_only)
+        if root is None:
             return
-        self.cache_dir = secure_root / _PICKLE_KEY_DIR_NAME
-        if private_cache_dir(self.cache_dir) is None:
+        directory = PrivateDirectory.child(root, _PICKLE_KEY_DIR_NAME, create=not read_only)
+        if directory is None:
+            root.close()
             return
+        self._root = root
+        self._directory = directory
+        self.cache_dir = directory.path
+        try:
+            # The fingerprint walks the installed package. An install shape
+            # without readable source files disables the cache; it must not
+            # fail the load that would otherwise parse successfully.
+            self._fingerprint = _code_fingerprint()
+        except OSError:
+            self._disable()
+            return
+        self._identity = _identity_digest(self._identity_text())
         self._enabled = True
-        self._startup_pruned_entries = self._initial_prune()
+        if self._read_only:
+            # A worker never mutates the cache, so it never prunes or rewrites
+            # the identity marker. Only the parent does maintenance.
+            return
+        try:
+            self._startup_pruned_entries = self._initial_prune(directory)
+        except OSError:
+            self._disable()
 
     @property
     def enabled(self) -> bool:
         """Whether the cache could establish a private, user-owned directory."""
         return self._enabled
 
-    @staticmethod
-    def _identity_text() -> str:
-        return f"{__version__}\n{grammar_fingerprint()}\n{_code_fingerprint()}\n"
+    @property
+    def read_only(self) -> bool:
+        """Whether this handle reads entries and never writes or maintains them."""
+        return self._read_only
 
-    def _initial_prune(self) -> int:
-        """Prune fully when the identity changed, otherwise only bound the count."""
-        marker = self.cache_dir / _IDENTITY_MARKER_NAME
+    def _identity_text(self) -> str:
+        """The full cache identity, recorded in the marker and digested below."""
+        return (
+            f"{FILE_AST_CACHE_VERSION}\n{__version__}\n{grammar_fingerprint()}\n"
+            f"{_runtime_identity()}\n{self._fingerprint}\n"
+        )
+
+    def _disable(self) -> None:
+        """Refuse this handle for the rest of the process and release its descriptors."""
+        self._enabled = False
+        if self._directory is not None:
+            self._directory.close()
+        if self._root is not None:
+            self._root.close()
+
+    def _ready_directory(self) -> PrivateDirectory | None:
+        """The held directory when it still matches its recorded identity."""
+        directory = self._directory
+        if not self._enabled or directory is None:
+            return None
+        if not directory.revalidate():
+            self._disable()
+            return None
+        return directory
+
+    def _initial_prune(self, directory: PrivateDirectory) -> int:
+        """Prune when the identity changed, otherwise only bound the count."""
+        marker = directory.read(_IDENTITY_MARKER_NAME)
         try:
-            if marker.read_text(encoding="ascii") == self._identity_text():
+            if marker is not None and marker.decode("ascii") == self._identity_text():
                 return self._prune_temporary_files() + self._enforce_entry_cap()
-        except (OSError, ValueError):
-            # A marker that cannot be decoded is an unusable marker: the bounded
-            # prune below rewrites it.
+        except UnicodeDecodeError:
+            # A marker that cannot be decoded is an unusable marker: the prune
+            # below rewrites it.
             pass
-        removed = self.prune_stale_entries()
-        with contextlib.suppress(OSError):
-            marker.write_text(self._identity_text(), encoding="ascii")
-        return removed
+        return self.prune_stale_entries()
 
     def _prune_temporary_files(self) -> int:
-        if not self._enabled:
+        if not self._enabled or self._read_only or self._directory is None:
             return 0
         removed = 0
-        if not self.cache_dir.exists():
-            return 0
-        for path in self.cache_dir.iterdir():
-            if not _is_regular_file(path) or not path.name.endswith(TEMP_SUFFIX):
+        for name in self._directory.names():
+            if not name.endswith(TEMP_SUFFIX):
                 continue
-            if _temp_file_is_abandoned(path) and _remove_file(path):
+            info = self._directory.stat(name)
+            if info is None or not stat.S_ISREG(info.st_mode):
+                continue
+            if _temp_file_is_abandoned(self.cache_dir / name) and self._directory.unlink(name):
                 removed += 1
         return removed
 
@@ -382,50 +619,89 @@ class FileASTCache:
         touches the entry, so the mtime approximates last use rather than the
         time the entry was written.
         """
-        if not self._enabled or not self.cache_dir.exists():
+        directory = self._directory
+        if not self._enabled or self._read_only or directory is None:
             return 0
-        entries: list[tuple[int, str, Path]] = []
-        for path in self.cache_dir.iterdir():
-            if not _is_regular_file(path) or not path.name.endswith(".pickle"):
+        entries: list[tuple[int, str]] = []
+        for name in directory.names():
+            if not name.endswith(".pickle"):
                 continue
-            stat_result = _safe_stat(path)
-            if stat_result is None:
+            info = directory.stat(name)
+            if info is None or not stat.S_ISREG(info.st_mode):
                 continue
-            entries.append((stat_result.st_mtime_ns, path.name, path))
+            entries.append((info.st_mtime_ns, name))
         excess = len(entries) - self._max_entries
         if excess <= 0:
             return 0
         entries.sort()
-        return sum(1 for _, _, path in entries[:excess] if _remove_file(path))
+        return sum(1 for _, name in entries[:excess] if directory.unlink(name))
 
-    @staticmethod
-    def _key(code_path: Path, mode: str) -> str:
+    def _prune_vanished_sources(self) -> int:
+        """Drop entries whose recorded source path no longer exists.
+
+        The source path comes from the entry's signed header, so nothing is
+        unpickled and no unverified path is stat-ed. An entry whose header
+        cannot be verified is left for :meth:`load` to reject: pruning does not
+        delete a file it cannot interpret.
+        """
+        directory = self._directory
+        if not self._enabled or self._read_only or directory is None:
+            return 0
+        prefix = f"{self._identity}-"
+        removed = 0
+        for name in directory.names():
+            if not name.startswith(prefix) or not name.endswith(".pickle"):
+                continue
+            header = _read_entry_header(directory, name)
+            if header is None:
+                continue
+            source = header.get("path")
+            if not isinstance(source, str) or _is_regular_file(Path(source)):
+                continue
+            if directory.unlink(name):
+                removed += 1
+        return removed
+
+    def _cap_check_interval(self) -> int:
+        """How many writes may pass before the entry cap is rechecked."""
+        return max(1, min(_MAX_CAP_CHECK_INTERVAL, self._max_entries // 8))
+
+    def _key(self, code_path: Path, mode: str) -> str:
         digest = hashlib.sha256()
         # ``os.fsencode`` keeps two non-UTF-8 names distinct, where a lossy
         # UTF-8 encode with ``errors="ignore"`` would collide them.
         digest.update(os.fsencode(_code_path_key(code_path)))
         digest.update(mode.encode("utf-8", errors="ignore"))
+        # The envelope version belongs to the key: a shape change makes every
+        # older entry unreachable even before its payload is inspected.
+        digest.update(str(FILE_AST_CACHE_VERSION).encode("ascii"))
         digest.update(__version__.encode("ascii"))
         digest.update(grammar_fingerprint().encode("ascii"))
-        digest.update(_code_fingerprint().encode("ascii"))
+        digest.update(_runtime_identity().encode("ascii"))
+        digest.update(self._fingerprint.encode("ascii"))
         return digest.hexdigest()
 
+    def _entry_name(self, code_path: Path, mode: str) -> str:
+        """The entry file name, prefixed with the identity so pruning needs no read."""
+        return f"{self._identity}-{self._key(code_path, mode)}.pickle"
+
     def _path(self, code_path: Path, mode: str) -> Path:
-        return self.cache_dir / f"{self._key(code_path, mode)}.pickle"
+        """The absolute entry path, for a caller that inspects the cache."""
+        return self.cache_dir / self._entry_name(code_path, mode)
 
     def load(self, code_path: Path, mode: str) -> BasePicture | None:
         """Return the cached AST for ``code_path``/``mode``, or ``None``.
 
         ``None`` means either no entry exists or the entry failed validation
-        (foreign namespace, wrong version, tampered payload, changed source).
-        A disabled cache (non-private root) always returns ``None``.
+        (foreign namespace, wrong version, tampered payload, changed source, or
+        a cache directory that no longer matches the one this handle opened). A
+        disabled cache always returns ``None``.
         """
-        if not self._enabled:
+        directory = self._ready_directory()
+        if directory is None:
             return None
-        path = self._path(code_path, mode)
-        if not _is_regular_file(path):
-            return None
-        payload = _load_pickle_payload(path)
+        name = self._entry_name(code_path, mode)
+        payload = _read_entry(directory, name)
         payload_map = _as_data_dict(payload)
         if payload_map is None or payload_map.get("version") != FILE_AST_CACHE_VERSION:
             return None
@@ -440,7 +716,9 @@ class FileASTCache:
             return None
         if meta.get("grammar") != grammar_fingerprint():
             return None
-        if meta.get("code") != _code_fingerprint():
+        if meta.get("runtime") != _runtime_identity():
+            return None
+        if meta.get("code") != self._fingerprint:
             return None
         if not _matches_source_identity(
             code_path,
@@ -452,10 +730,11 @@ class FileASTCache:
         ast = payload_map.get("ast")
         if not isinstance(ast, BasePicture):
             return None
-        # Touch on a hit so the entry cap approximates least-recently-used
-        # eviction instead of dropping whichever entry was written first.
-        with contextlib.suppress(OSError):
-            os.utime(path, None)
+        if not self._read_only:
+            # Touch on a hit so the entry cap approximates least-recently-used
+            # eviction instead of dropping whichever entry was written first. A
+            # worker leaves the cache untouched, so its mtimes stay the parent's.
+            directory.touch(name)
         return ast
 
     def save(
@@ -471,9 +750,14 @@ class FileASTCache:
         ``snapshot`` describes the bytes the parse read. When it is given and
         the file no longer holds the same bytes, the entry is not written: the
         AST describes an older revision, and storing it under the current
-        metadata would serve stale syntax until the next edit.
+        metadata would serve stale syntax until the next edit. A read-only
+        handle never writes, and a directory that no longer matches the one this
+        handle opened is never written into.
         """
-        if not self._enabled:
+        if self._read_only:
+            return
+        directory = self._ready_directory()
+        if directory is None:
             return
         current = source_snapshot(code_path)
         if current is None:
@@ -487,60 +771,54 @@ class FileASTCache:
                 "mode": mode,
                 "parser_version": __version__,
                 "grammar": grammar_fingerprint(),
-                "code": _code_fingerprint(),
+                "runtime": _runtime_identity(),
+                "code": self._fingerprint,
                 "mtime_ns": current.mtime_ns,
                 "size": current.size,
                 "sha256": current.sha256,
             },
             "ast": ast,
         }
-        _save_pickle_payload(self._path(code_path, mode), payload)
+        try:
+            _write_entry(directory, self._entry_name(code_path, mode), payload)
+        except Exception:  # noqa: BLE001 - a cache write failure must not fail a load
+            return
+        self._writes_since_cap += 1
+        if self._writes_since_cap >= self._cap_check_interval():
+            self._writes_since_cap = 0
+            with contextlib.suppress(OSError):
+                self._enforce_entry_cap()
 
     def prune_stale_entries(self) -> int:
-        """Remove entries that are not valid current-namespace AST entries.
+        """Remove every entry from another cache identity, plus abandoned temps.
 
-        An entry is stale when its envelope, version, parser identity, grammar,
-        or code fingerprint no longer matches, when its source path no longer
-        exists, or when it is one of the least recently used entries past the
-        configured cap (``max_entries``, default
-        :data:`MAX_AST_CACHE_ENTRIES`). Returns the number of entries removed.
-        A disabled cache removes nothing.
+        An entry's name starts with the digest of the identity it was written
+        under, so this pass compares file names rather than unpickling a
+        payload. It also drops an entry whose signed header records a source
+        path that no longer exists, and the least recently used entries past the
+        configured cap (``max_entries``, default :data:`MAX_AST_CACHE_ENTRIES`).
+        Entry-level validity (envelope, version, source revision) is decided by
+        :meth:`load`, which is the only place that unpickles a payload. Returns
+        the number of files removed. A disabled or read-only cache removes
+        nothing.
         """
-        if not self._enabled:
+        if self._read_only:
             return 0
-        removed = 0
-        directory = self.cache_dir
-        if not directory.exists():
+        directory = self._ready_directory()
+        if directory is None:
             return 0
-        for path in directory.iterdir():
-            if not _is_regular_file(path):
+        removed = self._prune_temporary_files()
+        prefix = f"{self._identity}-"
+        for name in directory.names():
+            if not name.endswith(".pickle") or name.startswith(prefix):
                 continue
-            if path.name.endswith(TEMP_SUFFIX):
-                if not _temp_file_is_abandoned(path):
-                    continue
-                if _remove_file(path):
-                    removed += 1
-                continue
-            if not path.name.endswith(".pickle"):
-                continue
-            payload = _load_pickle_payload(path)
-            payload_map = _as_data_dict(payload)
-            meta = _as_data_dict(payload_map.get("meta")) if payload_map is not None else None
-            if (
-                payload_map is not None
-                and payload_map.get("version") == FILE_AST_CACHE_VERSION
-                and meta is not None
-                and meta.get("parser_version") == __version__
-                and meta.get("grammar") == grammar_fingerprint()
-                and meta.get("code") == _code_fingerprint()
-                and _stored_source_exists(meta)
-            ):
-                continue
-            if _remove_file(path):
+            if directory.unlink(name):
                 removed += 1
+        removed += self._prune_vanished_sources()
         removed += self._enforce_entry_cap()
+        # An unwritable marker only means the next startup prunes again.
         with contextlib.suppress(OSError):
-            (directory / _IDENTITY_MARKER_NAME).write_text(self._identity_text(), encoding="ascii")
+            directory.write_atomic(_IDENTITY_MARKER_NAME, self._identity_text().encode("ascii"))
         return removed
 
     def drain_startup_pruned_entries(self) -> int:

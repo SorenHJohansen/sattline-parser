@@ -3,15 +3,22 @@ from typing import Any, cast
 
 import pytest
 from lark import Token
+from lark.exceptions import UnexpectedInput
 
 from sattline_parser import parse_and_validate
 from sattline_parser import parse_source_text as parser_core_parse_source_text
 from sattline_parser import source_io as parser_api
 from sattline_parser.api import create_parser
+from sattline_parser.errors import describe_parse_error
 from sattline_parser.grammar import constants as const
 from sattline_parser.grammar.keywords import make_keywords_case_insensitive
-from sattline_parser.models.ast_model import BasePicture, IntLiteral, ModuleTypeInstance
-from sattline_parser.models.clauses import Alignment, AssignClause
+from sattline_parser.models.ast_model import BasePicture, FloatLiteral, IntLiteral, ModuleTypeInstance
+from sattline_parser.models.clauses import (
+    Alignment,
+    AssignClause,
+    NestedClipping,
+    NestedClippingValue,
+)
 from sattline_parser.models.expressions import Assignment, BinOp, TernaryOp, VarRef
 from sattline_parser.models.tails import VarTail
 from sattline_parser.validation import DiagnosticCode
@@ -226,6 +233,98 @@ def test_a_datecode_prefixed_digit_is_a_name_outside_the_datecode_slot():
     bp = parser_core_parse_source_text(code)
 
     assert [variable.name for variable in bp.localvariables] == ["DateCode_1"]
+
+
+_PROGRAM_HEAD = (
+    '"SyntaxVersion"\n'
+    '"OriginalFileDate"\n'
+    '"ProgramDate"\n'
+    "BasePicture Invocation (0.0,0.0,0.0,1.0,1.0) : MODULEDEFINITION DateCode_ 1\n"
+)
+
+
+def _equation_program(declarations: str, statement: str) -> str:
+    return (
+        _PROGRAM_HEAD + "LOCALVARIABLES\n" + declarations + "ModuleDef\n"
+        "ClippingBounds = ( -1.0 , -1.0 ) ( 1.0 , 1.0 )\n"
+        "ModuleCode\n"
+        "EQUATIONBLOCK Main COORD 0.0, 0.0 OBJSIZE 1.0, 1.0 :\n"
+        f"    {statement}\n"
+        "ENDDEF;\n"
+    )
+
+
+@pytest.mark.parametrize("name", ["1E5", "2ABC", "9_Lives"])
+def test_a_name_may_not_begin_with_a_digit(name: str) -> None:
+    # A digit at the start of a name would be read as a numeric literal wherever
+    # a literal may start, so the declaration is rejected instead of producing a
+    # name that no expression can reference.
+    code = _equation_program(f"    {name}: integer := 0;\n", "X = 1;")
+
+    with pytest.raises(UnexpectedInput) as exc_info:
+        parser_core_parse_source_text(code, log_failures=False)
+
+    details = describe_parse_error(exc_info.value, code)
+    assert details.found == name[0]
+    assert details.expected == ("a name",)
+    assert details.line == 6
+
+
+def test_a_digit_leading_token_is_a_number_in_an_expression() -> None:
+    code = _equation_program("    X: integer := 0;\n", "X = 1E5;")
+
+    bp = parser_core_parse_source_text(code)
+
+    assert bp.modulecode is not None
+    statement = bp.modulecode.equationblocks[0].code[0]
+    assert isinstance(statement, Assignment)
+    assert isinstance(statement.value, FloatLiteral)
+    assert float(statement.value) == 100000.0
+
+
+def test_a_quoted_name_may_begin_with_a_digit() -> None:
+    code = _equation_program("    X: integer := 0;\n    '1E5': integer := 0;\n", "X = '1E5' + 1;")
+
+    bp, diagnostics = parse_and_validate(code)
+
+    assert [variable.name for variable in bp.localvariables] == ["X", "'1E5'"]
+    assert diagnostics == ()
+
+
+def test_a_quoted_name_may_not_span_a_line_break() -> None:
+    # The lexer and the compressed-source scanner share one boundary rule, and
+    # that rule keeps a quoted name on one line.
+    code = _equation_program("    X: integer := 0;\n", "X = 'open\n    name';")
+
+    with pytest.raises(UnexpectedInput):
+        parser_core_parse_source_text(code, log_failures=False)
+
+
+def test_a_rejected_comment_opener_is_reported_as_the_comment() -> None:
+    # Regression: the fallback lexer matched MULTIPLY first, so the diagnostic
+    # named '*' instead of the comment the source wrote.
+    code = _equation_program("    X: integer := 0;\n", "X = 1 + (* note *) 2;")
+
+    with pytest.raises(UnexpectedInput) as exc_info:
+        parser_core_parse_source_text(code, log_failures=False)
+
+    details = describe_parse_error(exc_info.value, code)
+    assert details.found == "(*"
+    assert details.sentence.startswith("unexpected '(*'")
+
+
+def test_a_rejected_comment_closer_is_reported_as_the_comment() -> None:
+    code = (
+        _PROGRAM_HEAD
+        + "LOCALVARIABLES\n*) X: integer := 0;\nModuleDef\nClippingBounds = ( -1.0 , -1.0 ) ( 1.0 , 1.0 )\nENDDEF;\n"
+    )
+
+    with pytest.raises(UnexpectedInput) as exc_info:
+        parser_core_parse_source_text(code, log_failures=False)
+
+    details = describe_parse_error(exc_info.value, code)
+    assert details.found == "*)"
+    assert details.sentence.startswith("unexpected '*)'")
 
 
 def test_parser_core_accepts_center_aligned_interactor_body():
@@ -513,8 +612,13 @@ ENDDEF (*BasePicture*);
     assert bp.moduledef.clipping_tails == (2.5,)
 
 
-def test_parser_core_flattens_nested_clipping_bounds_tails():
-    """`ClippingBounds = <values>` annotations contribute only their tails."""
+def test_parser_core_models_nested_clipping_bounds_values_and_tails():
+    """A nested `ClippingBounds = <values>` annotation keeps every value.
+
+    The annotation's own tails stay in the coordinate's flat tail view, so a
+    consumer that only counts references is unchanged while the formatter can
+    write the values back.
+    """
     code = """
 "SyntaxVersion"
 "OriginalFileDate"
@@ -534,6 +638,17 @@ ENDDEF (*BasePicture*);
         VarTail("in", "XMin"),
         VarTail("in", "XMax"),
     ]
+    assert bp.header.coordinate_clippings[0] == (
+        NestedClipping(
+            (
+                NestedClippingValue(3.48),
+                NestedClippingValue(3.48),
+                NestedClippingValue(0.0, VarTail("in", "XMin")),
+                NestedClippingValue(100.0, VarTail("in", "XMax")),
+            )
+        ),
+    )
+    assert bp.header.coordinate_clippings[1:] == ((), (), (), ())
 
 
 def test_parser_core_preserves_outvar_tails_in_module_invocation_arguments():
@@ -652,4 +767,25 @@ def test_retype_raw_keyword_keeps_a_token_without_positions():
 
     token = Token("IF", "IF")
     with compact_provenance(lambda _start, _end: True):
-        assert _retype_raw_keyword(token, "IF") == "IF"
+        assert _retype_raw_keyword(token, "IF", "", 0) == "IF"
+
+
+def test_retype_raw_keyword_keeps_a_datecode_prefix_before_its_digit():
+    # The datecode rule is `DATECODE_PREFIX SL_DATECODE`, so a raw prefix with a
+    # digit after it is the keyword half of the pair, not an identifier. The
+    # lookahead is a match at an offset in the source text, so no token is lexed
+    # ahead and no state is guessed.
+    from sattline_parser.grammar.sattline_lexer import (  # noqa: PLC0415
+        _retype_raw_keyword,  # pyright: ignore[reportPrivateUsage]
+        compact_provenance,
+    )
+
+    with compact_provenance(lambda _start, _end: False):
+        for following in ("1", " 1", "\r\n 42"):
+            token = Token("DATECODE_PREFIX", "DateCode_", 0, 1, 1)
+            token.end_pos = len("DateCode_")
+            assert _retype_raw_keyword(token, "DATECODE_PREFIX", following, 0) == "DATECODE_PREFIX"
+        token = Token("DATECODE_PREFIX", "DateCode_", 0, 1, 1)
+        token.end_pos = len("DateCode_")
+        assert _retype_raw_keyword(token, "DATECODE_PREFIX", " = 1", 0) == "NAME"
+        assert token.type == "NAME"

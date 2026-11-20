@@ -41,7 +41,8 @@ character.
 
 from __future__ import annotations
 
-from bisect import bisect_right
+import re
+from bisect import bisect_left, bisect_right
 from typing import Protocol, cast
 from weakref import WeakSet
 
@@ -105,14 +106,55 @@ class Generated(int):
 
 GENERATED = Generated()
 
+#: One line break: CRLF, LF, or a lone CR. The same rule decides where a line
+#: ends for the grammar's string terminals, the compressed scanner, the coded
+#: decoder, and ``render_ide_text``, so a source document's line and column
+#: must use it too.
+_LINE_BREAK_RE = re.compile(r"\r\n|\r|\n")
+
+#: A CR that is not the first half of CRLF, so it ends a line on its own.
+_LONE_CR_RE = re.compile(r"\r(?!\n)")
+
+
+def split_source_lines(text: str) -> tuple[str, ...]:
+    """Split *text* at CRLF, LF, or a lone CR, dropping the terminators.
+
+    One trailing terminator produces a final empty line, exactly like
+    ``text.split("\\n")`` does, so an offset at end of input is a boundary on
+    the line after the last terminator.
+    """
+    return tuple(_LINE_BREAK_RE.split(text))
+
 
 def _line_starts(text: str) -> tuple[int, ...]:
     starts = [0]
-    idx = text.find("\n")
-    while idx != -1:
-        starts.append(idx + 1)
-        idx = text.find("\n", idx + 1)
+    for match in _LINE_BREAK_RE.finditer(text):
+        starts.append(match.end())
     return tuple(starts)
+
+
+def _validate_char_map(char_map: tuple[int, ...], original_length: int) -> None:
+    """Reject a map that cannot describe a forward walk over the original text.
+
+    A real entry is an original character offset, and a forward walk never
+    visits an offset twice or goes back. A map that breaks either rule makes
+    ``map_range`` return an inverted or zero-width span, so the constructor
+    refuses it instead of letting a diagnostic point at the wrong text.
+    """
+    previous = -1
+    for index, value in enumerate(char_map):
+        if value == GENERATED:
+            continue
+        if value < 0 or value >= original_length:
+            raise ValueError(
+                f"char_map[{index}] = {value} is outside original_text (length {original_length}); "
+                f"a real entry is an offset into the original source"
+            )
+        if value <= previous:
+            raise ValueError(
+                f"char_map must be strictly increasing: char_map[{index}] = {value} does not follow {previous}"
+            )
+        previous = value
 
 
 class SourceDocument:
@@ -124,10 +166,14 @@ class SourceDocument:
     ``None`` when no map was materialized, which is what an identity document
     carries. A document whose normalized text differs from its original text
     must supply a map; omitting one would silently claim the two texts have the
-    same offsets.
+    same offsets. A map is validated at construction: every real entry must be
+    an offset inside ``original_text``, and the real entries must strictly
+    increase, because that is the order a forward decoding walk produces. A
+    map that breaks either rule would make a span inverted or zero-width, so it
+    raises ``ValueError`` instead.
     """
 
-    __slots__ = ("_char_map", "_line_starts", "normalized_text", "original_text")
+    __slots__ = ("_anchor_index", "_char_map", "_line_starts", "normalized_text", "original_text")
 
     def __init__(
         self,
@@ -139,9 +185,15 @@ class SourceDocument:
             raise ValueError("char_map length must match normalized_text length")
         if char_map is None and normalized_text != original_text:
             raise ValueError("char_map is required when normalized_text differs from original_text")
+        if char_map is not None:
+            _validate_char_map(char_map, len(original_text))
         self.original_text = original_text
         self.normalized_text = normalized_text
         self._char_map = char_map
+        # The anchor index is only needed by a document with a map, and only
+        # when a position is mapped, so it is built on first use. Identity
+        # documents never build it at all.
+        self._anchor_index: tuple[tuple[int, ...], tuple[int, ...]] | None = None
         # The line index is only needed when a position is rendered, so it is
         # built on first use. Most parses never ask for a line and column.
         self._line_starts: tuple[int, ...] | None = None
@@ -182,6 +234,24 @@ class SourceDocument:
             self._line_starts = starts
         return starts
 
+    def _anchor_pairs(self) -> tuple[tuple[int, ...], tuple[int, ...]]:
+        """Cached ``(normalized indices, original offsets)`` of the real characters.
+
+        Both tuples ascend: the map is built by a single forward walk over the
+        original text, so a real entry never follows a smaller one. A bisect
+        over the indices therefore finds the nearest real character for any
+        generated offset in logarithmic time, instead of walking a generated run
+        once per requested position (which is quadratic on marker-dense
+        compressed source).
+        """
+        anchors = self._anchor_index
+        if anchors is None:
+            char_map = self._char_map or ()
+            indices = tuple(index for index, value in enumerate(char_map) if value >= 0)
+            anchors = (indices, tuple(char_map[index] for index in indices))
+            self._anchor_index = anchors
+        return anchors
+
     def map_position(self, norm_offset: int) -> int | None:
         """Map a normalized offset to an original offset.
 
@@ -195,26 +265,18 @@ class SourceDocument:
         """
         if norm_offset < 0:
             return None
-        if self._char_map is None:
+        char_map = self._char_map
+        if char_map is None:
             return min(norm_offset, len(self.original_text))
-        if norm_offset >= len(self._char_map):
-            cursor = len(self._char_map) - 1
-            while cursor >= 0:
-                value = self._char_map[cursor]
-                if value >= 0:
-                    return value + 1
-                cursor -= 1
-            return 0
-        value = self._char_map[norm_offset]
+        if norm_offset >= len(char_map):
+            _indices, values = self._anchor_pairs()
+            return values[-1] + 1 if values else 0
+        value = char_map[norm_offset]
         if value >= 0:
             return value
-        cursor = norm_offset - 1
-        while cursor >= 0:
-            value = self._char_map[cursor]
-            if value >= 0:
-                return value
-            cursor -= 1
-        return 0
+        indices, values = self._anchor_pairs()
+        slot = bisect_left(indices, norm_offset) - 1
+        return values[slot] if slot >= 0 else 0
 
     def map_range(self, norm_start: int, norm_end: int) -> tuple[int, int]:
         """Map a normalized half-open range to the tightest original range.
@@ -231,7 +293,8 @@ class SourceDocument:
         at the mapped boundary position. A range ending at the end of the
         normalized text maps to the corresponding original end boundary.
         """
-        if self._char_map is None:
+        char_map = self._char_map
+        if char_map is None:
             if norm_start >= norm_end:
                 boundary = self.map_position(norm_start)
                 pos = 0 if boundary is None else boundary
@@ -246,25 +309,17 @@ class SourceDocument:
             return pos, pos
         mapped_start = self.map_position(norm_start)
         start = 0 if mapped_start is None else mapped_start
-        end: int | None = None
-        cursor = norm_end - 1
-        while cursor >= norm_start:
-            if 0 <= cursor < len(self._char_map):
-                value = self._char_map[cursor]
-                if value >= 0:
-                    end = value + 1
-                    break
-            cursor -= 1
-        if end is None:
-            cursor = norm_end
-            while cursor < len(self._char_map):
-                value = self._char_map[cursor]
-                if value >= 0:
-                    end = value + 1
-                    break
-                cursor += 1
-        if end is None:
-            end = len(self.original_text)
+        indices, values = self._anchor_pairs()
+        # The last real character before the end of the range covers it; when
+        # the range holds none, the first real character after it anchors the
+        # end instead, and a range past the last real character ends at the
+        # original boundary.
+        slot = bisect_left(indices, norm_end) - 1
+        if slot >= 0 and indices[slot] >= norm_start:
+            end = values[slot] + 1
+        else:
+            following = bisect_left(indices, norm_end)
+            end = values[following] + 1 if following < len(indices) else len(self.original_text)
         return start, end
 
     def line_col(self, orig_offset: int) -> tuple[int, int]:
@@ -291,7 +346,9 @@ class SourceDocument:
             return False
         if norm_start < 0 or norm_end <= norm_start or norm_end > len(self._char_map):
             return False
-        return all(value < 0 for value in self._char_map[norm_start:norm_end])
+        indices, _values = self._anchor_pairs()
+        slot = bisect_left(indices, norm_end) - 1
+        return slot < 0 or indices[slot] < norm_start
 
 
 def _remap_span(target: Token | Meta, doc: SourceDocument) -> bool:
@@ -338,9 +395,13 @@ def remap_tree_to_original(tree: Tree[Token], doc: SourceDocument) -> None:
     """Rewrite every position in *tree* from normalized to original coordinates.
 
     ``tree`` is mutated in place so that ``meta`` and ``Token`` positions refer
-    to the original source. This is a no-op for identity documents.
+    to the original source. An identity document whose text has no lone CR needs
+    no rewrite: offsets and LF-based lines already match. A CR-only identity
+    document still does, because the language treats a lone CR as a line break
+    while the Lark position index counts LF, so its token lines would otherwise
+    all stay on line 1.
     """
-    if doc.is_identity():
+    if doc.is_identity() and ("\r" not in doc.original_text or _LONE_CR_RE.search(doc.original_text) is None):
         return
     _walk(tree, doc)
 

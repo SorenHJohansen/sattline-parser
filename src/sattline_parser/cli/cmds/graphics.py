@@ -4,9 +4,12 @@ from __future__ import annotations
 
 import argparse
 from collections.abc import Sequence
+from pathlib import Path
 
 from sattline_parser.project import GraphicsModel, parse_graphics_text
+from sattline_parser.project.graphics_parsing import MAX_GRAPHICS_COMPANION_BYTES
 
+from .._errors import CliError
 from .._exit import ExitCode
 from .._findings import GRAPHICS_SCAN_RULE, Finding
 from .._io import display_path, read_source
@@ -14,6 +17,28 @@ from .._json import SCHEMA_PREFIX, dumps
 from ._common import add_output_flags, add_source_flags, emit_findings, finding_fields, require_companion
 
 __all__ = ["register", "run"]
+
+#: Leading words of the expression parser's exception text, which the graphics
+#: scanner appends to its message. A finding carries the source position and the
+#: raw expression already, so the dump behind these words is not repeated.
+_PARSER_DETAIL_PREFIXES: tuple[str, ...] = (
+    "Unexpected",
+    "No terminal",
+    "Expected",
+    "Parse",
+    "VisitError",
+    "Error",
+    "Token",
+)
+
+
+def _normalize_scan_message(message: str) -> str:
+    """Reduce a scan message to one sentence without the parser's token dump."""
+    line = next((part.strip() for part in message.splitlines() if part.strip()), "")
+    head, separator, detail = line.rpartition(": ")
+    if separator and detail.startswith(_PARSER_DETAIL_PREFIXES):
+        line = head
+    return line
 
 
 def register(subparsers: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:  # pyright: ignore[reportPrivateUsage]
@@ -31,20 +56,43 @@ def run(args: argparse.Namespace) -> int:
     file = display_path(name, absolute=args.path_style == "absolute")
     findings = _findings(model, name=file)
     _emit_document(model, args=args, name=file, findings=findings)
-    return int(ExitCode.FINDINGS if any(finding.is_error for finding in findings) else ExitCode.OK)
+    return int(ExitCode.FINDINGS if findings else ExitCode.OK)
 
 
 def _load_model(args: argparse.Namespace) -> tuple[GraphicsModel, str]:
-    require_companion(args.path)
-    source = read_source(args.path, name=args.stdin_name or "<stdin>")
+    require_companion(args.path, stdin_name=args.stdin_name)
+    _refuse_oversized_path(args.path)
+    source = read_source(args.path, name=args.stdin_name)
+    _refuse_oversized(source.original_length, name=source.name)
     return parse_graphics_text(source.text), source.name
+
+
+def _refuse_oversized_path(target: str) -> None:
+    """Refuse an oversized companion from its size, before its bytes are read.
+
+    The parser enforces the same limit after reading; this check is what keeps
+    a pathological file from becoming a memory request in the first place. A
+    path that cannot be stat'ed is left to ``read_source``, which reports it.
+    """
+    if target == "-":
+        return
+    try:
+        size = Path(target).stat().st_size
+    except OSError:
+        return
+    _refuse_oversized(size, name=target)
+
+
+def _refuse_oversized(size: int, *, name: str) -> None:
+    if size > MAX_GRAPHICS_COMPANION_BYTES:
+        raise CliError(f"{name}: companion is {size} bytes, over the {MAX_GRAPHICS_COMPANION_BYTES} byte limit")
 
 
 def _findings(model: GraphicsModel, *, name: str) -> list[Finding]:
     return [
         Finding(
             severity=message.severity,
-            message=message.message,
+            message=_normalize_scan_message(message.message),
             rule=GRAPHICS_SCAN_RULE,
             file=name,
             line=message.line,
@@ -70,7 +118,7 @@ def _message_rows(model: GraphicsModel) -> list[dict[str, object]]:
     return [
         {
             "severity": message.severity,
-            "message": message.message,
+            "message": _normalize_scan_message(message.message),
             "line": message.line,
             "column": message.column,
         }
