@@ -360,15 +360,16 @@ def test_assignment_to_plain_string_is_rejected() -> None:
     assert _codes(_bp(Assignment(VarRef("Text"), 1), variables=[_var("Text", "string")])) == ["SL-V045", "SL-V029"]
 
 
-def test_direct_assignment_is_rejected_only_for_the_plain_string_datatype() -> None:
-    """``SL-V045`` covers ``String``; the other string families stay silent.
+def test_direct_assignment_is_rejected_for_every_string_family() -> None:
+    """``SL-V045`` covers every native string family, not only ``String``.
 
-    Nothing establishes that the language forbids assigning directly to an
-    ``IdentString``, ``TagString``, ``MaxString``, or ``LineString``, so the rule
-    does not guess. See docs/validation.md, "Open questions".
+    The destination datatype decides the finding, so each family reports it and
+    the source family does not matter. See docs/validation.md.
     """
     for datatype in ("identstring", "tagstring", "maxstring", "linestring"):
-        assert _codes(_bp(Assignment(VarRef("Text"), "value"), variables=[_var("Text", datatype)])) == [], datatype
+        assert _codes(_bp(Assignment(VarRef("Text"), "value"), variables=[_var("Text", datatype)])) == ["SL-V045"], (
+            datatype
+        )
     assert _codes(_bp(Assignment(VarRef("Text"), "value"), variables=[_var("Text", "string")])) == ["SL-V045"]
 
 

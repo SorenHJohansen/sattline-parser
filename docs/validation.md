@@ -238,10 +238,11 @@ typing that needs a validation scope stays in this layer.
 - Comparison operands must be compatible. Each offending operand gets its own
   finding, with that operand's span and name.
 - Ternary branches must have compatible types.
-- A direct assignment to a `String` variable is rejected (`SL-V045`); the value
-  is copied with `CopyString` or `CopyVar`. The rule covers the plain `String`
-  datatype only, because nothing establishes that the language rejects a direct
-  assignment to the other string families. See Open questions.
+- A direct assignment to a native string variable is rejected (`SL-V045`); the
+  value is copied with `CopyString` or `CopyVar`. The rule covers every string
+  family: `String`, `IdentString`, `TagString`, `MaxString`, and `LineString`.
+  The destination datatype decides it, so a source that resolves to one of those
+  types reports the finding, and an unproven destination stays silent.
 - `AnyType` is exempt from the condition, ternary, assignment, operand, logical,
   builtin-argument, and coordinate rules: it proves nothing about the value.
 
@@ -413,18 +414,20 @@ here. `sattline rules` exposes the same data on the command line.
 | `SL-V056` | `SEQUENCE_AMBIGUOUS_FORK_TARGET` | active | sfc | A SEQFORK target may not be declared more than once in a module. |
 | `SL-V057` | `DATECODE_CONFLICT` | active | project | The same module type or datatype may not be declared with different datecodes in a visible closure. |
 | `SL-V058` | `UNKNOWN_MODULETYPE_NAME` | active | mappings | A module-type instance must name a declared type or one visible from a loaded dependency. |
-| `SL-V059` | `NUMERIC_LITERAL_OUT_OF_RANGE` | active | code | A numeric literal must fit the declared 32-bit integer or real range. |
+| `SL-V059` | `NUMERIC_LITERAL_OUT_OF_RANGE` | active | code | A numeric literal that does not fit the 32-bit integer or real range is reported. |
 | `SL-V060` | `PROCEDURE_IN_VALUE_POSITION` | active | code | A procedure call returns no value and cannot be used where a value is required. |
 <!-- RULE-TABLE:END -->
 
 ### Numeric range findings quote the written literal
 
-`SL-V059` fires for a literal the transformer had to clamp. The model keeps the
-clamped value, so the sentence must not quote it: a written `2147483648` is
-reported as `2147483648`, not as the stored `2147483647`. `IntLiteral.written`
-and `FloatLiteral.written` hold the token text for exactly this purpose, and a
-hand-built literal without it falls back to the stored value. The diagnostic
-span still covers the written literal.
+`SL-V059` fires for an integer literal outside the 32-bit range. The parser
+normalises the stored value to the nearest bound, so the sentence must not quote
+it: a written `2147483648` is reported as `2147483648`, not as the stored
+`2147483647`. `IntLiteral.written` and `FloatLiteral.written` hold the token text
+for exactly this purpose, and a hand-built literal without it falls back to the
+stored value. The diagnostic span still covers the written literal. The
+normalisation is the parser's own; the value the language stores for such a
+literal is not established, only that it is out of range.
 
 ### Retired and unimplemented codes
 
@@ -493,8 +496,8 @@ where the source is merely unproven.
 
 | Question | Current behaviour |
 | --- | --- |
-| Is direct assignment forbidden for every string family, or only `String`? | `SL-V045` covers the plain `String` datatype. `IdentString`, `TagString`, `MaxString`, and `LineString` are grouped with it for compatibility, but nothing establishes that the language rejects a direct assignment to them, so they stay silent. |
 | Is an `AnyType` coordinate tail legal? | `SL-V032` exempts it, because `AnyType` proves nothing about the value. The tail is unproven rather than accepted. |
+| Does an out-of-range integer literal keep a value, and which one? | The parser normalises it to the 32-bit bound and records `clamped=True` alongside the written text. What the language stores or reports is not established, so no rule claims the stored value is the language's. |
 | Can a dependency expose its `PRIVATE_` module types to another unit? | File-local definitions win over same-named dependency definitions regardless of `PRIVATE_`. Filtering private definitions when importing a dependency is not established. |
 | Which definition wins when multiple dependencies declare the same name? | The validator's dependency order is not established as the bound dependency-list order used by the language resolver. |
 | Can `SL-V048` distinguish a formal deleted from the resolved definition from a misspelled target? | No. The finding names both causes, because the mapping and the definition are separate files and the validator sees only the loaded closure. |

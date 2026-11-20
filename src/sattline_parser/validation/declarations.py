@@ -65,7 +65,6 @@ _BUILTIN_RECORD_KEYS = frozenset(fold_identifier(name) for name in BUILTIN_RECOR
 
 _MAX_IDENTIFIER_LENGTH = 20
 _IDENTIFIER_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*\Z")
-_ALLOWED_IDENTIFIER_KEYWORDS = frozenset(fold_identifier(name) for name in ("colour", "newwindow"))
 
 
 def _build_reserved_identifier_keywords() -> frozenset[str]:
@@ -75,10 +74,7 @@ def _build_reserved_identifier_keywords() -> frozenset[str]:
     for value in values:
         if not isinstance(value, str) or _IDENTIFIER_RE.fullmatch(value) is None:
             continue
-        folded = fold_identifier(value)
-        if folded in _ALLOWED_IDENTIFIER_KEYWORDS:
-            continue
-        reserved.add(folded)
+        reserved.add(fold_identifier(value))
     return frozenset(reserved)
 
 

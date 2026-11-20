@@ -1672,16 +1672,32 @@ def test_assignment_rule_allows_numeric_widening_and_same_family():
             _var("Rate", "real"),
             _var("Flag1", "boolean"),
             _var("Flag2", "boolean"),
-            _var("Label", "identstring"),
-            _var("Tag", "tagstring"),
         ],
         Assignment(VarRef("Rate"), VarRef("Count")),
         Assignment(VarRef("Count"), VarRef("Count")),
         Assignment(VarRef("Flag2"), VarRef("Flag1")),
-        Assignment(VarRef("Tag"), VarRef("Label")),
         Assignment(VarRef("Rate"), 1.5),
     )
     assert [d.code.value for d in validate_basepicture(bp)] == []
+
+
+def test_string_assignment_rule_covers_every_string_family():
+    """Every native string family is copied, never assigned directly.
+
+    The five families share the copy-only rule, so the destination datatype
+    decides the finding and the source family is irrelevant.
+    """
+    families = ("string", "identstring", "tagstring", "maxstring", "linestring")
+    targets = [("Dest" + str(index), name) for index, name in enumerate(families)]
+    bp = _typed_bp(
+        [*(_var(target, name) for target, name in targets), _var("Source", "string")],
+        *(Assignment(VarRef(target), VarRef("Source")) for target, _name in targets),
+    )
+    codes = [d.code.value for d in validate_basepicture(bp)]
+    assert codes == ["SL-V045"] * len(families)
+    messages = [d.message for d in validate_basepicture(bp)]
+    assert all("CopyString() or CopyVar()" in message for message in messages)
+    assert "Dest0" in messages[0]
 
 
 def test_assignment_rule_skips_unresolved_target_and_unknown_source():

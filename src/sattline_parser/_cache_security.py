@@ -149,7 +149,9 @@ def _windows_security_descriptor_is_private(path: Path) -> bool:  # pragma: no c
     return acl_is_private(owner_sid, entries, user_sid)
 
 
-def _windows_privacy_report(path: Path) -> str:  # pragma: no cover - needs Windows  # pyright: ignore[reportUnusedFunction]
+def _windows_privacy_report(  # pyright: ignore[reportUnusedFunction]
+    path: Path,
+) -> str:  # pragma: no cover - needs Windows
     """A one-line explanation of the Windows verdict, for diagnostics and tests.
 
     It names the owner SID, the token SID, and every ACE that carries a write

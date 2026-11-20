@@ -91,6 +91,12 @@
         "line": 29
       },
       {
+        "code": "SL-V045",
+        "column": 7,
+        "length": 11,
+        "line": 30
+      },
+      {
         "code": "SL-V029",
         "column": 7,
         "length": 14,
@@ -512,6 +518,38 @@
     "invalid/StandaloneSeqBreak.s": [
       {
         "parse_error": true
+      }
+    ],
+    "invalid/StringFamilyAssignment.s": [
+      {
+        "code": "SL-V045",
+        "column": 7,
+        "length": 14,
+        "line": 28
+      },
+      {
+        "code": "SL-V045",
+        "column": 7,
+        "length": 14,
+        "line": 29
+      },
+      {
+        "code": "SL-V045",
+        "column": 7,
+        "length": 12,
+        "line": 30
+      },
+      {
+        "code": "SL-V045",
+        "column": 7,
+        "length": 12,
+        "line": 31
+      },
+      {
+        "code": "SL-V045",
+        "column": 7,
+        "length": 13,
+        "line": 32
       }
     ],
     "invalid/StringLiteralInCallArgument.s": [

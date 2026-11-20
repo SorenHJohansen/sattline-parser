@@ -241,13 +241,17 @@ encoded as `'#' + chr(48 + n // 16) + chr(48 + n % 16)` and the row `id` is
 emitted unencoded. A code is added only with a fixture that decodes it, because
 the ordinal alone does not prove which word an export used.
 
-Three grammar keywords have no row: `EQUATIONS`, `IntObjPickButton`, and
-`NewWindow`. No encoded form of them has been observed, and the ordinal alone
-would not prove the word, so none is invented. A compressed document therefore
-cannot spell them, and both failure paths are clean: a raw spelling is an
-identifier in coded mode and the parse rejects it, while an unknown code raises
-`PreprocessError`. The set is pinned by a test, so adding a row or a keyword
-terminal keeps this paragraph and the table in step.
+Two grammar keywords have no row: `EQUATIONS` and `IntObjPickButton`. No encoded
+form of them has been observed, and the ordinal alone would not prove the word,
+so none is invented. A compressed document therefore cannot spell them, and both
+failure paths are clean: a raw spelling is an identifier in coded mode and the
+parse rejects it, while the unknown marker raises `PreprocessError`. The set is
+pinned by a test, so adding a row or a keyword terminal keeps this paragraph and
+the table in step.
+
+`NewWindow` is not on that list and has no keyword terminal. It is a procedure
+name that an interactor calls, so a compressed document writes it literally: the
+compressed corpus fixture carries it unencoded inside a `ComButProc_` body.
 
 Replacement text is aligned to the matched source region by longest common
 subsequence. A replacement character gets a real source mapping only when it
@@ -260,11 +264,16 @@ result is identical.
 
 ## IDE text rendering
 
-`render_ide_text(text)` lays out decoded text the way the SattLine IDE expects
-when it re-reads a saved file:
+`render_ide_text(text)` lays out decoded text for a saved file:
 
 - CRLF line terminators everywhere;
 - no line longer than `MAX_IDE_LINE_LENGTH` (135 characters).
+
+Those two numbers are this package's own canonical layout, not a reproduction of
+the native writer: the width the IDE uses is state and configuration dependent,
+and it handles strings as their own case. Matching it byte for byte is therefore
+not something this function claims, and `MAX_IDE_LINE_LENGTH` is a local choice
+rather than a measured limit.
 
 Long lines break at the last space within the limit. The scan never splits a
 string literal or a quoted identifier, so a break point inside `'a name'` is

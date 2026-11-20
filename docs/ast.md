@@ -307,10 +307,12 @@ source wrote no `Grid` clause. There is no default value in the model: a written
 the clause back only when the field is set.
 
 `ModuleDef.layer_limit` is the written `Two_Layers_ LayerLimit_ = <real>` value.
-Only a module has layers, and the value is the zoom level at which the module
-switches from displaying layer 1 to layer 2. `None` means the module has a
-single layer. An object keeps its own `Layer_ = 1` or `Layer_ = 2` in
-`layer_info` or the object property map.
+Only a module has layers, and `None` means the module has a single layer. The
+clause is read as an unsigned real literal: `= 0.5` is stored, while `= 1` is an
+integer token and does not satisfy it. What the value does at run time, and
+whether it is a zoom threshold at all, is not established here; the model keeps
+the written number rather than a meaning for it. An object keeps its own
+`Layer_ = 1` or `Layer_ = 2` in `layer_info` or the object property map.
 
 `ModuleDef.clipping` holds the whole `ClippingBounds` clause, so the resolved
 corners and the tails attached to them live in one payload. `clipping_bounds`
@@ -402,12 +404,15 @@ and its `InVar_` binding are read together. Compare a clause by `key` and
 `OutlineColour` written before an untailed `FillColour` keeps that order when
 the formatter writes the object back.
 
-`connection_node` holds both `ConnectionNode` shapes the grammar allows. A text
-object's own clause is the positioned form and carries `coords`. The bare marker
-the shared `common_properties` run allows has no coordinates and is stored as a
-`GraphObject` with an empty property map, so its presence is modelled rather
-than dropped. A text object that writes both forms is ambiguous: the property key
-is singular, so the transformer rejects the pair instead of keeping one.
+`connection_node` holds the `ConnectionNode` shapes this grammar allows. A text
+object's own clause is the positioned form and carries `coords`. The shared
+`common_properties` run also accepts a bare marker, which has no coordinates and
+is stored as a `GraphObject` with an empty property map, so its presence is
+modelled rather than dropped. Only the positioned form is established for a text
+object; the bare marker is accepted because `common_properties` accepts it in
+every object, not because a text object documents it. A text object that writes
+both forms is therefore rejected as ambiguous: the property key is singular, and
+neither form has a claim to win.
 
 A text object's *free label text* is not modelled. The text a source writes as a
 bare `text_content` item, with no `VarName` marker after it, has no field: only
@@ -670,11 +675,14 @@ true: the written form (`1` versus `1.0`) is not part of equality. Read `span`,
 `written`, or `type(value)` when the spelling matters.
 
 `written` is the token text exactly as the source wrote it. `value` is the value
-the model keeps, and a literal outside the language range is clamped: a written
-`2147483648` is stored as `2147483647` with `clamped=True`, while `written` stays
-`"2147483648"`. A diagnostic quotes `written`, because the stored value is not
-what the source said; the formatter writes `value`, because that is what the
-model holds. A hand-built literal may leave `written` as `None`.
+the model keeps, and an integer literal outside the 32-bit range is normalised to
+the nearest bound: a written `2147483648` is stored as `2147483647` with
+`clamped=True`, while `written` stays `"2147483648"`. That normalisation belongs
+to the parser: it keeps a value inside the declared range and records that it
+had to, and it is not a claim about how the language stores or rejects such a
+literal. A diagnostic quotes `written`, because the stored value is not what the
+source said; the formatter writes `value`, because that is what the model holds.
+A hand-built literal may leave `written` as `None`.
 
 ## Tails
 

@@ -381,6 +381,11 @@ RULES: tuple[Rule, ...] = (
         DiagnosticCode.STRING_ASSIGNMENT_NOT_ALLOWED,
         "A string variable is copied with CopyString or CopyVar, not assigned directly.",
         scope=RuleScope.CODE,
+        details=(
+            "Every native string family is covered: `String`, `IdentString`, `TagString`, `MaxString`, and "
+            "`LineString`. The resolved destination datatype decides the finding, so a source that is merely "
+            "unproven stays silent."
+        ),
     ),
     _rule(
         DiagnosticCode.BUILTIN_ARG_NOT_VARIABLE,
@@ -464,8 +469,13 @@ RULES: tuple[Rule, ...] = (
     ),
     _rule(
         DiagnosticCode.NUMERIC_LITERAL_OUT_OF_RANGE,
-        "A numeric literal must fit the declared 32-bit integer or real range.",
+        "A numeric literal that does not fit the 32-bit integer or real range is reported.",
         scope=RuleScope.CODE,
+        details=(
+            "The parser normalises the stored value to the nearest bound and keeps the written text, so the "
+            "sentence quotes what the source wrote. How the language itself stores or rejects such a literal is "
+            "not established, and the rule does not claim it."
+        ),
     ),
     _rule(
         DiagnosticCode.PROCEDURE_IN_VALUE_POSITION,

@@ -21,7 +21,6 @@ from sattline_parser.models.ast_model import (
     FrameModule,
     ModuleCode,
     ModuleTypeInstance,
-    ScalarDatatype,
     Sequence,
     SFCAlternative,
     SFCBodyItem,
@@ -592,12 +591,11 @@ def _check_assignment(assignment: Assignment, context: ValidationContext) -> Non
         )
     check_old_new(assignment.target, bool(resolved.state), context.errors)
     _check_old_write_target(assignment.target, resolved, context.errors)
-    if resolved.datatype == ScalarDatatype.STRING:
-        # Scope: plain ``String`` only. The other string families
-        # (``IdentString``, ``TagString``, ``MaxString``, ``LineString``) are
-        # grouped with it for compatibility, but nothing establishes that the
-        # language forbids assigning to them directly, so they stay silent.
-        # See docs/validation.md, "Open questions".
+    if is_string_simple_type(resolved.datatype):
+        # Scope: every native string family. ``String``, ``IdentString``,
+        # ``TagString``, ``MaxString``, and ``LineString`` are all copied with
+        # ``CopyString``/``CopyVar``; a direct assignment to any of them is
+        # rejected once the destination resolves to a native string type.
         context.errors.append(
             Diagnostic(
                 code=DiagnosticCode.STRING_ASSIGNMENT_NOT_ALLOWED,

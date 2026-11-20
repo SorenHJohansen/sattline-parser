@@ -25,7 +25,7 @@ policy are documented in the README.
 
 - **The invalid-source contract is public and diagnostics keep their line.** `PARSE_FAILURES` is exported from `sattline_parser.api` and documented, a project load failure keeps the underlying parse error's sentence, line, column, and hint, and the CLI excerpt uses the library's line split so a lone CR inside a string no longer shifts `source_line`. `describe_parse_error` now accepts `source_text=None` when only the exception position is known, and `source_line_at` is the public excerpt helper.
 
-- **Bare `ConnectionNode`.** A `ConnectionNode` marker written in an object's `common_properties` is modelled as a `GraphObject` under `properties["connection_node"]` instead of being dropped, so it survives the walk, the serializer, and the formatter. A text object that writes both the positioned clause and the bare marker is rejected as ambiguous.
+- **Bare `ConnectionNode`.** A `ConnectionNode` marker written in an object's `common_properties` is modelled as a `GraphObject` under `properties["connection_node"]` instead of being dropped, so it survives the walk, the serializer, and the formatter. The bare marker is accepted because `common_properties` accepts it in every object; only the positioned form is established for a text object. A text object that writes both forms is rejected as ambiguous rather than resolving one of them.
 
 - **Read-only builtin registries.** `BUILTIN_FUNCTIONS`, `BUILTIN_ALIASES`, `CATALOGUE_META`, and `BUILTIN_RECORD_SPECS` are read-only `FrozenMapping` values, so a caller cannot mutate the public table while validation keeps the table it read at import. Mutation raises `TypeError`, and both paths read one snapshot.
 
@@ -39,7 +39,7 @@ policy are documented in the README.
 
 - **CLI documents carry the finding envelope on both branches.** `parse --json` (summary and tree) and `query --json` now emit `ok` and `findings`, and query also emits `counts`, so a client reads success and a parse failure the same way. `check --json` `files` holds the display names the findings use, the `parse` and `query` `--jsonl` failure streams are documented, and a relative path outside the working directory becomes an absolute SARIF file URI instead of a `../` reference.
 
-- **Three keywords have no scanner code.** `EQUATIONS`, `IntObjPickButton`, and `NewWindow` have no row in `scanner_tokens.json` and no encoded form has been observed, so a compressed document cannot spell them: a raw spelling is an identifier in coded mode, and an unknown code raises `PreprocessError`. Both failures are clean, and a test pins the set so a future row or terminal keeps the documented limitation accurate.
+- **Two keywords have no scanner code.** `EQUATIONS` and `IntObjPickButton` have no row in `scanner_tokens.json` and no encoded form has been observed, so a compressed document cannot spell them: a raw spelling is an identifier in coded mode, and an unknown code raises `PreprocessError`. Both failures are clean, and a test pins the set so a future row or terminal keeps the documented limitation accurate. `NewWindow` is not in the set: it is a procedure name, and a compressed document writes it literally. The `NEWWINDOW` keyword terminal it used to carry was unreachable and is removed.
 
 - **Unary sign over a literal.** `format_expr` writes a unary sign separated from a numeric operand, so a `UnaryOp("-", 5)` node is written `- 5` and parses back as the same node instead of collapsing into the signed literal `-5`.
 - **Formatter fidelity harness.** A canonical token-stream comparison now runs over every valid and edge-case corpus fixture, so a construct the model drops fails with the fixture name and the missing token instead of passing an AST equality check. The same suite checks that every model field carrying written source is either emitted or listed as a deliberate omission.
@@ -55,7 +55,7 @@ policy are documented in the README.
 - **Literal leaves in a mapping payload.** `iter_literal_leaves` now reads the values of a mapping payload, so the text of a `Time_Value` initializer or parameter mapping is visible with a relation such as `init_value[Time_Value]`.
 - **Literal spelling and the JSON view.** `to_jsonable` still emits a literal as its plain number; `span`, `clamped`, and `written` are model attributes for source text and provenance and are deliberately absent from the data view.
 
-- **The module layer option is `ModuleDef.layer_limit`.** The field is renamed from `seq_layers` and narrowed to `float | None`. `Two_Layers_ LayerLimit_ = <real>` is the only layer form a module can write, and the value is the zoom level at which the module switches from displaying layer 1 to layer 2. The unreachable `seq_layers` transformer method, the `SeqLayers` payload, and the named-layer formatting refusal are removed.
+- **The module layer option is `ModuleDef.layer_limit`.** The field is renamed from `seq_layers` and narrowed to `float | None`. `Two_Layers_ LayerLimit_ = <real>` is the only layer form a module can write, and the field keeps the written number. What the value does at run time is not established, so the model carries no meaning for it. The unreachable `seq_layers` transformer method, the `SeqLayers` payload, and the named-layer formatting refusal are removed.
 
 - **Projects own an immutable snapshot.** `SattLineProject.load` freezes the loaded trees and `from_programs` deep-copies before freezing, so `project.index` cannot go stale. Attached model nodes reject field assignment, and attached lists and mappings are read-only.
 
@@ -67,6 +67,8 @@ policy are documented in the README.
 - **Sibling submodule identity.** A sibling instance label must be unique within its container regardless of the module kind, so two inline modules, two frame modules, two module-type instances, or any mix that fold to one label report `SL-V004`. Frame-module siblings are covered like every other kind, and the label is documented as an instance name rather than a resolvable symbol.
 
 - **Source lines count every line terminator.** `SourceDocument.line_col`, the source excerpt every diagnostic renders, and the AST line and column of a plain CR-only document now treat CRLF, LF, and a lone CR as line breaks, the same definition the grammar, the compressed scanner, and `render_ide_text` use. A CR-only document reports the physical line and column of a position instead of keeping every position on line 1.
+
+- **`SL-V045` covers every string family.** A direct assignment to `IdentString`, `TagString`, `MaxString`, or `LineString` now reports the same finding as `String`: the value is copied with `CopyString` or `CopyVar`. The destination datatype decides, so a destination that does not resolve stays silent. A new fixture writes one assignment per family and keeps the copied form clean.
 
 ### Fixed
 
@@ -80,7 +82,7 @@ policy are documented in the README.
 
 - **Cache maintenance.** The HMAC key is now published atomically, so a concurrent writer reads a complete key instead of a partial one and no writer deletes a key it does not own. The envelope version is part of the entry key, entry file names carry the cache identity so a prune compares names and never unpickles an entry, and the lookup cache enforces its entry cap on every write as well as at startup.
 
-- **Out-of-range literal messages.** `SL-V059` now quotes the numeric literal as the source wrote it, so a clamped `2147483648` is reported as `2147483648` rather than as the stored `2147483647`. `IntLiteral` and `FloatLiteral` expose the written text as `written`.
+- **Out-of-range literal messages.** `SL-V059` now quotes the numeric literal as the source wrote it, so a normalised `2147483648` is reported as `2147483648` rather than as the stored `2147483647`. `IntLiteral` and `FloatLiteral` expose the written text as `written`. The normalisation to the 32-bit bound is the parser's own; the release does not claim it is what the language stores.
 
 - **A coded source behind a byte-order mark is reported as `coded`.** The CLI strips a leading UTF-8 byte-order mark before classifying the input, the same slice the decoder reads, so `decode --report` and `parse --json` no longer call a marked coded file `plain`.
 
