@@ -22,7 +22,6 @@ from sattline_parser.models.ast_model import (
     DataType,
     FrameModule,
     ModuleCode,
-    ModuleHeader,
     ModuleTypeDef,
     ModuleTypeInstance,
     ScalarDatatype,
@@ -65,7 +64,6 @@ _BUILTIN_RECORD_KEYS = frozenset(fold_identifier(name) for name in BUILTIN_RECOR
 
 _MAX_IDENTIFIER_LENGTH = 20
 _IDENTIFIER_RE = re.compile(r"[A-Za-z_][A-Za-z0-9_]*\Z")
-_ALLOWED_IDENTIFIER_KEYWORDS = frozenset(fold_identifier(name) for name in ("colour", "newwindow"))
 
 
 def _build_reserved_identifier_keywords() -> frozenset[str]:
@@ -75,10 +73,7 @@ def _build_reserved_identifier_keywords() -> frozenset[str]:
     for value in values:
         if not isinstance(value, str) or _IDENTIFIER_RE.fullmatch(value) is None:
             continue
-        folded = fold_identifier(value)
-        if folded in _ALLOWED_IDENTIFIER_KEYWORDS:
-            continue
-        reserved.add(folded)
+        reserved.add(fold_identifier(value))
     return frozenset(reserved)
 
 
@@ -196,21 +191,46 @@ def _check_sequence_identifiers(items: list[SFCBodyItem], errors: list[Diagnosti
             _check_sequence_identifiers(item.body, errors)
 
 
+def _sibling_scope(child: Submodule) -> str:
+    """The declaration scope a sibling label belongs to.
+
+    A module-type instance is scoped by its module type, so two instances of
+    different types may share a label. A single module and a frame module are
+    each scoped by kind.
+    """
+    if isinstance(child, ModuleTypeInstance):
+        return f"module-type instance {child.moduletype_name!r}"
+    if isinstance(child, FrameModule):
+        return "frame module"
+    return "single module"
+
+
 def check_sibling_submodules(submodules: list[Submodule], errors: list[Diagnostic]) -> None:
-    """Flag duplicate sibling submodule instance/definition names."""
-    seen: dict[str, ModuleHeader] = {}
+    """Flag duplicate sibling labels in one declaration scope.
+
+    A container may hold a module-type instance, a single module, and a frame
+    module with the same label, and two module-type instances may share a label
+    when their types differ. Only siblings that share a label and a scope clash.
+    """
+    seen: set[tuple[str, str]] = set()
     for child in submodules:
-        key = fold_identifier(child.header.name)
+        scope = _sibling_scope(child)
+        key = (fold_identifier(child.header.name), scope)
         if key in seen:
+            description = (
+                f"module-type instance {child.header.name!r} of {child.moduletype_name!r}"
+                if isinstance(child, ModuleTypeInstance)
+                else f"{scope} {child.header.name!r}"
+            )
             errors.append(
                 Diagnostic(
                     code=DiagnosticCode.DUPLICATE_SIBLING_SUBMODULE,
-                    message=f"Submodule instance {child.header.name!r} is already declared as {seen[key].name!r}",
+                    message=f"Sibling {description} is already declared in the same container",
                     span=child.header.declaration_span,
                 )
             )
         else:
-            seen[key] = child.header
+            seen.add(key)
 
 
 def check_variable_declarations(

@@ -1,1 +1,0 @@
-- **`parse_source_bytes` on the top-level package.** `from sattline_parser import parse_source_bytes` now resolves to the same function as `sattline_parser.api.parse_source_bytes`, as the public API table documents.

@@ -142,10 +142,11 @@ class IntLiteral(int):
     not part of equality: read ``span``, ``written``, or ``type(value)`` when the
     spelling (``1`` versus ``1.0``) matters.
 
-    ``value`` is the value the model keeps. A literal outside the language range
-    is clamped, so ``2147483648`` is stored as ``2147483647`` with
-    ``clamped=True``; ``written`` still holds the text the source wrote, which is
-    what a diagnostic quotes.
+    ``value`` is the value the model keeps. A literal outside the 32-bit range
+    is normalised to the nearest bound, so ``2147483648`` is stored as
+    ``2147483647`` with ``clamped=True``; ``written`` still holds the text the
+    source wrote, which is what a diagnostic quotes. The normalisation is the
+    parser's own, not a claim about what the language stores.
     """
 
     span: SourceSpan | None

@@ -1,1 +1,0 @@
-- **String-literal call arguments.** A string literal is now accepted where the resolved builtin signature documents an `in` parameter of a string datatype, so `LoggedIn("operator")` passes. A literal at a written position (`in var`, `out`, `inout`) and a literal passed to a callee with no known signature are still rejected by `SL-V015`.

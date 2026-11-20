@@ -12,7 +12,10 @@ The conflicts are all comment or property-separator ambiguity:
   precedes, so both a shift (consume the comment as part of the next construct)
   and a reduce (close the current construct first) are possible. Shifting keeps
   the comment attached to the following construct, which is what the grammar
-  author intends.
+  author intends. This resolution is deliberately more permissive than the
+  language: the native readers decide per position, and several accept no
+  comment at all, so a comment in one of those positions is parsed here rather
+  than refused. The count stays pinned so a grammar change is still deliberate.
 - ``CONNECTIONNODE`` (8): the same shape for a connection property inside
   ``common_properties``. Shifting keeps the connection with the property list.
 

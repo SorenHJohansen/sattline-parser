@@ -11,6 +11,7 @@ and transition names.
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass, field, replace
 
 from sattline_parser.models import walk
@@ -21,7 +22,6 @@ from sattline_parser.models.ast_model import (
     FrameModule,
     ModuleCode,
     ModuleTypeInstance,
-    ScalarDatatype,
     Sequence,
     SFCAlternative,
     SFCBodyItem,
@@ -60,6 +60,8 @@ from sattline_parser.validation.symbols import (
 )
 from sattline_parser.validation.type_graph import TypeGraph
 from sattline_parser.validation.typing import (
+    SFC_SEQUENCE_ACCESSOR_SUFFIXES,
+    SFC_STEP_ACCESSOR_SUFFIXES,
     TypeFamily,
     assignment_type_matches,
     assignment_types,
@@ -69,19 +71,13 @@ from sattline_parser.validation.typing import (
     is_anytype_datatype,
     is_boolean,
     is_numeric,
+    is_sfc_runtime_accessor,
     is_string_simple_type,
     merge_compatible_types,
     unresolved_reference_is_a_defect,
 )
 
 _EQUALITY_COMPARISON_OPERATORS = frozenset({"==", "=", "!=", "<>"})
-
-#: The runtime fields an SFC element may expose. A root reached only through
-#: ``program_sfc_names`` has no sequence context, so this is the fallback set;
-#: a root declared in the current module uses its element-kind set instead.
-_SFC_STEP_ACCESSOR_SUFFIXES = frozenset({"x", "hold", "reset", "t"})
-_SFC_SEQUENCE_ACCESSOR_SUFFIXES = frozenset({"hold", "reset"})
-_SFC_ACCESSOR_SUFFIXES = _SFC_STEP_ACCESSOR_SUFFIXES
 
 
 @dataclass(frozen=True, slots=True)
@@ -126,19 +122,32 @@ def _iter_program_module_codes(bp: BasePicture) -> list[ModuleCode]:
     return codes
 
 
-def collect_program_sfc_names(bp: BasePicture) -> frozenset[str]:
-    """Every SFC step and sequence name visible anywhere in one program file.
+def collect_program_sfc_facts(bp: BasePicture) -> tuple[frozenset[str], dict[str, frozenset[str]]]:
+    """Every SFC name visible anywhere in one program file, with its accessors.
 
     SFC element names resolve program-wide: an equation block refers to a
     sequence defined in a *nested* frame module by name (``Seq.Reset``), so a
-    module-local set alone would report those references as undefined.
+    module-local set alone would report those references as undefined. The same
+    name set serves a parameter mapping source, which resolves in the invoking
+    scope and may still name a sequence declared in another module.
+
+    The accessor map records the runtime suffixes each declared step and
+    sequence exposes. A mapping source has no module-local element-kind entry,
+    so it reads the program-wide entry instead of falling back to the union.
     """
     names: set[str] = set()
+    accessors: dict[str, frozenset[str]] = {}
     for code in _iter_program_module_codes(bp):
         steps, _transitions = _collect_module_jump_targets(code.sequences)
         names |= steps
-        names |= {fold_identifier(sequence.name) for sequence in code.sequences or () if sequence.name}
-    return frozenset(names)
+        sequences = list(code.sequences or ())
+        names |= {fold_identifier(sequence.name) for sequence in sequences if sequence.name}
+        _steps, step_features, _sequence_names, sequence_features = _collect_sequence_features(sequences)
+        for key in step_features:
+            accessors[key] = SFC_STEP_ACCESSOR_SUFFIXES
+        for key in sequence_features:
+            accessors[key] = accessors.get(key, frozenset()) | SFC_SEQUENCE_ACCESSOR_SUFFIXES
+    return frozenset(names), accessors
 
 
 def walk_module_code(
@@ -146,6 +155,7 @@ def walk_module_code(
     context: ValidationContext,
     *,
     program_sfc_names: frozenset[str] = frozenset(),
+    program_sfc_accessors: Mapping[str, frozenset[str]] | None = None,
 ) -> None:
     sequences = list(mc.sequences or ())
     step_names, transition_names = _collect_module_jump_targets(mc.sequences)
@@ -159,9 +169,10 @@ def walk_module_code(
     # currently enables. ``check_step_auto_variables`` reports a missing
     # SeqControl/SeqTimer, so an unavailable-but-known field stays an accessor
     # here and does not also become an undefined reference.
-    accessors: dict[str, frozenset[str]] = dict.fromkeys(step_features, _SFC_STEP_ACCESSOR_SUFFIXES)
+    accessors: dict[str, frozenset[str]] = dict(program_sfc_accessors or {})
+    accessors.update(dict.fromkeys(step_features, SFC_STEP_ACCESSOR_SUFFIXES))
     for key in sequence_features:
-        accessors[key] = accessors.get(key, frozenset()) | _SFC_SEQUENCE_ACCESSOR_SUFFIXES
+        accessors[key] = accessors.get(key, frozenset()) | SFC_SEQUENCE_ACCESSOR_SUFFIXES
     module_context = replace(context, sfc_names=set(sfc_names), sfc_accessors=accessors)
     _check_duplicate_sfc_names(mc.sequences, context.errors)
     check_sequence_positions(mc.sequences, context.errors)
@@ -195,7 +206,7 @@ def _collect_sequence_features(
         sequences_by_key.setdefault(sequence_key, sequence.name or "")
         features = sequence_features.setdefault(sequence_key, set())
         if sequence.seqcontrol:
-            features.update({"hold", "reset"})
+            features.update(SFC_SEQUENCE_ACCESSOR_SUFFIXES)
         _collect_step_features(sequence.code, bool(sequence.seqcontrol), bool(sequence.seqtimer), steps, step_features)
     return steps, step_features, sequences_by_key, sequence_features
 
@@ -229,9 +240,9 @@ def check_step_auto_variables(mc: ModuleCode, context: ValidationContext) -> Non
 
     A step always exposes ``.X``; ``.Hold``/``.Reset`` require ``SeqControl`` on
     the enclosing sequence and ``.T`` requires ``SeqTimer``. A sequence exposes
-    ``.Hold``/``.Reset`` under the same condition. Unknown roots and unknown
-    suffixes stay with the undefined-variable rule, so this only reports known
-    elements that lack the requested feature.
+    ``.Hold``/``.Reset``/``.Disable`` under the same condition. Unknown roots and
+    unknown suffixes stay with the undefined-variable rule, so this only reports
+    known elements that lack the requested feature.
     """
     sequences = mc.sequences or ()
     if not sequences:
@@ -248,7 +259,7 @@ def check_step_auto_variables(mc: ModuleCode, context: ValidationContext) -> Non
         if not base_name or not field_path or "." in field_path:
             continue
         suffix = field_path.casefold()
-        if suffix not in {"x", "hold", "reset", "t"}:
+        if suffix not in {"x", "hold", "reset", "t", "disable"}:
             continue
         if context.scope.lookup(base_name) is not None:
             continue
@@ -256,11 +267,11 @@ def check_step_auto_variables(mc: ModuleCode, context: ValidationContext) -> Non
         step_name = steps.get(base_key)
         if step_name is None:
             sequence_name = sequences_by_key.get(base_key)
-            if sequence_name is None or suffix not in {"hold", "reset"}:
+            if sequence_name is None or suffix not in {"hold", "reset", "disable"}:
                 continue
             if suffix in sequence_features.get(base_key, set()):
                 continue
-            feature = "Hold" if suffix == "hold" else "Reset"
+            feature = {"hold": "Hold", "reset": "Reset", "disable": "Disable"}[suffix]
             context.errors.append(
                 Diagnostic(
                     code=DiagnosticCode.STEP_AUTO_VARIABLE_UNAVAILABLE,
@@ -274,6 +285,9 @@ def check_step_auto_variables(mc: ModuleCode, context: ValidationContext) -> Non
             continue
         features = step_features.get(base_key, set())
         if suffix == "x" or suffix in features:
+            continue
+        if suffix == "disable":
+            # A step does not expose .Disable; the undefined-variable rule owns it.
             continue
         feature = {"hold": "Hold", "reset": "Reset", "t": "T"}[suffix]
         reason = "SeqTimer" if suffix == "t" else "SeqControl"
@@ -314,7 +328,7 @@ def walk_expression(expr: SLExpression, context: ValidationContext) -> None:
         if (
             resolved is None
             and unresolved_reference_is_a_defect(expr, context.scope, context.type_graph)
-            and not _is_sfc_runtime_accessor(expr, context.sfc_names, context.sfc_accessors)
+            and not is_sfc_runtime_accessor(expr, context.sfc_names, context.sfc_accessors)
         ):
             context.errors.append(
                 Diagnostic(
@@ -571,7 +585,7 @@ def _expression_span(expr: SLExpression) -> SourceSpan | None:
 def _check_assignment(assignment: Assignment, context: ValidationContext) -> None:
     resolved = resolve_var(assignment.target, context.scope, context.records)
     if resolved is None:
-        if _is_sfc_runtime_accessor(assignment.target, context.sfc_names, context.sfc_accessors):
+        if is_sfc_runtime_accessor(assignment.target, context.sfc_names, context.sfc_accessors):
             return
         if unresolved_reference_is_a_defect(assignment.target, context.scope, context.type_graph):
             context.errors.append(
@@ -592,12 +606,11 @@ def _check_assignment(assignment: Assignment, context: ValidationContext) -> Non
         )
     check_old_new(assignment.target, bool(resolved.state), context.errors)
     _check_old_write_target(assignment.target, resolved, context.errors)
-    if resolved.datatype == ScalarDatatype.STRING:
-        # Scope: plain ``String`` only. The other string families
-        # (``IdentString``, ``TagString``, ``MaxString``, ``LineString``) are
-        # grouped with it for compatibility, but nothing establishes that the
-        # language forbids assigning to them directly, so they stay silent.
-        # See docs/validation.md, "Open questions".
+    if is_string_simple_type(resolved.datatype):
+        # Scope: every native string family. ``String``, ``IdentString``,
+        # ``TagString``, ``MaxString``, and ``LineString`` are all copied with
+        # ``CopyString``/``CopyVar``; a direct assignment to any of them is
+        # rejected once the destination resolves to a native string type.
         context.errors.append(
             Diagnostic(
                 code=DiagnosticCode.STRING_ASSIGNMENT_NOT_ALLOWED,
@@ -823,25 +836,6 @@ def _accepts_string_literal(signature: BuiltinFunction | None, position: int) ->
         return False
     parameter = signature.parameters[position - 1]
     return parameter.direction == "in" and is_string_simple_type(parameter.datatype)
-
-
-def _is_sfc_runtime_accessor(ref: VarRef, sfc_names: set[str], sfc_accessors: dict[str, frozenset[str]]) -> bool:
-    """Whether *ref* is a dotted runtime field of a known SFC element.
-
-    A root declared in the current module uses its element-kind set, so
-    ``Step.X`` and ``Seq.Hold`` are accessors while ``Seq.X`` and ``Step.Foo``
-    are not. A root visible only program-wide (a sequence in a nested frame
-    module) has no element-kind entry here, so the generic accessor names
-    apply.
-    """
-    root, separator, suffix = ref.name.partition(".")
-    if not separator or "." in suffix:
-        return False
-    key = fold_identifier(root)
-    allowed = sfc_accessors.get(key)
-    if allowed is not None:
-        return suffix.casefold() in allowed
-    return key in sfc_names and suffix.casefold() in _SFC_ACCESSOR_SUFFIXES
 
 
 def _collect_module_jump_targets(sequences: list[Sequence] | None) -> tuple[set[str], set[str]]:

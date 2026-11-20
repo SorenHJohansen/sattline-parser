@@ -540,12 +540,13 @@ def test_header_compression_flag_reads_a_lone_cr_header():
     assert _header_compression_flag('"Syntax version 2.23, date: 2026-08-26-11:48:22.200 C"\rDemo\r') == "C"
 
 
-def test_grammar_keywords_without_a_scanner_row_are_the_documented_three():
+def test_grammar_keywords_without_a_scanner_row_are_the_documented_two():
     # A keyword with no row cannot be spelled in a compressed document: a raw
     # word is an identifier in coded mode, and the marker that would encode it
-    # is unknown. No encoded form of these three has been observed, so none is
-    # invented; docs/source-provenance.md records them. Adding a row or a
-    # keyword terminal must update both this set and that document.
+    # is unknown. No encoded form of these two has been observed, so none is
+    # invented; docs/source-provenance.md records them. NewWindow is not in the
+    # set: it is a registered procedure name, which a compressed document
+    # writes literally, so it needs no keyword row and no grammar terminal.
     import re  # noqa: PLC0415
 
     from sattline_parser.grammar import constants  # noqa: PLC0415
@@ -558,4 +559,4 @@ def test_grammar_keywords_without_a_scanner_row_are_the_documented_three():
 
     missing = sorted(keywords - set(SCANNER_TOKENS.values()))
 
-    assert missing == ["EQUATIONS", "IntObjPickButton", "NewWindow"]
+    assert missing == ["EQUATIONS", "IntObjPickButton"]

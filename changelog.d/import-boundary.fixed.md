@@ -1,1 +1,0 @@
-- **The parser floor no longer imports the validator.** `parse_and_validate` now lives in `sattline_parser.api`, so `source_io` stays parse-only and the documented downward import direction holds.

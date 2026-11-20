@@ -1739,7 +1739,6 @@ def test_root_order_decides_which_same_named_body_wins(tmp_path: Path, first_nam
 
 def _datecode_moduletype(datecode: int) -> str:
     return (
-        "TYPEDEFINITIONS\n"
         f"   ControllerType = MODULEDEFINITION DateCode_ {datecode}\n"
         "   MODULEPARAMETERS\n"
         "      Setpoint: real := 0.0;\n"
@@ -1754,9 +1753,8 @@ def test_a_target_reached_as_a_dependency_still_reports_its_datecode_conflict(
     tmp_path: Path, targets: tuple[str, str]
 ) -> None:
     """Ownership comes from the target set, not from discovery order."""
-    write_file(tmp_path, "Base.s", _source("Base", typedefs=_datecode_moduletype(1)))
-    write_file(tmp_path, "Dep.s", _source("Dep", typedefs=_datecode_moduletype(2)))
-    write_file(tmp_path, "Dep.l", "Base\n")
+    typedefs = "TYPEDEFINITIONS\n" + _datecode_moduletype(1) + _datecode_moduletype(2)
+    write_file(tmp_path, "Dep.s", _source("Dep", typedefs=typedefs))
     write_file(tmp_path, "Main.s", _source("Main"))
 
     project = SattLineProject.load([tmp_path], LoadMode.DRAFT, targets)

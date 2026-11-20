@@ -412,8 +412,8 @@ def test_only_type_bindings_are_unconditional(tmp_path: Path, scope: LoadValidat
     project = _load(root, "Main", validate=scope)
     codes = {d.code.value for d in project.get("Lib").diagnostics}
     if scope is LoadValidation.FULL:
-        assert "SL-V031" in codes
-        assert len(codes) >= 2
+        # The repeated P target is accepted, so the code rule is the only one.
+        assert codes == {"SL-V031"}
     else:
         assert codes == set()
 
@@ -497,16 +497,17 @@ def test_invoked_module_keeps_local_record_shapes_and_duplicate_ambiguity(
     write_file(root, "Main.l", "Lib\n")
 
     findings = _load(root, "Main", validate=scope).get("Lib").diagnostics
-    assert [d.code.value for d in findings] == ["SL-V029", "SL-V029"]
+    # The local Rec wins over the dependency shape and the local BooleanSignal
+    # wins over the builtin transcription, so only Local.Value is a mismatch.
+    # Ambiguous stays unproven and reports nothing.
+    assert [d.code.value for d in findings] == ["SL-V029"]
     assert "Local.Value" in findings[0].message
-    assert "Builtin.Value" in findings[1].message
 
 
-def test_datecode_conflict_is_reported_on_the_later_program(tmp_path: Path) -> None:
+def test_datecode_conflict_is_reported_within_one_unit(tmp_path: Path) -> None:
     root = tmp_path / "libs"
     root.mkdir()
-    moduletype = (
-        "TYPEDEFINITIONS\n"
+    definition = (
         "   ControllerType = MODULEDEFINITION DateCode_ {datecode}\n"
         "   MODULEPARAMETERS\n"
         "      Setpoint: real := 0.0;\n"
@@ -514,25 +515,24 @@ def test_datecode_conflict_is_reported_on_the_later_program(tmp_path: Path) -> N
         "   ClippingBounds = ( -1.0 , -1.0 ) ( 1.0 , 1.0 )\n"
         "   ENDDEF (*ControllerType*);\n"
     )
-    write_file(root, "Dep.s", _source("Dep", typedefs=moduletype.format(datecode=1)))
-    write_file(root, "Main.s", _source("Main", typedefs=moduletype.format(datecode=2)))
-    write_file(root, "Main.l", "Dep\n")
+    write_file(
+        root,
+        "Main.s",
+        _source("Main", typedefs="TYPEDEFINITIONS\n" + definition.format(datecode=1) + definition.format(datecode=2)),
+    )
     program = _load(root, "Main").get("Main")
     conflicts = [diagnostic for diagnostic in program.diagnostics if diagnostic.code.value == "SL-V057"]
     assert len(conflicts) == 1
     assert "libs/Main.s" in conflicts[0].message
-    assert "1 in libs/Dep.s" in conflicts[0].message
+    assert "1 in libs/Main.s" in conflicts[0].message
+    assert "2 in libs/Main.s" in conflicts[0].message
 
 
-def test_datecode_conflict_names_only_the_differing_version(tmp_path: Path) -> None:
-    """A visible version equal to the program's own is not a conflict.
-
-    With versions 1 and 2 both visible, a program declaring 1 conflicts with 2
-    and must not report 1 against itself.
-    """
+def test_a_program_declaration_shadows_a_dependency_version(tmp_path: Path) -> None:
+    """A program's own declaration wins over a same-named dependency one."""
     root = tmp_path / "libs"
     root.mkdir()
-    moduletype = (
+    definition = (
         "TYPEDEFINITIONS\n"
         "   ControllerType = MODULEDEFINITION DateCode_ {datecode}\n"
         "   MODULEPARAMETERS\n"
@@ -541,56 +541,59 @@ def test_datecode_conflict_names_only_the_differing_version(tmp_path: Path) -> N
         "   ClippingBounds = ( -1.0 , -1.0 ) ( 1.0 , 1.0 )\n"
         "   ENDDEF (*ControllerType*);\n"
     )
-    write_file(root, "First.s", _source("First", typedefs=moduletype.format(datecode=1)))
-    write_file(root, "Second.s", _source("Second", typedefs=moduletype.format(datecode=2)))
-    write_file(root, "Main.s", _source("Main", typedefs=moduletype.format(datecode=1)))
-    write_file(root, "Main.l", "First\nSecond\n")
+    write_file(root, "Dep.s", _source("Dep", typedefs=definition.format(datecode=1)))
+    write_file(root, "Main.s", _source("Main", typedefs=definition.format(datecode=2)))
+    write_file(root, "Main.l", "Dep\n")
 
-    program = _load(root, "Main").get("Main")
+    project = _load(root, "Main")
 
-    conflicts = [diagnostic for diagnostic in program.diagnostics if diagnostic.code.value == "SL-V057"]
-    assert len(conflicts) == 1
-    assert "conflicts with 2 in libs/Second.s" in conflicts[0].message
-    assert "1 in libs/First.s" not in conflicts[0].message
+    assert [d.code.value for d in project.get("Main").diagnostics] == []
+    assert [d.code.value for d in project.get("Dep").diagnostics] == []
 
 
 @pytest.mark.parametrize(
     ("scope", "expected"),
-    [(LoadValidation.NONE, set[str]()), (LoadValidation.INVOKED, {"Main"}), (LoadValidation.FULL, {"Middle", "Main"})],
+    [
+        (LoadValidation.NONE, set[str]()),
+        (LoadValidation.INVOKED, set[str]()),
+        (LoadValidation.FULL, {"Middle"}),
+    ],
 )
 def test_datecode_scope_is_unchanged(tmp_path: Path, scope: LoadValidation, expected: set[str]) -> None:
     root = tmp_path / "libs"
     root.mkdir()
-    datatype = (
-        "TYPEDEFINITIONS\n   Shared = RECORD DateCode_ {datecode}\n      Field: integer;\n   ENDDEF (*Shared*);\n"
+    definition = "   Shared = RECORD DateCode_ {datecode}\n      Field: integer;\n   ENDDEF (*Shared*);\n"
+    write_file(
+        root,
+        "Middle.s",
+        _source("Middle", typedefs="TYPEDEFINITIONS\n" + definition.format(datecode=1) + definition.format(datecode=2)),
     )
-    for name, datecode in (("Leaf", 1), ("Middle", 2), ("Main", 3)):
-        write_file(root, f"{name}.s", _source(name, typedefs=datatype.format(datecode=datecode)))
+    write_file(root, "Main.s", _source("Main"))
     write_file(root, "Main.l", "Middle\n")
-    write_file(root, "Middle.l", "Leaf\n")
 
     project = _load(root, "Main", validate=scope)
     assert {
-        name
-        for name in ("Leaf", "Middle", "Main")
-        if any(d.code.value == "SL-V057" for d in project.get(name).diagnostics)
+        name for name in ("Middle", "Main") if any(d.code.value == "SL-V057" for d in project.get(name).diagnostics)
     } == expected
 
 
 def test_a_duplicate_datecode_is_not_a_conflict(tmp_path: Path) -> None:
-    """Copies of a declaration at the same datecode are the same revision."""
+    """Two declarations of one name at the same datecode are one revision."""
     root = tmp_path / "libs"
     root.mkdir()
-    datatype = (
-        "TYPEDEFINITIONS\n"
-        "   SensorType = RECORD DateCode_ 1\n"
-        "      RawValue: real := 0.0;\n"
-        "   ENDDEF\n"
-        "    (*SensorType*);\n"
-    )
-    write_file(root, "Dep.s", _source("Dep", typedefs=datatype))
-    write_file(root, "Main.s", _source("Main", typedefs=datatype))
-    write_file(root, "Main.l", "Dep\n")
+    record = "   SensorType = RECORD DateCode_ 1\n      RawValue: real := 0.0;\n   ENDDEF\n    (*SensorType*);\n"
+    write_file(root, "Main.s", _source("Main", typedefs="TYPEDEFINITIONS\n" + record + record))
+
+    program = _load(root, "Main").get("Main")
+
+    assert [d.code.value for d in program.diagnostics] == []
+
+
+def test_a_declaration_without_a_datecode_is_not_compared(tmp_path: Path) -> None:
+    root = tmp_path / "libs"
+    root.mkdir()
+    record = "   SensorType = RECORD\n      RawValue: real := 0.0;\n   ENDDEF (*SensorType*);\n"
+    write_file(root, "Main.s", _source("Main", typedefs="TYPEDEFINITIONS\n" + record + record))
 
     program = _load(root, "Main").get("Main")
 
@@ -635,15 +638,16 @@ def test_invoked_validation_stays_inside_the_referencing_closure(tmp_path: Path)
     assert "MissingType" in " ".join(d.message for d in project.get("B").diagnostics)
 
 
-def test_datecode_conflicts_only_cover_the_program_closure(tmp_path: Path) -> None:
-    """A sibling program that the target cannot see is not a conflict.
+def test_a_dependency_version_is_not_a_conflict(tmp_path: Path) -> None:
+    """A sibling program's declaration, and a dependency's, both stay silent.
 
     Unit libraries load dozens of independent programs that each declare their
-    own local module types; those copies must not be compared with each other.
+    own local module types; those copies must not be compared with each other,
+    and a dependency's version is shadowed by the declaring program's own.
     """
     root = tmp_path / "libs"
     root.mkdir()
-    moduletype = (
+    definition = (
         "TYPEDEFINITIONS\n"
         "   ControllerType = MODULEDEFINITION DateCode_ {datecode}\n"
         "   MODULEPARAMETERS\n"
@@ -652,12 +656,11 @@ def test_datecode_conflicts_only_cover_the_program_closure(tmp_path: Path) -> No
         "   ClippingBounds = ( -1.0 , -1.0 ) ( 1.0 , 1.0 )\n"
         "   ENDDEF (*ControllerType*);\n"
     )
-    write_file(root, "Unrelated.s", _source("Unrelated", typedefs=moduletype.format(datecode=1)))
-    write_file(root, "Dep.s", _source("Dep", typedefs=moduletype.format(datecode=2)))
-    write_file(root, "Main.s", _source("Main", typedefs=moduletype.format(datecode=3)))
+    write_file(root, "Unrelated.s", _source("Unrelated", typedefs=definition.format(datecode=1)))
+    write_file(root, "Dep.s", _source("Dep", typedefs=definition.format(datecode=2)))
+    write_file(root, "Main.s", _source("Main", typedefs=definition.format(datecode=3)))
     write_file(root, "Main.l", "Dep\n")
 
-    # Both targets are loaded into one project; neither may see the other.
     project = SattLineProject.load(
         [root],
         mode=LoadMode.DRAFT,
@@ -668,8 +671,8 @@ def test_datecode_conflicts_only_cover_the_program_closure(tmp_path: Path) -> No
         for program in project.programs().values()
     }
     assert codes["Unrelated"] == []
-    assert codes["Main"] == ["SL-V057"]
-    assert "libs/Unrelated.s" not in project.get("Main").diagnostics[0].message
+    assert codes["Dep"] == []
+    assert codes["Main"] == []
 
 
 def test_dependency_cycle_is_rejected(tmp_path: Path) -> None:
@@ -1001,17 +1004,18 @@ def test_libraries_reports_every_resolving_root(tmp_path: Path) -> None:
 def test_datatype_datecode_conflict_is_reported(tmp_path: Path) -> None:
     root = tmp_path / "libs"
     root.mkdir()
-    datatype = (
-        "TYPEDEFINITIONS\n"
+    definition = (
         "   SensorType = RECORD DateCode_ {datecode}\n"
         "      RawValue: real := 0.0;\n"
         "      Valid: boolean := False;\n"
         "   ENDDEF\n"
         "    (*SensorType*);\n"
     )
-    write_file(root, "Dep.s", _source("Dep", typedefs=datatype.format(datecode=1)))
-    write_file(root, "Main.s", _source("Main", typedefs=datatype.format(datecode=2)))
-    write_file(root, "Main.l", "Dep\n")
+    write_file(
+        root,
+        "Main.s",
+        _source("Main", typedefs="TYPEDEFINITIONS\n" + definition.format(datecode=1) + definition.format(datecode=2)),
+    )
     program = _load(root, "Main").get("Main")
     conflicts = [diagnostic for diagnostic in program.diagnostics if diagnostic.code.value == "SL-V057"]
     assert len(conflicts) == 1

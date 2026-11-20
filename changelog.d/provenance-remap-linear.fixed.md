@@ -1,1 +1,0 @@
-- **Linear provenance remapping.** Mapping a position or a span back to the original source now bisects a cached anchor index instead of walking a run of generated characters, so a marker-dense compressed file no longer costs quadratic time to remap.

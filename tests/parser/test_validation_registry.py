@@ -148,5 +148,5 @@ def test_rule_json_shape() -> None:
         "status": "active",
         "retired": False,
         "summary": rule.summary,
-        "details": None,
+        "details": rule.details,
     }

@@ -1,1 +1,0 @@
-- **Formatter expression precedence.** Parenthesised boolean, comparison, arithmetic, unary, and ternary sub-expressions now round-trip through `format_expr` and `format_source` without changing meaning.

@@ -1,1 +1,0 @@
-- **Datatype typo suggestions.** A name that is equally close to two builtin datatypes now gets no suggestion instead of whichever candidate the caller happened to list first. `suggest_datatype_name` returns `None` on a tie, and the declaration is reported as an unknown datatype name.

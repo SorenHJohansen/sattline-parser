@@ -1,1 +1,0 @@
-- **`graphics` enforces the companion size limit before reading.** A companion over 4 MiB is refused as an input problem from its size, so the CLI path cannot read a pathological file that the loader would reject afterwards.

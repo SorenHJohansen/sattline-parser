@@ -1,1 +1,0 @@
-- **Project exports are lazy.** The graphics and distribution entry points on `sattline_parser` now resolve on first access, so `import sattline_parser.api` no longer loads the project layer.

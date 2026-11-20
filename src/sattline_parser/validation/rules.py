@@ -132,14 +132,16 @@ RULES: tuple[Rule, ...] = (
     ),
     _rule(
         DiagnosticCode.DUPLICATE_SIBLING_SUBMODULE,
-        "Two sibling submodule instances may not share a name.",
+        "Two siblings in one declaration scope may not share an instance label.",
         scope=RuleScope.DECLARATIONS,
         details=(
-            "A module instance name is unique within its container regardless of the module kind, "
-            "so two inline modules, two frame modules, two module-type instances, or any mix that "
-            "fold to one label are the same duplicate. `tests/fixtures/corpus/invalid/"
-            "DuplicateSiblingCrossType.s` and `DuplicateSiblingFrameModules.s` prove the cross-kind "
-            "and frame-module cases. The label is an instance name, not a resolvable symbol."
+            "A module-type instance is scoped by its module type, so two instances of different "
+            "types may share a label. A single module and a frame module are each scoped by kind, "
+            "so one container may hold a module-type instance, a single module, and a frame module "
+            "under one label. Only siblings that share a label and a scope clash. "
+            "`tests/fixtures/corpus/edge_cases/SiblingLabelAcrossKinds.s` proves the cross-kind "
+            "case and `invalid/DuplicateSiblingFrameModules.s` the same-kind case. The label is an "
+            "instance name, not a resolvable symbol."
         ),
     ),
     _rule(
@@ -232,8 +234,13 @@ RULES: tuple[Rule, ...] = (
     ),
     _rule(
         DiagnosticCode.UNDEFINED_VARIABLE,
-        "A reference or assignment target must resolve to a declared variable or parameter.",
+        "A code reference or assignment target must resolve to a declared variable or parameter.",
         scope=RuleScope.CODE,
+        details=(
+            "The rule covers module code, SFC bodies, and the source of a live parameter mapping. A "
+            "mapping whose target formal no longer exists is inert, so its source is not checked. A "
+            "repeated target keeps its first entry, and a later entry for the same target is discarded."
+        ),
     ),
     _rule(
         DiagnosticCode.UNKNOWN_DATATYPE_NAME,
@@ -381,6 +388,11 @@ RULES: tuple[Rule, ...] = (
         DiagnosticCode.STRING_ASSIGNMENT_NOT_ALLOWED,
         "A string variable is copied with CopyString or CopyVar, not assigned directly.",
         scope=RuleScope.CODE,
+        details=(
+            "Every native string family is covered: `String`, `IdentString`, `TagString`, `MaxString`, and "
+            "`LineString`. The resolved destination datatype decides the finding, so a source that is merely "
+            "unproven stays silent."
+        ),
     ),
     _rule(
         DiagnosticCode.BUILTIN_ARG_NOT_VARIABLE,
@@ -394,13 +406,24 @@ RULES: tuple[Rule, ...] = (
     ),
     _rule(
         DiagnosticCode.PARAMETER_MAPPING_TARGET_UNKNOWN,
-        "A module-type instance mapping must target a declared parameter.",
+        "A mapping target must name a field the resolved parameter exposes.",
         scope=RuleScope.MAPPINGS,
+        details=(
+            "A target that names no formal parameter is silent: SattLine keeps an instance mapping "
+            "after its parameter is deleted from the definition, so the clause is inert. A live "
+            "parameter keeps the field checks: field access on a scalar parameter, or a field the "
+            "resolved record does not declare, is reported."
+        ),
     ),
     _rule(
         DiagnosticCode.PARAMETER_MAPPING_DUPLICATE_TARGET,
         "A module-type instance may map each parameter target only once.",
         scope=RuleScope.MAPPINGS,
+        status=RuleStatus.RETIRED,
+        details=(
+            "A module type may accept a repeated mapping target; the source loads and parses, so a "
+            "repeated target is not a defect."
+        ),
     ),
     _rule(
         DiagnosticCode.PARAMETER_MAPPING_TYPE_MISMATCH,
@@ -454,8 +477,13 @@ RULES: tuple[Rule, ...] = (
     ),
     _rule(
         DiagnosticCode.DATECODE_CONFLICT,
-        "The same module type or datatype may not be declared with different datecodes in a visible closure.",
+        "A unit may not declare one module type or datatype with two datecodes.",
         scope=RuleScope.PROJECT,
+        details=(
+            "A declaration shadows a same-named declaration held by a dependency, so a program and "
+            "its libraries may carry different revisions without a finding. The check compares only "
+            "the versions one unit declares itself."
+        ),
     ),
     _rule(
         DiagnosticCode.UNKNOWN_MODULETYPE_NAME,
@@ -464,8 +492,13 @@ RULES: tuple[Rule, ...] = (
     ),
     _rule(
         DiagnosticCode.NUMERIC_LITERAL_OUT_OF_RANGE,
-        "A numeric literal must fit the declared 32-bit integer or real range.",
+        "A numeric literal that does not fit the 32-bit integer or real range is reported.",
         scope=RuleScope.CODE,
+        details=(
+            "The parser normalises the stored value to the nearest bound and keeps the written text, so the "
+            "sentence quotes what the source wrote. How the language itself stores or rejects such a literal is "
+            "not established, and the rule does not claim it."
+        ),
     ),
     _rule(
         DiagnosticCode.PROCEDURE_IN_VALUE_POSITION,

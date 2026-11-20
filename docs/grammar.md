@@ -180,8 +180,11 @@ hook can attach the element's source span. `SEQFORK` is a suffix of its host
 step or transition, not an element of its own.
 
 The accepted body shapes are documented in
-`validation/sequences.py` and enforced after parsing, so comments may appear
-anywhere. See [validation.md](validation.md).
+`validation/sequences.py` and enforced after parsing, so a comment is accepted
+anywhere inside a sequence body. That is deliberately wider than the native
+readers, which decide per position: this grammar accepts a comment wherever the
+token can shift, so a comment the language rejects is parsed rather than
+refused. See [validation.md](validation.md).
 
 ### Equation blocks
 

@@ -38,7 +38,7 @@ from sattline_parser.names import fold_identifier
 from sattline_parser.validation.annotations import check_annotation_tails
 from sattline_parser.validation.code import (
     ValidationContext,
-    collect_program_sfc_names,
+    collect_program_sfc_facts,
     walk_module_code,
 )
 from sattline_parser.validation.declarations import (
@@ -89,6 +89,7 @@ class _ValidationContext:
     type_graph: TypeGraph
     allow_unresolved_external_datatypes: bool
     sfc_names: frozenset[str]
+    sfc_accessors: Mapping[str, frozenset[str]]
 
 
 def _code_context(scope: Scope, context: _ValidationContext, errors: list[Diagnostic]) -> ValidationContext:
@@ -133,7 +134,15 @@ def _check_parameter_contract(
     """
     check_parameter_transfers(mappings, parameters, subject, scope, context.records, context.type_graph, errors)
     expected = {fold_identifier(parameter.name): parameter for parameter in parameters}
-    check_parameter_mappings(mappings, expected, scope, context.type_graph, errors)
+    check_parameter_mappings(
+        mappings,
+        expected,
+        scope,
+        context.type_graph,
+        errors,
+        sfc_names=context.sfc_names,
+        sfc_accessors=context.sfc_accessors,
+    )
 
 
 def _check_numeric_literal_ranges(root: object, errors: list[Diagnostic]) -> None:
@@ -190,18 +199,23 @@ def _validation_context(
     allow_unresolved_external_datatypes: bool,
     *,
     sfc_names: frozenset[str],
+    sfc_accessors: Mapping[str, frozenset[str]],
 ) -> _ValidationContext:
     available_datatypes = [*external_datatypes, *bp.datatype_defs]
     available_moduletypes = [*external_moduletype_defs, *bp.moduletype_defs]
-    records = {fold_identifier(datatype.name): datatype for datatype in available_datatypes}
-    for builtin in _builtin_record_datatypes():
-        records[fold_identifier(builtin.name)] = builtin
+    # A transcription cannot state a State, Const, or OpSave modifier, so a
+    # declared record of the same name replaces it. The local file wins over a
+    # dependency definition, and both win over the builtin fallback.
+    records = {fold_identifier(datatype.name): datatype for datatype in _builtin_record_datatypes()}
+    for datatype in available_datatypes:
+        records[fold_identifier(datatype.name)] = datatype
     return _ValidationContext(
         records=records,
         moduletypes={fold_identifier(moduletype.name): moduletype for moduletype in available_moduletypes},
         type_graph=TypeGraph.from_datatypes(bp.datatype_defs, fallback=external_datatypes),
         allow_unresolved_external_datatypes=allow_unresolved_external_datatypes,
         sfc_names=sfc_names,
+        sfc_accessors=sfc_accessors,
     )
 
 
@@ -221,8 +235,8 @@ def validate_basepicture(
     it suppresses only the unknown-name findings, not typo suggestions or local
     rules.
 
-    Builtin records take precedence over file definitions, which take precedence
-    over same-named dependency definitions.
+    A declared record wins over a builtin transcription of the same name, and a
+    file definition wins over a same-named dependency definition.
 
     Raises :class:`~sattline_parser.errors.SourceTooDeepError` when the node
     nesting is deeper than :data:`MAX_VALIDATED_DEPTH`. Parsed input never
@@ -231,12 +245,14 @@ def validate_basepicture(
     """
     _reject_over_deep_tree(bp)
     errors: list[Diagnostic] = []
+    sfc_names, sfc_accessors = collect_program_sfc_facts(bp)
     context = _validation_context(
         bp,
         external_datatypes,
         external_moduletype_defs,
         allow_unresolved_external_datatypes,
-        sfc_names=collect_program_sfc_names(bp),
+        sfc_names=sfc_names,
+        sfc_accessors=sfc_accessors,
     )
 
     check_identifiers(bp, errors)
@@ -264,6 +280,7 @@ def validate_basepicture(
             bp.modulecode,
             _code_context(base_scope, context, errors),
             program_sfc_names=context.sfc_names,
+            program_sfc_accessors=context.sfc_accessors,
         )
     for child in bp.submodules:
         _walk_submodule(child, base_scope, context, errors)
@@ -282,12 +299,14 @@ def validate_moduletype_definitions(
 ) -> tuple[Diagnostic, ...]:
     """Validate selected module types using the containing picture's type shapes."""
     _reject_over_deep_tree(bp)
+    sfc_names, sfc_accessors = collect_program_sfc_facts(selected)
     context = _validation_context(
         bp,
         external_datatypes,
         external_moduletype_defs,
         False,
-        sfc_names=collect_program_sfc_names(selected),
+        sfc_names=sfc_names,
+        sfc_accessors=sfc_accessors,
     )
     errors: list[Diagnostic] = []
     for moduletype in selected.moduletype_defs:
@@ -319,9 +338,17 @@ def _walk_submodule(
                         span=child.header.declaration_span,
                     )
                 )
-            # The formals are unknown, so only the local mapping rules apply:
-            # a duplicate target is a defect regardless of where the type lives.
-            check_parameter_mappings(child.parametermappings, None, parent, context.type_graph, errors)
+            # The formals are unknown, so the target side needs the formal
+            # list and stays silent; a live source is still checked.
+            check_parameter_mappings(
+                child.parametermappings,
+                None,
+                parent,
+                context.type_graph,
+                errors,
+                sfc_names=context.sfc_names,
+                sfc_accessors=context.sfc_accessors,
+            )
             return
         _check_parameter_contract(
             child.parametermappings,
@@ -369,6 +396,7 @@ def _walk_moduletype_def(
             moduletype.modulecode,
             _code_context(scope, context, errors),
             program_sfc_names=context.sfc_names,
+            program_sfc_accessors=context.sfc_accessors,
         )
     for child in moduletype.submodules:
         _walk_submodule(child, scope, context, errors)
@@ -410,6 +438,7 @@ def _walk_definition(
             child.modulecode,
             _code_context(scope, context, errors),
             program_sfc_names=context.sfc_names,
+            program_sfc_accessors=context.sfc_accessors,
         )
     for sub in child.submodules:
         _walk_submodule(sub, scope, context, errors)

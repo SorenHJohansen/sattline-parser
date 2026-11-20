@@ -9,6 +9,225 @@ policy are documented in the README.
 
 ## [Unreleased]
 
+## [2026.11.8] - 2026-11-20
+
+### Added
+
+- **`FrozenMapping` is importable from `sattline_parser.ast`.** A read-only mapping a frozen tree carries is a public type, so a consumer can name it and check it without importing a `models` submodule. It is a `collections.abc.Mapping`, so reading through the abstract class stays valid.
+
+- **`parse_source_bytes` on the top-level package.** `from sattline_parser import parse_source_bytes` now resolves to the same function as `sattline_parser.api.parse_source_bytes`, as the public API table documents.
+
+- **Procedures used as values.** A call to a known procedure now reports `SL-V060` wherever a value is required: an assignment source, a condition, an arithmetic or logical operand, a ternary branch, and a call argument. The catalogue already separated a normal function from a procedure, so `CopyString(S1, S2, I)` in a value position is no longer read as an unproven type. The statement form stays clean and an unknown callee stays silent.
+
+- **Graphics refusal is part of the project surface.** `GraphicsParseError` and `MAX_GRAPHICS_COMPANION_BYTES` are exported from `sattline_parser.project`, so a caller can catch the error an oversized graphics companion raises without importing an internal module.
+
+- **Sequence `Disable` accessor.** A sequence that enables `SeqControl` exposes `.Disable` alongside `.Hold` and `.Reset`. `SL-V019` no longer reports it in module code or in a mapping source, and `SL-V051` reports a missing `SeqControl` for it.
+
+### Changed
+
+- **The invalid-source contract is public and diagnostics keep their line.** `PARSE_FAILURES` is exported from `sattline_parser.api` and documented, a project load failure keeps the underlying parse error's sentence, line, column, and hint, and the CLI excerpt uses the library's line split so a lone CR inside a string no longer shifts `source_line`. `describe_parse_error` now accepts `source_text=None` when only the exception position is known, and `source_line_at` is the public excerpt helper.
+
+- **Bare `ConnectionNode`.** A `ConnectionNode` marker written in an object's `common_properties` is modelled as a `GraphObject` under `properties["connection_node"]` instead of being dropped, so it survives the walk, the serializer, and the formatter. The bare marker is accepted because `common_properties` accepts it in every object; only the positioned form is established for a text object. A text object that writes both forms is rejected as ambiguous rather than resolving one of them.
+
+- **Read-only builtin registries.** `BUILTIN_FUNCTIONS`, `BUILTIN_ALIASES`, `CATALOGUE_META`, and `BUILTIN_RECORD_SPECS` are read-only `FrozenMapping` values, so a caller cannot mutate the public table while validation keeps the table it read at import. Mutation raises `TypeError`, and both paths read one snapshot.
+
+- **AST cache envelope header.** Each entry now starts with a signed JSON metadata header before the pickle. Pruning reads that header to drop an entry whose recorded source path has vanished without unpickling the payload or stat-ing a path from an unverified header.
+
+- **AST cache identity covers the parser stack.** The key and identity marker now include the installed `lark` and `regex` versions and the interpreter version, and `FILE_AST_CACHE_VERSION` is 14. An upgrade inside a dependency pin is a cache miss instead of an AST parsed by one parser stack and served under another.
+
+- **The decode report names the encoding.** `decode --report` and `decode --json` carry `encoding` with the same `plain`, `compressed`, or `coded` values as `parse`, instead of the boolean `coded`, which collapsed marker-compressed text into `coded`.
+
+- **`parse --json` encoding values.** `encoding` is now `plain`, `compressed` (marker-compressed text), or `coded` (a byte-coded stream) instead of collapsing compressed text into `coded`.
+
+- **CLI documents carry the finding envelope on both branches.** `parse --json` (summary and tree) and `query --json` now emit `ok` and `findings`, and query also emits `counts`, so a client reads success and a parse failure the same way. `check --json` `files` holds the display names the findings use, the `parse` and `query` `--jsonl` failure streams are documented, and a relative path outside the working directory becomes an absolute SARIF file URI instead of a `../` reference.
+
+- **Two keywords have no scanner code.** `EQUATIONS` and `IntObjPickButton` have no row in `scanner_tokens.json` and no encoded form has been observed, so a compressed document cannot spell them: a raw spelling is an identifier in coded mode, and an unknown code raises `PreprocessError`. Both failures are clean, and a test pins the set so a future row or terminal keeps the documented limitation accurate. `NewWindow` is not in the set: it is a procedure name, and a compressed document writes it literally. The `NEWWINDOW` keyword terminal it used to carry was unreachable and is removed.
+
+- **Unary sign over a literal.** `format_expr` writes a unary sign separated from a numeric operand, so a `UnaryOp("-", 5)` node is written `- 5` and parses back as the same node instead of collapsing into the signed literal `-5`.
+- **Formatter fidelity harness.** A canonical token-stream comparison now runs over every valid and edge-case corpus fixture, so a construct the model drops fails with the fixture name and the missing token instead of passing an AST equality check. The same suite checks that every model field carrying written source is either emitted or listed as a deliberate omission.
+
+- **LALR conflicts are pinned.** A test now asserts the exact shift/reduce conflict set the grammar leaves to Lark's default: 46 conflicts, 38 on `COMMENT_START` and 8 on `CONNECTIONNODE`, each resolved as a shift. A grammar or Lark change that alters a resolution fails the test instead of changing a parse silently.
+
+- **Identifier boundaries follow the lexer everywhere.** An unquoted name may no longer begin with a digit, so `1E5` is always the number `100000.0` and a declaration named `1E5` is rejected with `expected a name`; the quoted form `'1E5'` still spells such a name. A quoted name may not span a line break, which is the rule the compressed-source scanner already applied, so a multi-line quoted spelling is now a parse error rather than a marker that decodes differently from the way the lexer reads it.
+
+- **Project exports are lazy.** The graphics and distribution entry points on `sattline_parser` now resolve on first access, so `import sattline_parser.api` no longer loads the project layer.
+
+- **The loading path holds one library per name.** A root whose directory name repeats an earlier root, folded with the language name table, is shadowed and contributes no units or targets. Library labels are therefore unique, and `SattLineProject.libraries()` reports each effective root once.
+
+- **Literal leaves in a mapping payload.** `iter_literal_leaves` now reads the values of a mapping payload, so the text of a `Time_Value` initializer or parameter mapping is visible with a relation such as `init_value[Time_Value]`.
+- **Literal spelling and the JSON view.** `to_jsonable` still emits a literal as its plain number; `span`, `clamped`, and `written` are model attributes for source text and provenance and are deliberately absent from the data view.
+
+- **The module layer option is `ModuleDef.layer_limit`.** The field is renamed from `seq_layers` and narrowed to `float | None`. `Two_Layers_ LayerLimit_ = <real>` is the only layer form a module can write, and the field keeps the written number. What the value does at run time is not established, so the model carries no meaning for it. The unreachable `seq_layers` transformer method, the `SeqLayers` payload, and the named-layer formatting refusal are removed.
+
+- **Projects own an immutable snapshot.** `SattLineProject.load` freezes the loaded trees and `from_programs` deep-copies before freezing, so `project.index` cannot go stale. Attached model nodes reject field assignment, and attached lists and mappings are read-only.
+
+- **Breaking: project declaration validation.** All project validation scopes, including `NONE`, report unresolved declaration type references in every loaded file. `INVOKED` checks executable bodies only for targets and transitively invoked dependency module types.
+- **Variable and datatype resolution.** Ordinary modules no longer inherit enclosing variable scopes; frame modules remain transparent. A declared record wins over a builtin transcription of the same name, because the transcription carries field datatypes but no `State`, `Const`, or `OpSave` modifier.
+
+- **Sequence openers must match their closers.** `SEQUENCE` must end with `ENDSEQUENCE` and `OPENSEQUENCE` with `ENDOPENSEQUENCE`; a mismatched pair is now a parse error instead of a sequence whose type and closer disagree.
+
+- **Sibling submodule identity.** A module-type instance is scoped by its module type, and a single module or frame module by kind, so one container may hold them under one label. `SL-V004` now fires only for siblings that share a label and a scope.
+
+- **Source lines count every line terminator.** `SourceDocument.line_col`, the source excerpt every diagnostic renders, and the AST line and column of a plain CR-only document now treat CRLF, LF, and a lone CR as line breaks, the same definition the grammar, the compressed scanner, and `render_ide_text` use. A CR-only document reports the physical line and column of a position instead of keeping every position on line 1.
+
+- **A repeated mapping target keeps its first entry.** `SL-V049` is retired: SattLine accepts one parameter target mapped more than once and uses the first entry. A later entry for the same target is discarded, and neither its source nor its datatype is checked.
+
+- **`SL-V045` covers every string family.** A direct assignment to `IdentString`, `TagString`, `MaxString`, or `LineString` now reports the same finding as `String`: the value is copied with `CopyString` or `CopyVar`. The destination datatype decides, so a destination that does not resolve stays silent. A new fixture writes one assignment per family and keeps the copied form clean.
+
+### Fixed
+
+- **`AnyType` exemptions.** `AnyType` on the actual side of a builtin argument no longer reports `SL-V047`, and an `AnyType` coordinate tail no longer reports `SL-V032`. The type proves nothing about the value, matching the existing exemption for conditions, assignments, operands, and logical operators.
+
+- **AST cache entry cap during a run.** The least-recently-used cap now runs at startup and again every `max_entries // 8` writes (at most 64), so one long process overshoots the cap by at most that many entries instead of leaving the directory at whatever it reached. The run count is documented.
+
+- **A FIFO cache entry answers a miss instead of blocking.** An entry is opened with `O_NONBLOCK` before the regular-file check, so a FIFO named like a cache entry can no longer stall a load or a prune while the open waits for a writer.
+
+- **AST cache identity and directory safety.** The cache key now covers every shipped package file, including grammar sources and `scanner_tokens.json`. Every write revalidates the cache directory, entry files are created `0600`, and an unreadable key or payload is a miss rather than a load failure.
+
+- **Cache maintenance.** The HMAC key is now published atomically, so a concurrent writer reads a complete key instead of a partial one and no writer deletes a key it does not own. The envelope version is part of the entry key, entry file names carry the cache identity so a prune compares names and never unpickles an entry, and the lookup cache enforces its entry cap on every write as well as at startup.
+
+- **Out-of-range literal messages.** `SL-V059` now quotes the numeric literal as the source wrote it, so a normalised `2147483648` is reported as `2147483648` rather than as the stored `2147483647`. `IntLiteral` and `FloatLiteral` expose the written text as `written`. The normalisation to the 32-bit bound is the parser's own; the release does not claim it is what the language stores.
+
+- **A coded source behind a byte-order mark is reported as `coded`.** The CLI strips a leading UTF-8 byte-order mark before classifying the input, the same slice the decoder reads, so `decode --report` and `parse --json` no longer call a marked coded file `plain`.
+
+- **CLI output and exit-code contracts.** A closed stdout now exits `2` instead of `3` or `120`, `diff` reports no count changes when a side does not parse, `graphics` applies the shared `--stdin-name` rule, exits `1` on a scan message, and prints one sentence instead of the expression parser's token dump, and `--max-findings` notes the withheld count once under `--json`.
+
+- **`graphics` enforces the companion size limit before reading.** A companion over 4 MiB is refused as an input problem from its size, so the CLI path cannot read a pathological file that the loader would reject afterwards.
+
+- **A negative `--max-findings` is a usage error.** The cap now validates like the other count flags instead of silently disabling itself; `0` still prints no finding and keeps the exit code.
+
+- **A decode failure and a narrow stdout no longer become internal errors.** A malformed coded stream is reported as one sentence without the library logger's traceback, and a character the output stream cannot encode is escaped instead of raising, so a cp1252 stdout still prints the finding and keeps the content exit code.
+
+- **Closed output pipe on Windows.** A consumer that closes the pipe now stops
+  the report with the content exit code instead of reporting an internal error,
+  because the Windows `EINVAL` spelling of a closed stream is handled.
+
+- **A raw `DateCode_` prefix keeps its datecode pair in a coded document.** When a digit follows the raw prefix, the lexer keeps `DATECODE_PREFIX` as the keyword half of `DATECODE_PREFIX SL_DATECODE`, so the compact twin of a datecode parses exactly like the plain form.
+
+- **Datatype typo suggestions.** A name that is equally close to two builtin datatypes now gets no suggestion instead of whichever candidate the caller happened to list first. `suggest_datatype_name` returns `None` on a tie, and the declaration is reported as an unknown datatype name.
+
+- **Documentation matches the caches.** The Windows cache paragraph now describes the security-descriptor check instead of claiming there is no owner check, the entry-cap and pruning guarantees state what the code enforces, `sattline_parser.models` is described as internal everywhere, and the README names the three runtime distributions an install receives.
+
+- **Repeated singular clauses are rejected.** A second `Layer_`, `Enable_`, `Module_In_View`, `ZoomLimits`, `Width_`, `ColourStyle`, `ValueFraction`, `Format_String_`, or `ConnectionNode` in one invocation, object, colour block, or text object is now a transformer error instead of silently replacing the first value. Clause keys follow the language fold table, so a mixed-case repeat is the same clause.
+
+- **Equation and sequence name findings carry a span.** `Equation` and `Sequence` now record their declaration span, so `SL-V038` and related name findings point at the declaration.
+
+- **Compressed decoding carries region boundaries out of band.** Marker substitution now runs only on the text between strings, quoted identifiers, and comments instead of splicing placeholders and searching for them again, so a source that spells a placeholder-shaped sequence is decoded as text with linear output growth, cannot inject a protected region, and no longer raises `internal error: unknown placeholder`. Original-source spans and `char_map` are unchanged.
+
+- **Written initializer and description fidelity.** A bare `Time_Value` no longer stores its keyword as the payload text, a bare `Duration_Value` keeps its marker instead of vanishing, a quoted `"Duration_Value"` is read as a literal rather than the keyword, and an empty datatype description is written as `""` instead of being dropped.
+
+- **Formatter interactor and segment fidelity.** Literal interactor body lines stay values, simple interactors keep their coordinate tails, and `SegmentObject` tails are written at the position they were written instead of being duplicated or refused.
+
+- **Formatter and model fidelity.** Two header description comments keep their positions, a root `(Frame_Module)` marker and a frame module's parameter mappings survive, an empty equation is written as its bare header instead of a synthetic `(* empty *)`, a written `Grid = 0.2` is no longer dropped as a default, and `to_jsonable` emits `StrEnum` members as plain values and keeps spans, paths, and byte strings out of the depth limit.
+
+- **Formatter expression precedence.** Parenthesised boolean, comparison, arithmetic, unary, and ternary sub-expressions now round-trip through `format_expr` and `format_source` without changing meaning.
+
+- **Interactor layer lines keep their keyword.** A parsed `Layer_ = 2` body line is stored as a plain `int` rather than the span-carrying `IntLiteral` the token produces, so `format_source` writes `Layer_ = 2` instead of the bare literal `2`, which is a different construct.
+- **Reference state suffixes survive formatting.** `ModuleHeader.groupconn` and both sides of a `ParameterMapping` are rendered through the reference formatter, so `P:Old => Q:New` no longer loses its `:Old`/`:New` suffix and reparse no longer clears `VarRef.state`.
+- **Mixed colour blocks keep their written order.** A tailed `OutlineColour` written before an untailed `FillColour` is no longer reordered into an untailed group followed by a tailed one.
+- **Preserved comments and header lines keep their spelling.** A `CodeComment` continuation line is written verbatim instead of gaining the code indentation, and a header line's doubled inner quote is escaped again so the output reparses.
+
+- **Frame-module parameter mappings.** A frame-module declaration's mapping tail is now validated like a single module's, so a type-incompatible source, a duplicate target, and an absent formal report `SL-V027`, `SL-V049`, and `SL-V048` instead of passing silently.
+
+- **A frozen project tree stays renderable, picklable, and copyable.** The freeze boundary replaces a parsed `Time_Value` mapping with a read-only `FrozenMapping` instead of a `types.MappingProxyType`, so `format_source` writes `Time_Value "1h"` rather than Python dict syntax and a frozen graphics-bearing tree survives both `pickle` and `copy.deepcopy`.
+
+- **The graphics refusal is documented on the public surface.** `GraphicsParseError` and `MAX_GRAPHICS_COMPANION_BYTES` appear in the project surface table together with the rule that an oversized graphics companion raises the error and a smaller one reports `GraphicsMessage` values.
+
+- **IDE layout never splits a quoted identifier.** The line-breaking scan reuses the compressed-source region rule, so a space inside `'a name'` is not a break point and a rendered line is not cut into two tokens.
+
+- **The parser floor no longer imports the validator.** `parse_and_validate` now lives in `sattline_parser.api`, so `source_io` stays parse-only and the documented downward import direction holds.
+
+- **Interactor spelling, colour keys, and `VarName` binding.** `InteractObject.type` keeps the written keyword for every interactor, so `ProcedureInteract` no longer collapses to `ComButProc_`; colour `Width_`/`ColourStyle` clauses are matched through the identifier fold table; and a `VarName` marker binds only the text written immediately before it instead of raising or borrowing an earlier caption.
+
+- **Lark parser cache writes are atomic.** The compiled-grammar cache is serialized to a staging file, flushed, and published with `os.replace`, so a worker never reads a partially written pickle. The file carries a header naming the grammar, start rule, position mode, Lark version, and interpreter version; a truncated, partial, or older-format file is discarded and rebuilt.
+
+- **One line-terminator definition for string boundaries.** CRLF, LF, and a lone CR each end a line in the grammar's string terminals, the compressed-source scanner, the coded decoder, and `render_ide_text`. A CR inside a quoted string is now a syntax error rather than string content, and an unterminated description ends at a lone CR exactly as it does at LF. Line and column numbers still count LF.
+
+- **`load_source_text` strips the byte-order mark before classifying.** A leading UTF-8 byte-order mark no longer hides a coded-stream header, so `load_source_text` and `parse_source_file` agree on the same file.
+
+- **Lookup cache membership is lexical.** A cached resolution is matched against the configured roots by expanded, normalised text rather than by resolving the recorded `base_dir`, so a recorded base outside every configured root is discarded without being resolved, stat-ed, or opened. A planted UNC path in the cache can no longer make a lookup contact it on Windows, and relative, symlinked, and trailing-separator roots still hit.
+
+- **Lookup-cache pruning no longer touches recorded paths.** Startup pruning keeps entries whose shape is usable and never stats a recorded base directory, so a planted UNC path cannot turn a prune into an outbound SMB connection. Resolution validates the base against the configured roots and forgets a foreign entry.
+
+- **Nested `ClippingBounds` values are modelled.** A `ClippingBounds = <values>` annotation written after a coordinate value is kept as a `NestedClipping` on that value, so `format_source` writes every number and every value tail back instead of dropping the annotation. The grouping is exposed as `coord_clippings` on a graph or interact object, `x_clippings`/`y_clippings` on a `PolygonPoint`, `coordinate_clippings` on a `ModuleHeader`, and `corner_clippings` on a `ClippingClause`.
+
+- **Out-of-range numeric literals are reported.** An integer or real literal that exceeds the supported 32-bit range now reports `SL-V059` at its source position instead of being clamped without a finding.
+
+- **Out-of-range numeric literal sentence.** `SL-V059` no longer quotes the clamped value, which could be in range, for a source that wrote a larger number. The finding names the range and leaves the written value to the source span.
+
+- **A parallel `--debug` load keeps a message for every file.** A worker collects a bounded number of parser progress messages and returns them with the outcome, and the parent replays them in plan order. A load with `workers` greater than 1 therefore reports the same per-file progress as a serial one without sending the callback across the process boundary.
+
+- **Parameter-mapping targets.** A target that names no formal parameter is silent, because SattLine keeps an instance mapping after its parameter is removed and the clause has no effect. `SL-V048` now reports only field access on a scalar parameter and a field the resolved record does not declare.
+
+- **Parameter-mapping sources.** A live mapping checks its source in the invoking scope, so an undeclared source variable reports `SL-V019` and an `:Old` or `:New` suffix on a non-State declaration reports `SL-V005` or `SL-V006`. A sequence control accessor such as `StateSequence.Reset` resolves through the program-wide SFC facts.
+
+- **Datecode conflicts compare one unit's own declarations.** A declaration shadows a same-named declaration held by a dependency, so a program and its libraries may carry different revisions without a finding. `SL-V057` now fires only when one unit declares the same name twice with different datecodes.
+
+- **A parse-error excerpt follows the reported line on a CR-only document.** The context window now splits at CRLF, LF, or a lone CR, the rule the reported line and column already use, so the quoted line and the caret no longer span several physical lines.
+
+- **Parser diagnostics name what the source wrote.** An unknown compressed marker reports its offset in the original source rather than in the placeholder text the decoder substitutes, and a comment the grammar rejects is reported as `(*` or `*)` instead of the `*` that the multiplication operator matched.
+
+- **Pool fallback warning.** A load that cannot create a worker pool logs a warning before parsing in the current process, so a silent serial load is visible without `--debug`.
+
+- **A shared dependency is not reported as an unused alias.** A library reached twice, through a diamond or through two targets that share a dependency, read its sidecar on the first visit. `ALIAS_DECLARATIONS_UNUSED` now names only a sidecar at a different prefix, whose declarations really were not read.
+
+- **An alias prefix no longer reads or discards a sidecar.** The planner resolves a body before its sidecar, so a spelling that reaches an already planned body contributes no dependencies and an unreadable file at that prefix cannot fail the load. A sidecar beside the alias spelling is reported as `ALIAS_DECLARATIONS_UNUSED`, naming the file whose declarations were not used.
+
+- **Only regular files are project artifacts.** The stat fallback now requires a regular file, so a directory named like a body can no longer shadow a real body in a later root and a FIFO named like a body is never opened. A unit name is also no longer capped at 20 characters during resolution: the length rule is `SL-V038` at the declaration, so a 21-character unit loads.
+
+- **Companion resolution is one scan per directory and follows language identity.** Graphics, distribution, and the sidecar family probe share a per-load directory index, so a large flat library no longer re-lists its root once per unit and role. A companion stem is compared with `fold_identifier`, the winner among case variants no longer depends on directory order, and a collision is reported with the winner.
+- **A companion from the other artifact family is reported.** A `.y` beside a `.s` body, or a `.q` beside a `.s` body, is still never paired, but the load now reports `COMPANION_FAMILY_MISMATCH` so an unavailable `has_executing_system` answer is explained.
+
+- **Project copies at the accepted depth.** `SattLineProject.from_programs` copies and freezes a tree in one iterative pass instead of calling `copy.deepcopy`, so a tree at the depth the parser accepts now attaches: a 249-term expression chain works, where 244 terms used to raise `RecursionError`.
+
+- **Sidecar findings name the affected unit.** A non-fatal sidecar diagnostic is attributed to the library whose artifact is affected, not to each consumer that imported it. A warm lookup also re-stats its hit, and a symlinked body resolves the same way in the warm and cold paths.
+
+- **A folded-name collision keeps both units addressable.** Two loaded units whose names share a casefold key, such as `Straße` and `STRASSE`, both stay in `programs()`: the shared key names no single unit, so each is keyed by its language identity. `get`, `dependencies_of`, `dependents_of`, and the graph now agree, and a declared dependency on either unit no longer retargets at the other.
+
+- **A project load failure names its artifact.** `ProjectLoadError` and its subclasses now carry the failing artifact path and, when the raise site has the source at hand, the text of the failing line. A CLI load finding fills `file` and `source_line` from those fields, so a broken body is reported at its own path instead of a location with no file.
+
+- **A code file the resolver cannot name is reported, not fatal.** Default target discovery and resolution share the identifier rule, so a tree holding a file such as `Pump.v2.s` loads and reports `SKIPPED_FILE` once instead of failing on an unresolvable target.
+- **A root that is not a directory stops the load by name.** A file root, a missing root, or a root under a denied ancestor raises `ProjectLoadError` naming that root instead of being treated as an empty root and reporting a missing body.
+- **A nested load does not start a second worker pool.** A load constructed inside another load, or running in a process that already belongs to a pool, parses in place and logs that decision once instead of multiplying processes.
+
+- **Module-type recursion follows the referencing unit.** A module-type reference now binds to what the file that holds it can see, so a wrapper library that reuses a dependency's type name no longer captures the dependency's reference and no longer fails the load with a cycle the sources do not declare. A cycle inside the checked unit's own closure is still rejected.
+
+- **Iterative planning and recorded aliases.** Discovery plans with an explicit stack, so a long dependency chain no longer raises `RecursionError` and a 400-unit cycle is reported as a cycle. One body reached under several names keeps every spelling as an alias, so a name `dependencies_of` returns resolves through `get` and every `graph()` endpoint is a node. `invoked_moduletypes` accepts the caller's own key space, including program spellings.
+
+- **Project resolution uses language identity.** An artifact resolves only when its file stem matches the requested name under `fold_identifier`, so a dependency named `STRASSE` no longer loads `Straße.s`. `get` and `__contains__` apply the same rule, two files or two spellings that fold to one project key are reported as `FOLDED_NAME_COLLISION` instead of disappearing, and `LOOKUP_CACHE_VERSION` is bumped because the lookup cache key changed.
+
+- **Linear provenance remapping.** Mapping a position or a span back to the original source now bisects a cached anchor index instead of walking a run of generated characters, so a marker-dense compressed file no longer costs quadratic time to remap.
+
+- **`query --name` compares language identities.** The name filter folds with `fold_identifier` instead of Unicode case folding, so a unit that declares both `Straße` and `STRASSE` returns one row for either spelling rather than both.
+
+- **Record shape provenance.** A record declared in a file with zero fields now has a known shape, so a field access through it reports `SL-V019` instead of staying silent. A datatype name declared twice leaves a field's datatype unproven, so an assignment through it is not type-checked, and a same-named dependency definition no longer marks the file's own record as duplicated.
+
+- **`SetIoAttribute` and a Const argument.** The `Variable` parameter is the object member the call writes, so a `Const` value there no longer reports `SL-V007`. The exemption is per builtin parameter and does not relax the caller-write rule for any other output argument.
+
+- **`SourceDocument` validates its character map.** A map whose real entries leave the original text, repeat an offset, or run backwards now raises `ValueError` at construction instead of producing an inverted or zero-width span. The public constructor is unchanged otherwise.
+
+- **String-literal call arguments.** A string literal is now accepted where the resolved builtin signature documents an `in` parameter of a string datatype, so `LoggedIn("operator")` passes. A literal at a written position (`in var`, `out`, `inout`) and a literal passed to a callee with no known signature are still rejected by `SL-V015`.
+
+- **Transformer rejections are parse failures.** An exception a transformer raises while building the tree is re-raised as its own error instead of Lark's `VisitError` wrapper, so `sattline check` and a project load report a rejected duplicate clause as a parse failure rather than an internal error. A `RuntimeError` stays wrapped and still marks a parser defect.
+
+- **Manual trees past the validation bound.** `validate_basepicture` rejects a tree whose node nesting exceeds `MAX_VALIDATED_DEPTH` (256, the parser's own bound) with `SourceTooDeepError`, instead of letting a recursive expression rule raise a bare `RecursionError`. Parsed input never reaches the bound.
+
+- **Windows cache privacy.** The ACL reader declares its Win32 prototypes, so a
+  directory this user owns is recognised as private and the per-user cache is
+  enabled again on Windows.
+
+- **Worker error cause.** A parse failure raised in a worker keeps its `OSError` subclass, so a `PermissionError`, `FileNotFoundError`, or `IsADirectoryError` reaches the caller as the cause instead of a `RuntimeError`.
+
+- **A worker's decode failure no longer copies the source buffer.** The failure record keeps the encoding, reason, and position but only the first 64 bytes of the buffer, so a failure on a large file crosses the process pipe as a small record instead of the whole file. The failure's source excerpt is also bounded.
+
+- **Workers no longer touch the AST cache.** A worker process opens the cache through a read-only handle: it does not prune entries, rewrite the identity marker, move an entry's mtime, or write one. A parallel load leaves the cache file set, the marker bytes, and every mtime unchanged.
+
+### Security
+
+- **AST cache privacy boundary.** The cache now holds a directory descriptor opened `O_DIRECTORY | O_NOFOLLOW`, records its `(st_dev, st_ino)`, and performs every entry and key read or write relative to it with `O_NOFOLLOW`. The directory is revalidated before each load and save, so a cache root or `file_ast` directory renamed, replaced, symlinked, or widened after construction is refused instead of written into, and a removed directory is no longer recreated during the run. Every directory above the cache root is checked too: a root under a group-writable or foreign-owned parent disables the caches. The HMAC key is read only through the validated handle.
+
+- **Windows cache privacy.** A cache directory on Windows is trusted only when its security descriptor proves that this user owns it and that its DACL grants write access to nobody else. A foreign write ACE, a missing DACL, a reparse point, or a failed security-descriptor read disables the pickle cache instead of being accepted, and a platform with no privacy check at all is refused.
+
 ## [2026.11.7] - 2026-11-17
 
 ### Fixed

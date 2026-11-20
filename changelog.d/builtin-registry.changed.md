@@ -1,1 +1,0 @@
-- **Read-only builtin registries.** `BUILTIN_FUNCTIONS`, `BUILTIN_ALIASES`, `CATALOGUE_META`, and `BUILTIN_RECORD_SPECS` are read-only `FrozenMapping` values, so a caller cannot mutate the public table while validation keeps the table it read at import. Mutation raises `TypeError`, and both paths read one snapshot.

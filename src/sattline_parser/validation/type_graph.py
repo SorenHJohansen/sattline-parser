@@ -91,17 +91,21 @@ class TypeGraph:
         *,
         fallback: Iterable[DataType] = (),
     ) -> TypeGraph:
-        """Build a graph with builtin records above file and fallback shapes.
+        """Build a graph with declared records above the builtin transcriptions.
 
         ``datatypes`` are the definitions the caller owns, for example the file's
         own ``DATATYPE`` declarations. ``fallback`` are definitions that must not
         shadow them, for example loaded dependencies. A name declared more than
         once in ``datatypes`` has two shapes and is unproven; a ``fallback``
         definition of the same name is replaced, not counted as a duplicate.
-        Builtin records override both; duplicate local declarations cannot
-        make a builtin record's shape ambiguous.
+
+        A declared record wins over a builtin transcription of the same name,
+        because the transcription carries field datatypes only: it cannot state
+        a ``State``, ``Const``, or ``OpSave`` modifier, so it is not evidence
+        against the declaration. The builtin shape is the fallback for a name no
+        loaded file declares.
         """
-        records: dict[str, RecordDef] = {}
+        records: dict[str, RecordDef] = dict(cls._builtin_records())
         for datatype in fallback:
             records[fold_identifier(datatype.name)] = _record_def(datatype)
         seen: set[str] = set()
@@ -112,9 +116,6 @@ class TypeGraph:
                 duplicated.add(key)
             seen.add(key)
             records[key] = _record_def(datatype)
-        builtins = cls._builtin_records()
-        records.update(builtins)
-        duplicated.difference_update(builtins)
         return cls(records, frozenset(duplicated))
 
     @classmethod

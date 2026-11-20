@@ -465,16 +465,13 @@ and a module type that instantiates itself.
 
 ## Datecodes
 
-The loader records the datecode of every module type and datatype it sees,
-keyed by folded name and scoped to the program's visible closure. A conflict is
-reported when the same name is declared with two different datecodes in one
-closure. A program compares its own declaration against the visible versions,
-so a closure holding versions 1 and 2 reports the conflict on a program that
-declares either one, naming only the version that differs. Datecode findings
-belong to an explicitly selected program, not to a library import: a library is
-not the place to report its own version drift. Ownership comes from the target
-set, not from discovery order, so a target that was first reached as a
-dependency still reports its own conflict in either target order.
+A module type or datatype declaration shadows a same-named declaration held by a
+dependency, so a program and its libraries may carry different revisions without
+a finding. A conflict is reported only when one unit declares the same name
+itself with two different datecodes. Datecode findings belong to an explicitly
+selected program, not to a library import. Ownership comes from the target set,
+not from discovery order, so a target that was first reached as a dependency
+still reports its own conflict in either target order.
 
 ## Models
 

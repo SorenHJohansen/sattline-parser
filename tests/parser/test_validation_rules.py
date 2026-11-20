@@ -232,6 +232,44 @@ def test_sequence_hold_requires_seqcontrol() -> None:
     assert "SL-V051" in _codes(bp)
 
 
+def test_sequence_disable_is_allowed_with_seqcontrol() -> None:
+    step = SFCStep(kind="init", name="S1", code=SFCCodeBlocks())
+    bp = BasePicture(header=_header())
+    bp.modulecode = ModuleCode(
+        equationblocks=[_equation(Assignment(VarRef("Sink"), VarRef("Seq.Disable")))],
+        sequences=[
+            _sequence(step, SFCTransition(name="T1", condition=True), name="Seq", seqcontrol=True),
+        ],
+    )
+    bp.localvariables = [_var("Sink", "boolean")]
+    assert "SL-V019" not in _codes(bp)
+    assert "SL-V051" not in _codes(bp)
+
+
+def test_sequence_disable_requires_seqcontrol() -> None:
+    step = SFCStep(kind="init", name="S1", code=SFCCodeBlocks())
+    bp = BasePicture(header=_header())
+    bp.modulecode = ModuleCode(
+        equationblocks=[_equation(Assignment(VarRef("Sink"), VarRef("Seq.Disable")))],
+        sequences=[_sequence(step, SFCTransition(name="T1", condition=True), name="Seq")],
+    )
+    bp.localvariables = [_var("Sink", "boolean")]
+    assert "SL-V051" in _codes(bp)
+
+
+def test_step_disable_is_an_undefined_reference() -> None:
+    """A step exposes .X/.Hold/.Reset/.T, not .Disable."""
+    step = SFCStep(kind="init", name="S1", code=SFCCodeBlocks())
+    bp = BasePicture(header=_header())
+    bp.modulecode = ModuleCode(
+        equationblocks=[_equation(Assignment(VarRef("Sink"), VarRef("S1.Disable")))],
+        sequences=[_sequence(step, SFCTransition(name="T1", condition=True), seqcontrol=True)],
+    )
+    bp.localvariables = [_var("Sink", "boolean")]
+    assert "SL-V019" in _codes(bp)
+    assert "SL-V051" not in _codes(bp)
+
+
 def test_unknown_step_accessor_is_an_undefined_reference() -> None:
     step = SFCStep(kind="init", name="S1", code=SFCCodeBlocks())
     bp = BasePicture(header=_header())
@@ -360,15 +398,16 @@ def test_assignment_to_plain_string_is_rejected() -> None:
     assert _codes(_bp(Assignment(VarRef("Text"), 1), variables=[_var("Text", "string")])) == ["SL-V045", "SL-V029"]
 
 
-def test_direct_assignment_is_rejected_only_for_the_plain_string_datatype() -> None:
-    """``SL-V045`` covers ``String``; the other string families stay silent.
+def test_direct_assignment_is_rejected_for_every_string_family() -> None:
+    """``SL-V045`` covers every native string family, not only ``String``.
 
-    Nothing establishes that the language forbids assigning directly to an
-    ``IdentString``, ``TagString``, ``MaxString``, or ``LineString``, so the rule
-    does not guess. See docs/validation.md, "Open questions".
+    The destination datatype decides the finding, so each family reports it and
+    the source family does not matter. See docs/validation.md.
     """
     for datatype in ("identstring", "tagstring", "maxstring", "linestring"):
-        assert _codes(_bp(Assignment(VarRef("Text"), "value"), variables=[_var("Text", datatype)])) == [], datatype
+        assert _codes(_bp(Assignment(VarRef("Text"), "value"), variables=[_var("Text", datatype)])) == ["SL-V045"], (
+            datatype
+        )
     assert _codes(_bp(Assignment(VarRef("Text"), "value"), variables=[_var("Text", "string")])) == ["SL-V045"]
 
 

@@ -1,1 +1,0 @@
-- **`SetIoAttribute` and a Const argument.** The `Variable` parameter is the object member the call writes, so a `Const` value there no longer reports `SL-V007`. The exemption is per builtin parameter and does not relax the caller-write rule for any other output argument.

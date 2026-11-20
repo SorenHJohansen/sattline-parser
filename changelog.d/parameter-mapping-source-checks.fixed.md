@@ -1,1 +1,0 @@
-- **Parameter-mapping sources.** A mapping source is now checked independently of the target: an undefined source and an `:Old` or `:New` suffix on a non-State source report `SL-V019`, `SL-V005`, or `SL-V006` even when the target module type is not loaded.

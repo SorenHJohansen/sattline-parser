@@ -1,2 +1,0 @@
-- **Breaking: project declaration validation.** All project validation scopes, including `NONE`, report unresolved declaration type references in every loaded file. `INVOKED` checks executable bodies only for targets and transitively invoked dependency module types.
-- **Variable and datatype resolution.** Ordinary modules no longer inherit enclosing variable scopes; frame modules remain transparent. Builtin record specifications take precedence over same-named local and dependency records.

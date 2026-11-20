@@ -1,3 +1,0 @@
-- **A code file the resolver cannot name is reported, not fatal.** Default target discovery and resolution share the identifier rule, so a tree holding a file such as `Pump.v2.s` loads and reports `SKIPPED_FILE` once instead of failing on an unresolvable target.
-- **A root that is not a directory stops the load by name.** A file root, a missing root, or a root under a denied ancestor raises `ProjectLoadError` naming that root instead of being treated as an empty root and reporting a missing body.
-- **A nested load does not start a second worker pool.** A load constructed inside another load, or running in a process that already belongs to a pool, parses in place and logs that decision once instead of multiplying processes.

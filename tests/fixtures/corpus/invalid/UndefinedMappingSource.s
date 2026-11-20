@@ -1,8 +1,9 @@
 "Syntax version 2.23, date: 2026-11-15-12:00:00.000 N"
 "Original file date: ---"
 "Program date: 2026-11-15-12:00:00.000, name: UndefinedMappingSource"
-(* SEMANTIC: A parameter mapping names a source variable that is not declared.
-   The target type is declared in this file, so its formals are known.
+(* SEMANTIC: A live parameter mapping names a source variable that is not
+   declared. The child's formal parameter exists, so SattLine checks the
+   owning module's side and rejects the undeclared source.
    Expected: strict syntax-check fails with an undefined-variable finding at
    the mapping. *)
 

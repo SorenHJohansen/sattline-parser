@@ -1,1 +1,0 @@
-- **Formatter interactor and segment fidelity.** Literal interactor body lines stay values, simple interactors keep their coordinate tails, and `SegmentObject` tails are written at the position they were written instead of being duplicated or refused.

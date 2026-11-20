@@ -1,1 +1,0 @@
-- **Equation and sequence name findings carry a span.** `Equation` and `Sequence` now record their declaration span, so `SL-V038` and related name findings point at the declaration.

@@ -1,23 +1,30 @@
 """Parameter mapping rules for submodule declarations and module-type instances.
 
 A mapping connects an actual source (a variable, a literal, or a global) to a
-formal module parameter. This module checks the target side (duplicates, field
-access, unknown targets) and the value side (literal and variable datatypes).
-The same checks run for a module-type instance, a plain submodule declaration,
-and a module-type definition.
+formal module parameter. This module checks the target side (field access and
+unknown targets) and the value side (literal and variable datatypes). The same
+checks run for a module-type instance, a plain submodule declaration, and a
+module-type definition.
 
-An absent mapping target is reported when the formal parameter list is known.
-``None`` means the formals come from a definition that is not loaded, so the
-target stays unproven and silent. The mapping source is different: it resolves
-in the invoking scope, so an undefined source and an ``:Old``/``:New`` suffix on
-a non-State source are checked even when the formals are unknown. Module types
-and datatypes visible from loaded dependencies are passed in by the project
-layer, so a mapping that targets an external typedef resolves the same way as a
-local one. An instance may omit mappings entirely; only the mappings that are
-present are checked.
+An absent mapping target is silent: SattLine keeps a mapping after its formal
+parameter is deleted from the definition, so the clause is inert and its source
+is not checked either. A target that does exist is live, and its source must
+then resolve in the invoking scope: SattLine rejects a live mapping whose source
+variable is undeclared. An ``:Old``/``:New`` suffix on a resolved non-State
+source is reported as well.
+
+A repeated target is accepted by the language and is not reported. The first
+entry for a target is the one the instance uses, so a later entry with the same
+target is discarded and neither its source nor its datatype is checked. Module
+types and datatypes visible from loaded dependencies are passed in by the
+project layer, so a mapping that targets an external typedef resolves the same
+way as a local one. An instance may omit mappings entirely; only the mappings
+that are present are checked.
 """
 
 from __future__ import annotations
+
+from collections.abc import Collection, Mapping
 
 from sattline_parser.models.ast_model import ParameterMapping, ScalarDatatype, Variable
 from sattline_parser.names import fold_identifier
@@ -30,6 +37,7 @@ from sattline_parser.validation.typing import (
     format_datatype,
     has_time_literal_marker,
     infer_literal_datatype,
+    is_sfc_runtime_accessor,
     is_valid_duration_literal,
     is_valid_time_literal,
     literal_matches_expected_datatype,
@@ -47,38 +55,58 @@ def check_parameter_mappings(
     scope: Scope,
     type_graph: TypeGraph,
     errors: list[Diagnostic],
+    *,
+    sfc_names: Collection[str] = frozenset(),
+    sfc_accessors: Mapping[str, frozenset[str]] | None = None,
 ) -> None:
-    """Check duplicate targets, field access, and value datatypes.
+    """Check field access, unknown targets, and value datatypes.
 
-    The mapping source resolves in the invoking scope independently of the
-    target: a source typo or an ``:Old``/``:New`` suffix on a non-State source is
-    a local defect even when the target module type is not loaded and its
-    formals are unknown. Only the target-side checks need the formals, so
-    ``expected_parameters=None`` leaves those checks silent without suppressing
-    the source checks.
+    A mapping whose target the known formal list does not declare is a deleted
+    formal, not a typo. SattLine keeps the mapping after the parameter is
+    removed, so the whole clause is inert and its source is not checked either.
+    ``expected_parameters=None`` means the formals come from a definition that
+    is not loaded, so the target stays unproven while a source is still checked.
+
+    A live mapping source must resolve in the invoking scope. ``sfc_names`` and
+    ``sfc_accessors`` carry the program-wide SFC facts, because a source may name
+    a sequence declared in another module of the same program
+    (``StateReset => StateSequence.Reset``), which the module variable scope
+    alone cannot see.
+
+    A repeated target is accepted by the language. The first entry is the one
+    the instance uses, so a later entry with the same target is discarded and
+    neither its source nor its datatype is checked.
     """
-    seen: dict[str, str] = {}
+    accessors: Mapping[str, frozenset[str]] = sfc_accessors or {}
+    seen: set[str] = set()
     for mapping in mappings:
         target_name = mapping.target.name
         target_key = fold_identifier(target_name)
+        base_name, field_path = split_dotted_name(target_name)
+        target_variable: Variable | None = None
+        if expected_parameters is not None:
+            target_variable = expected_parameters.get(fold_identifier(base_name))
+            if target_variable is None:
+                # A formal removed from the definition leaves the mapping in
+                # place; the language keeps it and the clause has no effect, so
+                # neither its target nor its source is a finding.
+                continue
         if target_key in seen:
-            errors.append(
-                Diagnostic(
-                    code=DiagnosticCode.PARAMETER_MAPPING_DUPLICATE_TARGET,
-                    message=(f"Duplicate parameter mapping target {seen[target_key]!r} and {target_name!r}"),
-                    span=mapping.span,
-                )
-            )
+            # A repeated target keeps its first entry; this one is discarded.
             continue
-        seen[target_key] = target_name
+        seen.add(target_key)
 
-        # The source resolves in the invoking scope, so it is checked even when
-        # the target type is unknown. The check runs before the target rules so
-        # a typo is not hidden behind an unproven target shape.
+        # The source resolves in the invoking scope, so an undeclared live
+        # source is a defect. A sequence control accessor is not a variable and
+        # resolves through the program-wide SFC facts instead.
         source_datatype: ScalarDatatype | str | None = None
         if mapping.source is not None and not mapping.is_source_global:
             source_datatype = resolve_ref_datatype(mapping.source, scope, type_graph)
-            if source_datatype is None and unresolved_reference_is_a_defect(mapping.source, scope, type_graph):
+            if (
+                source_datatype is None
+                and unresolved_reference_is_a_defect(mapping.source, scope, type_graph)
+                and not is_sfc_runtime_accessor(mapping.source, sfc_names, accessors)
+            ):
                 errors.append(
                     Diagnostic(
                         code=DiagnosticCode.UNDEFINED_VARIABLE,
@@ -88,23 +116,7 @@ def check_parameter_mappings(
                 )
             check_old_new(mapping.source, resolve_ref_state(mapping.source, scope, type_graph), errors)
 
-        if expected_parameters is None:
-            continue
-
-        base_name, field_path = split_dotted_name(target_name)
-        target_variable = expected_parameters.get(fold_identifier(base_name))
         if target_variable is None:
-            errors.append(
-                Diagnostic(
-                    code=DiagnosticCode.PARAMETER_MAPPING_TARGET_UNKNOWN,
-                    message=(
-                        f"Parameter mapping target {target_name!r} is not a formal parameter in the "
-                        "resolved definition of the target module; a formal removed from that "
-                        "definition leaves this mapping stale"
-                    ),
-                    span=mapping.span,
-                )
-            )
             continue
 
         target_datatype = resolve_variable_field_datatype(target_variable, field_path, type_graph)
