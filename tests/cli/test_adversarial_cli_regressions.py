@@ -5,6 +5,8 @@ from __future__ import annotations
 
 import errno
 import json
+import os
+import re
 from pathlib import Path
 
 import pytest
@@ -33,7 +35,10 @@ class _FailingStdout:
         raise self._error
 
     def fileno(self) -> int:
-        raise AttributeError("no descriptor")
+        # Python 3.14's argparse probes the stream for color support while the
+        # parser is built. A value no real stream uses keeps that probe false
+        # while still leaving ``_discard_stdout`` without a usable descriptor.
+        return -1
 
 
 @pytest.mark.parametrize(
@@ -77,7 +82,8 @@ def test_sarif_uri_survives_a_non_utf8_filename(monkeypatch: pytest.MonkeyPatch,
 
     uri = _artifact_uri("caf\udce9.s")
 
-    assert uri == "caf%E9.s"
+    expected = "caf%E9.s" if os.name != "nt" else "caf%ED%B3%A9.s"
+    assert uri == expected
 
 
 def test_an_unreadable_corpus_directory_is_an_input_error(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
@@ -102,7 +108,7 @@ def test_an_unreadable_corpus_directory_without_a_filename_names_the_root(
 
     monkeypatch.setattr(corpus_module.os, "walk", failing_walk)
 
-    with pytest.raises(CliError, match=f"cannot read {tmp_path}"):
+    with pytest.raises(CliError, match=re.escape(f"cannot read {tmp_path}")):
         list(corpus_module._source_paths(tmp_path))
 
 
