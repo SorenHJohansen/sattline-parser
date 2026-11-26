@@ -22,6 +22,7 @@ from lark import Lark
 from .errors import PARSE_FAILURES, ParseErrorDetails, SourceTooDeepError, describe_parse_error, source_line_at
 from .models.ast_model import BasePicture, DataType, ModuleTypeDef
 from .preprocessing import render_ide_text
+from .source_document import split_source_lines
 from .source_io import (
     MAX_SOURCE_DEPTH,
     build_lark_parser,
@@ -90,5 +91,6 @@ __all__ = [
     "render_ide_text",
     "source_line_at",
     "source_text_for_parse",
+    "split_source_lines",
     "validate_basepicture",
 ]

@@ -405,6 +405,34 @@ def test_a_multi_line_comment_keeps_its_own_indentation() -> None:
     assert comment.text in formatted
 
 
+def test_a_step_with_code_and_a_fork_round_trips() -> None:
+    """``seqstep: SEQSTEP NAME? code_blocks seqfork?`` orders the fork last."""
+    formatted = _formatted(
+        _round_trip_source(
+            "LOCALVARIABLES\n"
+            "   Flag: boolean := False;\n"
+            "ModuleDef\n"
+            "ClippingBounds = ( -1.0 , -1.0 ) ( 1.0 , 1.0 )\n"
+            "MODULECODE\n"
+            "   SEQUENCE Demo COORD 0.0, 0.0 OBJSIZE 1.0, 1.0\n"
+            "      SEQINITSTEP Start\n"
+            "         SEQFORK TrStart\n"
+            "      SEQSTEP Work\n"
+            "         ACTIVECODE\n"
+            "            Flag = True;\n"
+            "         SEQFORK TrEnd\n"
+            "      SEQTRANSITION TrStart WAIT_FOR Flag\n"
+            "      SEQTRANSITION TrEnd WAIT_FOR True\n"
+            "   ENDSEQUENCE\n"
+        )
+    )
+
+    step = formatted.index("SEQSTEP Work")
+    assert formatted.index("ACTIVECODE", step) < formatted.index("SEQFORK TrEnd", step)
+    init = formatted.index("SEQINITSTEP Start")
+    assert formatted.index("SEQFORK TrStart", init) > init
+
+
 def test_a_header_line_with_a_doubled_quote_is_escaped_again() -> None:
     source = (
         '"Syntax version 2.23"\n'

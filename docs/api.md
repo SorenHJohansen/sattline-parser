@@ -49,6 +49,7 @@ JSON-friendly data.
 | `describe_parse_error` | both | `(exc, source_text=None, *, source_document=None)` | `ParseErrorDetails`; with `source_text=None` the position is kept and no excerpt is produced |
 | `PARSE_FAILURES` | `api` | tuple of exception types | the invalid-input contract: `UnexpectedInput`, `ValueError`, `UnicodeError`, `OSError` |
 | `source_line_at` | `api` | `(source_text, line)` | the original source line, split at CRLF, LF, or a lone CR |
+| `split_source_lines` | both | `(source_text)` | every source line, using the same CRLF, LF, and lone CR rule as `source_line_at` and `SourceDocument.line_col` |
 | `SourceTooDeepError` | both | `(limit, *, line=None, column=None, pos_in_stream=None)` | `UnexpectedInput` subclass for an over-deep structure |
 | `MAX_SOURCE_DEPTH` | both | `256` | Maximum structural depth accepted by `parse_source_text` |
 | `is_compressed` | top-level | `(text)` | `bool` |
@@ -91,7 +92,9 @@ contract. Catch `PARSE_FAILURES` rather than testing exception types by name.
 CRLF, LF, or a lone CR, the same line-break definition the grammar and
 `SourceDocument.line_col` use, so a CR-only document reports the quoted line it
 reports the number for. A form feed or a vertical tab is content, not a line
-break.
+break. `split_source_lines` returns the whole split with that same rule, so a
+consumer that needs line numbers does not need its own subtly different
+splitter. A trailing terminator produces a final empty line.
 
 ## Grammar vocabulary
 
@@ -298,7 +301,7 @@ wheel, and the top-level package does not re-export them. Import
 
 | Group | Names |
 | --- | --- |
-| Loading | `SattLineProject` (including `from_programs`), `ProjectLoader`, `LoadMode`, `LoadValidation` |
+| Loading | `SattLineProject` (including `from_programs`, `load`, and `load_many`), `ProjectLoader`, `LoadMode`, `LoadValidation`, `TargetLoadResult` |
 | Models | `SattLineProgram`, `DependencyGraph`, `ProgramFormat`, `SidecarState` |
 | Identity | `UnitIdentity`, `ArtifactIdentity` |
 | Index | `ProjectIndex`, `DefinitionSite`, `UsageSite`, `SymbolKind`, `invoked_moduletypes` |
@@ -308,7 +311,7 @@ wheel, and the top-level package does not re-export them. Import
 | Formats | `ArtifactKind`, `body_mode`, `candidate_extensions`, `code_ext`, `code_ext_candidates`, `deps_ext`, `deps_ext_candidates`, `deps_extensions_for_code`, `distribution_ext`, `distribution_ext_candidates`, `distribution_extensions_for_code`, `find_companion_beside`, `graphics_ext`, `graphics_ext_candidates`, `preferred_extension` |
 | Graphics | `GraphicsModel`, `GraphicsBinding`, `GraphicsMessage`, `GraphicsCompositeRecord`, `GraphicsPictureDisplayRecord`, `GraphicsPathRow`, `GraphicsParseError`, `MAX_GRAPHICS_COMPANION_BYTES`, `parse_graphics_file`, `parse_graphics_text`, `resolve_graphics_companion_path` |
 | Distribution | `DistributionData`, `DistributionTarget`, `DistributionParseError`, `parse_distribution_file`, `parse_distribution_text`, `resolve_distribution_companion_path` |
-| Caches | `FileLookupCache`, `FileASTCache`, `LOOKUP_CACHE_VERSION`, `FILE_AST_CACHE_VERSION`, `DEFAULT_LOOKUP_CACHE_FLUSH_INTERVAL` |
+| Caches | `FileLookupCache`, `FileASTCache`, `CacheInfo`, `CacheDisabledReason`, `LOOKUP_CACHE_VERSION`, `FILE_AST_CACHE_VERSION`, `DEFAULT_LOOKUP_CACHE_FLUSH_INTERVAL` |
 
 `DistributionData` has `version`, `source_code_systems`, `executing_systems`, and
 the derived `has_executing_system`. `SattLineProgram.has_executing_system` adds
@@ -342,6 +345,23 @@ caller that passes `SattLineProject.programs()` gets folded unit-name keys when
 `closure_of` is omitted. Its values are module-type names folded with
 `fold_identifier`. `closure_of(key)` must answer in the same key space as
 `programs`; mixing the two modes returns an empty result rather than raising.
+`SattLineProject.invoked_moduletypes(targets=None)` runs the same walk over the
+project's own view keys, so a consumer does not have to rebuild that key space.
+It follows resolved dependency edges, including an alias spelling, and every
+selected target appears in the result with an empty set when it reaches no
+module types.
+
+`ProjectIndex.definitions_of`, `ProjectIndex.usages_of`, and
+`ProjectIndex.defined_names` accept an optional `kind=SymbolKind` filter, so a
+consumer can ask for module-type declarations and references directly instead of
+filtering every result itself.
+
+`SattLineProgram.identity` is the unit's `UnitIdentity` and
+`SattLineProgram.artifact_identity` is the `ArtifactIdentity` of its resolved
+body. `SattLineProject.identity_of(name)` answers with the language identity of
+the unit a name designates. Use these, or `UnitIdentity.of`, for unit-name
+comparison. `str.casefold()` is only a project view key and is not the language
+identity table.
 
 `parse_distribution_file`, `parse_distribution_text`, and
 `resolve_distribution_companion_path` are also re-exported by the top-level
@@ -405,6 +425,28 @@ project = SattLineProject.load(
 )
 program = project.get("MyProgram")
 print(program.name, len(program.dependencies))
+print(project.cache_info)
+```
+
+`load` is all or nothing. For independent consumers, `load_many` returns one
+`TargetLoadResult` per target, so a failed consumer does not discard the
+successful ones:
+
+```python
+from pathlib import Path
+
+from sattline_parser.project import LoadMode, SattLineProject
+
+results = SattLineProject.load_many(
+    roots=[Path("programs"), Path("libs")],
+    mode=LoadMode.DRAFT,
+    targets=["ConsumerA", "ConsumerB", "ConsumerC"],
+)
+for target, result in results.items():
+    if result.ok:
+        print(target, len(result.project.programs()), result.project.cache_info)
+    else:
+        print(target, result.error)
 ```
 
 `roots` is the loading path in search order. It holds one library per name: a

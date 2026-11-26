@@ -58,6 +58,7 @@ __all__ = [
     "mark_remapped",
     "remap_parse_error",
     "remap_tree_to_original",
+    "split_source_lines",
 ]
 
 #: Parse failures whose positions already refer to the original source.
@@ -292,7 +293,10 @@ class SourceDocument:
         An empty range (``norm_start >= norm_end``) maps to a zero-width range
         at the mapped boundary position. A range ending at the end of the
         normalized text maps to the corresponding original end boundary.
+        Negative offsets clamp to the start of the normalized text.
         """
+        norm_start = max(norm_start, 0)
+        norm_end = max(norm_end, 0)
         char_map = self._char_map
         if char_map is None:
             if norm_start >= norm_end:

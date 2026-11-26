@@ -38,7 +38,10 @@ def _resolved(path: Path | None) -> Path | None:
         return None
     try:
         return path.resolve()
-    except OSError:
+    except (OSError, RuntimeError):
+        # ``resolve`` raises ``RuntimeError`` for a symlink loop on POSIX. Keep
+        # the written path so the caller reports it as an unusable root instead
+        # of leaking an implementation exception.
         return path
 
 
@@ -77,6 +80,18 @@ def _names_configured_root(path_key: str, root: Path) -> bool:
     the resolved key, while an exact spelling matches the lexical text.
     """
     return path_key == _lexical_path_key(root) or path_key == _lookup_path_key(root)
+
+
+def _is_regular_file(path: Path) -> bool:
+    """``Path.is_file`` that treats an unusable path as a miss.
+
+    Python 3.12 propagates ``ENAMETOOLONG`` from ``stat`` for a candidate built
+    from a legal but very long unit name. That is a miss, not an internal error.
+    """
+    try:
+        return path.is_file()
+    except OSError:
+        return False
 
 
 def _is_relative_to(path: Path | None, root: Path | None) -> bool:
@@ -217,7 +232,7 @@ class SourceIndex:
                 f"cannot read {base}: {exc.strerror or exc}",
             ) from exc
         for entry in entries:
-            if not entry.is_file():
+            if not _is_regular_file(entry):
                 continue
             ext = entry.suffix.lower()
             if ext not in self.INDEXED_EXTENSIONS:
@@ -326,7 +341,22 @@ def parse_search_path(text: str, *, base: Path | None = None) -> tuple[Path, ...
         path = Path(entry.replace("\\", "/"))
         if base is not None and not path.is_absolute():
             path = base / path
-        roots.append(path.resolve())
+        try:
+            resolved = path.resolve()
+        except (OSError, RuntimeError) as exc:
+            # A symlink loop or another unresolvable entry is a bad search-path
+            # argument, not an internal failure.
+            raise ValueError(f"search path entry {entry!r} is not resolvable: {exc}") from exc
+        try:
+            # Python 3.13's resolve() returns the written path for an ELOOP
+            # instead of raising, so stat the entry to catch that case. A missing
+            # entry stays acceptable here; the loader reports it as a bad root.
+            path.stat()
+        except FileNotFoundError:
+            pass
+        except OSError as exc:
+            raise ValueError(f"search path entry {entry!r} is not resolvable: {exc}") from exc
+        roots.append(resolved)
     if not roots:
         raise ValueError("search path has no entries")
     return ordered_lookup_bases(roots)
@@ -386,7 +416,7 @@ class ProjectLookup:
             self._dbg(f"Refusing {kind} name {name!r}: a unit name may not carry a path")
             return None
         indexed = self._index.find_in_index(base=base, name=name, extensions=extensions)
-        if indexed is not None and indexed.is_file():
+        if indexed is not None and _is_regular_file(indexed):
             self._dbg(f"Using ordered lookup file: {indexed}")
             self._remember(kind, name, base, indexed.suffix.lower())
             return indexed
@@ -399,7 +429,7 @@ class ProjectLookup:
             # bypassed. The candidate itself may be a symlink to a body outside
             # the base; that is a deliberate layout and both lookup paths accept
             # it.
-            if candidate.is_file() and _is_relative_to(candidate.parent, base):
+            if _is_regular_file(candidate) and _is_relative_to(candidate.parent, base):
                 self._dbg(f"Using ordered lookup file: {candidate}")
                 self._remember(kind, name, base, ext)
                 self._index.add(base=base, name=name, path=candidate)
@@ -470,7 +500,7 @@ class ProjectLookup:
         # fall through to a coarser extension. A stale index only costs a full
         # ordered scan: the caller forgets the entry and rescans.
         found = self._index.find_in_index(base=base, name=name, extensions=extensions)
-        if found is not None and found.is_file():
+        if found is not None and _is_regular_file(found):
             self._dbg(f"Using cached {kind} file: {found}")
             self._remember(kind, name, base, found.suffix.lower())
             return found, base

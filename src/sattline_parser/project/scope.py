@@ -14,6 +14,8 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import replace
+from pathlib import Path
+from typing import cast
 
 from sattline_parser.models.ast_model import BasePicture, DataType, ModuleTypeDef, SourceSpan
 from sattline_parser.names import fold_identifier
@@ -60,6 +62,14 @@ class ProjectValidator:
         self._registry = registry
         self._resolved_dependencies = resolved_dependencies
         self._target_plan_keys = target_plan_keys
+        #: Dependency closures and the definitions they expose are recomputed by
+        #: several validation passes. The resolved dependency mapping is complete
+        #: before validation runs, and the registry fills in post-order, so every
+        #: key in a unit's closure is registered before that unit's definitions
+        #: are collected. Each memoized answer is then stable for this validator.
+        self._closure_cache: dict[frozenset[str], frozenset[str]] = {}
+        self._visible_key_cache: dict[str, frozenset[str]] = {}
+        self._definitions_cache: dict[frozenset[str], tuple[tuple[DataType, ...], tuple[ModuleTypeDef, ...]]] = {}
 
     def artifact_diagnostics(
         self,
@@ -124,9 +134,17 @@ class ProjectValidator:
         exponentially many elementary cycles, so the search stops as soon as it
         finds one.
         """
-        edges_by_owner, labels, owners = _moduletype_edges(self._registry, self.visible_plan_keys)
-        for key in self._registry:
-            visible_keys = self.visible_plan_keys(key)
+        visible_by_key = {key: self.visible_plan_keys(key) for key in self._registry}
+        edges_by_owner, labels, owners = _moduletype_edges(self._registry, visible_by_key.__getitem__)
+        # One global search decides whether any closure needs the per-unit walk.
+        # A project with no recursive module type, which is the normal case,
+        # then costs one pass over the edge set instead of a search per unit.
+        if first_cycle([edge for owner_edges in edges_by_owner.values() for edge in owner_edges]) is None:
+            return
+        # A global cycle guarantees that at least one unit closure contains it,
+        # so this loop always raises before it can run out. The no-iteration arm
+        # is therefore unreachable once the global search above found a cycle.
+        for visible_keys in visible_by_key.values():  # pragma: no cover - always raises below
             edges = [edge for owner_key in sorted(visible_keys) for edge in edges_by_owner.get(owner_key, ())]
             cycle = first_cycle(edges)
             if cycle is not None:
@@ -162,21 +180,64 @@ class ProjectValidator:
             diagnostics = [*program.diagnostics, *module_diagnostics]
             self._registry[key] = replace(program, diagnostics=tuple(diagnostics))
 
+    def apply_scope(self) -> None:
+        """Apply this validator's configured scope to an already assembled registry.
+
+        Batch loading assembles every body once with the always-on type
+        reference checks, then splits the registry into per-target closures.
+        This applies the additional checks for one closure: ``FULL`` validates
+        every unit, ``INVOKED`` validates the target and the module types it
+        invokes, and ``NONE`` adds nothing. Datecode findings are added before
+        invoked module findings, matching the order a single load produces.
+        """
+        if self._validate is LoadValidation.NONE:
+            return
+        if self._validate is LoadValidation.FULL:
+            for key, program in list(self._registry.items()):
+                extra = self._program_diagnostics(
+                    program.code,
+                    dependencies=self._resolved_dependencies.get(key, ()),
+                    library=cast(str, program.library),
+                    file_name=cast(Path, program.source_path).name,
+                    key=key,
+                )
+                self._registry[key] = replace(program, diagnostics=(*program.diagnostics, *extra))
+            return
+        for key in sorted(self._target_plan_keys):
+            program = self._registry[key]
+            extra = self._datecode_conflicts(
+                program.code,
+                library=cast(str, program.library),
+                file_name=cast(Path, program.source_path).name,
+            )
+            self._registry[key] = replace(program, diagnostics=(*program.diagnostics, *extra))
+        self.validate_invoked()
+
     def closure(self, dependencies: Sequence[str]) -> frozenset[str]:
         """Plan keys of every unit a set of resolved dependencies reaches."""
+        memo_key = frozenset(dependencies)
+        cached = self._closure_cache.get(memo_key)
+        if cached is not None:
+            return cached
         closure: set[str] = set()
-        pending = list(dependencies)
+        pending = list(memo_key)
         while pending:
             key = pending.pop()
             if key in closure:
                 continue
             closure.add(key)
             pending.extend(self._resolved_dependencies.get(key, ()))
-        return frozenset(closure)
+        result = frozenset(closure)
+        self._closure_cache[memo_key] = result
+        return result
 
     def visible_plan_keys(self, key: str) -> frozenset[str]:
         """Keys of every unit *key* can see: itself plus its transitive deps."""
-        return frozenset({key}) | self.closure(self._resolved_dependencies.get(key, ()))
+        cached = self._visible_key_cache.get(key)
+        if cached is None:
+            cached = frozenset({key}) | self.closure(self._resolved_dependencies.get(key, ()))
+            self._visible_key_cache[key] = cached
+        return cached
 
     def _visible_definitions(
         self, dependencies: Sequence[str]
@@ -185,9 +246,14 @@ class ProjectValidator:
 
         The registry is dependency-first, so filtering it by the closure keeps
         a deterministic order. Using the whole registry here would let an
-        unrelated target's types hide an unknown-name finding.
+        unrelated target's types hide an unknown-name finding. Two units with
+        the same closure see the same definitions, so the answer is memoized by
+        that closure rather than rebuilt for every unit.
         """
         closure = self.closure(dependencies)
+        cached = self._definitions_cache.get(closure)
+        if cached is not None:
+            return cached
         datatypes: list[DataType] = []
         moduletypes: list[ModuleTypeDef] = []
         for key, program in self._registry.items():
@@ -195,7 +261,9 @@ class ProjectValidator:
                 continue
             datatypes.extend(program.code.datatype_defs)
             moduletypes.extend(program.code.moduletype_defs)
-        return tuple(datatypes), tuple(moduletypes)
+        definitions = (tuple(datatypes), tuple(moduletypes))
+        self._definitions_cache[closure] = definitions
+        return definitions
 
     def _validate_code(self, code: BasePicture, *, dependencies: Sequence[str]) -> tuple[Diagnostic, ...]:
         visible_datatypes, visible_moduletypes = self._visible_definitions(dependencies)

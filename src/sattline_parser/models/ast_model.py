@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import dataclasses
 import textwrap
 from dataclasses import dataclass, field
 from enum import Enum, StrEnum
@@ -161,10 +162,16 @@ class IntLiteral(int):
         written: str | None = None,
     ):
         obj = int.__new__(cls, value)
-        obj.span = span
-        obj.clamped = clamped
-        obj.written = written
+        object.__setattr__(obj, "span", span)
+        object.__setattr__(obj, "clamped", clamped)
+        object.__setattr__(obj, "written", written)
         return obj
+
+    def __setattr__(self, name: str, value: object) -> None:
+        raise dataclasses.FrozenInstanceError(f"cannot assign to field {name!r} on a literal")
+
+    def __delattr__(self, name: str) -> None:
+        raise dataclasses.FrozenInstanceError(f"cannot delete field {name!r} on a literal")
 
     def __reduce__(self):
         return (type(self), (int(self), self.span, self.clamped, self.written))
@@ -192,10 +199,16 @@ class FloatLiteral(float):
         written: str | None = None,
     ):
         obj = float.__new__(cls, value)
-        obj.span = span
-        obj.clamped = clamped
-        obj.written = written
+        object.__setattr__(obj, "span", span)
+        object.__setattr__(obj, "clamped", clamped)
+        object.__setattr__(obj, "written", written)
         return obj
+
+    def __setattr__(self, name: str, value: object) -> None:
+        raise dataclasses.FrozenInstanceError(f"cannot assign to field {name!r} on a literal")
+
+    def __delattr__(self, name: str) -> None:
+        raise dataclasses.FrozenInstanceError(f"cannot delete field {name!r} on a literal")
 
     def __reduce__(self):
         return (type(self), (float(self), self.span, self.clamped, self.written))

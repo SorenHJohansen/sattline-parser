@@ -13,7 +13,7 @@ the focused test passes, then the wider gates pass.
 | `tests/cli/` | Every subcommand, exit codes, JSON output, refusal rules |
 | `tests/builtins/` | Catalogue freshness and signature shape |
 | `tests/test_packaging.py` | Installed-package smoke tests outside the parser tree |
-| `benchmarks/` | pytest-benchmark parse, validation, and traversal timings, outside the coverage suite |
+| `benchmarks/` | pytest-benchmark parse, validation, traversal, and project-load timings, outside the coverage suite |
 | `tests/fixtures/corpus/` | Every fixture is a `.s` source, grouped by expected behaviour |
 | `tests/fixtures/validation/expectations.json` | Golden expectations for validation findings |
 | `tests/fixtures/project/companions/` | One committed companion file per artifact kind, written from a synthetic example, plus a CP1252 sidecar |
@@ -66,9 +66,13 @@ pytest -q                                   # full configured suite
 pytest tests/parser -q                      # parser only
 pytest tests/parser/test_parser_core_grammar.py -q
 python scripts/check_branch_coverage.py     # full suite plus both coverage gates
-pytest benchmarks --no-cov -q               # parse, validation, and traversal benchmarks
+pytest benchmarks --no-cov -q               # parse, validation, traversal, and project-load benchmarks
 pytest benchmarks --no-cov -q --benchmark-json=benchmark.json
 ```
+
+`benchmarks/test_bench_project.py` covers generated deep, wide, diamond, and
+module-type dependency graphs, and compares uncached, cold-cache, and warm-cache
+loads. It measures behaviour, not a pass/fail budget.
 
 `benchmarks/` is outside `testpaths`, so the coverage gate never depends on it.
 The benchmark job uploads `benchmark.json` as a CI artifact. It is observational
@@ -96,7 +100,7 @@ The coverage gates:
 | Gate | Minimum | Owner |
 | --- | --- | --- |
 | Line coverage | 100 percent after `pragma: no cover` and configured exclusions | `scripts/check_branch_coverage.py` |
-| Branch coverage | 93 percent | `scripts/check_branch_coverage.py` |
+| Branch coverage | 100 percent after `pragma: no cover` and configured exclusions | `scripts/check_branch_coverage.py` |
 
 `check_branch_coverage.py` is the authoritative branch gate because coverage's
 config cannot express separate line and branch fail thresholds. It also prints
@@ -257,7 +261,8 @@ longer need one. Where a blanket header is still the practical choice (deeply
 dynamic AST assertions), the header is the documented policy rather than a
 hidden exception. Ruff enables `E`, `F`, `W`, `I`, `N`, `UP`, `B`, `BLE`, `C4`,
 `PLC0415`, `PLR0915`, `S101`, `SIM`, and `RUF`, with a 120-character line length.
-`S101` is disabled for tests because `assert` is the test mechanism.
+`S101` is disabled for tests and benchmarks because `assert` is the test
+mechanism.
 
 ## Helper scripts
 

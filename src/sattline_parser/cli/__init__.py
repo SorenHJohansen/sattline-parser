@@ -78,19 +78,35 @@ def build_parser() -> argparse.ArgumentParser:
 def main(argv: Sequence[str] | None = None) -> int:
     """Run the CLI and return the process exit code."""
     _make_output_encoding_safe()
-    return _dispatch(argv)
+    code = _dispatch(argv)
+    # A short report fits the buffer, so its EPIPE or ENOSPC can surface only
+    # during the interpreter's exit flush. Flush here, where the exit code can
+    # still be the documented output-problem code instead of 120.
+    try:
+        sys.stdout.flush()
+    except Exception as exc:
+        if _is_output_stream_error(exc):
+            _discard_stdout()
+            return int(ExitCode.USAGE)
+        raise
+    return code
 
 
-def _is_closed_stream_error(exc: BaseException) -> bool:
-    """Whether *exc* means the reader closed the output stream.
+def _is_output_stream_error(exc: BaseException) -> bool:
+    """Whether *exc* means the output stream could not accept the report.
 
-    POSIX reports a closed pipe as ``BrokenPipeError``. Windows reports the
-    same condition as a generic ``OSError`` with ``EINVAL`` when the handle was
-    closed between the write and the flush, so the errno is checked too.
+    POSIX reports a closed pipe as ``BrokenPipeError``, Windows as a generic
+    ``OSError`` with ``EINVAL``, and a full device as ``ENOSPC``. All three are
+    output problems, which the CLI contract reports as exit 2.
     """
     if isinstance(exc, BrokenPipeError):
         return True
-    return isinstance(exc, OSError) and exc.errno in {errno.EPIPE, errno.EINVAL}
+    return isinstance(exc, OSError) and exc.errno in {
+        errno.EPIPE,
+        errno.EINVAL,
+        errno.ENOSPC,
+        getattr(errno, "EDQUOT", errno.ENOSPC),
+    }
 
 
 def _make_output_encoding_safe() -> None:
@@ -143,7 +159,7 @@ def _dispatch(argv: Sequence[str] | None) -> int:
         print(f"{_PROGRAM}: interrupted", file=sys.stderr)
         return int(ExitCode.INTERRUPTED)
     except Exception as exc:  # noqa: BLE001 - the CLI must never leak a traceback by default
-        if _is_closed_stream_error(exc):
+        if _is_output_stream_error(exc):
             # The consumer closed the pipe. Point stdout at the null device so
             # the interpreter's exit flush cannot fail a second time and turn a
             # stopped report into exit 120.

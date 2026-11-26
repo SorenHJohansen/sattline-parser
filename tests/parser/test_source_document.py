@@ -112,3 +112,10 @@ def test_a_trailing_terminator_is_an_empty_boundary_line() -> None:
 
     assert doc.line_col(2) == (2, 1)
     assert split_source_lines("a\r") == ("a", "")
+
+
+def test_a_negative_range_clamps_to_the_start_on_a_mapped_document() -> None:
+    doc = SourceDocument("abc", "bc", (1, 2))
+
+    assert doc.map_range(-2, -1) == (1, 1)
+    assert doc.map_range(-2, 0) == (1, 1)

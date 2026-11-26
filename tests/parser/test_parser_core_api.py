@@ -11,8 +11,9 @@ import pytest
 from lark import Token
 from lark.exceptions import UnexpectedToken, VisitError
 
+import sattline_parser
 from sattline_parser import source_io as parser_api
-from sattline_parser.api import parse_source_file
+from sattline_parser.api import parse_source_file, source_line_at, split_source_lines
 from sattline_parser.source_document import SourceDocument
 from sattline_parser.transformer.sl_transformer import SLTransformer
 
@@ -663,3 +664,12 @@ def test_a_transformer_defect_stays_wrapped_in_visit_error():
         )
 
     assert isinstance(exc_info.value.orig_exc, RuntimeError)
+
+
+def test_split_source_lines_uses_the_diagnostic_line_rule():
+    text = "one\r\ntwo\rthree\nfour\n"
+
+    assert split_source_lines(text) == ("one", "two", "three", "four", "")
+    assert split_source_lines(text)[1] == source_line_at(text, 2)
+    assert split_source_lines("form\ffeed\x0bcontent") == ("form\ffeed\x0bcontent",)
+    assert sattline_parser.split_source_lines is split_source_lines

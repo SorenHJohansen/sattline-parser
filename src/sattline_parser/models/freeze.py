@@ -20,7 +20,7 @@ single frame per level and stays inside the limit.
 from __future__ import annotations
 
 import dataclasses
-from collections.abc import Iterator, Mapping, Sequence
+from collections.abc import Callable, Iterator, Mapping, Sequence
 from typing import Any, cast
 
 __all__ = ["FrozenMapping", "FrozenNode", "copy_frozen_ast", "freeze_ast"]
@@ -129,13 +129,41 @@ def copy_frozen_ast(value: object) -> object:
 
 def _is_composite(value: object) -> bool:
     """True for a value whose children have to be copied or frozen."""
+    if _is_literal(value):
+        return True
     if isinstance(value, (list, tuple, dict)):
         return True
     return dataclasses.is_dataclass(value) and not isinstance(value, type)
 
 
+def _is_literal(value: object) -> bool:
+    """True for a numeric literal that carries mutable source metadata.
+
+    ``IntLiteral`` and ``FloatLiteral`` subclass ``int`` and ``float`` but hold
+    ``span``, ``clamped``, and ``written`` as ordinary attributes. Treating them
+    as immutable scalars would share them with the caller across the project
+    boundary, where those attributes could then be changed on both sides.
+    """
+    return (
+        isinstance(value, (int, float))
+        and not isinstance(value, bool)
+        and hasattr(value, "written")
+        and hasattr(value, "clamped")
+    )
+
+
+def _copy_literal(value: object) -> object:
+    """A detached copy of an ``IntLiteral`` or ``FloatLiteral``."""
+    literal = cast(Any, value)
+    number = float(literal) if isinstance(value, float) else int(literal)
+    factory = cast("Callable[..., object]", type(value))
+    return factory(number, literal.span, literal.clamped, literal.written)
+
+
 def _composite_children(value: object) -> tuple[object, ...]:
     """The direct child values of a composite value."""
+    if _is_literal(value):
+        return ()
     if isinstance(value, dict):
         return tuple(cast("dict[object, object]", value).values())
     if isinstance(value, (list, tuple)):
@@ -151,6 +179,8 @@ def _resolve(value: object, memo: dict[int, object]) -> object:
 
 def _rebuild(value: object, memo: dict[int, object]) -> object:
     """Build one composite from its already-copied children."""
+    if _is_literal(value):
+        return _copy_literal(value)
     if isinstance(value, list):
         return tuple(_resolve(item, memo) for item in cast("list[object]", value))
     if isinstance(value, tuple):
@@ -167,6 +197,8 @@ def _rebuild(value: object, memo: dict[int, object]) -> object:
 
 
 def _freeze(value: object) -> object:
+    if _is_literal(value):
+        return _copy_literal(value)
     if isinstance(value, FrozenNode):
         node = cast(Any, value)
         for field in dataclasses.fields(node):

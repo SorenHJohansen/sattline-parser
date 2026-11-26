@@ -18,6 +18,7 @@ from sattline_parser.project import (
     LoadMode,
     ProjectLoadError,
     ProjectLookup,
+    SattLineProject,
     SourceIndex,
     ordered_lookup_bases,
     parse_search_path,
@@ -230,6 +231,32 @@ def test_parse_search_path_drops_duplicates_and_rejects_an_empty_path(tmp_path: 
     assert parse_search_path(r"LibA\UnitLib,LibA/UnitLib", base=base) == ((base / "LibA/UnitLib").resolve(),)
     with pytest.raises(ValueError, match="no entries"):
         parse_search_path(" , ,, ", base=base)
+
+
+def test_parse_search_path_accepts_a_missing_entry(tmp_path: Path) -> None:
+    missing = tmp_path / "missing"
+
+    assert parse_search_path(str(missing)) == (missing.resolve(),)
+
+
+def test_parse_search_path_reports_a_resolve_failure(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    def failing_resolve(_self: Path) -> Path:
+        raise RuntimeError("symlink loop")
+
+    monkeypatch.setattr(Path, "resolve", failing_resolve)
+
+    with pytest.raises(ValueError, match="is not resolvable"):
+        parse_search_path(str(tmp_path / "loop"))
+
+
+def test_parse_search_path_reports_a_stat_failure(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    def failing_stat(_self: Path) -> object:
+        raise PermissionError("denied")
+
+    monkeypatch.setattr(Path, "stat", failing_stat)
+
+    with pytest.raises(ValueError, match="is not resolvable"):
+        parse_search_path(str(tmp_path / "entry"))
 
 
 def test_a_shadowed_library_contributes_no_units(tmp_path: Path) -> None:
@@ -915,3 +942,47 @@ def test_warm_cache_resolves_a_name_whose_case_differs(tmp_path: Path) -> None:
     cold = ProjectLookup([root], LoadMode.DRAFT)
 
     assert warm.find_code("mixed") == cold.find_code("mixed") == root / "Mixed.s"
+
+
+def test_a_symlink_loop_root_is_a_load_error(tmp_path: Path, symlink_supported: None) -> None:
+    """ELOOP from resolve is an unusable root, not an internal error."""
+    del symlink_supported
+    loop = tmp_path / "loop"
+    loop.symlink_to(loop)
+    good = tmp_path / "libs"
+    good.mkdir()
+
+    with pytest.raises(ProjectLoadError, match="root is not a readable directory"):
+        SattLineProject.load([good, loop], mode=LoadMode.DRAFT, targets=("Main",))
+
+
+def test_a_symlink_loop_search_path_entry_is_a_usage_error(tmp_path: Path, symlink_supported: None) -> None:
+    del symlink_supported
+    loop = tmp_path / "loop"
+    loop.symlink_to(loop)
+
+    with pytest.raises(ValueError, match="is not resolvable"):
+        parse_search_path(str(loop))
+
+
+def test_a_legally_long_unit_name_is_a_miss_not_an_internal_error(tmp_path: Path) -> None:
+    """ENAMETOOLONG from a 254-byte candidate is a missing artifact."""
+    root = tmp_path / "libs"
+    root.mkdir()
+
+    assert ProjectLookup([root], LoadMode.DRAFT).find_code("A" * 254) is None
+
+
+def test_a_replaced_lookup_cache_root_is_not_written(tmp_path: Path, symlink_supported: None) -> None:
+    del symlink_supported
+    cache = FileLookupCache(tmp_path / "cache", write_through=True)
+    replacement = tmp_path / "replacement"
+    replacement.mkdir()
+    cache.cache_dir.rename(tmp_path / "cache-moved")
+    cache.cache_dir.symlink_to(replacement, target_is_directory=True)
+
+    cache.set("code", "Main", "draft", base_dir=tmp_path, ext=".s")
+
+    assert list(replacement.iterdir()) == []
+    assert not cache._root_is_current()
+    cache._load()

@@ -18,10 +18,21 @@ from sattline_parser.models.ast_model import BasePicture
 from sattline_parser.models.freeze import copy_frozen_ast, freeze_ast
 
 from ._cycles import dependency_cycles
+from .errors import ProjectLoadError
 from .identity import UnitIdentity
 from .index import ProjectIndex
 from .loader import ProjectLoader
-from .models import DependencyGraph, LoadDiagnostic, LoadMode, LoadValidation, SattLineProgram
+from .models import (
+    CacheDisabledReason,
+    CacheInfo,
+    DependencyGraph,
+    LoadDiagnostic,
+    LoadMode,
+    LoadValidation,
+    SattLineProgram,
+    TargetLoadResult,
+)
+from .reachability import invoked_moduletypes as _invoked_moduletypes
 
 
 class SattLineProject:
@@ -44,6 +55,7 @@ class SattLineProject:
         self._identity_views: dict[str, str] = {}
         self._diagnostics: tuple[LoadDiagnostic, ...] = ()
         self._index: ProjectIndex | None = None
+        self._cache_info = CacheInfo(enabled=False, disabled_reason=CacheDisabledReason.NOT_CONFIGURED)
 
     def _attach(
         self,
@@ -154,7 +166,62 @@ class SattLineProject:
         project = cls()
         project._attach(program_registry, copy_ast=False, identity_views=loader.identity_views)
         project._diagnostics = loader.diagnostics
+        project._cache_info = loader.cache_info
         return project
+
+    @classmethod
+    def load_many(
+        cls,
+        roots: Sequence[Path],
+        mode: LoadMode,
+        targets: Sequence[str],
+        *,
+        debug: Callable[[str], None] | None = None,
+        cache_dir: Path | None = None,
+        validate: LoadValidation = LoadValidation.INVOKED,
+        workers: int = 1,
+    ) -> dict[str, TargetLoadResult]:
+        """Load several targets, keeping the ones that succeed.
+
+        Unlike :meth:`load`, one target's missing or unparseable artifact does
+        not fail the others. Discovery and parsing are shared: a dependency
+        common to several targets is planned, parsed, and cached once, and each
+        successful target receives a project over its own complete closure.
+        A target whose closure contains a failure reports that error in
+        ``TargetLoadResult.error`` instead.
+
+        The result is keyed by the target spelling the caller supplied. Each
+        successful project has its own diagnostics, scoped to its closure, and
+        its own validation scope, so another target's findings cannot leak in.
+        A skipped-file finding belongs to no loaded unit and is reported for
+        every target. :meth:`load` keeps its all-or-nothing contract for callers
+        that require one complete dependency closure.
+
+        ``cache_dir``, ``validate``, ``workers``, and ``debug`` have the same
+        meaning as in :meth:`load`. A cache that cannot be established is
+        reported through :attr:`cache_info` on each returned project.
+        """
+        try:
+            loader = ProjectLoader(
+                roots=roots,
+                mode=mode,
+                debug=debug,
+                cache_dir=cache_dir,
+                validate=validate,
+                workers=workers,
+                defer_validation=True,
+            )
+        except ProjectLoadError as exc:
+            return {target: TargetLoadResult(target=target, error=exc) for target in targets}
+        loaded, failures = loader.resolve_many(targets)
+        results = {target: TargetLoadResult(target=target, error=error) for target, error in failures.items()}
+        for target, payload in loaded.items():
+            project = cls()
+            project._attach(payload.programs, copy_ast=False, identity_views=payload.identity_views)
+            project._diagnostics = payload.diagnostics
+            project._cache_info = payload.cache_info
+            results[target] = TargetLoadResult(target=target, project=project)
+        return results
 
     def _resolve_view(self, name: str) -> str | None:
         """The view key *name* designates, or ``None``.
@@ -229,6 +296,17 @@ class SattLineProject:
         """
         return self._diagnostics
 
+    @property
+    def cache_info(self) -> CacheInfo:
+        """Cache configuration and counters for the load that built this project.
+
+        A project built by :meth:`from_programs` reports no cache. A project
+        built by :meth:`load` or :meth:`load_many` reports whether the caches
+        were usable, why they were not, and how many AST and lookup reads each
+        cache answered.
+        """
+        return self._cache_info
+
     def cycles(self) -> tuple[tuple[str, ...], ...]:
         """Every dependency cycle in the declared graph, canonical and sorted.
 
@@ -265,6 +343,51 @@ class SattLineProject:
         """
         program = self._resolve(name)
         return UnitIdentity.of(program.name if program is not None else name).key
+
+    def identity_of(self, name: str) -> UnitIdentity:
+        """The language identity of the unit *name* designates.
+
+        Use this for every unit-name comparison instead of ``str.casefold()``.
+        A name that designates no loaded unit keeps its own folded identity.
+        ``ArtifactIdentity`` is separate: it compares a resolved filesystem
+        path with the platform's rule.
+        """
+        program = self._resolve(name)
+        return UnitIdentity.of(program.name if program is not None else name)
+
+    def invoked_moduletypes(self, targets: Sequence[str] | None = None) -> dict[str, frozenset[str]]:
+        """Module types each unit reaches from *targets*, over this project.
+
+        Keys are the view keys of :meth:`programs`, and values are module-type
+        names folded with :func:`~sattline_parser.names.fold_identifier`.
+        ``targets`` names units in this project's key space; ``None`` treats
+        every loaded unit as a target. Every selected target appears in the
+        result, with an empty set when it reaches no module types. The walk
+        follows resolved dependency edges, so an alias spelling in a sidecar
+        still reaches the body it named.
+        """
+        selected = tuple(self._programs) if targets is None else tuple(self._view_key(target) for target in targets)
+        edges: dict[str, list[str]] = {}
+        for owner, dependency in self.graph().edges:
+            edges.setdefault(owner, []).append(dependency)
+
+        def closure_of(key: str) -> frozenset[str]:
+            seen: set[str] = set()
+            pending = [key]
+            while pending:
+                current = pending.pop()
+                if current in seen:
+                    continue
+                seen.add(current)
+                pending.extend(edges.get(current, ()))
+            return frozenset(seen)
+
+        reachable = _invoked_moduletypes(self._programs, selected, closure_of=closure_of)
+        result = {key: frozenset(names) for key, names in reachable.items()}
+        for key in selected:
+            if key in self._programs:
+                result.setdefault(key, frozenset())
+        return result
 
     def dependents_of(self, name: str) -> tuple[str, ...]:
         """Loaded programs declaring ``name`` as a dependency, in load order.

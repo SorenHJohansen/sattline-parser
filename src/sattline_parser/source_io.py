@@ -332,7 +332,7 @@ def _parser_cache_dir() -> Path | None:
 class _ParserProtocol(Protocol):
     """The slice of Lark's parser interface the pipeline calls."""
 
-    def parse(self, text: str) -> Tree[Token]: ...
+    def parse(self, text: str) -> Tree[Token]: ...  # pragma: no cover - protocol signature only
 
 
 def _parser_cache_path(

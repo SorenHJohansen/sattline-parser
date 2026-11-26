@@ -30,7 +30,7 @@ flowchart TB
     E -->|3| I["exit 3 internal"]
     D -->|CliError| U
     D -->|KeyboardInterrupt| K["print interrupted<br/>exit 130"]
-    D -->|BrokenPipeError| P["discard stdout<br/>exit 2"]
+    D -->|output error| P["discard stdout<br/>exit 2"]
     D -->|other exception| X{"--debug?"}
     X -->|yes| T["traceback"]
     X -->|no| O["one-line internal error"]
@@ -505,3 +505,4 @@ public change and must be called out in the changelog.
 | `tests/cli/test_cli_graphics.py` | Companion output and refusal |
 | `tests/cli/test_cli_decode_diff_corpus.py` | Decode, diff, and corpus |
 | `tests/cli/test_cli_coded.py` | Coded input through the CLI |
+| `tests/cli/test_adversarial_cli_regressions.py` | Output contract, encoding, and input refusal regressions |

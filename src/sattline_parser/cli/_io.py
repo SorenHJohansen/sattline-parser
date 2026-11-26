@@ -53,7 +53,7 @@ def read_source(target: str, *, name: str | None) -> Source:
     ``--stdin-name`` because every finding must be attributable to something.
     """
     if target == _STDIN:
-        if name is None:
+        if name is None or not name.strip():
             raise CliError("reading from stdin requires --stdin-name so findings carry a path")
         raw = sys.stdin.buffer.read()
         return _source(raw, name)

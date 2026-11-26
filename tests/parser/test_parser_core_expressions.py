@@ -31,6 +31,20 @@ _META = SimpleNamespace(line=1, column=1, start_pos=10, end_pos=20, end_line=1, 
 _SPAN = SourceSpan(start=10, end=20, line=1, column=1)
 
 
+def test_a_very_long_integer_token_clamps_instead_of_raising():
+    mixin = _TokensHarness()
+    text = "9" * 4301
+    tok = Token(
+        "SIGNED_INT", text, start_pos=0, line=1, column=1, end_line=1, end_column=len(text) + 1, end_pos=len(text)
+    )
+
+    value = mixin.SIGNED_INT(tok)
+
+    assert value == parser_const.INT_MAX
+    assert value.clamped is True
+    assert value.written == text
+
+
 def test_tokens_mixin_coerces_supported_terminals_and_keywords():
     mixin = _TokensHarness()
     signed_int = Token("SIGNED_INT", "-7", start_pos=10, line=4, column=2, end_line=4, end_column=4, end_pos=12)

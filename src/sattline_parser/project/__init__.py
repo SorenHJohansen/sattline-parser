@@ -11,9 +11,11 @@ sidecars, loads dependencies first, parses ``.g`` / ``.y`` graphics and ``.p`` /
 runs the single-file validator against the definitions visible
 from already-loaded dependencies. The loader records library and origin
 provenance, reports definition datecode conflicts, and rejects recursive
-dependency sidecars and recursive module-type instantiation. A load is all or
+dependency sidecars and recursive module-type instantiation. ``load`` is all or
 nothing: a missing or unparseable artifact raises instead of returning a partial
-project.
+project. ``SattLineProject.load_many`` shares one discovery and parse pass across
+several targets and keeps the targets that succeed, reporting each failure
+against the target it affects.
 """
 
 from __future__ import annotations
@@ -64,6 +66,8 @@ from .index import DefinitionSite, ProjectIndex, SymbolKind, UsageSite
 from .loader import ProjectLoader, read_dependency_names
 from .lookup_cache import DEFAULT_LOOKUP_CACHE_FLUSH_INTERVAL, LOOKUP_CACHE_VERSION, FileLookupCache
 from .models import (
+    CacheDisabledReason,
+    CacheInfo,
     DependencyGraph,
     DistributionData,
     DistributionTarget,
@@ -80,6 +84,7 @@ from .models import (
     ProgramFormat,
     SattLineProgram,
     SidecarState,
+    TargetLoadResult,
 )
 from .project import SattLineProject
 from .reachability import invoked_moduletypes
@@ -92,6 +97,8 @@ __all__ = [
     "ArtifactIdentity",
     "ArtifactKind",
     "ArtifactLoadError",
+    "CacheDisabledReason",
+    "CacheInfo",
     "DefinitionSite",
     "DependencyCycleError",
     "DependencyGraph",
@@ -125,6 +132,7 @@ __all__ = [
     "SourceIndex",
     "StructuralProjectError",
     "SymbolKind",
+    "TargetLoadResult",
     "UnitIdentity",
     "UsageSite",
     "body_mode",

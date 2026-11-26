@@ -36,8 +36,17 @@ def _normalize_base_dir(base_dir: Path) -> str:
     expanded = base_dir.expanduser()
     try:
         return str(expanded.resolve())
-    except OSError:
+    except (OSError, RuntimeError):
         return str(expanded)
+
+
+def _directory_identity(path: Path) -> tuple[int, int] | None:
+    """The device and inode of *path*, or ``None`` when it cannot be stat-ed."""
+    try:
+        info = path.stat()
+    except OSError:
+        return None
+    return (info.st_dev, info.st_ino)
 
 
 def _read_json(path: Path) -> object:
@@ -100,15 +109,39 @@ class FileLookupCache:
         self.cache_dir = cache_dir
         self.cache_dir.mkdir(parents=True, exist_ok=True)
         self.path = self.cache_dir / "file_lookup_cache.json"
+        # The loader proved this directory private once. Record its filesystem
+        # identity so a later rename, replacement, or symlink swap disables the
+        # cache instead of writing into whatever now sits at the path. The AST
+        # cache holds a descriptor and revalidates it the same way.
+        self._root_identity = _directory_identity(self.cache_dir)
+        self._root_valid = self._root_identity is not None
         self._flush_interval = flush_interval
         self._write_through = write_through
         self._pending_mutations = 0
         self._data: dict[str, object] = {"version": LOOKUP_CACHE_VERSION, "entries": {}}
         self._dirty = False
+        self._hits = 0
+        self._misses = 0
         self._startup_pruned_entries = self.prune_stale_entries()
         self._load()
 
+    def _root_is_current(self) -> bool:
+        """Whether the configured root is still the directory this cache opened."""
+        if not self._root_valid:
+            return False
+        if _directory_identity(self.cache_dir) != self._root_identity:
+            self._root_valid = False
+            return False
+        return True
+
+    @property
+    def enabled(self) -> bool:
+        """Whether the configured root is still the directory this cache opened."""
+        return self._root_is_current()
+
     def _load(self) -> None:
+        if not self._root_is_current():
+            return
         if not self.path.exists():
             return
         try:
@@ -137,7 +170,7 @@ class FileLookupCache:
         planted path is never touched by a prune.
         """
         removed = self._prune_temporary_files()
-        if not self.path.exists():
+        if not self._root_is_current() or not self.path.exists():
             return removed
         try:
             payload = _read_json(self.path)
@@ -165,7 +198,7 @@ class FileLookupCache:
         return removed + dropped
 
     def _prune_temporary_files(self) -> int:
-        if not self.cache_dir.exists():
+        if not self._root_is_current() or not self.cache_dir.exists():
             return 0
         removed = 0
         for path in self.cache_dir.iterdir():
@@ -181,6 +214,8 @@ class FileLookupCache:
         return removed
 
     def _write_payload(self, payload: dict[str, object]) -> None:
+        if not self._root_is_current():
+            raise OSError("lookup cache directory changed after construction")
         temp_path = _temp_path_for(self.path)
         try:
             with temp_path.open("w", encoding="utf-8") as f:
@@ -234,8 +269,14 @@ class FileLookupCache:
     def get(self, kind: str, name: str, mode: str) -> dict[str, str] | None:
         entries = self._entries_map()
         if entries is None:
+            self._misses += 1
             return None
-        return _as_file_lookup_entry(entries.get(self._key(kind, name, mode)))
+        entry = _as_file_lookup_entry(entries.get(self._key(kind, name, mode)))
+        if entry is None:
+            self._misses += 1
+        else:
+            self._hits += 1
+        return entry
 
     def set(self, kind: str, name: str, mode: str, base_dir: Path, ext: str) -> None:
         entries = self._entries_map()
@@ -259,7 +300,7 @@ class FileLookupCache:
             self._record_mutation()
 
     def flush(self) -> None:
-        if not self._dirty:
+        if not self._dirty or not self._root_valid:
             return
         try:
             self._save()
@@ -269,6 +310,16 @@ class FileLookupCache:
             return
         self._dirty = False
         self._pending_mutations = 0
+
+    @property
+    def hits(self) -> int:
+        """Lookups answered from the cache so far."""
+        return self._hits
+
+    @property
+    def misses(self) -> int:
+        """Lookups that found no usable entry so far."""
+        return self._misses
 
 
 __all__ = [

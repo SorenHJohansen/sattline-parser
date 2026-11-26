@@ -18,9 +18,10 @@ The mapping is mechanical and documented rather than clever:
 
 from __future__ import annotations
 
+import os
 from collections.abc import Sequence
 from pathlib import Path
-from urllib.parse import quote
+from urllib.parse import quote_from_bytes
 
 from sattline_parser.validation import Rule, find_rule
 
@@ -146,7 +147,9 @@ def _artifact_uri(file: str) -> str:
         relative = path.relative_to(Path.cwd().resolve())
     except ValueError:
         return path.as_uri()
-    return quote(relative.as_posix(), safe="/")
+    # ``os.fsencode`` applies surrogateescape to a non-UTF-8 filename, so the
+    # original bytes are percent-encoded instead of raising on the surrogate.
+    return quote_from_bytes(os.fsencode(relative.as_posix()), safe="/")
 
 
 def _location(finding: Finding) -> dict[str, object] | None:

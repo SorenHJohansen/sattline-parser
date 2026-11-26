@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 from collections import Counter
 from collections.abc import Iterable, Sequence
 from concurrent.futures.process import BrokenProcessPool
@@ -67,10 +68,29 @@ def run(args: argparse.Namespace) -> int:
     root = Path(args.root)
     if not root.is_dir():
         raise CliError(f"cannot read {root}: not a directory")
-    paths = sorted(path for path in root.rglob("*") if path.suffix.lower() in _SOURCE_SUFFIXES)
+    paths = sorted(_source_paths(root))
     rows = _analyse_all(paths, jobs=args.jobs)
     _emit(rows, args=args)
     return int(_exit_code(rows, fail_on=args.fail_on))
+
+
+def _source_paths(root: Path) -> Iterable[Path]:
+    """Every source file below *root*, refusing an unreadable directory.
+
+    ``Path.rglob`` swallows ``PermissionError`` and would turn an unreadable
+    root or subtree into a clean empty scan. ``os.walk`` reports the failure
+    through ``onerror``, which this command maps onto its input-error contract.
+    """
+
+    def refuse(error: OSError) -> None:
+        name = error.filename if error.filename is not None else str(root)
+        raise CliError(f"cannot read {name}: {error.strerror or error}") from error
+
+    for directory, _dirs, files in os.walk(root, onerror=refuse):
+        for name in files:
+            path = Path(directory) / name
+            if path.suffix.lower() in _SOURCE_SUFFIXES:
+                yield path
 
 
 def _analyse_path(path: Path) -> CorpusRow:

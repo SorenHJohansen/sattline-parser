@@ -29,7 +29,7 @@ from enum import Enum
 from pathlib import Path
 from typing import cast
 
-from .models.ast_model import SourceSpan
+from .models.ast_model import FloatLiteral, IntLiteral, SourceSpan
 
 __all__ = ["to_json", "to_jsonable"]
 
@@ -68,6 +68,10 @@ def _convert(value: object, *, remaining: int | None) -> object:
     # as the member object, and before the limit so it is never a placeholder.
     if isinstance(value, Enum):
         return value.value
+    if isinstance(value, IntLiteral):
+        return int(value)
+    if isinstance(value, FloatLiteral):
+        return float(value)
     if value is None or isinstance(value, (bool, int, float, str)):
         return value
     if isinstance(value, SourceSpan):

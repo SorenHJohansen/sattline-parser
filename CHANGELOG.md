@@ -9,6 +9,57 @@ policy are documented in the README.
 
 ## [Unreleased]
 
+## [2026.11.9] - 2026-11-26
+
+### Added
+
+- **Partial-success project loading.** `SattLineProject.load_many` loads several
+  targets in one discovery and parse pass, shares every successful dependency
+  closure, and returns a `TargetLoadResult` per target so one failed consumer
+  does not discard the others. `SattLineProject.load` keeps its all-or-nothing
+  contract.
+- **Reusable source-line split.** `split_source_lines` is exported from
+  `sattline_parser.api` and the top-level package, using the same CRLF, LF, and
+  lone CR rule as `source_line_at` and `SourceDocument.line_col`.
+- **Cache diagnostics.** `SattLineProject.cache_info` reports whether the caches
+  were usable, why they were disabled, and the AST and lookup hit and miss
+  counts for the load.
+- **Consumer index and identity helpers.** `ProjectIndex` lookups accept a
+  `SymbolKind` filter, `SattLineProject.invoked_moduletypes` answers over the
+  project's own keys, and `SattLineProgram.identity`,
+  `SattLineProgram.artifact_identity`, and `SattLineProject.identity_of` expose
+  the language and filesystem identities directly.
+
+### Changed
+
+- **Project-layer loading work.** An uncached load no longer takes a SHA-256
+  snapshot of every source file, and a file that fails to parse is never
+  hashed. Dependency closures are memoized, an acyclic module-type graph is
+  cleared by one global cycle search, the planner uses a FIFO deque instead of
+  shifting a list, and the project symbol index fills definitions and usages
+  from one AST walk.
+- **Project-loading benchmarks.** Generated deep, wide, diamond, and
+  module-type graphs, plus uncached, cold-cache, and warm-cache loads, now have
+  benchmark coverage.
+
+### Fixed
+
+- **Adversarial fixes.** IDE text rendering scans the source once instead of
+  rescanning the remainder of every long line, a step fork is written after its
+  code blocks, and numeric literal metadata is detached from the caller across
+  the project boundary and emitted as plain numbers by the serializer.
+- **Hostile input handling.** A symlink-loop root, a 254-byte unit name, and
+  an unreadable corpus directory now map onto the documented load or usage
+  errors. A replaced lookup-cache root is no longer written into, and a cycle
+  between `Straße` and `STRASSE` keeps both units distinguishable.
+- **CLI output contract.** A short report that fails only on the final flush
+  exits 2 instead of 120, output failures such as a full device exit 2, JSON
+  stays valid on an ASCII stream, a non-UTF-8 filename yields a valid SARIF
+  URI, and an empty `--stdin-name` is refused.
+- **Literal and range edges.** A very long integer literal clamps instead of
+  raising, negative ranges clamp to the mapped start, and comment continuation
+  lines can break at spaces.
+
 ## [2026.11.8] - 2026-11-20
 
 ### Added

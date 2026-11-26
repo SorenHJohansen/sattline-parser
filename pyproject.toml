@@ -124,6 +124,7 @@ ignore = [
 "tests/parser/test_models_walk.py" = ["N802"]
 "tests/*.py" = ["S101"]
 "tests/**/*.py" = ["S101"]
+"benchmarks/*.py" = ["S101"]
 
 [tool.ruff.lint.pylint]
 max-statements = 50

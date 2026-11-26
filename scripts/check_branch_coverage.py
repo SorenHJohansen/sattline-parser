@@ -5,7 +5,7 @@ script is the authoritative branch gate used by CI. It runs the complete test
 suite with branch measurement and asserts:
 
 - line coverage >= 100 (the project's documented guarantee)
-- branch coverage >= the configured minimum
+- branch coverage >= 100 (the project's documented guarantee)
 
 Usage: ``python scripts/check_branch_coverage.py``
 """
@@ -20,9 +20,9 @@ from pathlib import Path
 
 LINE_MIN = 100.0
 # Branch coverage is measured as a depth complement to line coverage. The gate
-# sits below the current level so it catches regressions without demanding
-# coverage of purely-defensive branches.
-BRANCH_MIN = 93.0
+# is at 100 percent; a purely defensive branch is either exercised by a focused
+# test or excluded with a documented pragma.
+BRANCH_MIN = 100.0
 
 _REPO_ROOT = Path(__file__).resolve().parents[1]
 _JSON_REPORT = _REPO_ROOT / "coverage-branch.json"

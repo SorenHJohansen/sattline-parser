@@ -11,11 +11,17 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import Enum, StrEnum
 from pathlib import Path
-from typing import Literal
+from typing import TYPE_CHECKING, Literal
 
 from sattline_parser.models.ast_model import BasePicture, GraphicsBinding, SourceSpan
 from sattline_parser.names import fold_identifier
 from sattline_parser.validation.diagnostics import Diagnostic
+
+from .errors import ProjectLoadError
+from .identity import ArtifactIdentity, UnitIdentity
+
+if TYPE_CHECKING:
+    from .project import SattLineProject
 
 
 class LoadMode(Enum):
@@ -38,6 +44,40 @@ class LoadValidation(StrEnum):
     NONE = "none"
     FULL = "full"
     INVOKED = "invoked"
+
+
+class CacheDisabledReason(StrEnum):
+    """Why a project cache is not usable for this load.
+
+    ``NOT_CONFIGURED`` means the caller passed no ``cache_dir``.
+    ``PRIVACY`` means the supplied directory could not be proven private to
+    this user. ``UNAVAILABLE`` means it could not be created or opened, or a
+    cache handle was disabled after construction.
+    """
+
+    NOT_CONFIGURED = "not-configured"
+    PRIVACY = "privacy"
+    UNAVAILABLE = "unavailable"
+
+
+@dataclass(frozen=True, slots=True)
+class CacheInfo:
+    """A snapshot of the project-owned caches for one load.
+
+    ``enabled`` is true only when both the lookup cache and the AST cache could
+    be established. The counters describe the work this load actually did:
+    ``ast_hits`` and ``ast_misses`` count body parses served from or attempted
+    against the AST cache, and ``lookup_hits``/``lookup_misses`` count ordered
+    discovery resolutions served from or attempted against the lookup cache.
+    A load with no cache reports zero counters.
+    """
+
+    enabled: bool = False
+    disabled_reason: CacheDisabledReason | None = CacheDisabledReason.NOT_CONFIGURED
+    ast_hits: int = 0
+    ast_misses: int = 0
+    lookup_hits: int = 0
+    lookup_misses: int = 0
 
 
 @dataclass(frozen=True, slots=True)
@@ -201,6 +241,25 @@ class LoadDiagnostic:
 
 
 @dataclass(frozen=True, slots=True)
+class TargetLoadResult:
+    """The outcome of one target in :meth:`SattLineProject.load_many`.
+
+    Exactly one of ``project`` and ``error`` is set. A successful target owns a
+    complete project for its own dependency closure; a failed target reports the
+    load error that stopped it. ``target`` is the spelling the caller supplied.
+    """
+
+    target: str
+    project: SattLineProject | None = None
+    error: ProjectLoadError | None = None
+
+    @property
+    def ok(self) -> bool:
+        """Whether this target loaded completely."""
+        return self.project is not None
+
+
+@dataclass(frozen=True, slots=True)
 class DistributionTarget:
     """One entry of a distribution section: a named download target.
 
@@ -303,6 +362,24 @@ class SattLineProgram:
             return None
         return self.distribution.has_executing_system
 
+    @property
+    def identity(self) -> UnitIdentity:
+        """The language identity of this unit, folded by the CP1252 name table.
+
+        ``name`` keeps the display spelling. Compare units with this property,
+        never with ``str.casefold()`` on the name.
+        """
+        return UnitIdentity.of(self.name)
+
+    @property
+    def artifact_identity(self) -> ArtifactIdentity | None:
+        """The filesystem identity of the loaded body, when its path is known.
+
+        This is the platform's comparison of the resolved path, not a language
+        name comparison.
+        """
+        return None if self.source_path is None else ArtifactIdentity.of(self.source_path)
+
 
 @dataclass(frozen=True, slots=True)
 class DependencyGraph:
@@ -343,6 +420,8 @@ class DependencyGraph:
 
 
 __all__ = [
+    "CacheDisabledReason",
+    "CacheInfo",
     "DependencyGraph",
     "DistributionData",
     "DistributionTarget",
@@ -359,4 +438,5 @@ __all__ = [
     "ProgramFormat",
     "SattLineProgram",
     "SidecarState",
+    "TargetLoadResult",
 ]

@@ -239,6 +239,44 @@ dependency-first closure. `validate=INVOKED` additionally runs **after** the
 graph is complete, because it needs the whole invocation graph. The loader
 walks `invoked_moduletypes` and appends the invoked-scope diagnostics.
 
+### Partial success
+
+`SattLineProject.load` keeps its all-or-nothing contract: it either returns one
+complete registry or raises. A caller that loads several independent consumers
+can use `SattLineProject.load_many` instead:
+
+```python
+results = SattLineProject.load_many(
+    roots=roots,
+    mode=mode,
+    targets=("ConsumerA", "ConsumerB", "ConsumerC"),
+)
+
+for target, result in results.items():
+    if result.ok:
+        project = result.project
+    else:
+        print(target, result.error)
+```
+
+The result is keyed by the target spelling the caller supplied, and each value
+is a `TargetLoadResult`. Exactly one of `project` and `error` is set. A target
+whose own closure fails, whether during discovery, parsing, assembly, or
+module-type cycle checking, reports that error without stopping the other
+targets.
+
+Discovery and parsing are shared. The union of the targets is planned once, so
+a library common to several consumers is resolved and parsed once, and the
+loader's caches see one read per body. Each successful target then receives a
+project over its own closure only. Scoped validation, module-type cycle
+checking, and unit-specific load diagnostics are applied against that target
+alone, so one consumer's findings never appear in another consumer's project.
+A skipped-file finding belongs to no loaded unit, so every target reports it.
+
+A plan that never finished because its target failed is rolled back before the
+next target is planned, so a later target can plan the same artifact cleanly. A
+dependency that did finish before the failure stays planned and is reused.
+
 ## Identity
 
 The project layer keeps several comparisons apart, and conflating them has caused
@@ -279,6 +317,14 @@ a case-sensitive filesystem and one directory on Windows.
 `UnitIdentity.of(name)` and `ArtifactIdentity.of(path)` are exported for a
 consumer that needs the same comparisons. Equality and hashing use the key, so
 two spellings of one identity are equal.
+
+The loaded models expose those identities directly: `SattLineProgram.identity`
+is the unit's `UnitIdentity`, `SattLineProgram.artifact_identity` is the
+`ArtifactIdentity` of its resolved body (or `None` when there is no path), and
+`SattLineProject.identity_of(name)` answers with the identity of the unit the
+name designates. A consumer should use these, or `UnitIdentity.of`, for every
+unit-name comparison. `str.casefold()` is a project view detail, not the
+language identity table, and must not replace it for resolution.
 
 ### Aliases
 
@@ -329,7 +375,10 @@ planner resolves an artifact before it recurses, so the cycle check follows
 physical files: when the resolved artifact is already on the active stack, it
 raises `DependencyCycleError` with the canonical cycle path, for example
 `("alpha", "beta", "alpha")`. The names in the path are the logical names that
-formed the loop, folded, because that is what a reader can act on. The error is
+formed the loop, folded, because that is what a reader can act on. The ordinary
+fold is `str.casefold`; when two units in the path share that key but remain
+distinct under the language name table, such as `Straße` and `STRASSE`, each is
+shown by its language identity so the loop stays distinguishable. The error is
 structural: a cycle inside an unparseable dependency still fails the load.
 
 Following artifacts rather than names matters because two different names for
@@ -479,14 +528,19 @@ still reports its own conflict in either target order.
 classDiagram
     class SattLineProject {
         from_programs(programs)
+        load(roots, mode, targets)
+        load_many(roots, mode, targets)
         get(name)
         programs()
         diagnostics()
+        cache_info
         cycles()
         libraries()
         dependencies_of(name)
         dependents_of(name)
         graph()
+        invoked_moduletypes(targets)
+        identity_of(name)
         index
     }
     class SattLineProgram {
@@ -502,6 +556,22 @@ classDiagram
         library: str | None
         resolved_base: Path | None
         diagnostics: tuple[Diagnostic, ...]
+        identity: UnitIdentity
+        artifact_identity: ArtifactIdentity | None
+    }
+    class TargetLoadResult {
+        target: str
+        project: SattLineProject | None
+        error: ProjectLoadError | None
+        ok: bool
+    }
+    class CacheInfo {
+        enabled: bool
+        disabled_reason: CacheDisabledReason | None
+        ast_hits: int
+        ast_misses: int
+        lookup_hits: int
+        lookup_misses: int
     }
     class DistributionData {
         version: str | None
@@ -535,6 +605,8 @@ classDiagram
     SattLineProject --> SattLineProgram
     SattLineProject --> DependencyGraph
     SattLineProject --> ProjectIndex
+    SattLineProject --> CacheInfo
+    TargetLoadResult --> SattLineProject
     SattLineProgram --> ProgramFormat
     SattLineProgram --> DistributionData
     DistributionData --> DistributionTarget
@@ -613,6 +685,18 @@ plan keys), its values are module-type names folded with `fold_identifier`, and
 `closure_of` must answer in the same key space as `programs`. See
 [validation scopes](#validation-scopes).
 
+`SattLineProject.invoked_moduletypes(targets=None)` is the same walk over the
+project's own view keys, so a consumer does not need to rebuild the key space.
+It follows resolved dependency edges, including an alias spelling, and every
+selected target appears in the result with an empty set when it reaches no
+module types. Pass target names, or omit them to treat every loaded unit as a
+target.
+
+`ProjectIndex.definitions_of` and `ProjectIndex.usages_of` accept an optional
+`kind=SymbolKind` filter, and `defined_names(kind=...)` reports only names with
+a declaration of that kind. A consumer can therefore ask for module-type
+definitions and references without filtering the whole result itself.
+
 ## Caches
 
 Both project caches are opt-in through `cache_dir=`. When it is `None`, the
@@ -633,6 +717,33 @@ parsing.
 The companion directory index is not one of those caches. It lives only for one
 load, so a second load lists its directories again and sees a file that changed
 in between; nothing about a companion scan outlives the load that made it.
+
+### Cache diagnostics
+
+`SattLineProject.cache_info` reports a `CacheInfo` snapshot for the load that
+built the project:
+
+| Field | Meaning |
+| --- | --- |
+| `enabled` | Both the lookup cache and the AST cache were usable |
+| `disabled_reason` | `CacheDisabledReason.NOT_CONFIGURED`, `PRIVACY`, or `UNAVAILABLE`, or `None` when enabled |
+| `ast_hits` | Body parses served from the AST cache |
+| `ast_misses` | Body parses that found no usable AST entry |
+| `lookup_hits` | Ordered resolutions served from the lookup cache |
+| `lookup_misses` | Ordered resolutions that found no usable lookup entry |
+
+`NOT_CONFIGURED` means the caller passed no `cache_dir`. `PRIVACY` means the
+supplied directory could not be proven private to this user. `UNAVAILABLE`
+means the directory could not be created or opened, or a cache handle was
+disabled after construction. A project built by `from_programs` reports
+`NOT_CONFIGURED` and zero counters.
+
+The counters describe this load. A cold load reports AST misses; a warm load of
+an unchanged tree reports AST hits and no misses. They let a consumer report
+real loading performance and verify cache integration without inspecting the
+private cache directory. A parallel load counts a worker's cache read from its
+outcome, so the snapshot covers the whole load rather than only the parent
+process.
 
 ### Lookup cache
 
@@ -704,6 +815,9 @@ The snapshot is taken from the exact bytes that are parsed, and the entry
 records those bytes' digest, so an entry can never claim a source revision it
 was not parsed from. A body whose source changed while a worker was reading it
 is left uncached: the next load reparses it instead of trusting a stale AST.
+Hashing is only paid when it can be used: a load with `cache_dir=None`, or one
+whose cache could not be proven private, reads every source without taking a
+snapshot, and a body that fails to parse is never hashed.
 
 The namespace and file-format magic belong to `sattline-parser`
 (`FILE_AST_CACHE_VERSION`), so another tool's cache never cross-reads.
@@ -796,11 +910,12 @@ code file's directory. It never does a root-ordered lookup:
 
 The stem is compared with the language name table, so `Pump.S` pairs with
 `pump.g` while `Straße` never pairs with `STRASSE`. The exact stem and extension
-are tried first; a case variant is found through the load's directory index.
-Only a regular file pairs: a directory named `Pump.g` is not a companion. When a
-directory holds two case variants of one companion name, `Main.g` and `MAIN.G`,
-the alphabetically first file wins whatever order the directory lists them in,
-and the load reports `FOLDED_NAME_COLLISION` naming both and the winner.
+are tried first and pair directly; only when no exact match exists is a case
+variant found through the load's directory index. Only a regular file pairs: a
+directory named `Pump.g` is not a companion. When the index holds two case
+variants of one companion name, `Main.g` and `MAIN.G`, the alphabetically first
+file wins whatever order the directory lists them in, and the load reports
+`FOLDED_NAME_COLLISION` naming both and the winner.
 
 A companion from the other artifact family beside the body, for example a `.y`
 beside a `.s` body, is never paired and is reported as
@@ -842,11 +957,12 @@ code file's directory, never a root-ordered lookup:
 - a `.p` or `.q` input resolves to itself.
 
 The stem is compared with the language name table, so `Pump.S` pairs with
-`pump.p` while `Straße` never pairs with `STRASSE`. As with graphics, the exact
-stem wins, a case variant is found through the load's directory index, and a
-collision between case variants is reported with its winner. A `.q` beside a
-`.s` body is not paired and is reported as `COMPANION_FAMILY_MISMATCH`, which is
-why `has_executing_system` is `None` rather than a silent unknown.
+`pump.p` while `Straße` never pairs with `STRASSE`. As with graphics, an exact
+stem and extension pair directly; only a case-variant lookup through the load's
+directory index can produce a collision, which is reported with its winner. A
+`.q` beside a `.s` body is not paired and is reported as
+`COMPANION_FAMILY_MISMATCH`, which is why `has_executing_system` is `None`
+rather than a silent unknown.
 
 The file is a small nested structure of named groups:
 
@@ -912,7 +1028,12 @@ re-parsing the body.
 - Each resolved body is parsed once, by resolved code path.
 - The parser is shared across files.
 - The lookup cache skips repeated ordered scans for a stable layout.
-- The AST cache skips re-parsing an unchanged file.
+- The AST cache skips re-parsing an unchanged file, and a source is hashed only
+  when an enabled cache can store the result.
+- Dependency closures are computed once per distinct dependency set, and an
+  acyclic module-type graph is cleared by one global search instead of one
+  search per unit.
+- The symbol index collects definitions and usages in one AST walk.
 - `INVOKED` scope skips additional validation of a library's unused module
   types, while still checking their type bindings.
 - Companion resolution lists each directory once per load and indexes it by
@@ -931,6 +1052,11 @@ Measured with `sattline project` over a 268-program library tree (315 MB of
 Parsing is 99% of a load. Lookup, sidecar reads, graphics and distribution
 companions, and graph assembly together are under a second on that tree, which
 is why `workers` is the only lever with a large factor.
+
+`benchmarks/test_bench_project.py` measures generated deep, wide, diamond, and
+module-type graphs, plus uncached, cold-cache, and warm-cache loads. See
+[testing.md](testing.md).
+
 A `ProjectLoader` resolves one load. Discovery plans, parse outcomes, and the
 registry are per-load state, so a second `resolve()` call raises rather than
 doubling the plans over an existing registry; construct another loader.
@@ -976,7 +1102,11 @@ on the worker count: discovery fixes the plan order before any parse runs.
 | `tests/project/test_discovery.py` | Ordered lookup and path-list notation |
 | `tests/project/test_formats.py` | Extension selection and companion pairing |
 | `tests/project/test_loader.py` | Recursive loading and post-order |
+| `tests/project/test_load_many.py` | Partial-success multi-target loading and shared closures |
+| `tests/project/test_index.py` | Definitions and usages across a loaded project |
+| `tests/project/test_project_layer_branches.py` | Defensive project-layer branch paths |
 | `tests/project/test_project_layer.py` | `SattLineProject` views and graph |
+| `tests/project/test_cache_info.py` | Cache configuration and hit/miss diagnostics |
 | `tests/project/test_project_validation.py` | Scopes and datecodes |
 | `tests/project/test_reachability.py` | Invoked module-type walk |
 | `tests/project/test_lookup_cache.py` | Cache trust, invalidation, and a prune that never stats a recorded base |

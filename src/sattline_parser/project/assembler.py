@@ -91,6 +91,32 @@ class ProjectAssembler:
         for plan in plans:
             self._assemble_one(plan, outcomes[plan.key])
 
+    def assemble_collecting(
+        self,
+        plans: Sequence[Plan],
+        *,
+        outcomes: Mapping[str, ParseOutcome],
+    ) -> dict[str, ProjectLoadError]:
+        """Attach every plan, returning the failure that stopped each one.
+
+        A plan whose dependency already failed is not assembled: its missing
+        definitions could turn a downstream consequence into a misleading
+        finding. It inherits the dependency's error instead, so the target
+        report names the artifact that actually failed. The registry keeps every
+        plan that assembled successfully.
+        """
+        failures: dict[str, ProjectLoadError] = {}
+        for plan in plans:
+            blocker = next((failures[dependency] for dependency in plan.dependencies if dependency in failures), None)
+            if blocker is not None:
+                failures[plan.key] = blocker
+                continue
+            try:
+                self._assemble_one(plan, outcomes[plan.key])
+            except ProjectLoadError as exc:
+                failures[plan.key] = exc
+        return failures
+
     def _assemble_one(self, plan: Plan, outcome: ParseOutcome) -> None:
         artifact = plan.artifact
         basepicture = outcome.ast
