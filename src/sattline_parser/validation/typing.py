@@ -177,16 +177,16 @@ class FieldSpec(Protocol):
     """Structural view of one record field, for graph implementations."""
 
     @property
-    def datatype(self) -> ScalarDatatype | str: ...
+    def datatype(self) -> ScalarDatatype | str: ...  # pragma: no cover - protocol signature only
 
     @property
-    def state(self) -> bool | None: ...
+    def state(self) -> bool | None: ...  # pragma: no cover - protocol signature only
 
 
 class FieldGraph(Protocol):
     """Structural view of a record field graph."""
 
-    def field(self, record_type: str, field_name: str) -> FieldSpec | None: ...
+    def field(self, record_type: str, field_name: str) -> FieldSpec | None: ...  # pragma: no cover - protocol
 
 
 def resolve_variable_field_datatype(

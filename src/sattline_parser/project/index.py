@@ -94,10 +94,11 @@ class ProjectIndex:
         ordered = sorted(programs.values(), key=lambda program: (UnitIdentity.of(program.name).key, program.name))
         for program in ordered:
             library = program.library
-            for site in _program_definitions(program.code, program=program.name, library=library):
-                definitions.setdefault(UnitIdentity.of(site.name).key, []).append(site)
-            for site in _program_usages(program.code, program=program.name, library=library):
-                usages.setdefault(UnitIdentity.of(site.name).key, []).append(site)
+            for site in _program_sites(program.code, program=program.name, library=library):
+                if isinstance(site, DefinitionSite):
+                    definitions.setdefault(UnitIdentity.of(site.name).key, []).append(site)
+                else:
+                    usages.setdefault(UnitIdentity.of(site.name).key, []).append(site)
         self._definitions = {key: _sorted_definitions(sites) for key, sites in definitions.items()}
         self._usages = {key: _sorted_usages(sites) for key, sites in usages.items()}
 
@@ -124,7 +125,12 @@ class ProjectIndex:
         return tuple(spellings[key] for key in sorted(spellings))
 
 
-def _program_definitions(code: BasePicture, *, program: str, library: str | None) -> Iterable[DefinitionSite]:
+def _program_sites(code: BasePicture, *, program: str, library: str | None) -> Iterable[DefinitionSite | UsageSite]:
+    """Every declaration and use site in one program, in a single AST walk.
+
+    Declarations and uses are classified independently, as they were when the
+    index walked the tree twice, but one walk now feeds both answers.
+    """
     yield DefinitionSite(
         name=program,
         kind=SymbolKind.PROGRAM,
@@ -140,11 +146,6 @@ def _program_definitions(code: BasePicture, *, program: str, library: str | None
             yield DefinitionSite(node.name, SymbolKind.MODULETYPE, program, library, node.declaration_span)
         elif isinstance(node, Variable):
             yield DefinitionSite(node.name, SymbolKind.VARIABLE, program, library, node.declaration_span)
-
-
-def _program_usages(code: BasePicture, *, program: str, library: str | None) -> Iterable[UsageSite]:
-    for event in walk(code):
-        node = event.node
         if isinstance(node, VarRef):
             yield UsageSite(node.name, SymbolKind.VARIABLE, program, library, node.span)
         elif isinstance(node, ModuleTypeInstance):

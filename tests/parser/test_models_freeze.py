@@ -10,7 +10,7 @@ from typing import cast
 import pytest
 
 from sattline_parser.api import parse_source_text
-from sattline_parser.ast import BasePicture
+from sattline_parser.ast import BasePicture, IntLiteral
 from sattline_parser.formatting import format_source
 from sattline_parser.models.freeze import FrozenMapping, copy_frozen_ast, freeze_ast
 
@@ -131,3 +131,30 @@ ENDDEF (*Shared*);
     assert isinstance(copied.moduledef.graph_objects, tuple)
     with pytest.raises(dataclasses.FrozenInstanceError):
         copied.moduledef.grid = 0.5
+
+
+def test_copy_frozen_ast_detaches_literal_metadata() -> None:
+    """A numeric literal carries mutable source metadata, so it is copied."""
+    picture = parse_source_text(
+        """"Syntax version 2.23"
+"Original file date: ---"
+"Program date: ---, name: Literal"
+Frozen Invocation ( 0.0 , 0.0 , 0.0 , 1.0 , 1.0 ) : MODULEDEFINITION
+LOCALVARIABLES
+   X: integer := 7;
+ModuleDef
+ClippingBounds = ( -1.0 , -1.0 ) ( 1.0 , 1.0 )
+ENDDEF (*Literal*);
+""",
+        log_failures=False,
+    )
+    literal = picture.localvariables[0].init_value
+    assert isinstance(literal, IntLiteral)
+
+    copied = cast(BasePicture, copy_frozen_ast(picture))
+    copied_literal = copied.localvariables[0].init_value
+    assert isinstance(copied_literal, IntLiteral)
+    assert copied_literal == literal
+    assert copied_literal is not literal
+    with pytest.raises(dataclasses.FrozenInstanceError):
+        copied_literal.written = "caller mutation"

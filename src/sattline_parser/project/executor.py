@@ -280,8 +280,9 @@ def parse_code_file(
     code_text, mode, cache_text, log_failures, collect_debug = task
     code_path = Path(code_text)
     messages: list[str] = []
-    if cache_text is not None:
-        cached = _worker_cache(cache_text).load(code_path, mode)
+    cache = _worker_cache(cache_text) if cache_text is not None else None
+    if cache is not None and cache.enabled:
+        cached = cache.load(code_path, mode)
         if cached is not None:
             if collect_debug:
                 _append_bounded_debug(messages, f"Using cached AST for: {code_path}")
@@ -290,7 +291,6 @@ def parse_code_file(
         raw_bytes = code_path.read_bytes()
     except OSError as exc:
         return ParseOutcome(failure=str(exc), failure_record=parse_failure_record(exc), debug=tuple(messages))
-    source_revision = snapshot(code_path, raw_bytes)
     if collect_debug:
         _append_bounded_debug(messages, f"Parsing: {code_path}")
 
@@ -312,6 +312,10 @@ def parse_code_file(
             source_line=failure_source_line(raw_bytes, record.line),
             debug=tuple(messages),
         )
+    # A worker hashes only when its own read-only handle is usable. A body with
+    # no snapshot is not stored by the parent, so an unavailable worker cache
+    # costs no SHA-256 pass, and a failed parse above never reaches this point.
+    source_revision = snapshot(code_path, raw_bytes) if cache is not None and cache.enabled else None
     return ParseOutcome(ast=picture, snapshot=source_revision, debug=tuple(messages))
 
 
@@ -460,27 +464,37 @@ class ParseExecutor:
 
         A worker never writes the cache, so the per-user key and the entry
         signatures stay single-process. A parse that came from the cache has
-        nothing to store, and a body whose source changed while the worker was
-        reading it is left uncached rather than stored under newer metadata.
+        nothing to store, a disabled cache has nowhere to store it, and a body
+        whose source changed while the worker was reading it is left uncached
+        rather than stored under newer metadata. A worker with no usable cache
+        returns no snapshot, which is also a reason not to store its body.
         """
-        if outcome.ast is None or outcome.cached or self._ast_cache is None:
+        cache = self._ast_cache
+        if outcome.ast is None or outcome.cached or cache is None or not cache.enabled:
+            return
+        # A worker that could not hash the body returns no snapshot. The parent
+        # must not store that body under its own newer metadata: the AST may have
+        # been parsed from older bytes. Only an armed snapshot closes the race.
+        if outcome.snapshot is None:
             return
         code_path = plan.artifact.code_path
         try:
-            self._ast_cache.save(code_path, self._mode.value, outcome.ast, snapshot=outcome.snapshot)
+            cache.save(code_path, self._mode.value, outcome.ast, snapshot=outcome.snapshot)
         except OSError as exc:
             # The cache is an optimisation: a failed write must not turn a
             # successful parse into a load failure.
             self._dbg(f"Cache write failed for {code_path}: {exc}")
 
     def _load_ast(self, code_path: Path, *, program_name: str, dependency: str | None) -> BasePicture:
-        if self._ast_cache is not None:
-            cached = self._ast_cache.load(code_path, self._mode.value)
+        cache = self._ast_cache
+        if cache is not None and cache.enabled:
+            cached = cache.load(code_path, self._mode.value)
             if cached is not None:
                 self._dbg(f"Using cached AST for: {code_path}")
                 return cached
-        # Read the source once and hash those bytes: the entry written below then
-        # describes exactly the revision that was parsed, never a later stat.
+        # Read the source once. A snapshot is only taken when a successful parse
+        # can be stored: an uncached load, or a source that fails to parse, must
+        # not pay for a SHA-256 pass over every body.
         try:
             raw_bytes = code_path.read_bytes()
         except OSError as exc:
@@ -492,7 +506,6 @@ class ParseExecutor:
                 dependency=dependency,
                 path=code_path,
             ) from exc
-        snapshot = source_snapshot(code_path, raw_bytes)
         self._dbg(f"Parsing: {code_path}")
         try:
             basepicture = parse_source_bytes(
@@ -517,9 +530,13 @@ class ParseExecutor:
                 path=code_path,
                 source_line=source_line,
             ) from exc
-        if self._ast_cache is not None:
+        if cache is not None and cache.enabled:
+            # Hash the exact bytes that were parsed, after the parse succeeded:
+            # the entry then describes that revision, and save() refuses to
+            # write when the file changed while it was being parsed.
+            snapshot = source_snapshot(code_path, raw_bytes)
             try:
-                self._ast_cache.save(code_path, self._mode.value, basepicture, snapshot=snapshot)
+                cache.save(code_path, self._mode.value, basepicture, snapshot=snapshot)
             except OSError as exc:
                 # The cache is an optimisation: a failed write must not turn a
                 # successful parse into a load failure.

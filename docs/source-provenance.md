@@ -86,7 +86,7 @@ document.
 | Generated character | Anchor: nearest preceding real character | Anchored at the preceding real character |
 | Deleted original region | No normalized counterpart | Included when the range spans the surviving text around it |
 | Offset at or past the end | End boundary after the last real character | End boundary |
-| Negative offset | `None` | Clamped to 0 |
+| Negative offset | `None` | Clamped to the start of the normalized text |
 | Range with `start >= end` | Boundary position | Zero-width range at that boundary |
 
 Anchoring is the key rule: a generated character never claims an exact

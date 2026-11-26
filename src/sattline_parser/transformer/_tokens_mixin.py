@@ -78,9 +78,17 @@ class TokensMixin:
         the token text in ``written``, so a diagnostic can quote the source
         spelling of a literal whose stored value is clamped.
         """
-        raw = int(str(tok))
-        clamped = max(const.INT_MIN, min(const.INT_MAX, raw))
-        return IntLiteral(clamped, self._token_span(tok), clamped=clamped != raw, written=str(tok))
+        raw_text = str(tok)
+        overflow = False
+        try:
+            raw = int(raw_text)
+        except ValueError:
+            # CPython limits int() to 4300 digits by default. A longer literal
+            # is lexically valid and must clamp like a shorter out-of-range one.
+            overflow = True
+            raw = const.INT_MIN if raw_text.lstrip().startswith("-") else const.INT_MAX
+        bounded = max(const.INT_MIN, min(const.INT_MAX, raw))
+        return IntLiteral(bounded, self._token_span(tok), clamped=overflow or bounded != raw, written=raw_text)
 
     def SIGNED_INT_NOTAIL(self, tok: Token) -> IntLiteral:
         """Grammar SIGNED_INT_NOTAIL terminal -> IntLiteral (no trailing coordinates)."""

@@ -365,7 +365,7 @@ ruff format --check src tests scripts benchmarks fuzzing
 pyright src tests benchmarks fuzzing scripts
 bandit -q -r src fuzzing -x tests -c pyproject.toml
 pip-audit
-python scripts/check_branch_coverage.py     # line >= 100%, branch >= 93%
+python scripts/check_branch_coverage.py     # line >= 100%, branch >= 100%
 ```
 
 The repository also ships an OpenCode workspace in `.opencode/`: the
@@ -380,14 +380,13 @@ FreeBSD only. Add it explicitly where it is supported:
 pip install -e ".[dev,fuzz]"                # Linux / FreeBSD only
 ```
 
-Line coverage is enforced at 100% after `pragma: no cover` and the configured
-`exclude_lines` are applied; branch coverage is measured and gated by
-`scripts/check_branch_coverage.py` (both enforced in CI). That script also
-prints how many executable lines the exclusion rules keep outside the line
-gate, so the 100% number is not mistaken for full-source coverage. The full
-test suite is run by CI via `pytest` (the project's configured `testpaths`),
-including the packaging tests in `tests/test_packaging.py` that live outside
-`tests/parser`.
+Line and branch coverage are enforced at 100% after `pragma: no cover` and the
+configured `exclude_lines` are applied; `scripts/check_branch_coverage.py` owns
+both gates (enforced in CI). That script also prints how many executable lines
+the exclusion rules keep outside the line gate, so the 100% number is not
+mistaken for full-source coverage. The full test suite is run by CI via
+`pytest` (the project's configured `testpaths`), including the packaging tests
+in `tests/test_packaging.py` that live outside `tests/parser`.
 
 Fuzzing runs in three tiers, each enforced separately:
 

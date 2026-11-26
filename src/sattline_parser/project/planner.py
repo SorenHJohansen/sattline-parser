@@ -22,10 +22,12 @@ keep an alias as a name for the same unit.
 
 from __future__ import annotations
 
+from collections import deque
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from pathlib import Path
 
+from sattline_parser.names import fold_identifier
 from sattline_parser.source_io import read_text_cp1252
 
 from ._cycles import canonical_cycle
@@ -63,8 +65,27 @@ class _Pending:
     declared_by: str | None
     artifact: ResolvedArtifact
     identity: ArtifactIdentity
-    pending: list[str]
+    pending: deque[str]
     resolved: list[str]
+
+
+def _cycle_display_names(spellings: Sequence[str]) -> tuple[str, ...]:
+    """Fold a cycle path for display, keeping language-distinct units apart.
+
+    The ordinary project view key is ``str.casefold``, which is what existing
+    cycle messages use. Two units can share that key while remaining distinct
+    under :func:`fold_identifier`, such as ``Straße`` and ``STRASSE``; using the
+    shared key would render the loop as a self-dependency. If any such pair is
+    present, the whole path uses the language identity so one message never
+    mixes two folding rules.
+    """
+    casefolded = [spelling.casefold() for spelling in spellings]
+    identities: dict[str, set[str]] = {}
+    for spelling, key in zip(spellings, casefolded, strict=True):
+        identities.setdefault(key, set()).add(fold_identifier(spelling))
+    if all(len(group) == 1 for group in identities.values()):
+        return tuple(casefolded)
+    return tuple(fold_identifier(spelling) for spelling in spellings)
 
 
 class ProjectPlanner:
@@ -156,7 +177,7 @@ class ProjectPlanner:
             while True:
                 frame = stack[-1]
                 if frame.pending:
-                    dependency = frame.pending.pop(0)
+                    dependency = frame.pending.popleft()
                     child = self._open(dependency, declared_by=frame.name)
                     if isinstance(child, str):
                         frame.resolved.append(child)
@@ -201,8 +222,9 @@ class ProjectPlanner:
             # has no finite load order. Report the logical names that formed it.
             chain = list(self._loading.items())
             start = next(index for index, entry in enumerate(chain) if entry[0] == identity)
-            cycle = (*tuple(spelling for _, spelling in chain[start:]), name.casefold())
-            raise DependencyCycleError(canonical_cycle(cycle))
+            spellings = [spelling for _, spelling in chain[start:]]
+            spellings.append(name)
+            raise DependencyCycleError(canonical_cycle(_cycle_display_names(spellings)))
         if identity in self._planned:
             self._record_name(name, identity.key, code_path)
             self._report_unused_alias(name, identity.key, code_path)
@@ -216,13 +238,13 @@ class ProjectPlanner:
         )
         self._planned.add(identity)
         self._read_sidecars[identity.key] = artifact.deps_path
-        self._loading[identity] = name.casefold()
+        self._loading[identity] = name
         return _Pending(
             name=name,
             declared_by=declared_by,
             artifact=artifact,
             identity=identity,
-            pending=list(artifact.dependencies),
+            pending=deque(artifact.dependencies),
             resolved=[],
         )
 

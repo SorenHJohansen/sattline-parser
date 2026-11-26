@@ -324,10 +324,10 @@ def describe_parse_error(
     ``source_text`` must be the original (un-preprocessed) source. It may be
     ``None`` when only the exception's own position is available, as when a
     project load error carries a parse failure as its cause: the details then
-    keep ``line`` and ``column`` but have no excerpt. When ``source_document``
-    is supplied and the exception position is in normalized (decoded)
-    coordinates, the reported line/column are mapped back to the original
-    source.
+    keep ``line`` and ``column`` but have no excerpt. When ``source_text`` and
+    ``source_document`` are both supplied and the exception position is in
+    normalized (decoded) coordinates, the reported line/column are mapped back
+    to the original source and the excerpt is taken from the original text.
     """
     line = getattr(exc, "line", None)
     column = getattr(exc, "column", None)

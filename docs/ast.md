@@ -682,7 +682,9 @@ to the parser: it keeps a value inside the declared range and records that it
 had to, and it is not a claim about how the language stores or rejects such a
 literal. A diagnostic quotes `written`, because the stored value is not what the
 source said; the formatter writes `value`, because that is what the model holds.
-A hand-built literal may leave `written` as `None`.
+A hand-built literal may leave `written` as `None`. The three metadata fields
+are immutable after construction: assigning or deleting `span`, `clamped`, or
+`written` raises `FrozenInstanceError`.
 
 ## Tails
 

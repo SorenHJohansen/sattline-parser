@@ -244,7 +244,7 @@ def _code_path_key(code_path: Path) -> str:
     """
     try:
         return str(code_path.resolve())
-    except OSError:
+    except (OSError, RuntimeError):
         return str(code_path)
 
 

@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import pickle
+from collections.abc import Sequence
 from pathlib import Path
 
 import pytest
@@ -17,9 +18,11 @@ from sattline_parser.project import (
     ModuleTypeCycleError,
     SattLineProject,
 )
+from sattline_parser.project import scope as scope_module
 from sattline_parser.project._cycles import cycle_key, dependency_cycles, first_cycle
 from sattline_parser.project.loader import ProjectLoader
 from sattline_parser.project.models import SattLineProgram
+from sattline_parser.project.scope import ProjectValidator
 
 from ._support import write_file
 
@@ -872,6 +875,76 @@ def test_acyclic_moduletype_instances_load(tmp_path: Path) -> None:
     assert project.cycles() == ()
 
 
+def _diamond_root(tmp_path: Path) -> Path:
+    root = tmp_path / "libs"
+    root.mkdir()
+    write_file(root, "Base.s", _source("Base", typedefs=_typedefinitions(_moduletype("BaseType"))))
+    write_file(
+        root,
+        "Left.s",
+        _source("Left", typedefs=_typedefinitions(_moduletype("LeftType", instantiates="BaseType"))),
+    )
+    write_file(
+        root,
+        "Right.s",
+        _source("Right", typedefs=_typedefinitions(_moduletype("RightType", instantiates="BaseType"))),
+    )
+    write_file(
+        root,
+        "Top.s",
+        _source("Top", typedefs=_typedefinitions(_moduletype("TopType", instantiates="LeftType"))),
+    )
+    write_file(root, "Left.l", "Base\n")
+    write_file(root, "Right.l", "Base\n")
+    write_file(root, "Top.l", "Left\nRight\n")
+    return root
+
+
+def test_an_acyclic_project_searches_the_cycle_graph_once(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    """A clean graph must not run a closure-scoped cycle search per unit."""
+    root = _diamond_root(tmp_path)
+    calls: list[int] = []
+    real_first_cycle = scope_module.first_cycle
+
+    def counting(edges: Sequence[tuple[str, str]]) -> tuple[str, ...] | None:
+        calls.append(1)
+        return real_first_cycle(edges)
+
+    monkeypatch.setattr(scope_module, "first_cycle", counting)
+    project = _load(root, "Top")
+
+    assert set(project.programs()) == {"base", "left", "right", "top"}
+    assert len(calls) == 1
+
+
+def test_dependency_closures_are_traversed_once_per_distinct_set(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Left and Right share Base's closure, so it is traversed once."""
+    root = _diamond_root(tmp_path)
+    traversed: list[frozenset[str]] = []
+    real_closure = ProjectValidator.closure
+
+    def recording(self: ProjectValidator, dependencies: Sequence[str]) -> frozenset[str]:
+        memo_key = frozenset(dependencies)
+        if memo_key not in self._closure_cache:
+            traversed.append(memo_key)
+        return real_closure(self, dependencies)
+
+    monkeypatch.setattr(ProjectValidator, "closure", recording)
+    project = _load(root, "Top")
+
+    def names(keys: frozenset[str]) -> frozenset[str]:
+        return frozenset(Path(key).stem.casefold() for key in keys)
+
+    assert set(project.programs()) == {"base", "left", "right", "top"}
+    assert sorted((names(keys) for keys in traversed), key=len) == [
+        frozenset(),
+        frozenset({"base"}),
+        frozenset({"left", "right"}),
+    ]
+
+
 def test_same_type_names_in_unrelated_closures_are_not_a_cycle(tmp_path: Path) -> None:
     left = tmp_path / "left"
     right = tmp_path / "right"
@@ -1047,3 +1120,18 @@ def test_cycles_report_no_cycle_for_a_dag() -> None:
     b = SattLineProgram(name="B", code=code)
     project = SattLineProject.from_programs({"A": a, "B": b})
     assert project.cycles() == ()
+
+
+def test_a_cycle_keeps_fold_pair_units_distinct(tmp_path: Path) -> None:
+    """``Straße`` and ``STRASSE`` are different units, even though casefold agrees."""
+    root = tmp_path / "libs"
+    root.mkdir()
+    write_file(root, "Straße.s", _source("Straße"))
+    write_file(root, "STRASSE.s", _source("STRASSE"))
+    (root / "Straße.l").write_bytes(b"STRASSE\n")
+    (root / "STRASSE.l").write_bytes("Straße\n".encode("cp1252"))
+
+    with pytest.raises(DependencyCycleError) as excinfo:
+        _load(root, "Straße")
+
+    assert excinfo.value.cycle == ("STRASSE", "STRAßE", "STRASSE")

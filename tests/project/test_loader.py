@@ -48,12 +48,14 @@ from sattline_parser.project.executor import (
     MAX_UNICODE_ERROR_BYTES,
     MAX_WORKER_DEBUG_MESSAGES,
     ParseFailure,
+    ParseOutcome,
     parse_code_file,
     rebuild_parse_failure,
 )
 from sattline_parser.project.formats import CompanionIndex
 from sattline_parser.project.models import LoadDiagnosticKind, SidecarState
 from sattline_parser.project.parallel import load_in_progress, loads_in_progress, pool_allowed, start_method
+from sattline_parser.project.plan import Plan, ResolvedArtifact
 from sattline_parser.project.planner import ProjectPlanner
 from sattline_parser.transformer.sl_transformer import SLTransformer
 
@@ -1568,6 +1570,39 @@ def test_a_parallel_save_records_the_snapshot_the_worker_parsed(
     assert seen == [source_snapshot(tmp_path / "Lib.s"), source_snapshot(tmp_path / "Main.s")]
 
 
+def test_a_parallel_outcome_without_a_snapshot_is_not_cached(tmp_path: Path) -> None:
+    """A worker with no cache cannot hand the parent an unguarded body."""
+    code = write_file(tmp_path, "Main.s", _CODE)
+    cache_dir = tmp_path / "cache"
+    cache = FileASTCache(cache_dir)
+    plan = Plan(
+        key=ArtifactIdentity.of(code).key,
+        name="Main",
+        declared_by=None,
+        artifact=ResolvedArtifact(
+            code_path=code,
+            resolved_base=tmp_path,
+            library=tmp_path.name,
+            deps_path=None,
+            sidecar=SidecarState.ABSENT,
+            dependencies=(),
+        ),
+    )
+    executor = executor_module.ParseExecutor(
+        mode=LoadMode.DRAFT,
+        workers=1,
+        log_failures=False,
+        debug=None,
+        ast_cache=cache,
+        secure_cache_dir=cache_dir,
+        pool_factory=project_loader_parallel.process_pool,
+    )
+
+    executor._save_cached(plan, ParseOutcome(ast=parse_source_file(code)))
+
+    assert cache.load(code, LoadMode.DRAFT.value) is None
+
+
 def test_a_warm_parallel_load_does_not_rewrite_cached_bodies(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     write_file(tmp_path, "Lib.s", _CODE)
     write_file(tmp_path, "Main.s", _CODE)
@@ -1605,6 +1640,69 @@ def test_a_body_that_changes_during_the_parse_is_not_cached(tmp_path: Path, monk
 
     assert "main" in project
     assert FileASTCache(tmp_path / "cache").load(tmp_path / "Main.s", LoadMode.DRAFT.value) is None
+
+
+def _refuse_snapshot(_path: Path, _raw_bytes: bytes | None = None) -> SourceSnapshot:
+    raise AssertionError("the source must not be hashed when no cache can store the AST")
+
+
+def test_an_uncached_load_never_hashes_the_source(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    write_file(tmp_path, "Main.s", _CODE)
+    monkeypatch.setattr(executor_module, "source_snapshot", _refuse_snapshot)
+
+    project = _load(tmp_path, cache_dir=None)
+
+    assert tuple(project.programs()) == ("main",)
+
+
+def test_a_disabled_ast_cache_never_hashes_the_source(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    write_file(tmp_path, "Main.s", _CODE)
+    cache_dir = tmp_path / "cache"
+    cache = FileASTCache(cache_dir)
+    assert cache.enabled
+    cache._disable()
+
+    def disabled(_cache_dir: Path) -> FileASTCache:
+        return cache
+
+    monkeypatch.setattr(project_loader, "FileASTCache", disabled)
+    monkeypatch.setattr(executor_module, "source_snapshot", _refuse_snapshot)
+
+    project = _load(tmp_path, cache_dir=cache_dir)
+
+    assert tuple(project.programs()) == ("main",)
+
+
+def test_a_failed_parse_is_not_hashed_for_the_cache(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    write_file(tmp_path, "Broken.s", _BROKEN)
+    monkeypatch.setattr(executor_module, "source_snapshot", _refuse_snapshot)
+
+    with pytest.raises(ArtifactLoadError):
+        _load(tmp_path, targets=("Broken",), cache_dir=tmp_path / "cache")
+
+
+def test_a_worker_without_a_cache_never_hashes_the_source(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    code = write_file(tmp_path, "Main.s", _CODE)
+    monkeypatch.setattr(executor_module, "source_snapshot", _refuse_snapshot)
+
+    outcome = parse_code_file((str(code), LoadMode.DRAFT.value, None, False, False))
+
+    assert outcome.ast is not None
+    assert outcome.snapshot is None
+
+
+def test_a_worker_with_a_disabled_cache_never_hashes_the_source(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    code = write_file(tmp_path, "Main.s", _CODE)
+    blocker = tmp_path / "cache"
+    blocker.write_text("not a directory", encoding="utf-8")
+    monkeypatch.setattr(executor_module, "source_snapshot", _refuse_snapshot)
+
+    outcome = parse_code_file((str(code), LoadMode.DRAFT.value, str(blocker), False, False))
+
+    assert outcome.ast is not None
+    assert outcome.snapshot is None
 
 
 class _InterruptedPool:

@@ -42,6 +42,21 @@ def test_a_clamped_literal_keeps_the_written_text_and_pickles_it() -> None:
     assert int(written) == 2147483647
 
 
+def test_a_literal_keeps_its_metadata_immutable() -> None:
+    span = SourceSpan(start=2, end=13, line=1, column=3)
+    integer = IntLiteral(7, span, False, "7")
+    real = FloatLiteral(2.5, span, False, "2.5")
+
+    with pytest.raises(dataclasses.FrozenInstanceError):
+        integer.written = "changed"
+    with pytest.raises(dataclasses.FrozenInstanceError):
+        del integer.span
+    with pytest.raises(dataclasses.FrozenInstanceError):
+        real.clamped = True
+    with pytest.raises(dataclasses.FrozenInstanceError):
+        del real.written
+
+
 def test_ast_model_helpers_cover_reduce_usage_and_string_formats(monkeypatch: pytest.MonkeyPatch):
     span = SourceSpan(start=2, end=3, line=1, column=3)
     int_lit = IntLiteral(7, span)

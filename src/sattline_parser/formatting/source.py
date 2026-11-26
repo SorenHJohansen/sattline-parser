@@ -582,8 +582,12 @@ def _emit_sfc_item(printer: _Printer, item: SFCBodyItem, level: int) -> None:
     elif isinstance(item, SFCStep):
         keyword = "SEQINITSTEP" if item.kind == "init" else "SEQSTEP"
         name = f" {item.name}" if item.name else ""
-        printer.emit(level, f"{keyword}{name}{_fork_text(item.fork)}")
+        printer.emit(level, f"{keyword}{name}")
         _emit_code_blocks(printer, item.code, level + 1)
+        if item.fork is not None:
+            # ``seqstep`` and ``seqinitstep`` put the fork after the code blocks,
+            # so it cannot share the header line.
+            printer.emit(level + 1, _fork_line(item.fork))
     elif isinstance(item, SFCTransition):
         name = f" {item.name}" if item.name else ""
         guard = f" WAIT_FOR {_expression_text(item.condition)}" if item.condition is not None else ""
@@ -620,11 +624,15 @@ def _emit_sfc_item(printer: _Printer, item: SFCBodyItem, level: int) -> None:
         printer.emit(level, "ENDPARALLEL")
 
 
+def _fork_line(fork: SFCFork) -> str:
+    targets = ", ".join(fork.targets)
+    return f"SEQFORK {targets}" + (" SEQBREAK" if fork.has_break else "")
+
+
 def _fork_text(fork: SFCFork | None) -> str:
     if fork is None:
         return ""
-    targets = ", ".join(fork.targets)
-    return f" SEQFORK {targets}" + (" SEQBREAK" if fork.has_break else "")
+    return f" {_fork_line(fork)}"
 
 
 def _emit_code_blocks(printer: _Printer, blocks: SFCCodeBlocks, level: int) -> None:

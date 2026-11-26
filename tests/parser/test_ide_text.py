@@ -1,3 +1,7 @@
+from __future__ import annotations
+
+import pytest
+
 from sattline_parser.api import parse_source_text
 from sattline_parser.preprocessing import MAX_IDE_LINE_LENGTH, render_ide_text
 
@@ -76,3 +80,31 @@ def test_rendered_text_with_an_overlong_quoted_identifier_still_parses():
 
     assert quoted in rendered
     assert parse_source_text(rendered, log_failures=False).name == "BasePicture"
+
+
+def test_render_ide_text_wraps_comment_text_across_lines() -> None:
+    """A continuation line inside a comment is comment text, not a string."""
+    raw = "(* start\n" + "'" + "a" * 80 + " " + "b" * 70 + "'" + "\n*)\n"
+
+    rendered = render_ide_text(raw)
+
+    assert all(len(line) <= MAX_IDE_LINE_LENGTH for line in rendered.split("\r\n"))
+
+
+def test_render_ide_text_scans_the_source_once(monkeypatch: pytest.MonkeyPatch) -> None:
+    """The wrapper must not rescan the whole line for every split."""
+    from sattline_parser.preprocessing import ide_text  # noqa: PLC0415
+
+    calls: list[int] = []
+    real_scan = ide_text.scan_opaque_regions
+
+    def counting_scan(text: str) -> list[tuple[str, int, int]]:
+        calls.append(len(text))
+        return real_scan(text)
+
+    monkeypatch.setattr(ide_text, "scan_opaque_regions", counting_scan)
+
+    rendered = render_ide_text("a " * 4000)
+
+    assert len(calls) == 1
+    assert all(len(line) <= MAX_IDE_LINE_LENGTH for line in rendered.split("\r\n"))

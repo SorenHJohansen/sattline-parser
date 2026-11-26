@@ -66,6 +66,6 @@ class ArtifactIdentity:
         """The identity of *path*, resolved and normalised for this platform."""
         try:
             resolved = path.resolve()
-        except OSError:
+        except (OSError, RuntimeError):
             resolved = path
         return cls(key=os.path.normcase(str(resolved)), path=resolved)

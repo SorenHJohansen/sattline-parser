@@ -15,5 +15,5 @@ SCHEMA_PREFIX = "sattline.v1"
 def dumps(payload: object, *, compact: bool = False) -> str:
     """Serialise a payload; ``compact`` emits one line."""
     if compact:
-        return json.dumps(payload, ensure_ascii=False, separators=(",", ":"))
-    return json.dumps(payload, ensure_ascii=False, indent=2)
+        return json.dumps(payload, ensure_ascii=True, separators=(",", ":"))
+    return json.dumps(payload, ensure_ascii=True, indent=2)

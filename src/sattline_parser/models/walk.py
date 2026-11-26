@@ -477,10 +477,10 @@ class _Ancestors(Sequence[object]):
         return iter(self._as_tuple())
 
     @overload
-    def __getitem__(self, index: int) -> object: ...
+    def __getitem__(self, index: int) -> object: ...  # pragma: no cover - type signature only
 
     @overload
-    def __getitem__(self, index: slice) -> Sequence[object]: ...
+    def __getitem__(self, index: slice) -> Sequence[object]: ...  # pragma: no cover - type signature only
 
     def __getitem__(self, index: int | slice) -> object | Sequence[object]:
         return self._as_tuple()[index]
@@ -703,7 +703,9 @@ def iter_child_nodes(node: object) -> Iterator[tuple[str, object]]:
     Non-node values are filtered here, so callers may pass a field directly.
     """
     for child in _iter_child_entries(node):
-        if isinstance(child.node, _NODE_TYPES):
+        # Every producer already filters through ``_NODE_TYPES`` before it
+        # builds a ``_Child``, so the false arm is defensive redundancy.
+        if isinstance(child.node, _NODE_TYPES):  # pragma: no cover - producers pre-filter
             yield child.relation, child.node
 
 

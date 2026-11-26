@@ -68,6 +68,16 @@ def test_serializer_handles_paths_and_mappings() -> None:
     assert to_jsonable({"key": Path("/a/b")}) == {"key": str(Path("/a/b"))}
 
 
+def test_serializer_returns_plain_numbers_for_literal_leaves() -> None:
+    """A literal subclass carries metadata but the data view is a plain number."""
+    span = SourceSpan(1, 2, 3, 4)
+    integer = to_jsonable(IntLiteral(7, span, False, "7"))
+    real = to_jsonable(FloatLiteral(1.5, span, False, "1.5"))
+
+    assert integer == 7 and type(integer) is int
+    assert real == 1.5 and type(real) is float
+
+
 _SOURCE = """"SyntaxVersion"
 "OriginalFileDate"
 "ProgramDate"

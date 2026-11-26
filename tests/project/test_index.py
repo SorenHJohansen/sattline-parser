@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Iterator, Mapping
 from dataclasses import FrozenInstanceError
 from pathlib import Path
 from typing import cast
@@ -10,9 +10,11 @@ from typing import cast
 import pytest
 
 from sattline_parser import parse_source_text
-from sattline_parser.models.ast_model import Variable
+from sattline_parser.models.ast_model import BasePicture, Variable
 from sattline_parser.models.freeze import freeze_ast
+from sattline_parser.models.walk import WalkEvent
 from sattline_parser.project import LoadMode, ProjectIndex, SattLineProgram, SattLineProject, SymbolKind
+from sattline_parser.project import index as index_module
 
 from ._support import write_file
 
@@ -112,6 +114,22 @@ def test_index_is_built_once_per_project() -> None:
     assert project.index is project.index
     assert isinstance(project.index, ProjectIndex)
     assert "PumpType" in project.index.defined_names()
+
+
+def test_index_walks_each_ast_once(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Definitions and usages come out of one traversal, not one each."""
+    calls: list[int] = []
+    real_walk = index_module.walk
+
+    def counting(node: BasePicture) -> Iterator[WalkEvent]:
+        calls.append(1)
+        return real_walk(node)
+
+    monkeypatch.setattr(index_module, "walk", counting)
+    project = _project()
+
+    assert project.index.usages_of("PumpType")
+    assert len(calls) == 1
 
 
 def test_attached_ast_is_frozen() -> None:

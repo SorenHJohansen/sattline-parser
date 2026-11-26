@@ -329,7 +329,10 @@ planner resolves an artifact before it recurses, so the cycle check follows
 physical files: when the resolved artifact is already on the active stack, it
 raises `DependencyCycleError` with the canonical cycle path, for example
 `("alpha", "beta", "alpha")`. The names in the path are the logical names that
-formed the loop, folded, because that is what a reader can act on. The error is
+formed the loop, folded, because that is what a reader can act on. The ordinary
+fold is `str.casefold`; when two units in the path share that key but remain
+distinct under the language name table, such as `Straße` and `STRASSE`, each is
+shown by its language identity so the loop stays distinguishable. The error is
 structural: a cycle inside an unparseable dependency still fails the load.
 
 Following artifacts rather than names matters because two different names for
@@ -704,6 +707,9 @@ The snapshot is taken from the exact bytes that are parsed, and the entry
 records those bytes' digest, so an entry can never claim a source revision it
 was not parsed from. A body whose source changed while a worker was reading it
 is left uncached: the next load reparses it instead of trusting a stale AST.
+Hashing is only paid when it can be used: a load with `cache_dir=None`, or one
+whose cache could not be proven private, reads every source without taking a
+snapshot, and a body that fails to parse is never hashed.
 
 The namespace and file-format magic belong to `sattline-parser`
 (`FILE_AST_CACHE_VERSION`), so another tool's cache never cross-reads.
@@ -796,11 +802,12 @@ code file's directory. It never does a root-ordered lookup:
 
 The stem is compared with the language name table, so `Pump.S` pairs with
 `pump.g` while `Straße` never pairs with `STRASSE`. The exact stem and extension
-are tried first; a case variant is found through the load's directory index.
-Only a regular file pairs: a directory named `Pump.g` is not a companion. When a
-directory holds two case variants of one companion name, `Main.g` and `MAIN.G`,
-the alphabetically first file wins whatever order the directory lists them in,
-and the load reports `FOLDED_NAME_COLLISION` naming both and the winner.
+are tried first and pair directly; only when no exact match exists is a case
+variant found through the load's directory index. Only a regular file pairs: a
+directory named `Pump.g` is not a companion. When the index holds two case
+variants of one companion name, `Main.g` and `MAIN.G`, the alphabetically first
+file wins whatever order the directory lists them in, and the load reports
+`FOLDED_NAME_COLLISION` naming both and the winner.
 
 A companion from the other artifact family beside the body, for example a `.y`
 beside a `.s` body, is never paired and is reported as
@@ -842,11 +849,12 @@ code file's directory, never a root-ordered lookup:
 - a `.p` or `.q` input resolves to itself.
 
 The stem is compared with the language name table, so `Pump.S` pairs with
-`pump.p` while `Straße` never pairs with `STRASSE`. As with graphics, the exact
-stem wins, a case variant is found through the load's directory index, and a
-collision between case variants is reported with its winner. A `.q` beside a
-`.s` body is not paired and is reported as `COMPANION_FAMILY_MISMATCH`, which is
-why `has_executing_system` is `None` rather than a silent unknown.
+`pump.p` while `Straße` never pairs with `STRASSE`. As with graphics, an exact
+stem and extension pair directly; only a case-variant lookup through the load's
+directory index can produce a collision, which is reported with its winner. A
+`.q` beside a `.s` body is not paired and is reported as
+`COMPANION_FAMILY_MISMATCH`, which is why `has_executing_system` is `None`
+rather than a silent unknown.
 
 The file is a small nested structure of named groups:
 
@@ -912,7 +920,12 @@ re-parsing the body.
 - Each resolved body is parsed once, by resolved code path.
 - The parser is shared across files.
 - The lookup cache skips repeated ordered scans for a stable layout.
-- The AST cache skips re-parsing an unchanged file.
+- The AST cache skips re-parsing an unchanged file, and a source is hashed only
+  when an enabled cache can store the result.
+- Dependency closures are computed once per distinct dependency set, and an
+  acyclic module-type graph is cleared by one global search instead of one
+  search per unit.
+- The symbol index collects definitions and usages in one AST walk.
 - `INVOKED` scope skips additional validation of a library's unused module
   types, while still checking their type bindings.
 - Companion resolution lists each directory once per load and indexes it by
@@ -931,6 +944,11 @@ Measured with `sattline project` over a 268-program library tree (315 MB of
 Parsing is 99% of a load. Lookup, sidecar reads, graphics and distribution
 companions, and graph assembly together are under a second on that tree, which
 is why `workers` is the only lever with a large factor.
+
+`benchmarks/test_bench_project.py` measures generated deep, wide, diamond, and
+module-type graphs, plus uncached, cold-cache, and warm-cache loads. See
+[testing.md](testing.md).
+
 A `ProjectLoader` resolves one load. Discovery plans, parse outcomes, and the
 registry are per-load state, so a second `resolve()` call raises rather than
 doubling the plans over an existing registry; construct another loader.
@@ -976,6 +994,8 @@ on the worker count: discovery fixes the plan order before any parse runs.
 | `tests/project/test_discovery.py` | Ordered lookup and path-list notation |
 | `tests/project/test_formats.py` | Extension selection and companion pairing |
 | `tests/project/test_loader.py` | Recursive loading and post-order |
+| `tests/project/test_index.py` | Definitions and usages across a loaded project |
+| `tests/project/test_project_layer_branches.py` | Defensive project-layer branch paths |
 | `tests/project/test_project_layer.py` | `SattLineProject` views and graph |
 | `tests/project/test_project_validation.py` | Scopes and datecodes |
 | `tests/project/test_reachability.py` | Invoked module-type walk |
