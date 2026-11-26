@@ -351,6 +351,11 @@ class ParseExecutor:
         self._nested = nested
         #: Plan key -> the parsed body or the failure that stopped it.
         self.outcomes: dict[str, ParseOutcome] = {}
+        #: AST-cache reads this load attempted. In-process reads are counted by
+        #: ``_load_ast``; a worker's own read is counted from its outcome after
+        #: the pool returns, because its counters live in another process.
+        self.ast_hits = 0
+        self.ast_misses = 0
 
     def _dbg(self, message: str) -> None:
         if self._debug is not None:
@@ -442,6 +447,11 @@ class ParseExecutor:
             for message in outcome.debug:
                 self._dbg(message)
             self.outcomes[plan.key] = outcome
+            if self._ast_cache is not None and self._ast_cache.enabled:
+                if outcome.cached:
+                    self.ast_hits += 1
+                else:
+                    self.ast_misses += 1
             self._save_cached(plan, outcome)
 
     def _parse_in_process(self, plan: Plan) -> ParseOutcome:
@@ -490,8 +500,10 @@ class ParseExecutor:
         if cache is not None and cache.enabled:
             cached = cache.load(code_path, self._mode.value)
             if cached is not None:
+                self.ast_hits += 1
                 self._dbg(f"Using cached AST for: {code_path}")
                 return cached
+            self.ast_misses += 1
         # Read the source once. A snapshot is only taken when a successful parse
         # can be stored: an uncached load, or a source that fails to parse, must
         # not pay for a SHA-256 pass over every body.

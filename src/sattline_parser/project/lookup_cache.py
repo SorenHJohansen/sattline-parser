@@ -120,6 +120,8 @@ class FileLookupCache:
         self._pending_mutations = 0
         self._data: dict[str, object] = {"version": LOOKUP_CACHE_VERSION, "entries": {}}
         self._dirty = False
+        self._hits = 0
+        self._misses = 0
         self._startup_pruned_entries = self.prune_stale_entries()
         self._load()
 
@@ -131,6 +133,11 @@ class FileLookupCache:
             self._root_valid = False
             return False
         return True
+
+    @property
+    def enabled(self) -> bool:
+        """Whether the configured root is still the directory this cache opened."""
+        return self._root_is_current()
 
     def _load(self) -> None:
         if not self._root_is_current():
@@ -262,8 +269,14 @@ class FileLookupCache:
     def get(self, kind: str, name: str, mode: str) -> dict[str, str] | None:
         entries = self._entries_map()
         if entries is None:
+            self._misses += 1
             return None
-        return _as_file_lookup_entry(entries.get(self._key(kind, name, mode)))
+        entry = _as_file_lookup_entry(entries.get(self._key(kind, name, mode)))
+        if entry is None:
+            self._misses += 1
+        else:
+            self._hits += 1
+        return entry
 
     def set(self, kind: str, name: str, mode: str, base_dir: Path, ext: str) -> None:
         entries = self._entries_map()
@@ -297,6 +310,16 @@ class FileLookupCache:
             return
         self._dirty = False
         self._pending_mutations = 0
+
+    @property
+    def hits(self) -> int:
+        """Lookups answered from the cache so far."""
+        return self._hits
+
+    @property
+    def misses(self) -> int:
+        """Lookups that found no usable entry so far."""
+        return self._misses
 
 
 __all__ = [

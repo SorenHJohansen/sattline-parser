@@ -102,23 +102,40 @@ class ProjectIndex:
         self._definitions = {key: _sorted_definitions(sites) for key, sites in definitions.items()}
         self._usages = {key: _sorted_usages(sites) for key, sites in usages.items()}
 
-    def definitions_of(self, name: str) -> tuple[DefinitionSite, ...]:
-        """Every loaded declaration that writes *name*, in project order."""
-        return self._definitions.get(UnitIdentity.of(name).key, ())
+    def definitions_of(self, name: str, *, kind: SymbolKind | None = None) -> tuple[DefinitionSite, ...]:
+        """Every loaded declaration that writes *name*, in project order.
 
-    def usages_of(self, name: str) -> tuple[UsageSite, ...]:
-        """Every loaded reference that writes *name*, in project order."""
-        return self._usages.get(UnitIdentity.of(name).key, ())
+        Pass ``kind`` to select one declaration kind, such as only
+        ``SymbolKind.MODULETYPE`` definitions.
+        """
+        sites = self._definitions.get(UnitIdentity.of(name).key, ())
+        if kind is None:
+            return sites
+        return tuple(site for site in sites if site.kind is kind)
 
-    def defined_names(self) -> tuple[str, ...]:
+    def usages_of(self, name: str, *, kind: SymbolKind | None = None) -> tuple[UsageSite, ...]:
+        """Every loaded reference that writes *name*, in project order.
+
+        Pass ``kind`` to select one reference kind, such as only
+        ``SymbolKind.MODULETYPE`` instances.
+        """
+        sites = self._usages.get(UnitIdentity.of(name).key, ())
+        if kind is None:
+            return sites
+        return tuple(site for site in sites if site.kind is kind)
+
+    def defined_names(self, *, kind: SymbolKind | None = None) -> tuple[str, ...]:
         """Every defined spelling that has at least one declaration site.
 
         A name is reported once, under the alphabetically first spelling any
         site wrote, so the result can be fed back into :meth:`definitions_of`.
+        Pass ``kind`` to report only names with a declaration of that kind.
         """
         spellings: dict[str, str] = {}
         for sites in self._definitions.values():
             for site in sites:
+                if kind is not None and site.kind is not kind:
+                    continue
                 current = spellings.get(UnitIdentity.of(site.name).key)
                 if current is None or site.name < current:
                     spellings[UnitIdentity.of(site.name).key] = site.name

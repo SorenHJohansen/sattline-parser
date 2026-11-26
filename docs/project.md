@@ -239,6 +239,44 @@ dependency-first closure. `validate=INVOKED` additionally runs **after** the
 graph is complete, because it needs the whole invocation graph. The loader
 walks `invoked_moduletypes` and appends the invoked-scope diagnostics.
 
+### Partial success
+
+`SattLineProject.load` keeps its all-or-nothing contract: it either returns one
+complete registry or raises. A caller that loads several independent consumers
+can use `SattLineProject.load_many` instead:
+
+```python
+results = SattLineProject.load_many(
+    roots=roots,
+    mode=mode,
+    targets=("ConsumerA", "ConsumerB", "ConsumerC"),
+)
+
+for target, result in results.items():
+    if result.ok:
+        project = result.project
+    else:
+        print(target, result.error)
+```
+
+The result is keyed by the target spelling the caller supplied, and each value
+is a `TargetLoadResult`. Exactly one of `project` and `error` is set. A target
+whose own closure fails, whether during discovery, parsing, assembly, or
+module-type cycle checking, reports that error without stopping the other
+targets.
+
+Discovery and parsing are shared. The union of the targets is planned once, so
+a library common to several consumers is resolved and parsed once, and the
+loader's caches see one read per body. Each successful target then receives a
+project over its own closure only. Scoped validation, module-type cycle
+checking, and unit-specific load diagnostics are applied against that target
+alone, so one consumer's findings never appear in another consumer's project.
+A skipped-file finding belongs to no loaded unit, so every target reports it.
+
+A plan that never finished because its target failed is rolled back before the
+next target is planned, so a later target can plan the same artifact cleanly. A
+dependency that did finish before the failure stays planned and is reused.
+
 ## Identity
 
 The project layer keeps several comparisons apart, and conflating them has caused
@@ -279,6 +317,14 @@ a case-sensitive filesystem and one directory on Windows.
 `UnitIdentity.of(name)` and `ArtifactIdentity.of(path)` are exported for a
 consumer that needs the same comparisons. Equality and hashing use the key, so
 two spellings of one identity are equal.
+
+The loaded models expose those identities directly: `SattLineProgram.identity`
+is the unit's `UnitIdentity`, `SattLineProgram.artifact_identity` is the
+`ArtifactIdentity` of its resolved body (or `None` when there is no path), and
+`SattLineProject.identity_of(name)` answers with the identity of the unit the
+name designates. A consumer should use these, or `UnitIdentity.of`, for every
+unit-name comparison. `str.casefold()` is a project view detail, not the
+language identity table, and must not replace it for resolution.
 
 ### Aliases
 
@@ -482,14 +528,19 @@ still reports its own conflict in either target order.
 classDiagram
     class SattLineProject {
         from_programs(programs)
+        load(roots, mode, targets)
+        load_many(roots, mode, targets)
         get(name)
         programs()
         diagnostics()
+        cache_info
         cycles()
         libraries()
         dependencies_of(name)
         dependents_of(name)
         graph()
+        invoked_moduletypes(targets)
+        identity_of(name)
         index
     }
     class SattLineProgram {
@@ -505,6 +556,22 @@ classDiagram
         library: str | None
         resolved_base: Path | None
         diagnostics: tuple[Diagnostic, ...]
+        identity: UnitIdentity
+        artifact_identity: ArtifactIdentity | None
+    }
+    class TargetLoadResult {
+        target: str
+        project: SattLineProject | None
+        error: ProjectLoadError | None
+        ok: bool
+    }
+    class CacheInfo {
+        enabled: bool
+        disabled_reason: CacheDisabledReason | None
+        ast_hits: int
+        ast_misses: int
+        lookup_hits: int
+        lookup_misses: int
     }
     class DistributionData {
         version: str | None
@@ -538,6 +605,8 @@ classDiagram
     SattLineProject --> SattLineProgram
     SattLineProject --> DependencyGraph
     SattLineProject --> ProjectIndex
+    SattLineProject --> CacheInfo
+    TargetLoadResult --> SattLineProject
     SattLineProgram --> ProgramFormat
     SattLineProgram --> DistributionData
     DistributionData --> DistributionTarget
@@ -616,6 +685,18 @@ plan keys), its values are module-type names folded with `fold_identifier`, and
 `closure_of` must answer in the same key space as `programs`. See
 [validation scopes](#validation-scopes).
 
+`SattLineProject.invoked_moduletypes(targets=None)` is the same walk over the
+project's own view keys, so a consumer does not need to rebuild the key space.
+It follows resolved dependency edges, including an alias spelling, and every
+selected target appears in the result with an empty set when it reaches no
+module types. Pass target names, or omit them to treat every loaded unit as a
+target.
+
+`ProjectIndex.definitions_of` and `ProjectIndex.usages_of` accept an optional
+`kind=SymbolKind` filter, and `defined_names(kind=...)` reports only names with
+a declaration of that kind. A consumer can therefore ask for module-type
+definitions and references without filtering the whole result itself.
+
 ## Caches
 
 Both project caches are opt-in through `cache_dir=`. When it is `None`, the
@@ -636,6 +717,33 @@ parsing.
 The companion directory index is not one of those caches. It lives only for one
 load, so a second load lists its directories again and sees a file that changed
 in between; nothing about a companion scan outlives the load that made it.
+
+### Cache diagnostics
+
+`SattLineProject.cache_info` reports a `CacheInfo` snapshot for the load that
+built the project:
+
+| Field | Meaning |
+| --- | --- |
+| `enabled` | Both the lookup cache and the AST cache were usable |
+| `disabled_reason` | `CacheDisabledReason.NOT_CONFIGURED`, `PRIVACY`, or `UNAVAILABLE`, or `None` when enabled |
+| `ast_hits` | Body parses served from the AST cache |
+| `ast_misses` | Body parses that found no usable AST entry |
+| `lookup_hits` | Ordered resolutions served from the lookup cache |
+| `lookup_misses` | Ordered resolutions that found no usable lookup entry |
+
+`NOT_CONFIGURED` means the caller passed no `cache_dir`. `PRIVACY` means the
+supplied directory could not be proven private to this user. `UNAVAILABLE`
+means the directory could not be created or opened, or a cache handle was
+disabled after construction. A project built by `from_programs` reports
+`NOT_CONFIGURED` and zero counters.
+
+The counters describe this load. A cold load reports AST misses; a warm load of
+an unchanged tree reports AST hits and no misses. They let a consumer report
+real loading performance and verify cache integration without inspecting the
+private cache directory. A parallel load counts a worker's cache read from its
+outcome, so the snapshot covers the whole load rather than only the parent
+process.
 
 ### Lookup cache
 
@@ -994,9 +1102,11 @@ on the worker count: discovery fixes the plan order before any parse runs.
 | `tests/project/test_discovery.py` | Ordered lookup and path-list notation |
 | `tests/project/test_formats.py` | Extension selection and companion pairing |
 | `tests/project/test_loader.py` | Recursive loading and post-order |
+| `tests/project/test_load_many.py` | Partial-success multi-target loading and shared closures |
 | `tests/project/test_index.py` | Definitions and usages across a loaded project |
 | `tests/project/test_project_layer_branches.py` | Defensive project-layer branch paths |
 | `tests/project/test_project_layer.py` | `SattLineProject` views and graph |
+| `tests/project/test_cache_info.py` | Cache configuration and hit/miss diagnostics |
 | `tests/project/test_project_validation.py` | Scopes and datecodes |
 | `tests/project/test_reachability.py` | Invoked module-type walk |
 | `tests/project/test_lookup_cache.py` | Cache trust, invalidation, and a prune that never stats a recorded base |

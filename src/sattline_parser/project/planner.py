@@ -32,7 +32,7 @@ from sattline_parser.source_io import read_text_cp1252
 
 from ._cycles import canonical_cycle
 from .discovery import ProjectLookup
-from .errors import DependencyCycleError, DependencyNotFoundError, DependencyParseError
+from .errors import DependencyCycleError, DependencyNotFoundError, DependencyParseError, ProjectLoadError
 from .formats import ALL_DEPS_EXTENSIONS, CompanionIndex, code_ext_candidates, find_companion_beside
 from .identity import ArtifactIdentity
 from .models import LoadDiagnosticKind, LoadMode, SidecarState
@@ -141,6 +141,29 @@ class ProjectPlanner:
         for target in targets:
             self.target_plan_keys.add(self._plan(target, declared_by=None))
 
+    def resolve_many(self, targets: Sequence[str]) -> tuple[dict[str, str], dict[str, ProjectLoadError]]:
+        """Plan every target independently, sharing every body already planned.
+
+        A target whose own discovery fails does not stop the others. Bodies
+        that were fully planned before the failure stay planned and are reused,
+        while an artifact whose frame never closed is rolled back by
+        :meth:`_plan`, so a later target can plan it cleanly. The return value
+        is ``(successes, failures)``, each keyed by the target spelling the
+        caller supplied.
+        """
+        self._report_unusable_names()
+        successes: dict[str, str] = {}
+        failures: dict[str, ProjectLoadError] = {}
+        for target in targets:
+            try:
+                key = self._plan(target, declared_by=None)
+            except ProjectLoadError as exc:
+                failures[target] = exc
+            else:
+                successes[target] = key
+                self.target_plan_keys.add(key)
+        return successes, failures
+
     def _report_unusable_names(self) -> None:
         """Report a code file whose stem can never be a unit name.
 
@@ -189,6 +212,14 @@ class ProjectPlanner:
                 if not stack:
                     return key
                 stack[-1].resolved.append(key)
+        except BaseException:
+            # A frame never closed has no plan, so it must not stay marked as
+            # planned: a later target would reuse a key the plan list cannot
+            # answer. Plans that did close stay planned and are shared.
+            for frame in stack:
+                self._planned.discard(frame.identity)
+                self._read_sidecars.pop(frame.identity.key, None)
+            raise
         finally:
             # A failed load leaves no active chain behind, so the cycle report of
             # a later visit starts from that visit's own root.

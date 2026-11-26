@@ -17,18 +17,21 @@ module:
 
 ``ProjectLoader`` wires them together, owns the non-fatal load diagnostics and
 the two caches, and runs the three cross-phase invariants: registry post-order,
-module-type recursion, and validation. A load is all or nothing: a missing or
-unparseable artifact raises, and the two structural errors (a recursive sidecar
-chain and a self-instantiating module type) are fatal in the same way.
+module-type recursion, and validation. ``resolve`` is all or nothing: a missing
+or unparseable artifact raises, and the two structural errors (a recursive
+sidecar chain and a self-instantiating module type) are fatal in the same way.
+``resolve_many`` shares the planning and parse pass, then reports each target's
+failure separately so healthy targets still load.
 
 A ``ProjectLoader`` resolves one load. Discovery plans, parse outcomes, and the
 registry are per-load state, so a second ``resolve()`` call raises rather than
-doubling the plans over an existing registry.
+doubling the plans over an existing registry. Construct another loader.
 """
 
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping, Sequence
+from dataclasses import dataclass
 from pathlib import Path
 
 from sattline_parser.source_io import private_cache_dir
@@ -43,6 +46,8 @@ from .formats import CompanionIndex
 from .identity import UnitIdentity
 from .lookup_cache import FileLookupCache
 from .models import (
+    CacheDisabledReason,
+    CacheInfo,
     LoadDiagnostic,
     LoadDiagnosticKind,
     LoadMode,
@@ -52,7 +57,22 @@ from .models import (
 from .planner import ProjectPlanner, read_dependency_names
 from .scope import ProjectValidator
 
-__all__ = ["ProjectLoader", "read_dependency_names"]
+__all__ = ["LoadedTarget", "ProjectLoader", "read_dependency_names"]
+
+
+@dataclass(frozen=True, slots=True)
+class LoadedTarget:
+    """One successful target produced by :meth:`ProjectLoader.resolve_many`.
+
+    The loader hands back the registry slice, the alias table, the scoped
+    diagnostics, and the cache snapshot. ``SattLineProject`` turns it into the
+    public result, so the loader never imports the project class.
+    """
+
+    programs: Mapping[str, SattLineProgram]
+    identity_views: Mapping[str, str]
+    diagnostics: tuple[LoadDiagnostic, ...]
+    cache_info: CacheInfo
 
 
 class ProjectLoader:
@@ -67,11 +87,15 @@ class ProjectLoader:
         cache_dir: Path | None,
         validate: LoadValidation = LoadValidation.INVOKED,
         workers: int = 1,
+        defer_validation: bool = False,
     ) -> None:
         # The whole cache root has to be private: the AST cache stores pickles,
         # and the lookup cache shares the same directory. Fail closed by
         # disabling both caches when the directory is not ours.
         secure_cache_dir = private_cache_dir(cache_dir) if cache_dir is not None else None
+        self._cache_dir = cache_dir
+        self._secure_cache_dir = secure_cache_dir
+        self._defer_validation = defer_validation
         self._lookup_cache = FileLookupCache(secure_cache_dir) if secure_cache_dir is not None else None
         self._ast_cache = FileASTCache(secure_cache_dir) if secure_cache_dir is not None else None
         _assert_roots_are_directories(roots)
@@ -114,10 +138,23 @@ class ProjectLoader:
             resolved_dependencies=self._planner.resolved_dependencies,
             target_plan_keys=self._planner.target_plan_keys,
         )
+        #: A batch load defers target-scoped validation until it has split the
+        #: registry into per-target closures, so assembly computes only the
+        #: always-on type-reference diagnostics.
+        self._assembly_validator = (
+            ProjectValidator(
+                validate=LoadValidation.NONE,
+                registry=self._registry,
+                resolved_dependencies=self._planner.resolved_dependencies,
+                target_plan_keys=set(),
+            )
+            if defer_validation
+            else self._validator
+        )
         self._assembler = ProjectAssembler(
             mode=mode,
             registry=self._registry,
-            validator=self._validator,
+            validator=self._assembly_validator,
             debug=debug,
             companions=self._companions,
             diagnose=self._diagnose,
@@ -148,6 +185,40 @@ class ProjectLoader:
         """
         return self._identity_views
 
+    @property
+    def cache_info(self) -> CacheInfo:
+        """The cache configuration and the work this load did against it."""
+        lookup_enabled = self._lookup_cache is not None and self._lookup_cache.enabled
+        ast_enabled = self._ast_cache is not None and self._ast_cache.enabled
+        enabled = lookup_enabled and ast_enabled
+        reason: CacheDisabledReason | None = None
+        if not enabled:
+            reason = self._disabled_cache_reason()
+        lookup_hits = self._lookup_cache.hits if self._lookup_cache is not None else 0
+        lookup_misses = self._lookup_cache.misses if self._lookup_cache is not None else 0
+        return CacheInfo(
+            enabled=enabled,
+            disabled_reason=reason,
+            ast_hits=self._executor.ast_hits,
+            ast_misses=self._executor.ast_misses,
+            lookup_hits=lookup_hits,
+            lookup_misses=lookup_misses,
+        )
+
+    def _disabled_cache_reason(self) -> CacheDisabledReason:
+        """Why the caches are off, as far as the loader can tell.
+
+        No configured directory is intentional. A directory that exists but
+        failed the privacy proof is a privacy refusal. A missing directory that
+        could not be created, or a cache handle disabled after construction, is
+        unavailable.
+        """
+        if self._cache_dir is None:
+            return CacheDisabledReason.NOT_CONFIGURED
+        if self._secure_cache_dir is None:
+            return CacheDisabledReason.PRIVACY if self._cache_dir.is_dir() else CacheDisabledReason.UNAVAILABLE
+        return CacheDisabledReason.UNAVAILABLE
+
     def _diagnose(self, kind: LoadDiagnosticKind, program: str, detail: str, path: Path | None = None) -> None:
         diagnostic = LoadDiagnostic(kind=kind, program=program, detail=detail, path=path)
         if diagnostic in self._diagnostic_set:
@@ -159,6 +230,8 @@ class ProjectLoader:
         """Load every target and its dependencies; return the folded registry."""
         if self._resolved:
             raise RuntimeError("this ProjectLoader has already resolved a load; construct another loader")
+        if self._defer_validation:
+            raise RuntimeError("this ProjectLoader defers validation; use resolve_many for a batch load")
         self._resolved = True
         try:
             with _parallel.load_in_progress():
@@ -169,14 +242,125 @@ class ProjectLoader:
                 self._validator.assert_no_moduletype_cycles()
                 if self._validate is LoadValidation.INVOKED:
                     self._validator.validate_invoked()
-                programs, view_of_plan = self._name_registry()
-                self._identity_views = self._identity_view_registry(view_of_plan)
+                programs, view_of_plan = self._name_registry(self._registry)
+                self._identity_views = self._identity_view_registry(self._registry, view_of_plan)
                 return programs
         finally:
             if self._lookup_cache is not None:
                 self._lookup_cache.flush()
 
-    def _name_registry(self) -> tuple[dict[str, SattLineProgram], dict[str, str]]:
+    def resolve_many(self, targets: Sequence[str]) -> tuple[dict[str, LoadedTarget], dict[str, ProjectLoadError]]:
+        """Load targets independently while sharing every closure that succeeds.
+
+        Discovery and parsing run once for the union of the targets. A target
+        whose own closure contains a failed artifact reports that error and is
+        left out of the successful results. The registry, parse outcomes, and
+        cache work of the healthy targets are shared, so a dependency common to
+        several targets is planned and parsed once.
+
+        Each successful target carries a registry slice over its own closure
+        only, with scoped validation applied against that target alone, so
+        another target's findings cannot leak into its diagnostics.
+        """
+        if self._resolved:
+            raise RuntimeError("this ProjectLoader has already resolved a load; construct another loader")
+        if not self._defer_validation:
+            raise RuntimeError("resolve_many requires a loader constructed with defer_validation=True")
+        self._resolved = True
+        loaded: dict[str, LoadedTarget] = {}
+        failures: dict[str, ProjectLoadError] = {}
+        try:
+            with _parallel.load_in_progress():
+                successes, planning_failures = self._planner.resolve_many(targets)
+                failures.update(planning_failures)
+                outcomes = self._executor.parse(self._planner.plans)
+                assembly_failures = self._assembler.assemble_collecting(self._planner.plans, outcomes=outcomes)
+                self._assert_registry_post_order()
+                for target, target_key in successes.items():
+                    closure = self._closure(target_key)
+                    failure = self._first_closure_failure(closure, assembly_failures)
+                    if failure is not None:
+                        failures[target] = failure
+                        continue
+                    success = self._target_loaded(target_key, closure)
+                    if isinstance(success, ProjectLoadError):
+                        failures[target] = success
+                    else:
+                        loaded[target] = success
+                return loaded, failures
+        finally:
+            if self._lookup_cache is not None:
+                self._lookup_cache.flush()
+
+    def _closure(self, key: str) -> frozenset[str]:
+        """Plan keys of *key* and every unit it reaches through resolved deps."""
+        seen: set[str] = set()
+        pending = [key]
+        while pending:
+            current = pending.pop()
+            if current in seen:
+                continue
+            seen.add(current)
+            pending.extend(self._planner.resolved_dependencies.get(current, ()))
+        return frozenset(seen)
+
+    def _first_closure_failure(
+        self, closure: frozenset[str], failures: Mapping[str, ProjectLoadError]
+    ) -> ProjectLoadError | None:
+        """The first failed plan in plan order inside *closure*, if any."""
+        for plan in self._planner.plans:
+            if plan.key in closure and plan.key in failures:
+                return failures[plan.key]
+        return None
+
+    def _target_loaded(self, target_key: str, closure: frozenset[str]) -> LoadedTarget | ProjectLoadError:
+        """Build one successful target's registry slice from its own closure."""
+        plan_order = [plan.key for plan in self._planner.plans if plan.key in closure]
+        registry = {key: self._registry[key] for key in plan_order}
+        resolved_dependencies = {
+            key: tuple(dependency for dependency in self._planner.resolved_dependencies[key] if dependency in closure)
+            for key in registry
+        }
+        validator = ProjectValidator(
+            validate=self._validate,
+            registry=registry,
+            resolved_dependencies=resolved_dependencies,
+            target_plan_keys={target_key},
+        )
+        try:
+            validator.assert_no_moduletype_cycles()
+            validator.apply_scope()
+        except ProjectLoadError as exc:
+            return exc
+        programs, view_of_plan = self._name_registry(registry)
+        return LoadedTarget(
+            programs=programs,
+            identity_views=self._identity_view_registry(registry, view_of_plan),
+            diagnostics=self._diagnostics_for(closure),
+            cache_info=self.cache_info,
+        )
+
+    def _diagnostics_for(self, closure: frozenset[str]) -> tuple[LoadDiagnostic, ...]:
+        """Load findings that belong to *closure*, plus skipped-file findings.
+
+        A finding about a loaded unit is included only for a target whose
+        closure holds that unit. A skipped file has no loaded unit and is
+        reported for every target.
+        """
+        closure_identities = {UnitIdentity.of(self._registry[key].name).key for key in closure}
+        for spelling, (plan_key) in self._planner.resolved_names.values():
+            if plan_key in closure:
+                closure_identities.add(UnitIdentity.of(spelling).key)
+        return tuple(
+            diagnostic
+            for diagnostic in self._diagnostics
+            if diagnostic.kind is LoadDiagnosticKind.SKIPPED_FILE
+            or UnitIdentity.of(diagnostic.program).key in closure_identities
+        )
+
+    def _name_registry(
+        self, registry: Mapping[str, SattLineProgram]
+    ) -> tuple[dict[str, SattLineProgram], dict[str, str]]:
         """The public registry and the view key of every plan.
 
         One unit per ``str.casefold`` key. The key is the project view's own
@@ -191,20 +375,22 @@ class ProjectLoader:
         planner has already reported the pair as a folded-name collision.
         """
         shared: dict[str, int] = {}
-        for program in self._registry.values():
+        for program in registry.values():
             key = program.name.casefold()
             shared[key] = shared.get(key, 0) + 1
-        registry: dict[str, SattLineProgram] = {}
+        named: dict[str, SattLineProgram] = {}
         view_of_plan: dict[str, str] = {}
-        for plan_key, program in self._registry.items():
+        for plan_key, program in registry.items():
             view = program.name.casefold()
             if shared[view] > 1:
                 view = UnitIdentity.of(program.name).key
-            registry[view] = program
+            named[view] = program
             view_of_plan[plan_key] = view
-        return registry, view_of_plan
+        return named, view_of_plan
 
-    def _identity_view_registry(self, view_of_plan: Mapping[str, str]) -> dict[str, str]:
+    def _identity_view_registry(
+        self, registry: Mapping[str, SattLineProgram], view_of_plan: Mapping[str, str]
+    ) -> dict[str, str]:
         """Every spelling that reached a unit in the view, as identity -> view.
 
         A sidecar may name one body twice, for example directly and through a
@@ -214,10 +400,11 @@ class ProjectLoader:
         in a shared casefold group is reachable under its language identity.
         """
         views: dict[str, str] = {}
-        for plan_key, program in self._registry.items():
+        for plan_key, program in registry.items():
             views.setdefault(UnitIdentity.of(program.name).key, view_of_plan[plan_key])
         for spelling, plan_key in self._planner.resolved_names.values():
-            views.setdefault(UnitIdentity.of(spelling).key, view_of_plan[plan_key])
+            if plan_key in view_of_plan:
+                views.setdefault(UnitIdentity.of(spelling).key, view_of_plan[plan_key])
         return views
 
     def _assert_registry_post_order(self) -> None:

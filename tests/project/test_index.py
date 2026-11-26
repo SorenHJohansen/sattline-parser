@@ -61,6 +61,46 @@ def _project() -> SattLineProject:
     return SattLineProject.from_programs({"SimpleModuleTypeInv": program})
 
 
+_ALIAS_MAIN_SOURCE = """\
+"Syntax version 2.23, date: 2026-06-19-12:00:00.000 N"
+"Original file date: ---"
+"Program date: 2026-06-19-12:00:00.000, name: Main"
+
+BasePicture Invocation
+   ( 0.0 , 0.0 , 0.0 , 1.0 , 1.0
+    ) : MODULEDEFINITION DateCode_ 1
+
+LOCALVARIABLES
+   SpeedRef: real  := 50.0;
+
+SUBMODULES
+   Pump Invocation
+      ( 0.0 , 0.0 , 0.0 , 0.5 , 0.5
+       ) : PumpType (
+      Speed => SpeedRef);
+
+ModuleDef
+ClippingBounds = ( -1.0 , -1.0 ) ( 1.0 , 1.0 )
+
+ENDDEF (*BasePicture*);
+"""
+
+_PLAIN_SOURCE = """\
+"Syntax version 2.23, date: 2026-06-19-12:00:00.000 N"
+"Original file date: ---"
+"Program date: 2026-06-19-12:00:00.000, name: Plain"
+
+BasePicture Invocation
+   ( 0.0 , 0.0 , 0.0 , 1.0 , 1.0
+    ) : MODULEDEFINITION DateCode_ 1
+
+ModuleDef
+ClippingBounds = ( -1.0 , -1.0 ) ( 1.0 , 1.0 )
+
+ENDDEF (*BasePicture*);
+"""
+
+
 def test_index_reports_who_defines_a_module_type() -> None:
     project = _project()
 
@@ -114,6 +154,69 @@ def test_index_is_built_once_per_project() -> None:
     assert project.index is project.index
     assert isinstance(project.index, ProjectIndex)
     assert "PumpType" in project.index.defined_names()
+
+
+def test_index_filters_definitions_and_usages_by_kind() -> None:
+    project = _project()
+
+    assert [site.kind for site in project.index.definitions_of("PumpType", kind=SymbolKind.MODULETYPE)] == [
+        SymbolKind.MODULETYPE
+    ]
+    assert project.index.definitions_of("PumpType", kind=SymbolKind.VARIABLE) == ()
+    assert [site.kind for site in project.index.usages_of("PumpType", kind=SymbolKind.MODULETYPE)] == [
+        SymbolKind.MODULETYPE
+    ]
+    assert project.index.usages_of("PumpType", kind=SymbolKind.VARIABLE) == ()
+    moduletypes = project.index.defined_names(kind=SymbolKind.MODULETYPE)
+    assert "PumpType" in moduletypes
+    assert "SimpleModuleTypeInv" not in moduletypes
+
+
+def test_project_reports_invoked_moduletypes() -> None:
+    project = _project()
+
+    assert project.invoked_moduletypes()["simplemoduletypeinv"] == frozenset({"PUMPTYPE"})
+    assert project.invoked_moduletypes(("SimpleModuleTypeInv",))["simplemoduletypeinv"] == frozenset({"PUMPTYPE"})
+
+
+def test_project_reports_an_empty_set_for_a_target_that_invokes_nothing(tmp_path: Path) -> None:
+    write_file(tmp_path, "Plain.s", _PLAIN_SOURCE)
+    project = SattLineProject.load([tmp_path], LoadMode.DRAFT, ["Plain"])
+
+    assert project.invoked_moduletypes(("Plain",))["plain"] == frozenset()
+    assert project.invoked_moduletypes(("Missing",)) == {}
+
+
+def test_project_invoked_moduletypes_follows_a_resolved_alias_dependency(tmp_path: Path) -> None:
+    write_file(tmp_path, "Base.s", _SOURCE)
+    try:
+        (tmp_path / "AliasBase.s").symlink_to(tmp_path / "Base.s")
+    except (OSError, NotImplementedError):
+        pytest.skip("this filesystem cannot create a symlink")
+    write_file(tmp_path, "Main.s", _ALIAS_MAIN_SOURCE)
+    write_file(tmp_path, "Main.l", "AliasBase\n")
+
+    project = SattLineProject.load([tmp_path], LoadMode.DRAFT, ("Base", "Main"))
+
+    assert project.dependencies_of("Main") == ("AliasBase",)
+    reachable = project.invoked_moduletypes(("Main",))
+    assert reachable["base"] == frozenset({"PUMPTYPE"})
+    assert reachable["main"] == frozenset()
+
+
+def test_project_invoked_moduletypes_walks_a_diamond_once() -> None:
+    project = SattLineProject.from_programs(
+        {
+            "Main": SattLineProgram(
+                name="Main", code=parse_source_text(_ALIAS_MAIN_SOURCE), dependencies=("Left", "Right")
+            ),
+            "Left": SattLineProgram(name="Left", code=parse_source_text(_PLAIN_SOURCE), dependencies=("Base",)),
+            "Right": SattLineProgram(name="Right", code=parse_source_text(_PLAIN_SOURCE), dependencies=("Base",)),
+            "Base": SattLineProgram(name="Base", code=parse_source_text(_SOURCE)),
+        }
+    )
+
+    assert project.invoked_moduletypes(("Main",))["base"] == frozenset({"PUMPTYPE"})
 
 
 def test_index_walks_each_ast_once(monkeypatch: pytest.MonkeyPatch) -> None:

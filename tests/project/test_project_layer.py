@@ -27,6 +27,7 @@ from sattline_parser.project import (
     ProjectLoadError,
     SattLineProgram,
     SattLineProject,
+    UnitIdentity,
 )
 
 from ._support import write_file
@@ -143,6 +144,23 @@ def test_project_get_missing_raises_key_error() -> None:
     project = SattLineProject()
     with pytest.raises(KeyError, match="no loaded program"):
         project.get("missing")
+
+
+def test_program_exposes_language_and_artifact_identity(tmp_path: Path) -> None:
+    program = SattLineProgram(name="Util", code=_code(), source_path=tmp_path / "Util.s")
+
+    assert program.identity == UnitIdentity.of("UTIL")
+    assert (program.identity.key, program.identity.spelling) == ("UTIL", "Util")
+    assert program.artifact_identity is not None
+    assert program.artifact_identity.path == (tmp_path / "Util.s").resolve()
+    assert SattLineProgram(name="Util", code=_code()).artifact_identity is None
+
+
+def test_project_identity_of_uses_the_designated_unit() -> None:
+    project = SattLineProject.from_programs({"Util": SattLineProgram(name="Util", code=_code())})
+
+    assert project.identity_of("uTiL") == UnitIdentity.of("Util")
+    assert project.identity_of("Unknown") == UnitIdentity.of("Unknown")
 
 
 def test_project_dependencies_and_dependents() -> None:

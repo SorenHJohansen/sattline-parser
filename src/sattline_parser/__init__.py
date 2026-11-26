@@ -40,6 +40,7 @@ from .api import (
     parse_source_bytes,
     parse_source_file,
     parse_source_text,
+    split_source_lines,
 )
 from .grammar import constants
 from .serialization import to_json, to_jsonable
@@ -120,6 +121,7 @@ __all__ = [
     "render_ide_text",
     "resolve_distribution_companion_path",
     "resolve_graphics_companion_path",
+    "split_source_lines",
     "to_json",
     "to_jsonable",
     "validate_basepicture",

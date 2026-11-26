@@ -58,6 +58,7 @@ __all__ = [
     "mark_remapped",
     "remap_parse_error",
     "remap_tree_to_original",
+    "split_source_lines",
 ]
 
 #: Parse failures whose positions already refer to the original source.

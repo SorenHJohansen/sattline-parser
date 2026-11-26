@@ -14,6 +14,8 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import replace
+from pathlib import Path
+from typing import cast
 
 from sattline_parser.models.ast_model import BasePicture, DataType, ModuleTypeDef, SourceSpan
 from sattline_parser.names import fold_identifier
@@ -177,6 +179,39 @@ class ProjectValidator:
                 )
             diagnostics = [*program.diagnostics, *module_diagnostics]
             self._registry[key] = replace(program, diagnostics=tuple(diagnostics))
+
+    def apply_scope(self) -> None:
+        """Apply this validator's configured scope to an already assembled registry.
+
+        Batch loading assembles every body once with the always-on type
+        reference checks, then splits the registry into per-target closures.
+        This applies the additional checks for one closure: ``FULL`` validates
+        every unit, ``INVOKED`` validates the target and the module types it
+        invokes, and ``NONE`` adds nothing. Datecode findings are added before
+        invoked module findings, matching the order a single load produces.
+        """
+        if self._validate is LoadValidation.NONE:
+            return
+        if self._validate is LoadValidation.FULL:
+            for key, program in list(self._registry.items()):
+                extra = self._program_diagnostics(
+                    program.code,
+                    dependencies=self._resolved_dependencies.get(key, ()),
+                    library=cast(str, program.library),
+                    file_name=cast(Path, program.source_path).name,
+                    key=key,
+                )
+                self._registry[key] = replace(program, diagnostics=(*program.diagnostics, *extra))
+            return
+        for key in sorted(self._target_plan_keys):
+            program = self._registry[key]
+            extra = self._datecode_conflicts(
+                program.code,
+                library=cast(str, program.library),
+                file_name=cast(Path, program.source_path).name,
+            )
+            self._registry[key] = replace(program, diagnostics=(*program.diagnostics, *extra))
+        self.validate_invoked()
 
     def closure(self, dependencies: Sequence[str]) -> frozenset[str]:
         """Plan keys of every unit a set of resolved dependencies reaches."""

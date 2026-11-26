@@ -38,6 +38,14 @@ def test_defaults_are_exposed() -> None:
     assert isinstance(LOOKUP_CACHE_VERSION, int)
 
 
+def test_enabled_tracks_the_root_directory(tmp_path: Path) -> None:
+    cache = FileLookupCache(tmp_path)
+    assert cache.enabled is True
+
+    tmp_path.rmdir()
+    assert cache.enabled is False
+
+
 def test_set_get_roundtrip_is_case_insensitive(tmp_path: Path) -> None:
     cache = FileLookupCache(tmp_path, write_through=True)
     base_dir = Path("/tmp/X")

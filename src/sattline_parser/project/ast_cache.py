@@ -512,6 +512,8 @@ class FileASTCache:
         self._read_only = read_only
         self._max_entries = max(0, max_entries)
         self._startup_pruned_entries = 0
+        self._hits = 0
+        self._misses = 0
         self._fingerprint = ""
         self._identity = ""
         self._writes_since_cap = 0
@@ -559,6 +561,16 @@ class FileASTCache:
     def read_only(self) -> bool:
         """Whether this handle reads entries and never writes or maintains them."""
         return self._read_only
+
+    @property
+    def hits(self) -> int:
+        """Cache reads that returned an AST so far."""
+        return self._hits
+
+    @property
+    def misses(self) -> int:
+        """Cache reads that found no usable entry so far."""
+        return self._misses
 
     def _identity_text(self) -> str:
         """The full cache identity, recorded in the marker and digested below."""
@@ -695,8 +707,19 @@ class FileASTCache:
         ``None`` means either no entry exists or the entry failed validation
         (foreign namespace, wrong version, tampered payload, changed source, or
         a cache directory that no longer matches the one this handle opened). A
-        disabled cache always returns ``None``.
+        disabled cache always returns ``None``. A usable handle counts every
+        attempted read as a hit or a miss for :attr:`hits` and :attr:`misses`.
         """
+        if not self._enabled:
+            return None
+        ast = self._load_entry(code_path, mode)
+        if ast is None:
+            self._misses += 1
+        else:
+            self._hits += 1
+        return ast
+
+    def _load_entry(self, code_path: Path, mode: str) -> BasePicture | None:
         directory = self._ready_directory()
         if directory is None:
             return None
